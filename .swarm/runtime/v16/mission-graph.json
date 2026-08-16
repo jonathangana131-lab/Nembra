@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 52,
+    "classifiedPRTotal": 51,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1448,7 +1448,7 @@
         "lane": "",
         "pr": 3432,
         "recommendedAction": "independent-review",
-        "similarity": 0.206,
+        "similarity": 0.19,
         "title": "[Capture P0][ADVERSARIAL] Prove sibling-entry generation splice"
       },
       "3433": {
@@ -1459,7 +1459,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3433,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.393,
+        "similarity": 0.345,
         "title": "[Capture P0][RED TEAM] Prove shared-ancestor cache-dup FD cleanup leak"
       },
       "3435": {
@@ -1583,28 +1583,6 @@
         "similarity": 0.394,
         "title": "[Capture P0][RED TEAM] Prove final-child swap after parent revalidation"
       },
-      "3463": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3463,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.393,
-        "title": "[Capture P0][RED TEAM] Reprove current cache-dup FD cleanup leak"
-      },
-      "3464": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3464,
-        "recommendedAction": "independent-review",
-        "similarity": 0.257,
-        "title": "[Capture P0][INTERNAL] Replay proven cache-dup cleanup on current shared-ancestor head"
-      },
       "3466": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1637,6 +1615,17 @@
         "recommendedAction": "archive-after-evidence-transfer",
         "similarity": 0.718,
         "title": "[Capture P0][REPAIR] Close shared-ancestor cache-dup FD on failure"
+      },
+      "3470": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "f8346e14438b5965806f990214da8fc4770308bc",
+        "lane": "capture-signed-install-custody",
+        "pr": 3470,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.31,
+        "title": "[Capture P0][DIAGNOSTIC] Classify accepted build-root custody failure"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1669,9 +1658,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:24:45Z",
+    "liveRefreshAt": "2026-08-16T06:25:08Z",
     "liveRefreshDuplicatesSuppressed": [
-      3463
+      3470
     ],
     "liveRefreshMainSHA": "7154479d4ea0a1914eb565b5cd235968a5985443",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5454,10 +5443,10 @@
       "userValue": 7
     }
   },
-  "revision": 711,
+  "revision": 712,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:24:48Z",
+  "updatedAt": "2026-08-16T06:25:11Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5533,7 +5522,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:24:45Z",
+      "updatedAt": "2026-08-16T06:25:08Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
