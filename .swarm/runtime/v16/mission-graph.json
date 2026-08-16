@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 43,
+    "classifiedPRTotal": 44,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1503,7 +1503,7 @@
         "lane": "",
         "pr": 3442,
         "recommendedAction": "independent-review",
-        "similarity": 0.225,
+        "similarity": 0.251,
         "title": "[Battery/Range V15][RED] Pin Accessibility XXXL Navigation clearance"
       },
       "3445": {
@@ -1536,8 +1536,19 @@
         "lane": "",
         "pr": 3447,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.26,
+        "similarity": 0.268,
         "title": "[Vehicle/Controls V15][QA] Real surface + exact XXXL witness"
+      },
+      "3448": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3448,
+        "recommendedAction": "independent-review",
+        "similarity": 0.266,
+        "title": "[Vehicle/Controls V15][RED] Pin compact choice and Navigation clearance"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1570,7 +1581,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-15T23:04:19Z",
+    "liveRefreshAt": "2026-08-16T00:03:46Z",
     "liveRefreshDuplicatesSuppressed": [
       3436
     ],
@@ -5355,10 +5366,10 @@
       "userValue": 7
     }
   },
-  "revision": 673,
+  "revision": 674,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-15T23:04:21Z",
+  "updatedAt": "2026-08-16T00:03:49Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5434,7 +5445,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-15T23:04:19Z",
+      "updatedAt": "2026-08-16T00:03:46Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
