@@ -91,8 +91,19 @@ jobs:
       - name: Prove retarget and generation races fail closed
         shell: bash
         run: |
-          set -euo pipefail
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py
+          set +e
+          output="$(/usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if (( status != 0 )); then
+            detail="$(printf '%s\n' "$output" | tail -n 40 | tail -c 6000)"
+            detail="${detail//'%'/'%25'}"
+            detail="${detail//$'\r'/'%0D'}"
+            detail="${detail//$'\n'/'%0A'}"
+            printf '::error file=scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py,title=Held-symlink Mac failure classifier::%s\n' "$detail"
+            exit "$status"
+          fi
 
       - name: Preserve held-generation component walk
         shell: bash
