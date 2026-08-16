@@ -45,7 +45,7 @@ jobs:
           changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
           expected="$(printf '%s\n' \
             .github/workflows/capture-private-read-lease-component-walk.yml \
-            scripts/ci/tests/test_capture_private_read_lease_post-validation-symlink-retarget-red-team.py | LC_ALL=C sort)"
+            scripts/ci/tests/test_capture_private_read_lease_post_validation_symlink_retarget_red_team.py | LC_ALL=C sort)"
           test "$changed" = "$expected"
           git diff --check "$EXACT_PARENT"...HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
