@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 39,
+    "classifiedPRTotal": 38,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1473,17 +1473,6 @@
         "similarity": 0.322,
         "title": "[Capture P0][CI] Make launcher provenance contract semantic (clean)"
       },
-      "3530": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "134bdd16c2832eabfbb4433a2f1e7faf1886173f",
-        "lane": "capture-private-read-lease",
-        "pr": 3530,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.322,
-        "title": "[Capture P0][DIAGNOSTIC] Surface macOS held-symlink transition failure"
-      },
       "3532": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1526,7 +1515,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:58:39Z",
+    "liveRefreshAt": "2026-08-16T06:58:54Z",
     "liveRefreshDuplicatesSuppressed": [
       3416
     ],
@@ -5311,10 +5300,10 @@
       "userValue": 7
     }
   },
-  "revision": 808,
+  "revision": 809,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:58:41Z",
+  "updatedAt": "2026-08-16T06:58:55Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5390,7 +5379,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:58:39Z",
+      "updatedAt": "2026-08-16T06:58:54Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
