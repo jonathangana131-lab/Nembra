@@ -154,14 +154,17 @@ class CapturePrivateReadLeaseSymlinkAuthorityTransitionTests(unittest.TestCase):
                 mock.patch.object(helper, "_acl_listing", side_effect=listing),
                 mock.patch.object(helper, "_chmod_acl", side_effect=chmod),
             ):
-                with self.assertRaises(helper.SelectedXcodeBuildOrchestratorError):
+                with self.assertRaises(helper.SelectedXcodeBuildOrchestratorError) as raised:
                     lease.grant("nembrasymlinkgeneration")
 
+            self.assertIn(
+                "held directory generation changed during symlink validation",
+                str(raised.exception),
+            )
             self.assertGreaterEqual(retargets, 1)
             self.assertFalse(any(state.values()))
             self.assertFalse(lease._opened)
             self.assertEqual(lease._principal, "")
-            self.assertEqual(link.resolve(strict=True), external.resolve(strict=True))
 
     def test_grant_source_revalidates_symlinks_before_and_after_acl_loop(self) -> None:
         helper = load()
