@@ -1404,18 +1404,18 @@
         "lane": "capture-private-read-lease",
         "pr": 3457,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.295,
+        "similarity": 0.276,
         "title": "[Capture P0][RED TEAM] Re-anchor post-validation symlink retarget on current product"
       },
       "3467": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "9b68439c1ef19e0e445f488be46b0c3e6ef61936",
+        "headSHA": "598aa595a6f7c95db98d9fcae87c09f54d8e90fe",
         "lane": "capture-private-read-lease",
         "pr": 3467,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.299,
+        "similarity": 0.267,
         "title": "[Capture P0][REPAIR] Fence held symlinks at ACL authority transition"
       },
       "3476": {
@@ -1504,7 +1504,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T07:05:32Z",
+    "liveRefreshAt": "2026-08-16T07:05:52Z",
     "liveRefreshDuplicatesSuppressed": [
       3416
     ],
@@ -5289,10 +5289,10 @@
       "userValue": 7
     }
   },
-  "revision": 826,
+  "revision": 827,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T07:05:33Z",
+  "updatedAt": "2026-08-16T07:05:53Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5368,7 +5368,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T07:05:32Z",
+      "updatedAt": "2026-08-16T07:05:52Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
