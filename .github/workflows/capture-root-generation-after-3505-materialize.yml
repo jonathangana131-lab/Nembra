@@ -1,0 +1,47 @@
+name: Capture Root Generation Current Materializer
+on:
+  push:
+    branches: [repair/v17-capture-root-generation-after-3505-sol-20260815]
+    paths: [.github/workflows/capture-root-generation-after-3505-materialize.yml]
+permissions:
+  contents: write
+env:
+  EXACT_PARENT: ef8f9c7adac8f8f0121d14fce27b7f580aabea56
+  DELTA_BASE: 385e311807fbc832b03fe894eec19f4ed624167e
+  DELTA_HEAD: 88515c72fb5ec87934747dc2bf68251251be51fa
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: repair/v17-capture-root-generation-after-3505-sol-20260815
+      - name: Bind and apply accepted delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$EXACT_PARENT" HEAD
+          test "$(git diff --name-only "$EXACT_PARENT"...HEAD)" = '.github/workflows/capture-root-generation-after-3505-materialize.yml'
+          git diff "$DELTA_BASE" "$DELTA_HEAD" -- scripts/ci/capture_accepted_build_input_snapshot.py scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py > "$RUNNER_TEMP/root.patch"
+          test -s "$RUNNER_TEMP/root.patch"
+          git apply --3way "$RUNNER_TEMP/root.patch"
+          python3 -m py_compile scripts/ci/capture_accepted_build_input_snapshot.py scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          python3 scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          python3 scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          git diff --check
+      - name: Publish clean repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-root-generation-after-3505-materialize.yml
+          git add -A
+          actual="$(git diff --cached --name-only "$EXACT_PARENT" | LC_ALL=C sort)"
+          expected="$(printf '%s\n' scripts/ci/capture_accepted_build_input_snapshot.py scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git diff --cached --check
+          git config user.name nembra-swarm-bot
+          git config user.email nembra-swarm-bot@users.noreply.github.com
+          git commit -m 'fix(capture): fence root generation on current accepted input'
+          git push origin HEAD:repair/v17-capture-root-generation-after-3505-sol-20260815
