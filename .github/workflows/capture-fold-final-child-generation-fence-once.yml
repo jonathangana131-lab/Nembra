@@ -1,0 +1,69 @@
+name: Capture Fold Final Child Generation Fence Once
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-final-child-generation-fence-gpt56-20260815
+    paths:
+      - .github/workflows/capture-fold-final-child-generation-fence-once.yml
+
+permissions:
+  contents: write
+
+env:
+  EXACT_PARENT: 3a824e5301b5e1208c955b15af0ea5b1f38f7568
+
+jobs:
+  fold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repair/v17-capture-final-child-generation-fence-gpt56-20260815
+          fetch-depth: 0
+
+      - name: Bind one-shot authoring tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-fold-final-child-generation-fence-once.yml \
+            scripts/ci/fold_final_child_generation_fence_once.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Apply exact final-child generation fence
+        run: python3 scripts/ci/fold_final_child_generation_fence_once.py
+
+      - name: Verify permanent regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -m py_compile \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          python3 scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          python3 scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          git diff --check
+
+      - name: Publish clean permanent product tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-fold-final-child-generation-fence-once.yml
+          rm scripts/ci/fold_final_child_generation_fence_once.py
+          changed="$(git diff --name-only "$EXACT_PARENT" -- | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_PARENT" --
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(capture): revalidate generated parent after child open"
+          git push origin HEAD:repair/v17-capture-final-child-generation-fence-gpt56-20260815
