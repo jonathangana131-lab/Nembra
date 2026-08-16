@@ -49,22 +49,30 @@ jobs:
           git config user.name "Nembra GO worker"
           git config user.email "nembra-go@users.noreply.github.com"
           authoring_head="$(git rev-parse HEAD)"
-          archive="$RUNNER_TEMP/accepted-root-xcode-input-repair.tar"
+          staging="$RUNNER_TEMP/accepted-root-xcode-input-repair"
+          mkdir -p "$staging/.github/workflows" "$staging/scripts/ci/tests" "$staging/scripts/ci"
+          cp .github/workflows/capture-accepted-root-build-composition.yml "$staging/.github/workflows/"
+          cp scripts/ci/capture_selected_xcode_build_orchestrator.py "$staging/scripts/ci/"
+          cp scripts/ci/tests/test_capture_accepted_root_build_composition.py "$staging/scripts/ci/tests/"
+          cp scripts/ci/tests/test_capture_accepted_root_xcode_input_grammar.py "$staging/scripts/ci/tests/"
+          git reset --hard "$EXACT_PARENT"
+          cp -R "$staging/." .
+          chmod 0644 .github/workflows/capture-accepted-root-build-composition.yml
+          chmod 0755 scripts/ci/capture_selected_xcode_build_orchestrator.py
+          chmod 0755 scripts/ci/tests/test_capture_accepted_root_build_composition.py
+          chmod 0755 scripts/ci/tests/test_capture_accepted_root_xcode_input_grammar.py
           product_paths=(
             .github/workflows/capture-accepted-root-build-composition.yml
             scripts/ci/capture_selected_xcode_build_orchestrator.py
             scripts/ci/tests/test_capture_accepted_root_build_composition.py
             scripts/ci/tests/test_capture_accepted_root_xcode_input_grammar.py
           )
-          tar -cf "$archive" "${product_paths[@]}"
-          git reset --hard "$EXACT_PARENT"
-          tar -xf "$archive"
           git add "${product_paths[@]}"
           actual="$(git diff --cached --name-only "$EXACT_PARENT" | LC_ALL=C sort)"
           expected="$(printf '%s\n' "${product_paths[@]}" | LC_ALL=C sort)"
           test "$actual" = "$expected"
           test ! -e .github/workflows/capture-accepted-root-xcode-input-grammar-materialize-once.yml
-          test ! -e scripts/ci/materialize_capture_accepted_root_xcode-input-grammar-once.py
+          test ! -e scripts/ci/materialize_capture_accepted_root_xcode_input_grammar_once.py
           git diff --cached --check
           git commit -m "fix(capture): bind Xcode source inputs to accepted root"
           git push --force-with-lease="$BRANCH:$authoring_head" origin "HEAD:$BRANCH"
