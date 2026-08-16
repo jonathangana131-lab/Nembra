@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 40,
+    "classifiedPRTotal": 39,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1484,17 +1484,6 @@
         "similarity": 0.322,
         "title": "[Capture P0][DIAGNOSTIC] Surface macOS held-symlink transition failure"
       },
-      "3531": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "b32e9d94fbb825f5874ab9898877217c596deb16",
-        "lane": "capture-signed-install-custody",
-        "pr": 3531,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.347,
-        "title": "[Capture P0][REPAIR] Seal exact custody witness before root execution"
-      },
       "3532": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1503,7 +1492,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3532,
         "recommendedAction": "independent-review",
-        "similarity": 0.349,
+        "similarity": 0.248,
         "title": "[Capture P0][SYNC] Promote pre-sealed custody witness onto live carrier"
       }
     },
@@ -1537,7 +1526,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:58:13Z",
+    "liveRefreshAt": "2026-08-16T06:58:39Z",
     "liveRefreshDuplicatesSuppressed": [
       3416
     ],
@@ -5322,10 +5311,10 @@
       "userValue": 7
     }
   },
-  "revision": 807,
+  "revision": 808,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:58:14Z",
+  "updatedAt": "2026-08-16T06:58:41Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5401,7 +5390,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:58:13Z",
+      "updatedAt": "2026-08-16T06:58:39Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
