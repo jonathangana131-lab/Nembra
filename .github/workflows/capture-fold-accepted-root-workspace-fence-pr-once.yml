@@ -1,0 +1,68 @@
+name: Capture Fold Accepted Root Workspace Fence PR Once
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-fold-accepted-root-workspace-fence-pr-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repair/v17-capture-accepted-root-workspace-fence-gpt56-sol
+          fetch-depth: 0
+
+      - name: Bind authored repair inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f scripts/ci/fold_accepted_root_workspace_fence_once.py
+          test -f scripts/ci/capture_selected_xcode_build_orchestrator.py
+          test -f scripts/ci/tests/test_capture_accepted_root_build_composition.py
+
+      - name: Apply workspace authority transform
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/fold_accepted_root_workspace_fence_once.py
+
+      - name: Verify product regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+          for raw in (
+              "scripts/ci/capture_selected_xcode_build_orchestrator.py",
+              "scripts/ci/tests/test_capture_accepted_root_build_composition.py",
+          ):
+              path = Path(raw)
+              compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
+          PY
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_root_build_composition.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          git diff --check
+          test -z "$(find scripts/ci -type f -name '*.pyc' -print)"
+
+      - name: Publish only permanent product files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_accepted_root_build_composition.py
+          git diff --cached --name-only | LC_ALL=C sort > "$RUNNER_TEMP/staged.txt"
+          printf '%s\n' \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_accepted_root_build_composition.py | LC_ALL=C sort > "$RUNNER_TEMP/expected.txt"
+          diff -u "$RUNNER_TEMP/expected.txt" "$RUNNER_TEMP/staged.txt"
+          git commit -m "fix(capture): bind strict workspace to accepted root"
+          git push origin HEAD:repair/v17-capture-accepted-root-workspace-fence-gpt56-sol
