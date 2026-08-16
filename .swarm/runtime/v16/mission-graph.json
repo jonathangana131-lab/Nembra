@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 46,
+    "classifiedPRTotal": 49,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1459,7 +1459,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3433,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.257,
+        "similarity": 0.393,
         "title": "[Capture P0][RED TEAM] Prove shared-ancestor cache-dup FD cleanup leak"
       },
       "3435": {
@@ -1481,7 +1481,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3436,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.258,
+        "similarity": 0.373,
         "title": "[Capture P0][RED TEAM] Attack child entries under held generated ancestor"
       },
       "3438": {
@@ -1494,6 +1494,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.42,
         "title": "[Capture P0][RED TEAM] Attack post-validation symlink retarget"
+      },
+      "3439": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3439,
+        "recommendedAction": "independent-review",
+        "similarity": 0.335,
+        "title": "[Capture P0][HARDENING] Close shared-ancestor cache-dup child FD on failure"
       },
       "3442": {
         "classification": "requires-review",
@@ -1571,6 +1582,28 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.303,
         "title": "[Capture P0][QA] Prove accepted-input admission on macOS"
+      },
+      "3462": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3462,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.394,
+        "title": "[Capture P0][RED TEAM] Prove final-child swap after parent revalidation"
+      },
+      "3463": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3463,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.393,
+        "title": "[Capture P0][RED TEAM] Reprove current cache-dup FD cleanup leak"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1603,9 +1636,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:22:42Z",
+    "liveRefreshAt": "2026-08-16T06:22:57Z",
     "liveRefreshDuplicatesSuppressed": [
-      3461
+      3463
     ],
     "liveRefreshMainSHA": "7154479d4ea0a1914eb565b5cd235968a5985443",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5388,10 +5421,10 @@
       "userValue": 7
     }
   },
-  "revision": 705,
+  "revision": 706,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:22:44Z",
+  "updatedAt": "2026-08-16T06:22:59Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5467,7 +5500,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:22:42Z",
+      "updatedAt": "2026-08-16T06:22:57Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
