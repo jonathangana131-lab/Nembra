@@ -1492,7 +1492,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3438,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.432,
+        "similarity": 0.42,
         "title": "[Capture P0][RED TEAM] Attack post-validation symlink retarget"
       },
       "3442": {
@@ -1547,7 +1547,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3457,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.434,
+        "similarity": 0.426,
         "title": "[Capture P0][RED TEAM] Re-anchor post-validation symlink retarget on current product"
       },
       "3458": {
@@ -1592,7 +1592,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:21:14Z",
+    "liveRefreshAt": "2026-08-16T06:21:29Z",
     "liveRefreshDuplicatesSuppressed": [
       3436
     ],
@@ -5377,10 +5377,10 @@
       "userValue": 7
     }
   },
-  "revision": 700,
+  "revision": 701,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:21:16Z",
+  "updatedAt": "2026-08-16T06:21:32Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5456,7 +5456,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:21:14Z",
+      "updatedAt": "2026-08-16T06:21:29Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
