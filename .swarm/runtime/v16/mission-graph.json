@@ -1140,7 +1140,7 @@
         "lane": "capture-build-authority",
         "pr": 3333,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.166,
+        "similarity": 0.272,
         "title": "[Capture P0][SECURITY] Converge private-input authority and frozen device custody"
       },
       "3335": {
@@ -1484,17 +1484,6 @@
         "similarity": 0.373,
         "title": "[Capture P0][RED TEAM] Attack child entries under held generated ancestor"
       },
-      "3442": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3442,
-        "recommendedAction": "independent-review",
-        "similarity": 0.249,
-        "title": "[Battery/Range V15][RED] Pin Accessibility XXXL Navigation clearance"
-      },
       "3447": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1613,8 +1602,19 @@
         "lane": "dashboard-cockpit-product-closure",
         "pr": 3475,
         "recommendedAction": "independent-review",
-        "similarity": 0.08,
+        "similarity": 0.073,
         "title": "[Dashboard V17] Make the battery itself the range toggle"
+      },
+      "3476": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-build-authority",
+        "pr": 3476,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.28,
+        "title": "[Capture P0][RED TEAM] Re-anchor whole-source compiler window to live #3333"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1647,7 +1647,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:27:08Z",
+    "liveRefreshAt": "2026-08-16T06:27:22Z",
     "liveRefreshDuplicatesSuppressed": [
       3470
     ],
@@ -5432,10 +5432,10 @@
       "userValue": 7
     }
   },
-  "revision": 718,
+  "revision": 719,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:27:09Z",
+  "updatedAt": "2026-08-16T06:27:25Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5511,7 +5511,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:27:08Z",
+      "updatedAt": "2026-08-16T06:27:22Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
