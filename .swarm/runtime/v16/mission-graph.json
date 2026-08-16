@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 51,
+    "classifiedPRTotal": 50,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1539,17 +1539,6 @@
         "similarity": 0.355,
         "title": "[Capture P0][RED TEAM] Re-anchor post-validation symlink retarget on current product"
       },
-      "3460": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-read-lease",
-        "pr": 3460,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.493,
-        "title": "[Capture P0][REPAIR] Revalidate symlinks at private-lease handoff"
-      },
       "3461": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1602,18 +1591,18 @@
         "lane": "capture-private-read-lease",
         "pr": 3473,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.512,
+        "similarity": 0.443,
         "title": "[Capture P0][REPAIR] Bind symlink witnesses through final lease plan"
       },
       "3474": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "",
+        "headSHA": "9c478371e36a23c75c4a5cfc612993cc27273d21",
         "lane": "",
         "pr": 3474,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.261,
+        "similarity": 0.26,
         "title": "[Capture P0][REPAIR] Reprove held symlink policy at ACL grant boundary"
       },
       "3475": {
@@ -1658,7 +1647,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:26:34Z",
+    "liveRefreshAt": "2026-08-16T06:26:50Z",
     "liveRefreshDuplicatesSuppressed": [
       3470
     ],
@@ -5443,10 +5432,10 @@
       "userValue": 7
     }
   },
-  "revision": 716,
+  "revision": 717,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:26:37Z",
+  "updatedAt": "2026-08-16T06:26:53Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5522,7 +5511,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:26:34Z",
+      "updatedAt": "2026-08-16T06:26:50Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
