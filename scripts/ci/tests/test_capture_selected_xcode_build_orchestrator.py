@@ -145,7 +145,12 @@ class CaptureSelectedXcodeBuildOrchestratorTests(unittest.TestCase):
             ]
             self.assertEqual(
                 helper._private_read_subjects(command, repo),
-                (repo / "LocalSecrets/TuyaSDK", repo / "LocalSecrets/TuyaRuntime"),
+                (
+                    repo / "LocalSecrets/TuyaSDK/ThingSmartCryption.podspec",
+                    repo / "LocalSecrets/TuyaSDK/Build",
+                    repo / "LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec",
+                    repo / "LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig",
+                ),
             )
             escaped = list(command)
             escaped[escaped.index("--identity-sources") + 1] = str(repo / "other")
