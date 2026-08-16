@@ -7,7 +7,10 @@ on:
       - scripts/ci/tests/test_capture_accepted_root_build_composition.py
       - scripts/ci/tests/test_capture_accepted_root_whole_read_lease.py
       - scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py
+      - scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+      - scripts/ci/tests/test_capture_private_read_lease_rollback.py
       - scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py
+      - scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
       - .github/workflows/capture-current-accepted-root-compiler-composition.yml
   workflow_dispatch:
 
@@ -52,7 +55,10 @@ jobs:
             scripts/ci/tests/test_capture_accepted_root_build_composition.py \
             scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py \
             scripts/ci/tests/test_capture_accepted_root_whole_read_lease.py \
-            scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py | LC_ALL=C sort)"
+            scripts/ci/tests/test_capture_private_read_lease_component_walk.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py \
+            scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py | LC_ALL=C sort)"
           test "$actual" = "$expected"
           git diff --check "$EXACT_PARENT"...HEAD
 
@@ -67,7 +73,10 @@ jobs:
               "scripts/ci/tests/test_capture_accepted_root_build_composition.py",
               "scripts/ci/tests/test_capture_accepted_root_whole_read_lease.py",
               "scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py",
+              "scripts/ci/tests/test_capture_private_read_lease_component_walk.py",
+              "scripts/ci/tests/test_capture_private_read_lease_rollback.py",
               "scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py",
+              "scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py",
           ):
               path = Path(raw)
               compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
