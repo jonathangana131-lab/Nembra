@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 44,
+    "classifiedPRTotal": 45,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1393,7 +1393,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3418,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.292,
+        "similarity": 0.296,
         "title": "[Capture P0][RED TEAM] Reject mixed LocalSecrets subject generations"
       },
       "3419": {
@@ -1426,7 +1426,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3421,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.335,
+        "similarity": 0.357,
         "title": "[Capture P0][REPAIR] Hold shared generated selector ancestors"
       },
       "3428": {
@@ -1459,7 +1459,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3433,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.258,
+        "similarity": 0.257,
         "title": "[Capture P0][RED TEAM] Prove shared-ancestor cache-dup FD cleanup leak"
       },
       "3435": {
@@ -1481,7 +1481,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3436,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.296,
+        "similarity": 0.282,
         "title": "[Capture P0][RED TEAM] Attack child entries under held generated ancestor"
       },
       "3438": {
@@ -1505,17 +1505,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.249,
         "title": "[Battery/Range V15][RED] Pin Accessibility XXXL Navigation clearance"
-      },
-      "3446": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "578efcfb6c642fb52d332a9541f2ccaf8450f8dd",
-        "lane": "capture-signed-install-custody",
-        "pr": 3446,
-        "recommendedAction": "independent-review",
-        "similarity": 0.295,
-        "title": "[Capture P0][TEST] Accept macOS casefold fail-closed admission"
       },
       "3447": {
         "classification": "validation",
@@ -1547,8 +1536,30 @@
         "lane": "",
         "pr": 3452,
         "recommendedAction": "independent-review",
-        "similarity": 0.206,
+        "similarity": 0.245,
         "title": "[Capture P0][SYNC] Re-anchor continuity repair on portable accepted-input oracle"
+      },
+      "3453": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3453,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.283,
+        "title": "[Capture P0][REPAIR] Bind macOS casefold regression scope"
+      },
+      "3454": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "e0052466c3aca45c2e65101722adc82f2ddd27f5",
+        "lane": "capture-private-read-lease",
+        "pr": 3454,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.277,
+        "title": "[Capture P0][CI] Re-anchor inherited read-lease rollback fixtures on Darwin"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1581,7 +1592,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:20:00Z",
+    "liveRefreshAt": "2026-08-16T06:20:19Z",
     "liveRefreshDuplicatesSuppressed": [
       3436
     ],
@@ -5366,10 +5377,10 @@
       "userValue": 7
     }
   },
-  "revision": 696,
+  "revision": 697,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:20:03Z",
+  "updatedAt": "2026-08-16T06:20:21Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5445,7 +5456,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:20:00Z",
+      "updatedAt": "2026-08-16T06:20:19Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
