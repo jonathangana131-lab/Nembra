@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 
+EXACT_PARENT = "88515c72fb5ec87934747dc2bf68251251be51fa"
 HELPER = Path("scripts/ci/capture_accepted_build_input_snapshot.py")
 TEST = Path("scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py")
 WORKFLOW = Path(".github/workflows/capture-generated-shared-ancestor-continuity.yml")
+SELF = Path(__file__)
 
 
 def replace_once(source: str, old: str, new: str, label: str) -> str:
@@ -16,11 +19,25 @@ def replace_once(source: str, old: str, new: str, label: str) -> str:
     return source.replace(old, new, 1)
 
 
+def parent_file(path: Path) -> str:
+    completed = subprocess.run(
+        ["/usr/bin/git", "show", f"{EXACT_PARENT}:{path.as_posix()}"],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    return completed.stdout
+
+
 def main() -> None:
     helper = HELPER.read_text(encoding="utf-8")
     old = """                cached_descriptor, admitted = directory_cache[relative]\n                _assert_directory_generation(cached_descriptor, admitted, relative)\n                selection_ancestors.append((cached_descriptor, admitted, relative))\n                os.close(current)\n                current = os.dup(cached_descriptor)\n                continue\n"""
     new = """                cached_descriptor, admitted = directory_cache[relative]\n                _assert_directory_generation(cached_descriptor, admitted, relative)\n                replacement = os.dup(cached_descriptor)\n                selection_ancestors.append((cached_descriptor, admitted, relative))\n                previous = current\n                current = replacement\n                os.close(previous)\n                continue\n"""
-    HELPER.write_text(replace_once(helper, old, new, "cached-parent transfer seam"), encoding="utf-8")
+    HELPER.write_text(
+        replace_once(helper, old, new, "cached-parent transfer seam"),
+        encoding="utf-8",
+    )
 
     tests = TEST.read_text(encoding="utf-8")
     marker = '\n\nif __name__ == "__main__":\n    unittest.main(verbosity=2)\n'
@@ -74,11 +91,29 @@ def main() -> None:
                 helper._close_directory_cache(cache)
                 os.close(root_fd)
 '''
-    TEST.write_text(replace_once(tests, marker, addition + marker, "test insertion marker"), encoding="utf-8")
+    TEST.write_text(
+        replace_once(tests, marker, addition + marker, "test insertion marker"),
+        encoding="utf-8",
+    )
 
-    workflow = WORKFLOW.read_text(encoding="utf-8")
-    if "Capture Generated FD Transfer Convergence Author" not in workflow:
+    author_workflow = WORKFLOW.read_text(encoding="utf-8")
+    if "Capture Generated FD Transfer Convergence Author" not in author_workflow:
         raise SystemExit("unexpected author workflow identity")
+
+    workflow = parent_file(WORKFLOW)
+    old_scope = """          expected="$(printf '%s\\n' \\
+            .github/workflows/capture-generated-shared-ancestor-continuity.yml \\
+"""
+    new_scope = """          expected="$(printf '%s\\n' \\
+            .github/workflows/capture-accepted-build-input-snapshot-validation.yml \\
+            .github/workflows/capture-generated-shared-ancestor-continuity.yml \\
+"""
+    WORKFLOW.write_text(
+        replace_once(workflow, old_scope, new_scope, "continuity QA allowlist seam"),
+        encoding="utf-8",
+    )
+
+    SELF.unlink()
 
 
 if __name__ == "__main__":
