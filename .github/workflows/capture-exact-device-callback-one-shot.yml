@@ -43,21 +43,25 @@ jobs:
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           text = path.read_text()
           old = '''    func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {
-              guard let dps, !dps.isEmpty else { return }
+                  guard let dps, !dps.isEmpty else { return }
           '''
-          new = '''    func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {
-              // Application evidence belongs to the exact ThingSmartDevice instance created
-              // from the freshly re-verified Tuya device ID for this attempt. A nil, stale,
-              // or foreign delegate callback must never mint payload authority.
-              guard let callbackDevice = device,
-                    let boundDevice = self.device,
-                    callbackDevice === boundDevice else { return }
-              guard let dps, !dps.isEmpty else { return }
+          # YAML strips the workflow block's common indentation. Match the Swift body
+          # independently so the authoring harness cannot drift on Python heredoc spacing.
+          signature = "    func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {\n"
+          admission = "        guard let dps, !dps.isEmpty else { return }\n"
+          anchor = signature + admission
+          replacement = signature + '''        // Application evidence belongs to the exact ThingSmartDevice instance created
+                  // from the freshly re-verified Tuya device ID for this attempt. A nil, stale,
+                  // or foreign delegate callback must never mint payload authority.
+                  guard let callbackDevice = device,
+                        let boundDevice = self.device,
+                        callbackDevice === boundDevice else { return }
+                  guard let dps, !dps.isEmpty else { return }
           '''
-          count = text.count(old)
+          count = text.count(anchor)
           if count != 1:
               raise SystemExit(f"expected exactly one dpsUpdate admission anchor, found {count}")
-          text = text.replace(old, new, 1)
+          text = text.replace(anchor, replacement, 1)
           path.write_text(text)
           PY
 
