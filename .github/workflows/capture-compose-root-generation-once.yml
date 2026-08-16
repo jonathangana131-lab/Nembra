@@ -1,0 +1,63 @@
+name: Capture Compose Root Generation Once
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-post-open-ancestor-revalidation-gpt56-go
+    paths:
+      - .github/workflows/capture-compose-root-generation-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repair/v17-capture-post-open-ancestor-revalidation-gpt56-go
+          fetch-depth: 0
+
+      - name: Bind exact composition inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "c72ce6d50f587552beb5e0b752a4f0f5d7ca6281"
+          test "$(git diff --name-only HEAD^...HEAD)" = ".github/workflows/capture-compose-root-generation-once.yml"
+          git cat-file -e 682e0370394b7e38c1d969c361f3e7de94afc891^{commit}
+          git cat-file -e 47064d002ca1b4fbf2865c668b85aa2107b4810a^{commit}
+
+      - name: Compose exact root-generation repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --binary 682e0370394b7e38c1d969c361f3e7de94afc891...47064d002ca1b4fbf2865c668b85aa2107b4810a -- \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py \
+            > "$RUNNER_TEMP/root-generation.patch"
+          test -s "$RUNNER_TEMP/root-generation.patch"
+          git apply --3way --index "$RUNNER_TEMP/root-generation.patch"
+          changed="$(git diff --cached --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' scripts/ci/capture_accepted_build_input_snapshot.py scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --cached --check
+
+      - name: Verify composed permanent regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -m py_compile scripts/ci/capture_accepted_build_input_snapshot.py scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+
+      - name: Publish combined repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix(capture): compose repository-root generation continuity"
+          git push origin HEAD:repair/v17-capture-post-open-ancestor-revalidation-gpt56-go
