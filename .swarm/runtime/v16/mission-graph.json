@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 53,
+    "classifiedPRTotal": 56,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1261,7 +1261,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3359,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.304,
+        "similarity": 0.319,
         "title": "[Capture P0][VALIDATION] Bind generated CocoaPods/private inputs before source snapshot"
       },
       "3360": {
@@ -1382,7 +1382,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3418,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.31,
+        "similarity": 0.315,
         "title": "[Capture P0][RED TEAM] Reject mixed LocalSecrets subject generations"
       },
       "3419": {
@@ -1547,7 +1547,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3479,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.39,
+        "similarity": 0.399,
         "title": "[Capture P0][RED TEAM] Attack generated root sibling continuity"
       },
       "3481": {
@@ -1646,8 +1646,41 @@
         "lane": "",
         "pr": 3494,
         "recommendedAction": "independent-review",
-        "similarity": 0.163,
+        "similarity": 0.353,
         "title": "[Capture P0][INTERNAL] Carry structured field credentials onto f1be root custody"
+      },
+      "3495": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3495,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.375,
+        "title": "[Capture P0][REPAIR] Carry structured field credentials onto F1BE root custody"
+      },
+      "3496": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3496,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.396,
+        "title": "[Capture P0][REPAIR] Hold generated repository-root generation"
+      },
+      "3497": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "5e787a61c10cd454c97b6a4bd164bd5b6f5e5c15",
+        "lane": "dashboard-cockpit-product-closure",
+        "pr": 3497,
+        "recommendedAction": "independent-review",
+        "similarity": 0.08,
+        "title": "[Dashboard V17][RECOVERY] Ship signature battery / learned-range instrument"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1680,7 +1713,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:32:48Z",
+    "liveRefreshAt": "2026-08-16T06:33:05Z",
     "liveRefreshDuplicatesSuppressed": [
       3491
     ],
@@ -5465,10 +5498,10 @@
       "userValue": 7
     }
   },
-  "revision": 736,
+  "revision": 737,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:32:51Z",
+  "updatedAt": "2026-08-16T06:33:08Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5544,7 +5577,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:32:48Z",
+      "updatedAt": "2026-08-16T06:33:05Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
