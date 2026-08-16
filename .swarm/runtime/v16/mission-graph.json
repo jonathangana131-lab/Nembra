@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 44,
+    "classifiedPRTotal": 43,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1506,17 +1506,6 @@
         "similarity": 0.285,
         "title": "[Battery/Range V15][RED] Pin Accessibility XXXL Navigation clearance"
       },
-      "3445": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3445,
-        "recommendedAction": "independent-review",
-        "similarity": 0.119,
-        "title": "[Vehicle/Controls V15] Ship premium truthful current-main surface"
-      },
       "3446": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1581,11 +1570,11 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T04:00:06Z",
+    "liveRefreshAt": "2026-08-16T04:00:54Z",
     "liveRefreshDuplicatesSuppressed": [
       3436
     ],
-    "liveRefreshMainSHA": "7cbf030dca7735fab56f1f71dd05115f0236d556",
+    "liveRefreshMainSHA": "7154479d4ea0a1914eb565b5cd235968a5985443",
     "liveRefreshSelectedCanonicalPRs": [
       3142
     ],
@@ -5366,10 +5355,10 @@
       "userValue": 7
     }
   },
-  "revision": 684,
+  "revision": 685,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T04:00:08Z",
+  "updatedAt": "2026-08-16T04:00:56Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5445,7 +5434,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T04:00:06Z",
+      "updatedAt": "2026-08-16T04:00:54Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
