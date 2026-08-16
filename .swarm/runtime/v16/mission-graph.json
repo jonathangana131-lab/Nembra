@@ -1481,7 +1481,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3436,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.285,
+        "similarity": 0.296,
         "title": "[Capture P0][RED TEAM] Attack child entries under held generated ancestor"
       },
       "3438": {
@@ -1510,11 +1510,11 @@
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "68a461e2ecf6a2f80e7810e9bc9d978a3a7db43f",
+        "headSHA": "578efcfb6c642fb52d332a9541f2ccaf8450f8dd",
         "lane": "capture-signed-install-custody",
         "pr": 3446,
         "recommendedAction": "independent-review",
-        "similarity": 0.283,
+        "similarity": 0.295,
         "title": "[Capture P0][TEST] Accept macOS casefold fail-closed admission"
       },
       "3447": {
@@ -1547,7 +1547,7 @@
         "lane": "",
         "pr": 3452,
         "recommendedAction": "independent-review",
-        "similarity": 0.221,
+        "similarity": 0.206,
         "title": "[Capture P0][SYNC] Re-anchor continuity repair on portable accepted-input oracle"
       }
     },
@@ -1581,7 +1581,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:19:44Z",
+    "liveRefreshAt": "2026-08-16T06:20:00Z",
     "liveRefreshDuplicatesSuppressed": [
       3436
     ],
@@ -5366,10 +5366,10 @@
       "userValue": 7
     }
   },
-  "revision": 695,
+  "revision": 696,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:19:47Z",
+  "updatedAt": "2026-08-16T06:20:03Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5445,7 +5445,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:19:44Z",
+      "updatedAt": "2026-08-16T06:20:00Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
