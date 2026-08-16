@@ -149,13 +149,24 @@ class CapturePrivateReadLeaseSymlinkAuthorityTransitionTests(unittest.TestCase):
 
             state, listing, chmod = self._acl_transport()
             lease = helper._PrivateReadLease((subject,), repo)
-            with (
-                mock.patch.object(helper.os, "readlink", side_effect=safe_readlink_then_external),
-                mock.patch.object(helper, "_acl_listing", side_effect=listing),
-                mock.patch.object(helper, "_chmod_acl", side_effect=chmod),
-            ):
-                with self.assertRaises(helper.SelectedXcodeBuildOrchestratorError) as raised:
-                    lease.grant("nembrasymlinkgeneration")
+            with mock.patch.object(
+                helper.os,
+                "readlink",
+                side_effect=safe_readlink_then_external,
+            ) as injected_readlink:
+                advertised_dir_fd_support = set(helper.os.supports_dir_fd)
+                advertised_dir_fd_support.add(injected_readlink)
+                with (
+                    mock.patch.object(
+                        helper.os,
+                        "supports_dir_fd",
+                        advertised_dir_fd_support,
+                    ),
+                    mock.patch.object(helper, "_acl_listing", side_effect=listing),
+                    mock.patch.object(helper, "_chmod_acl", side_effect=chmod),
+                ):
+                    with self.assertRaises(helper.SelectedXcodeBuildOrchestratorError) as raised:
+                        lease.grant("nembrasymlinkgeneration")
 
             self.assertIn(
                 "held directory generation changed during symlink validation",
