@@ -17,11 +17,14 @@ concurrency:
 
 env:
   EXACT_ACCEPTED_INPUT_PARENT: dde5074c91c077911cd40bab615ad0d0d0a9b683
+  SNAPSHOT_BLOB: 317d36e2d95b2d904770908a491d17bb057ca79c
+  CUSTODY_BLOB: 2eb437eaf2e5d46f784c05ea666ebeb92ba9175c
+  WITNESS_BLOB: 1532a3b728e3562c090837b0f4d62f655c9a14d1
   PYTHONDONTWRITEBYTECODE: 1
 
 jobs:
   custody:
-    name: Prove sealed accepted compiler-input root + exact helper bundle
+    name: Prove sealed accepted compiler-input root + pinned pre-exec bundle
     runs-on: xcode-27
     timeout-minutes: 10
     steps:
@@ -31,7 +34,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Bind exact additive custody child
+      - name: Bind exact composed custody surface
         shell: bash
         run: |
           set -euo pipefail
@@ -41,28 +44,18 @@ jobs:
           test "$(git merge-base HEAD "$EXACT_ACCEPTED_INPUT_PARENT")" = "$EXACT_ACCEPTED_INPUT_PARENT"
           actual="$(git diff --name-only "$EXACT_ACCEPTED_INPUT_PARENT"...HEAD | LC_ALL=C sort)"
           expected="$(printf '%s\n' \
+            .github/workflows/capture-accepted-build-input-snapshot-validation.yml \
             .github/workflows/capture-accepted-build-root-custody.yml \
+            .github/workflows/capture-generated-shared-ancestor-continuity.yml \
             scripts/ci/capture_accepted_build_root_custody.py \
             scripts/ci/tests/test_capture_accepted_build_root_custody.py | LC_ALL=C sort)"
           test "$actual" = "$expected"
           git diff --check "$EXACT_ACCEPTED_INPUT_PARENT"...HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Compile custody helper and witness without artifacts
-        shell: bash
-        run: |
-          set -euo pipefail
-          /usr/bin/python3 -B -I - <<'PY'
-          from pathlib import Path
-          for raw in (
-              "scripts/ci/capture_accepted_build_input_snapshot.py",
-              "scripts/ci/capture_accepted_build_root_custody.py",
-              "scripts/ci/tests/test_capture_accepted_build_root_custody.py",
-          ):
-              path = Path(raw)
-              compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
-          PY
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          test "$(env GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null git rev-parse "${expected_head}:scripts/ci/capture_accepted_build_input_snapshot.py")" = "$SNAPSHOT_BLOB"
+          test "$(env GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null git rev-parse "${expected_head}:scripts/ci/capture_accepted_build_root_custody.py")" = "$CUSTODY_BLOB"
+          test "$(env GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null git rev-parse "${expected_head}:scripts/ci/tests/test_capture_accepted_build_root_custody.py")" = "$WITNESS_BLOB"
 
       - name: Require noninteractive root authority
         shell: bash
@@ -70,122 +63,197 @@ jobs:
           set -euo pipefail
           /usr/bin/sudo -n /usr/bin/true
 
-      - name: Materialize exact root-sealed helper sibling bundle
+      - name: Root-create and exact-write sealed sibling bundle
         id: bundle
         shell: bash
         run: |
           set -euo pipefail
-          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          set -o pipefail
           bundle="/private/tmp/nembra-capture-root-custody-exec-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           /usr/bin/sudo -n /bin/rm -rf "$bundle"
 
-          # Establish root-only pathname custody before any accepted execution byte is
-          # materialized. The field identity can neither enter nor mutate the bundle
-          # during the Git-object check -> privileged-import interval.
-          /usr/bin/sudo -n /usr/bin/install -d -o root -g wheel -m 0700 \
-            "$bundle" \
-            "$bundle/scripts" \
-            "$bundle/scripts/ci" \
-            "$bundle/scripts/ci/tests"
+          /usr/bin/sudo -n /usr/bin/python3 -B - "$bundle" <<'PY'
+          import os
+          from pathlib import Path
+          import stat
+          import sys
 
-          for path in \
-            scripts/ci/capture_accepted_build_input_snapshot.py \
-            scripts/ci/capture_accepted_build_root_custody.py \
-            scripts/ci/tests/test_capture_accepted_build_root_custody.py
-          do
-            expected_blob="$(env \
+          bundle = Path(sys.argv[1])
+          parent = bundle.parent
+          meta = parent.lstat()
+          if parent != Path('/private/tmp') or not stat.S_ISDIR(meta.st_mode):
+              raise SystemExit('unexpected validation bundle parent')
+          if meta.st_uid != 0 or stat.S_IMODE(meta.st_mode) != 0o1777:
+              raise SystemExit('/private/tmp custody mismatch')
+          os.mkdir(bundle, 0o700)
+          os.mkdir(bundle / 'scripts', 0o700)
+          os.mkdir(bundle / 'scripts/ci', 0o700)
+          os.mkdir(bundle / 'scripts/ci/tests', 0o700)
+          for directory in (
+              bundle,
+              bundle / 'scripts',
+              bundle / 'scripts/ci',
+              bundle / 'scripts/ci/tests',
+          ):
+              item = directory.lstat()
+              if item.st_uid != 0 or not stat.S_ISDIR(item.st_mode) or stat.S_IMODE(item.st_mode) != 0o700:
+                  raise SystemExit(f'non-root validation directory: {directory}')
+          PY
+
+          write_exact_blob() {
+            path="$1"
+            oid="$2"
+            env \
               GIT_NO_REPLACE_OBJECTS=1 \
               GIT_CONFIG_NOSYSTEM=1 \
               GIT_CONFIG_GLOBAL=/dev/null \
-              /usr/bin/git rev-parse "${expected_head}:${path}")"
-            test "${#expected_blob}" -eq 40
+              /usr/bin/git cat-file blob "$oid" | \
+              /usr/bin/sudo -n /usr/bin/python3 -B -c '
+          import hashlib
+          import os
+          from pathlib import Path, PurePosixPath
+          import stat
+          import sys
 
-            # Read the exact content-addressed blob under root and write it directly
-            # into the already root-only bundle; never stage execution bytes in a
-            # field-writable pathname.
-            /usr/bin/sudo -n env \
-              GIT_NO_REPLACE_OBJECTS=1 \
-              GIT_CONFIG_NOSYSTEM=1 \
-              GIT_CONFIG_GLOBAL=/dev/null \
-              /usr/bin/git -C "$GITHUB_WORKSPACE" cat-file blob "$expected_blob" \
-              | /usr/bin/sudo -n /usr/bin/tee "$bundle/$path" >/dev/null
-            /usr/bin/sudo -n /usr/sbin/chown root:wheel "$bundle/$path"
-            /usr/bin/sudo -n /bin/chmod 0400 "$bundle/$path"
+          bundle = Path(sys.argv[1])
+          relative = PurePosixPath(sys.argv[2])
+          expected = sys.argv[3]
+          if relative.is_absolute() or ".." in relative.parts:
+              raise SystemExit("unsafe exact-blob relative path")
+          data = sys.stdin.buffer.read()
+          digest = hashlib.sha1()
+          digest.update(f"blob {len(data)}\0".encode("ascii"))
+          digest.update(data)
+          if digest.hexdigest() != expected:
+              raise SystemExit("Git object stream does not match pinned blob OID")
+          destination = bundle.joinpath(*relative.parts)
+          parent = destination.parent
+          parent_meta = parent.lstat()
+          if parent_meta.st_uid != 0 or not stat.S_ISDIR(parent_meta.st_mode) or stat.S_IMODE(parent_meta.st_mode) != 0o700:
+              raise SystemExit("exact-blob parent escaped root custody")
+          flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+          if hasattr(os, "O_NOFOLLOW"):
+              flags |= os.O_NOFOLLOW
+          fd = os.open(destination, flags, 0o400)
+          try:
+              offset = 0
+              while offset < len(data):
+                  offset += os.write(fd, data[offset:])
+              os.fsync(fd)
+          finally:
+              os.close(fd)
+          item = destination.lstat()
+          if item.st_uid != 0 or not stat.S_ISREG(item.st_mode) or stat.S_IMODE(item.st_mode) != 0o400:
+              raise SystemExit("exact blob was not created as root-only regular file")
+          ' "$bundle" "$path" "$oid"
+          }
 
-            actual_blob="$(/usr/bin/sudo -n /usr/bin/git hash-object "$bundle/$path")"
-            test "$actual_blob" = "$expected_blob"
-          done
+          write_exact_blob scripts/ci/capture_accepted_build_input_snapshot.py "$SNAPSHOT_BLOB"
+          write_exact_blob scripts/ci/capture_accepted_build_root_custody.py "$CUSTODY_BLOB"
+          write_exact_blob scripts/ci/tests/test_capture_accepted_build_root_custody.py "$WITNESS_BLOB"
 
-          # Final read-only seal, followed by a second identity attestation before
-          # any root Python import. A post-execution hash is useful diagnostics but
-          # is never the authority transition.
-          /usr/bin/sudo -n /usr/bin/find "$bundle" -type f -exec /bin/chmod 0444 {} +
-          /usr/bin/sudo -n /usr/bin/find "$bundle" -type d -exec /bin/chmod 0555 {} +
-          for path in \
-            scripts/ci/capture_accepted_build_input_snapshot.py \
-            scripts/ci/capture_accepted_build_root_custody.py \
-            scripts/ci/tests/test_capture_accepted_build_root_custody.py
-          do
-            expected_blob="$(env \
-              GIT_NO_REPLACE_OBJECTS=1 \
-              GIT_CONFIG_NOSYSTEM=1 \
-              GIT_CONFIG_GLOBAL=/dev/null \
-              /usr/bin/git rev-parse "${expected_head}:${path}")"
-            actual_blob="$(/usr/bin/sudo -n /usr/bin/git hash-object "$bundle/$path")"
-            test "$actual_blob" = "$expected_blob"
-            test "$(/usr/bin/sudo -n /usr/bin/stat -f '%Su:%Sg:%Lp' "$bundle/$path")" = 'root:wheel:444'
-          done
-          test "$(/usr/bin/sudo -n /usr/bin/stat -f '%Su:%Sg:%Lp' "$bundle")" = 'root:wheel:555'
-
+          /usr/bin/sudo -n /usr/bin/find "$bundle" -type d -exec /bin/chmod 0500 {} +
           printf '%s\n' "$bundle" > "$RUNNER_TEMP/accepted-root-helper-bundle-path"
           printf 'bundle=%s\n' "$bundle" >> "$GITHUB_OUTPUT"
 
-      - name: Prove sealed bundle ignores poisoned live sibling and rejects field writes
+      - name: Root re-attest sealed exact blobs before privileged execution
+        shell: bash
+        env:
+          SEALED_BUNDLE: ${{ steps.bundle.outputs.bundle }}
+        run: |
+          set -euo pipefail
+          /usr/bin/sudo -n /usr/bin/python3 -B - \
+            "$SEALED_BUNDLE" "$SNAPSHOT_BLOB" "$CUSTODY_BLOB" "$WITNESS_BLOB" <<'PY'
+          import hashlib
+          from pathlib import Path
+          import stat
+          import sys
+
+          bundle = Path(sys.argv[1])
+          expected = {
+              Path('scripts/ci/capture_accepted_build_input_snapshot.py'): sys.argv[2],
+              Path('scripts/ci/capture_accepted_build_root_custody.py'): sys.argv[3],
+              Path('scripts/ci/tests/test_capture_accepted_build_root_custody.py'): sys.argv[4],
+          }
+          bundle_meta = bundle.lstat()
+          if bundle_meta.st_uid != 0 or stat.S_IMODE(bundle_meta.st_mode) != 0o500:
+              raise SystemExit('sealed bundle root lost root-only custody')
+          for relative, wanted in expected.items():
+              path = bundle / relative
+              item = path.lstat()
+              if item.st_uid != 0 or not stat.S_ISREG(item.st_mode) or stat.S_IMODE(item.st_mode) != 0o400:
+                  raise SystemExit(f'pre-exec file custody mismatch: {relative}')
+              data = path.read_bytes()
+              digest = hashlib.sha1()
+              digest.update(f'blob {len(data)}\0'.encode('ascii'))
+              digest.update(data)
+              if digest.hexdigest() != wanted:
+                  raise SystemExit(f'pre-exec blob mismatch: {relative}')
+          PY
+
+      - name: Prove sealed bundle ignores poisoned live sibling and rejects field access
         shell: bash
         env:
           SEALED_BUNDLE: ${{ steps.bundle.outputs.bundle }}
         run: |
           set -euo pipefail
           field_user="$(/usr/bin/id -un)"
-          live_snapshot="scripts/ci/capture_accepted_build_input_snapshot.py"
-          backup="$RUNNER_TEMP/live-snapshot-backup.py"
-          /bin/cp "$live_snapshot" "$backup"
-          cleanup() {
-            /bin/cp "$backup" "$live_snapshot" || true
-          }
-          trap cleanup EXIT
+          custody="$SEALED_BUNDLE/scripts/ci/capture_accepted_build_root_custody.py"
+          witness="$SEALED_BUNDLE/scripts/ci/tests/test_capture_accepted_build_root_custody.py"
 
-          if /usr/bin/sudo -n -u "$field_user" /bin/sh -c "printf 'field-mutation\\n' >> '$SEALED_BUNDLE/scripts/ci/capture_accepted_build_root_custody.py'" 2>/dev/null; then
+          if /usr/bin/sudo -n -u "$field_user" /bin/cat "$custody" >/dev/null 2>&1; then
+            echo 'field identity unexpectedly read sealed custody helper' >&2
+            exit 1
+          fi
+          if /usr/bin/sudo -n -u "$field_user" /bin/sh -c "printf 'field-mutation\\n' >> '$custody'" 2>/dev/null; then
             echo 'field identity unexpectedly mutated sealed custody helper' >&2
             exit 1
           fi
 
+          live_snapshot="scripts/ci/capture_accepted_build_input_snapshot.py"
+          backup="$RUNNER_TEMP/live-snapshot-backup.py"
+          /bin/cp "$live_snapshot" "$backup"
+          cleanup_live() {
+            /bin/cp "$backup" "$live_snapshot" || true
+          }
+          trap cleanup_live EXIT
           printf '%s\n' 'raise RuntimeError("poisoned live snapshot helper executed")' > "$live_snapshot"
 
           /usr/bin/sudo -n env \
             NEMBRA_TEST_FIELD_USER="$field_user" \
             PYTHONDONTWRITEBYTECODE=1 \
-            /usr/bin/python3 -B -I \
-            "$SEALED_BUNDLE/scripts/ci/tests/test_capture_accepted_build_root_custody.py" \
-            --field-user "$field_user"
+            /usr/bin/python3 -B -I "$witness" --field-user "$field_user"
 
-          cleanup
+          cleanup_live
           trap - EXIT
-          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
-          for path in \
-            scripts/ci/capture_accepted_build_input_snapshot.py \
-            scripts/ci/capture_accepted_build_root_custody.py \
-            scripts/ci/tests/test_capture_accepted_build_root_custody.py
-          do
-            expected_blob="$(env \
-              GIT_NO_REPLACE_OBJECTS=1 \
-              GIT_CONFIG_NOSYSTEM=1 \
-              GIT_CONFIG_GLOBAL=/dev/null \
-              /usr/bin/git rev-parse "${expected_head}:${path}")"
-            actual_blob="$(/usr/bin/sudo -n /usr/bin/git hash-object "$SEALED_BUNDLE/$path")"
-            test "$actual_blob" = "$expected_blob"
-          done
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Root re-attest exact blobs after witness
+        shell: bash
+        env:
+          SEALED_BUNDLE: ${{ steps.bundle.outputs.bundle }}
+        run: |
+          set -euo pipefail
+          /usr/bin/sudo -n /usr/bin/python3 -B - \
+            "$SEALED_BUNDLE" "$SNAPSHOT_BLOB" "$CUSTODY_BLOB" "$WITNESS_BLOB" <<'PY'
+          import hashlib
+          from pathlib import Path
+          import sys
+
+          bundle = Path(sys.argv[1])
+          expected = {
+              Path('scripts/ci/capture_accepted_build_input_snapshot.py'): sys.argv[2],
+              Path('scripts/ci/capture_accepted_build_root_custody.py'): sys.argv[3],
+              Path('scripts/ci/tests/test_capture_accepted_build_root_custody.py'): sys.argv[4],
+          }
+          for relative, wanted in expected.items():
+              data = (bundle / relative).read_bytes()
+              digest = hashlib.sha1()
+              digest.update(f'blob {len(data)}\0'.encode('ascii'))
+              digest.update(data)
+              if digest.hexdigest() != wanted:
+                  raise SystemExit(f'post-exec blob mismatch: {relative}')
+          PY
 
       - name: Preserve production-boundary truth
         shell: bash
@@ -194,27 +262,27 @@ jobs:
         run: |
           set -euo pipefail
           helper="$SEALED_BUNDLE/scripts/ci/capture_accepted_build_root_custody.py"
-          grep -Fq 'snapshot.stage_accepted_build_inputs(' "$helper"
-          grep -Fq 'os.chmod(root, 0o700)' "$helper"
-          grep -Fq 'accepted_build_root_fingerprint' "$helper"
-          grep -Fq 'def create_accepted_build_root(' "$helper"
-          grep -Fq 'Path(__file__).with_name("capture_accepted_build_input_snapshot.py")' "$helper"
-          echo "NEMBRA_ACCEPTED_BUILD_ROOT_BOUNDARY rootCustodyProved=true exactSiblingBundleProved=true xcodeBuildWired=false signingAuthority=false installAuthority=false deviceTouched=false bluetoothTouched=false physicalAuthorityCreated=false"
+          /usr/bin/sudo -n /usr/bin/grep -Fq 'snapshot.stage_accepted_build_inputs(' "$helper"
+          /usr/bin/sudo -n /usr/bin/grep -Fq 'os.chmod(root, 0o700)' "$helper"
+          /usr/bin/sudo -n /usr/bin/grep -Fq 'accepted_build_root_fingerprint' "$helper"
+          /usr/bin/sudo -n /usr/bin/grep -Fq 'def create_accepted_build_root(' "$helper"
+          echo "NEMBRA_ACCEPTED_BUILD_ROOT_BOUNDARY rootCustodyProved=true exactSiblingBundlePreExecProved=true pinnedBlobOIDs=true xcodeBuildWired=false signingAuthority=false installAuthority=false deviceTouched=false bluetoothTouched=false physicalAuthorityCreated=false"
 
       - name: Remove sealed validation bundle
         if: always()
         shell: bash
         run: |
           set -euo pipefail
-          if test -f "$RUNNER_TEMP/accepted-root-helper-bundle-path"; then
-            bundle="$(cat "$RUNNER_TEMP/accepted-root-helper-bundle-path")"
+          bundle_path_file="$RUNNER_TEMP/accepted-root-helper-bundle-path"
+          if [[ -f "$bundle_path_file" ]]; then
+            bundle="$(cat "$bundle_path_file")"
             case "$bundle" in
               /private/tmp/nembra-capture-root-custody-exec-*)
-                /usr/bin/sudo -n /bin/chmod -R u+rwX "$bundle" 2>/dev/null || true
                 /usr/bin/sudo -n /bin/rm -rf "$bundle"
+                test ! -e "$bundle"
                 ;;
               *)
-                echo "refusing unexpected cleanup path: $bundle" >&2
+                echo "unsafe cleanup path: $bundle" >&2
                 exit 1
                 ;;
             esac
