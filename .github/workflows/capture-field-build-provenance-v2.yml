@@ -1,0 +1,100 @@
+name: Capture Field Build Provenance V2
+
+on:
+  push:
+    branches:
+      - capture/one-time-ble-dump-gpt56
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  provenance:
+    name: Stamp and verify explicit Capture provenance
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Bind exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          expected="$(printf '%s' "$GITHUB_SHA" | tr '[:upper:]' '[:lower:]')"
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Re-prove private Tuya and Apple identity custody contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
+          /usr/bin/python3 scripts/ci/tests/test_capture_apple_signin_field_entitlement_custody.py
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          bash -n scripts/field/install_one_time_capture.command
+
+      - name: Verify explicit plist source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          plist='NembraCaptureProvenance.plist'
+          installer='scripts/field/install_one_time_capture.command'
+          procedure_test='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldProcedureRendezvousSourceTests.swift'
+          /usr/bin/plutil -lint "$plist" >/dev/null
+          grep -Fq '<string>$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)</string>' "$plist"
+          grep -Fq '<string>$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)</string>' "$plist"
+          grep -Fq '<string>$(NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256)</string>' "$plist"
+          grep -Fq '<string>$(NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER)</string>' "$plist"
+          grep -Fq '"NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER=$PROCEDURE_ID"' "$installer"
+          grep -Fq '"INFOPLIST_FILE=NembraCaptureProvenance.plist"' "$installer"
+          grep -Fq 'plutil -extract NembraCaptureBuildIdentifier raw -o - "$APP_INFO_PLIST"' "$installer"
+          grep -Fq 'plutil -extract NembraCaptureSourceCommitSHA raw -o - "$APP_INFO_PLIST"' "$installer"
+          grep -Fq 'plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$APP_INFO_PLIST"' "$installer"
+          grep -Fq 'plutil -extract NembraCaptureProcedureIdentifier raw -o - "$APP_INFO_PLIST"' "$installer"
+          grep -Fq 'NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER=$PROCEDURE_ID' "$procedure_test"
+          grep -Fq 'INFOPLIST_FILE=NembraCaptureProvenance.plist' "$procedure_test"
+          ! grep -Fq 'INFOPLIST_KEY_NembraCaptureProcedureIdentifier=$PROCEDURE_ID' "$installer"
+
+      - name: Run canonical procedure source regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaFieldProcedureRendezvousSourceTests
+
+      - name: Build and verify stamped Simulator app
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          dependency_sha='abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789'
+          procedure='ES80-AUTHENTICATED-STATIONARY-v1'
+          label="capture-v14-${sha:0:12}"
+          derived_data="$(mktemp -d "${RUNNER_TEMP:?RUNNER_TEMP is required}/NembraCaptureProvenanceV2.XXXXXX")"
+          trap 'rm -rf -- "$derived_data"' EXIT
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$derived_data" \
+            CODE_SIGNING_ALLOWED=NO \
+            NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
+            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$sha" \
+            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="$dependency_sha" \
+            NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER="$procedure" \
+            INFOPLIST_FILE=NembraCaptureProvenance.plist \
+            build
+          plist="$derived_data/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist"
+          test -f "$plist"
+          test "$(/usr/bin/plutil -extract NembraCaptureBuildIdentifier raw -o - "$plist")" = "$label"
+          test "$(/usr/bin/plutil -extract NembraCaptureSourceCommitSHA raw -o - "$plist")" = "$sha"
+          test "$(/usr/bin/plutil -extract NembraCaptureTuyaDependencyLockSHA256 raw -o - "$plist")" = "$dependency_sha"
+          test "$(/usr/bin/plutil -extract NembraCaptureProcedureIdentifier raw -o - "$plist")" = "$procedure"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
