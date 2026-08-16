@@ -1,3 +1,4 @@
+# connected push re-arm
 name: Capture Fold Accepted Root Workspace Fence Once
 
 on:
@@ -59,7 +60,7 @@ jobs:
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_root_build_composition.py
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
           git diff --check
-          test -z "$(find scripts/ci -type d -name __pycache__ -o -type f -name '*.pyc' -print)"
+          test -z "$(find scripts/ci -type f -name '*.pyc' -print)"
 
       - name: Publish clean two-path repair
         shell: bash
