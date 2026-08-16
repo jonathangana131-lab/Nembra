@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 50,
+    "classifiedPRTotal": 52,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1393,7 +1393,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3418,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.296,
+        "similarity": 0.318,
         "title": "[Capture P0][RED TEAM] Reject mixed LocalSecrets subject generations"
       },
       "3419": {
@@ -1426,7 +1426,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3421,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.357,
+        "similarity": 0.308,
         "title": "[Capture P0][REPAIR] Hold shared generated selector ancestors"
       },
       "3428": {
@@ -1448,7 +1448,7 @@
         "lane": "",
         "pr": 3432,
         "recommendedAction": "independent-review",
-        "similarity": 0.203,
+        "similarity": 0.19,
         "title": "[Capture P0][ADVERSARIAL] Prove sibling-entry generation splice"
       },
       "3433": {
@@ -1492,7 +1492,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3439,
         "recommendedAction": "independent-review",
-        "similarity": 0.36,
+        "similarity": 0.335,
         "title": "[Capture P0][HARDENING] Close shared-ancestor cache-dup child FD on failure"
       },
       "3442": {
@@ -1547,7 +1547,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3457,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.35,
+        "similarity": 0.355,
         "title": "[Capture P0][RED TEAM] Re-anchor post-validation symlink retarget on current product"
       },
       "3460": {
@@ -1558,7 +1558,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3460,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.428,
+        "similarity": 0.493,
         "title": "[Capture P0][REPAIR] Revalidate symlinks at private-lease handoff"
       },
       "3461": {
@@ -1591,7 +1591,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3467,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.429,
+        "similarity": 0.446,
         "title": "[Capture P0][REPAIR] Fence held symlinks at ACL authority transition"
       },
       "3470": {
@@ -1605,16 +1605,38 @@
         "similarity": 0.31,
         "title": "[Capture P0][DIAGNOSTIC] Classify accepted build-root custody failure"
       },
-      "3472": {
+      "3473": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "229ade03155db8f233377ed7a983eee4c31b1a69",
-        "lane": "capture-signed-install-custody",
-        "pr": 3472,
+        "headSHA": "",
+        "lane": "capture-private-read-lease",
+        "pr": 3473,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.385,
-        "title": "[Capture P0][REPAIR] Close current cache-dup child FD leak"
+        "similarity": 0.512,
+        "title": "[Capture P0][REPAIR] Bind symlink witnesses through final lease plan"
+      },
+      "3474": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3474,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.261,
+        "title": "[Capture P0][REPAIR] Reprove held symlink policy at ACL grant boundary"
+      },
+      "3475": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "fe105b0d9018e05a131422a1949a2169ef44d23f",
+        "lane": "dashboard-cockpit-product-closure",
+        "pr": 3475,
+        "recommendedAction": "independent-review",
+        "similarity": 0.08,
+        "title": "[Dashboard V17] Make the battery itself the range toggle"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1647,7 +1669,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:25:51Z",
+    "liveRefreshAt": "2026-08-16T06:26:14Z",
     "liveRefreshDuplicatesSuppressed": [
       3470
     ],
@@ -5432,10 +5454,10 @@
       "userValue": 7
     }
   },
-  "revision": 714,
+  "revision": 715,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:25:54Z",
+  "updatedAt": "2026-08-16T06:26:18Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5511,7 +5533,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:25:51Z",
+      "updatedAt": "2026-08-16T06:26:14Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
