@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 53,
+    "classifiedPRTotal": 50,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1492,7 +1492,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3439,
         "recommendedAction": "independent-review",
-        "similarity": 0.373,
+        "similarity": 0.36,
         "title": "[Capture P0][HARDENING] Close shared-ancestor cache-dup child FD on failure"
       },
       "3442": {
@@ -1583,17 +1583,6 @@
         "similarity": 0.394,
         "title": "[Capture P0][RED TEAM] Prove final-child swap after parent revalidation"
       },
-      "3466": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3466,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.718,
-        "title": "[Capture P0][REPAIR] Close shared-ancestor cache-dup FD on failure"
-      },
       "3467": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1604,17 +1593,6 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.429,
         "title": "[Capture P0][REPAIR] Fence held symlinks at ACL authority transition"
-      },
-      "3469": {
-        "classification": "superseded",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3469,
-        "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.718,
-        "title": "[Capture P0][REPAIR] Close shared-ancestor cache-dup FD on failure"
       },
       "3470": {
         "classification": "validation",
@@ -1627,17 +1605,6 @@
         "similarity": 0.31,
         "title": "[Capture P0][DIAGNOSTIC] Classify accepted build-root custody failure"
       },
-      "3471": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "ab7586634060603ec650ccd7220c0e91c41bde49",
-        "lane": "capture-signed-install-custody",
-        "pr": 3471,
-        "recommendedAction": "independent-review",
-        "similarity": 0.497,
-        "title": "[Capture P0][HARDENING] Close cache-dup FD failure on current shared-ancestor repair"
-      },
       "3472": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1646,7 +1613,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3472,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.502,
+        "similarity": 0.385,
         "title": "[Capture P0][REPAIR] Close current cache-dup child FD leak"
       }
     },
@@ -1680,7 +1647,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:25:30Z",
+    "liveRefreshAt": "2026-08-16T06:25:51Z",
     "liveRefreshDuplicatesSuppressed": [
       3470
     ],
@@ -5465,10 +5432,10 @@
       "userValue": 7
     }
   },
-  "revision": 713,
+  "revision": 714,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:25:34Z",
+  "updatedAt": "2026-08-16T06:25:54Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5544,7 +5511,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:25:30Z",
+      "updatedAt": "2026-08-16T06:25:51Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
