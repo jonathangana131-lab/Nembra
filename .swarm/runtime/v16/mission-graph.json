@@ -1481,7 +1481,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3514,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.382,
+        "similarity": 0.373,
         "title": "[Capture P0][REPAIR] Preserve cached-reuse descriptor ownership"
       },
       "3515": {
@@ -1492,7 +1492,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3515,
         "recommendedAction": "independent-review",
-        "similarity": 0.38,
+        "similarity": 0.355,
         "title": "[Capture P0][CONVERGENCE] Preserve cached-parent FD ownership"
       },
       "3516": {
@@ -1537,7 +1537,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:43:00Z",
+    "liveRefreshAt": "2026-08-16T06:43:15Z",
     "liveRefreshDuplicatesSuppressed": [
       3416
     ],
@@ -5322,10 +5322,10 @@
       "userValue": 7
     }
   },
-  "revision": 769,
+  "revision": 770,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:43:01Z",
+  "updatedAt": "2026-08-16T06:43:16Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5401,7 +5401,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:43:00Z",
+      "updatedAt": "2026-08-16T06:43:15Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
