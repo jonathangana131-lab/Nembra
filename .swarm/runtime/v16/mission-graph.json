@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 55,
+    "classifiedPRTotal": 57,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1536,7 +1536,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3478,
         "recommendedAction": "independent-review",
-        "similarity": 0.32,
+        "similarity": 0.361,
         "title": "[Capture P0][TEST] Use structured field credentials in root-custody witness"
       },
       "3479": {
@@ -1635,7 +1635,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3495,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.375,
+        "similarity": 0.508,
         "title": "[Capture P0][REPAIR] Carry structured field credentials onto F1BE root custody"
       },
       "3496": {
@@ -1670,6 +1670,28 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.402,
         "title": "[Capture P0][REPAIR] Revalidate cached parent after final child admission"
+      },
+      "3499": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3499,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.338,
+        "title": "[Capture P0][RED TEAM] Attack held repository-root generation across subjects"
+      },
+      "3500": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "11461d4904480db4d750ccdcf63fee1bc1f5983c",
+        "lane": "capture-signed-install-custody",
+        "pr": 3500,
+        "recommendedAction": "independent-review",
+        "similarity": 0.525,
+        "title": "[Capture P0][TEST] Carry structured field launch onto F1BE root custody"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1702,9 +1724,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:33:19Z",
+    "liveRefreshAt": "2026-08-16T06:33:36Z",
     "liveRefreshDuplicatesSuppressed": [
-      3491
+      3499
     ],
     "liveRefreshMainSHA": "7154479d4ea0a1914eb565b5cd235968a5985443",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5487,10 +5509,10 @@
       "userValue": 7
     }
   },
-  "revision": 738,
+  "revision": 739,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:33:23Z",
+  "updatedAt": "2026-08-16T06:33:40Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5566,7 +5588,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:33:19Z",
+      "updatedAt": "2026-08-16T06:33:36Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
