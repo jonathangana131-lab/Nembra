@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 43,
+    "classifiedPRTotal": 44,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1448,7 +1448,7 @@
         "lane": "",
         "pr": 3432,
         "recommendedAction": "independent-review",
-        "similarity": 0.19,
+        "similarity": 0.206,
         "title": "[Capture P0][ADVERSARIAL] Prove sibling-entry generation splice"
       },
       "3433": {
@@ -1538,6 +1538,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.368,
         "title": "[Vehicle/Controls V15] Clear full persistent Navigation footprint"
+      },
+      "3452": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3452,
+        "recommendedAction": "independent-review",
+        "similarity": 0.221,
+        "title": "[Capture P0][SYNC] Re-anchor continuity repair on portable accepted-input oracle"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1570,7 +1581,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:19:14Z",
+    "liveRefreshAt": "2026-08-16T06:19:44Z",
     "liveRefreshDuplicatesSuppressed": [
       3436
     ],
@@ -5355,10 +5366,10 @@
       "userValue": 7
     }
   },
-  "revision": 694,
+  "revision": 695,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:19:16Z",
+  "updatedAt": "2026-08-16T06:19:47Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5434,7 +5445,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:19:14Z",
+      "updatedAt": "2026-08-16T06:19:44Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
