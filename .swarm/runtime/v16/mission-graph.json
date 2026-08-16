@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 40,
+    "classifiedPRTotal": 41,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1470,7 +1470,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3513,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.358,
+        "similarity": 0.366,
         "title": "[Capture P0][REPAIR] Compose current selector fences with two-OS QA scope"
       },
       "3515": {
@@ -1503,8 +1503,19 @@
         "lane": "capture-signed-install-custody",
         "pr": 3517,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.381,
+        "similarity": 0.5,
         "title": "[Capture P0][REPAIR] Preserve cached-reuse fd ownership on selector carrier"
+      },
+      "3518": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "c85330d86984114f1c4bfd930b191a43f144d65c",
+        "lane": "capture-signed-install-custody",
+        "pr": 3518,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.5,
+        "title": "[Capture P0][REPAIR] Preserve cached-parent FD ownership on current selector"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1537,7 +1548,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:44:04Z",
+    "liveRefreshAt": "2026-08-16T06:44:26Z",
     "liveRefreshDuplicatesSuppressed": [
       3416
     ],
@@ -5322,10 +5333,10 @@
       "userValue": 7
     }
   },
-  "revision": 772,
+  "revision": 773,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:44:05Z",
+  "updatedAt": "2026-08-16T06:44:27Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5401,7 +5412,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:44:04Z",
+      "updatedAt": "2026-08-16T06:44:26Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
