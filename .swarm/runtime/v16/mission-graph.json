@@ -1503,7 +1503,7 @@
         "lane": "",
         "pr": 3442,
         "recommendedAction": "independent-review",
-        "similarity": 0.282,
+        "similarity": 0.285,
         "title": "[Battery/Range V15][RED] Pin Accessibility XXXL Navigation clearance"
       },
       "3445": {
@@ -1536,7 +1536,7 @@
         "lane": "",
         "pr": 3447,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.633,
+        "similarity": 0.481,
         "title": "[Vehicle/Controls V15][QA] Real surface + exact XXXL witness"
       },
       "3449": {
@@ -1544,10 +1544,10 @@
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
-        "lane": "",
+        "lane": "vehicle-controls",
         "pr": 3449,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.572,
+        "similarity": 0.454,
         "title": "[Vehicle/Controls V15][QA] Final real surface + exact XXXL witness"
       }
     },
@@ -1581,7 +1581,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T03:03:07Z",
+    "liveRefreshAt": "2026-08-16T04:00:06Z",
     "liveRefreshDuplicatesSuppressed": [
       3436
     ],
@@ -5366,10 +5366,10 @@
       "userValue": 7
     }
   },
-  "revision": 683,
+  "revision": 684,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T03:03:10Z",
+  "updatedAt": "2026-08-16T04:00:08Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5445,7 +5445,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T03:03:07Z",
+      "updatedAt": "2026-08-16T04:00:06Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
