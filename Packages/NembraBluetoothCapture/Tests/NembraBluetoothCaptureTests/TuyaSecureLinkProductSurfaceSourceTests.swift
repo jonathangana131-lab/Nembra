@@ -50,7 +50,8 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
         #expect(body.contains("test.confirmCorrelatedTarget()"))
         #expect(body.contains("test.authenticate()"))
         #expect(body.contains("test.sdkLocalBLEOnline"))
-        #expect(body.contains("test.applicationUpdateCount > 0"))
+        #expect(body.contains("test.preflightVerdict == .readyForStationaryMapping"))
+        #expect(!body.contains("test.applicationUpdateCount > 0"))
         #expect(body.contains("Historical UUID, name, RSSI, FD50, and Tuya hints never authorize the target."))
         #expect(body.contains("No DP query or scooter command is authorized by this surface."))
     }
