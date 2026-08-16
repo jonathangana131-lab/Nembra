@@ -5,6 +5,7 @@ on:
     paths:
       - scripts/ci/capture_accepted_build_input_snapshot.py
       - scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+      - scripts/ci/tests/test_capture_generated_root_generation_continuity.py
       - .github/workflows/capture-generated-shared-ancestor-continuity.yml
   workflow_dispatch:
 
@@ -16,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  EXACT_PARENT: 1f9c5213d99116b93635e48061f29c88bffc2db8
+  EXACT_PARENT: 385e311807fbc832b03fe894eec19f4ed624167e
 
 jobs:
   exact-portable:
@@ -34,7 +35,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Bind serial repair delta
+      - name: Bind serial root-generation repair delta
         shell: bash
         run: |
           set -euo pipefail
@@ -45,11 +46,21 @@ jobs:
           expected="$(printf '%s\n' \
             .github/workflows/capture-generated-shared-ancestor-continuity.yml \
             scripts/ci/capture_accepted_build_input_snapshot.py \
-            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
+            scripts/ci/tests/test_capture_generated_root_generation_continuity.py | LC_ALL=C sort)"
           test "$changed" = "$expected"
           git diff --check "$EXACT_PARENT"...HEAD
 
-      - name: Run generated shared-ancestor continuity regression
+      - name: Run generated root-generation continuity regression
+        id: root_generation
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_root_generation_continuity.py \
+            2>&1 | tee "$RUNNER_TEMP/generated-root-generation-continuity-${{ matrix.os }}.log"
+
+      - name: Run inherited shared-ancestor continuity regression
         id: continuity
         shell: bash
         continue-on-error: true
@@ -84,6 +95,7 @@ jobs:
         with:
           name: generated-shared-ancestor-continuity-${{ matrix.os }}-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
+            ${{ runner.temp }}/generated-root-generation-continuity-${{ matrix.os }}.log
             ${{ runner.temp }}/generated-shared-ancestor-continuity-${{ matrix.os }}.log
             ${{ runner.temp }}/accepted-build-input-snapshot-${{ matrix.os }}.log
             ${{ runner.temp }}/checkout-status-${{ matrix.os }}.log
@@ -96,10 +108,12 @@ jobs:
         if: always()
         shell: bash
         env:
+          ROOT_GENERATION_OUTCOME: ${{ steps.root_generation.outcome }}
           CONTINUITY_OUTCOME: ${{ steps.continuity.outcome }}
           INHERITED_OUTCOME: ${{ steps.inherited.outcome }}
         run: |
           set -euo pipefail
+          test "$ROOT_GENERATION_OUTCOME" = success
           test "$CONTINUITY_OUTCOME" = success
           test "$INHERITED_OUTCOME" = success
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
