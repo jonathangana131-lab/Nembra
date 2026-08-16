@@ -7,10 +7,11 @@ struct VehicleControlsView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var controlColumns: [GridItem] {
-        if dynamicTypeSize.isAccessibilitySize {
-            return [GridItem(.flexible(), spacing: 10)]
-        }
-        return [GridItem(.adaptive(minimum: 128), spacing: 10)]
+        [GridItem(.flexible(), spacing: 10)]
+    }
+
+    private var persistentNavigationViewportClearance: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 144 : 72
     }
 
     var body: some View {
@@ -49,6 +50,7 @@ struct VehicleControlsView: View {
             .padding(.top, 10)
             .padding(.bottom, 40)
         }
+        .padding(.bottom, persistentNavigationViewportClearance)
         .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("Vehicle Controls")
         .navigationBarTitleDisplayMode(.inline)
