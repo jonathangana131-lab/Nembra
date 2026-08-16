@@ -100,7 +100,10 @@ jobs:
               '    )',
               'PYAST',
           ]
-          replacement = "".join(f"{indent}{line}\n" for line in ast_lines)
+          replacement = "".join(
+              f"{indent}{line}\n" if line else "\n"
+              for line in ast_lines
+          )
           source_lines[index] = replacement
           path.write_text("".join(source_lines), encoding="utf-8")
           PY
