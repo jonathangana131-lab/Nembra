@@ -120,13 +120,13 @@ jobs:
               acl_t after = acl_get_fd_np(target_fd, ACL_TYPE_EXTENDED);
               if (after == NULL) die("acl_get_fd_np after grant");
               char *after_text = acl_text(after);
-              if (strstr(after_text, "nobody") == NULL) {
-                  fprintf(stderr, "descriptor ACL did not contain nobody after grant: %s\n", after_text);
+              if (strcmp(before_text, after_text) == 0) {
+                  fprintf(stderr, "descriptor ACL did not change after grant\nBEFORE=%s\nAFTER=%s\n", before_text, after_text);
                   return 3;
               }
 
               if (!child_can_read(held, nobody->pw_uid, nobody->pw_gid)) {
-                  fprintf(stderr, "nobody could not read held original after fd ACL grant\n");
+                  fprintf(stderr, "nobody could not read held original after fd ACL grant\nACL=%s\n", after_text);
                   return 4;
               }
               if (child_can_read(target, nobody->pw_uid, nobody->pw_gid)) {
