@@ -1239,7 +1239,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3359,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.295,
+        "similarity": 0.301,
         "title": "[Capture P0][VALIDATION] Bind generated CocoaPods/private inputs before source snapshot"
       },
       "3360": {
@@ -1488,11 +1488,11 @@
         "classification": "validation",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "6db9ec855cbdc79cceecc512e02b342c70db9b56",
+        "headSHA": "c4ae540b7e9217aaf92f469d564d055cd3b86b92",
         "lane": "capture-signed-install-custody",
         "pr": 3521,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.559,
+        "similarity": 0.405,
         "title": "[Capture P0][VALIDATION] Re-anchor accepted build-root custody to selector-accepted head"
       },
       "3522": {
@@ -1503,19 +1503,8 @@
         "lane": "capture-signed-install-custody",
         "pr": 3522,
         "recommendedAction": "independent-review",
-        "similarity": 0.396,
+        "similarity": 0.363,
         "title": "[Capture P0][CUSTODY] Seal accepted build root on current selector head"
-      },
-      "3523": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "65b8f090321c550977ab5d1faae0ea548a52f80b",
-        "lane": "capture-signed-install-custody",
-        "pr": 3523,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.553,
-        "title": "[Capture P0][VALIDATION] Re-anchor accepted build-root custody on current selector"
       },
       "3524": {
         "classification": "requires-review",
@@ -1525,8 +1514,19 @@
         "lane": "capture-signed-install-custody",
         "pr": 3524,
         "recommendedAction": "independent-review",
-        "similarity": 0.323,
+        "similarity": 0.368,
         "title": "[Capture P0][TEST] Restore structured field credentials on DDE root custody"
+      },
+      "3525": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "bd29d6d3c366259773bde883b706c3a2d9edff4f",
+        "lane": "capture-signed-install-custody",
+        "pr": 3525,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.393,
+        "title": "[Capture P0][INTEGRATION] Re-anchor accepted build-root custody on current selector"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1559,9 +1559,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:50:12Z",
+    "liveRefreshAt": "2026-08-16T06:50:27Z",
     "liveRefreshDuplicatesSuppressed": [
-      3523
+      3521
     ],
     "liveRefreshMainSHA": "7154479d4ea0a1914eb565b5cd235968a5985443",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5344,10 +5344,10 @@
       "userValue": 7
     }
   },
-  "revision": 785,
+  "revision": 786,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:50:14Z",
+  "updatedAt": "2026-08-16T06:50:29Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5423,7 +5423,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:50:12Z",
+      "updatedAt": "2026-08-16T06:50:27Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
