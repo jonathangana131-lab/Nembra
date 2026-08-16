@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - scripts/ci/capture_accepted_build_input_snapshot.py
+      - scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
       - scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
       - .github/workflows/capture-generated-shared-ancestor-continuity.yml
   workflow_dispatch:
@@ -45,6 +46,7 @@ jobs:
           expected="$(printf '%s\n' \
             .github/workflows/capture-generated-shared-ancestor-continuity.yml \
             scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_accepted_build_input_snapshot.py \
             scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
           test "$changed" = "$expected"
           git diff --check "$EXACT_PARENT"...HEAD
