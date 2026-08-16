@@ -47,18 +47,72 @@ jobs:
 
           path = Path(sys.argv[1])
           source = path.read_text(encoding="utf-8")
-          stale = "          grep -Fq 'launcher_run(field_pid, source_sha, freeze_helper_base64, freeze_helper_blob)' \"$selected_xcode_orchestrator\"\n"
-          replacement = '''          /usr/bin/python3 -B -I - "$selected_xcode_orchestrator" <<'PYAST'\n          import ast\n          from pathlib import Path\n          import sys\n\n          tree = ast.parse(Path(sys.argv[1]).read_text(encoding="utf-8"))\n          expected_args = [\n              "field_pid",\n              "source_sha",\n              "freeze_helper_base64",\n              "freeze_helper_blob",\n          ]\n          matches = []\n          for node in ast.walk(tree):\n              if not isinstance(node, ast.Assign) or len(node.targets) != 1:\n                  continue\n              target = node.targets[0]\n              call = node.value\n              if not (isinstance(target, ast.Name) and target.id == "freeze_result"):\n                  continue\n              if not (\n                  isinstance(call, ast.Call)\n                  and isinstance(call.func, ast.Name)\n                  and call.func.id == "launcher_run"\n                  and not call.keywords\n              ):\n                  continue\n              names = [arg.id if isinstance(arg, ast.Name) else None for arg in call.args]\n              if names == expected_args:\n                  matches.append(node)\n          if len(matches) != 1:\n              raise SystemExit(\n                  "selected-Xcode orchestrator must assign freeze_result from exactly one "\n                  "launcher_run(field_pid, source_sha, freeze_helper_base64, freeze_helper_blob) call"\n              )\n          PYAST\n'''
-          if source.count(stale) != 1:
-              raise SystemExit("stale launcher source grep seam is not exact")
-          path.write_text(source.replace(stale, replacement, 1), encoding="utf-8")
+          needle = "grep -Fq 'launcher_run(field_pid, source_sha, freeze_helper_base64, freeze_helper_blob)' \"$selected_xcode_orchestrator\""
+          source_lines = source.splitlines(keepends=True)
+          matching_indexes = [
+              index
+              for index, line in enumerate(source_lines)
+              if line.strip() == needle
+          ]
+          if len(matching_indexes) != 1:
+              raise SystemExit(
+                  f"stale launcher source grep seam count is {len(matching_indexes)}, expected exactly 1"
+              )
+
+          index = matching_indexes[0]
+          stale_line = source_lines[index]
+          indent = stale_line[: len(stale_line) - len(stale_line.lstrip())]
+          ast_lines = [
+              '/usr/bin/python3 -B -I - "$selected_xcode_orchestrator" <<\'PYAST\'',
+              'import ast',
+              'from pathlib import Path',
+              'import sys',
+              '',
+              'tree = ast.parse(Path(sys.argv[1]).read_text(encoding="utf-8"))',
+              'expected_args = [',
+              '    "field_pid",',
+              '    "source_sha",',
+              '    "freeze_helper_base64",',
+              '    "freeze_helper_blob",',
+              ']',
+              'matches = []',
+              'for node in ast.walk(tree):',
+              '    if not isinstance(node, ast.Assign) or len(node.targets) != 1:',
+              '        continue',
+              '    target = node.targets[0]',
+              '    call = node.value',
+              '    if not (isinstance(target, ast.Name) and target.id == "freeze_result"):',
+              '        continue',
+              '    if not (',
+              '        isinstance(call, ast.Call)',
+              '        and isinstance(call.func, ast.Name)',
+              '        and call.func.id == "launcher_run"',
+              '        and not call.keywords',
+              '    ):',
+              '        continue',
+              '    names = [arg.id if isinstance(arg, ast.Name) else None for arg in call.args]',
+              '    if names == expected_args:',
+              '        matches.append(node)',
+              'if len(matches) != 1:',
+              '    raise SystemExit(',
+              '        "selected-Xcode orchestrator must assign freeze_result from exactly one "',
+              '        "launcher_run(field_pid, source_sha, freeze_helper_base64, freeze_helper_blob) call"',
+              '    )',
+              'PYAST',
+          ]
+          replacement = "".join(f"{indent}{line}\n" for line in ast_lines)
+          source_lines[index] = replacement
+          path.write_text("".join(source_lines), encoding="utf-8")
           PY
 
       - name: Prove permanent delta before publication
         shell: bash
         run: |
           set -euo pipefail
-          test "$(grep -Fc "grep -Fq 'launcher_run(field_pid, source_sha, freeze_helper_base64, freeze_helper_blob)'" "$TARGET")" = 0
+          if grep -Fq "grep -Fq 'launcher_run(field_pid, source_sha, freeze_helper_base64, freeze_helper_blob)'" "$TARGET"; then
+            echo 'ERROR: stale formatting-only launcher grep survived materialization.' >&2
+            exit 1
+          fi
           grep -Fq 'tree = ast.parse(Path(sys.argv[1]).read_text(encoding="utf-8"))' "$TARGET"
           grep -Fq 'target.id == "freeze_result"' "$TARGET"
           grep -Fq 'call.func.id == "launcher_run"' "$TARGET"
