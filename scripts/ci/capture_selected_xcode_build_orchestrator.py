@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import importlib.util
 import os
 from pathlib import Path
 import re
@@ -33,6 +34,8 @@ ACCEPTED_GUARD_RELATIVE = Path("Scripts/capture_tuya_private_input_build_guard.p
 ACCEPTED_PROVENANCE_RELATIVE = Path("Scripts/capture_tuya_private_input_provenance.py")
 CANONICAL_SDK_RELATIVE = Path("LocalSecrets/TuyaSDK")
 CANONICAL_RUNTIME_RELATIVE = Path("LocalSecrets/TuyaRuntime")
+ACCEPTED_BUILD_ROOT_CUSTODY_RELATIVE = Path("scripts/ci/capture_accepted_build_root_custody.py")
+ACCEPTED_BUILD_INPUT_SNAPSHOT_RELATIVE = Path("scripts/ci/capture_accepted_build_input_snapshot.py")
 
 
 class SelectedXcodeBuildOrchestratorError(RuntimeError):
@@ -69,6 +72,20 @@ def _require_callable(namespace: dict[str, object], name: str, label: str) -> Ca
     if not callable(value):
         raise SelectedXcodeBuildOrchestratorError(f"{label} exposes no {name} callable")
     return value
+
+
+def _load_python_module(path: Path, *, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise SelectedXcodeBuildOrchestratorError(f"{name} could not be loaded")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception as error:
+        sys.modules.pop(name, None)
+        raise SelectedXcodeBuildOrchestratorError(f"{name} could not be loaded") from error
+    return module
 
 
 def _require_frozen_tool(tools: dict[object, object], name: str, frozen_developer: Path) -> Path:
@@ -614,6 +631,56 @@ def _destroy_guard_bundle(bundle: Path | None) -> None:
     shutil.rmtree(bundle, ignore_errors=True)
 
 
+def _materialize_accepted_build_root_bundle(repo: Path, source_sha: str) -> tuple[Path, Path]:
+    custody_raw = _read_accepted_git_blob(repo, source_sha, ACCEPTED_BUILD_ROOT_CUSTODY_RELATIVE)
+    snapshot_raw = _read_accepted_git_blob(repo, source_sha, ACCEPTED_BUILD_INPUT_SNAPSHOT_RELATIVE)
+    private_tmp = Path("/private/tmp")
+    _require_real_directory(private_tmp, "private temporary root")
+    bundle = Path(tempfile.mkdtemp(prefix="nembra-accepted-build-root-helper.", dir=private_tmp))
+    custody_path = bundle / ACCEPTED_BUILD_ROOT_CUSTODY_RELATIVE.name
+    snapshot_path = bundle / ACCEPTED_BUILD_INPUT_SNAPSHOT_RELATIVE.name
+    try:
+        os.chown(bundle, 0, 0)
+        os.chmod(bundle, 0o700)
+        _remove_acl(bundle)
+        _write_root_readonly(custody_path, custody_raw)
+        _write_root_readonly(snapshot_path, snapshot_raw)
+        os.chmod(bundle, 0o555)
+        metadata = bundle.lstat()
+        if metadata.st_uid != 0 or metadata.st_gid != 0 or stat.S_IMODE(metadata.st_mode) != 0o555:
+            raise SelectedXcodeBuildOrchestratorError(
+                "accepted build-root helper bundle directory is not root read-only"
+            )
+        return bundle, custody_path
+    except Exception:
+        _destroy_guard_bundle(bundle)
+        raise
+
+
+def _rebase_private_guard_paths(
+    command: Sequence[str], *, live_repo: Path, accepted_root: Path
+) -> list[str]:
+    live_repo = _absolute_lexical(live_repo)
+    accepted_root = _absolute_lexical(accepted_root)
+    _require_real_directory(accepted_root, "accepted build root")
+    expected = {
+        "--lockfile": Path("Podfile.lock"),
+        "--security-podspec": CANONICAL_SDK_RELATIVE / "ThingSmartCryption.podspec",
+        "--security-build": CANONICAL_SDK_RELATIVE / "Build",
+        "--identity-podspec": CANONICAL_RUNTIME_RELATIVE / "NembraTuyaPrivateConfig.podspec",
+        "--identity-sources": CANONICAL_RUNTIME_RELATIVE / "Sources/NembraTuyaPrivateConfig",
+    }
+    rebased = list(command)
+    for flag, relative in expected.items():
+        if _flag_path(command, flag) != _absolute_lexical(live_repo / relative):
+            raise SelectedXcodeBuildOrchestratorError(
+                f"private-input guard {flag} cannot be rebound from a noncanonical live subject"
+            )
+        index = rebased.index(flag)
+        rebased[index + 1] = str(accepted_root / relative)
+    return rebased
+
+
 def _replace_live_guard(command: Sequence[str], *, live_guard: Path, accepted_guard: Path) -> list[str]:
     live_guard = _absolute_lexical(live_guard)
     accepted_guard = _absolute_lexical(accepted_guard)
@@ -677,8 +744,16 @@ def _private_read_subjects(command: Sequence[str], repo: Path) -> tuple[Path, Pa
     return repo / CANONICAL_SDK_RELATIVE, repo / CANONICAL_RUNTIME_RELATIVE
 
 
-def _bind_private_read_lease(build_origin: dict[str, object], lease: _PrivateReadLease) -> None:
+def _bind_private_read_lease(
+    build_origin: dict[str, object],
+    lease: _PrivateReadLease,
+    *,
+    build_cwd: Path | None = None,
+) -> None:
     original = _require_callable(build_origin, "_run_exec_bound_build", "signed build-origin helper")
+    forced_cwd = _absolute_lexical(build_cwd) if build_cwd is not None else None
+    if forced_cwd is not None:
+        _require_real_directory(forced_cwd, "accepted compiler working root")
 
     def leased_exec_bound_build(
         command: Sequence[str],
@@ -703,7 +778,7 @@ def _bind_private_read_lease(build_origin: dict[str, object], lease: _PrivateRea
                 gid=gid,
                 baseline_groups=baseline_groups,
                 environment=environment,
-                cwd=cwd,
+                cwd=forced_cwd if forced_cwd is not None else cwd,
             )
         finally:
             lease.revoke()
@@ -725,6 +800,7 @@ def orchestrate(
     build_origin_blob: str,
     install_custody_base64: str,
     install_custody_blob: str,
+    accepted_generated_manifest_sha256: str | None = None,
     command: Sequence[str],
 ) -> tuple[Path, str]:
     if sys.platform != "darwin" or os.geteuid() != 0:
@@ -735,11 +811,18 @@ def orchestrate(
         raise SelectedXcodeBuildOrchestratorError("field shell PID is invalid")
     if re.fullmatch(r"[0-9a-f]{40}", source_sha) is None:
         raise SelectedXcodeBuildOrchestratorError("accepted source SHA is malformed")
+    if (
+        accepted_generated_manifest_sha256 is not None
+        and re.fullmatch(r"[0-9a-f]{64}", accepted_generated_manifest_sha256) is None
+    ):
+        raise SelectedXcodeBuildOrchestratorError(
+            "accepted generated build-input manifest SHA-256 is malformed"
+        )
 
     repo = _absolute_lexical(Path(os.getcwd()))
     _require_real_directory(repo, "repository root")
     live_guard = repo / ACCEPTED_GUARD_RELATIVE
-    private_subjects = _private_read_subjects(command, repo)
+    live_private_subjects = _private_read_subjects(command, repo)
 
     launcher_raw = _decode_verified_git_blob(
         freeze_launcher_base64, freeze_launcher_blob, "selected-Xcode freeze launcher"
@@ -755,13 +838,58 @@ def orchestrate(
     )
 
     bundle: Path | None = None
+    root_bundle: Path | None = None
+    accepted_root: Path | None = None
+    accepted_root_fingerprint = ""
+    root_custody_module = None
     lease: _PrivateReadLease | None = None
     try:
+        canonical_command = list(command)
+        private_subjects = live_private_subjects
+        lease_repo = repo
+        build_cwd = repo
+
+        if accepted_generated_manifest_sha256 is not None:
+            root_bundle, root_helper = _materialize_accepted_build_root_bundle(repo, source_sha)
+            root_custody_module = _load_python_module(
+                root_helper, name="nembra_accepted_build_root_custody"
+            )
+            create_root = getattr(root_custody_module, "create_accepted_build_root", None)
+            if not callable(create_root):
+                raise SelectedXcodeBuildOrchestratorError(
+                    "accepted build-root helper exposes no create_accepted_build_root callable"
+                )
+            created = create_root(repo, source_sha, accepted_generated_manifest_sha256)
+            if not isinstance(created, tuple) or len(created) != 3:
+                raise SelectedXcodeBuildOrchestratorError(
+                    "accepted build-root helper returned malformed authority"
+                )
+            accepted_root, accepted_root_fingerprint, returned_manifest = created
+            if (
+                not isinstance(accepted_root, Path)
+                or not accepted_root.is_absolute()
+                or not isinstance(accepted_root_fingerprint, str)
+                or re.fullmatch(r"[0-9a-f]{64}", accepted_root_fingerprint) is None
+                or returned_manifest != accepted_generated_manifest_sha256
+            ):
+                raise SelectedXcodeBuildOrchestratorError(
+                    "accepted build-root helper returned invalid identity"
+                )
+            canonical_command = _rebase_private_guard_paths(
+                canonical_command, live_repo=repo, accepted_root=accepted_root
+            )
+            private_subjects = (
+                accepted_root / CANONICAL_SDK_RELATIVE,
+                accepted_root / CANONICAL_RUNTIME_RELATIVE,
+            )
+            lease_repo = accepted_root
+            build_cwd = accepted_root
+
         bundle, accepted_guard, _accepted_provenance = _materialize_accepted_guard_bundle(
             repo, source_sha
         )
         guarded_command = _replace_live_guard(
-            command, live_guard=live_guard, accepted_guard=accepted_guard
+            canonical_command, live_guard=live_guard, accepted_guard=accepted_guard
         )
 
         launcher = _load_namespace(
@@ -808,8 +936,12 @@ def orchestrate(
             name="nembra_signed_app_build_origin_custody",
             filename="<accepted-build-origin-custody>",
         )
-        lease = _PrivateReadLease(private_subjects, repo)
-        _bind_private_read_lease(build_origin, lease)
+        lease = _PrivateReadLease(private_subjects, lease_repo)
+        _bind_private_read_lease(
+            build_origin,
+            lease,
+            build_cwd=build_cwd,
+        )
         run_custodied_build = _require_callable(
             build_origin, "run_custodied_build", "signed build-origin helper"
         )
@@ -831,11 +963,35 @@ def orchestrate(
             raise SelectedXcodeBuildOrchestratorError(
                 "private read lease survived the guarded build window"
             )
+        if accepted_root is not None:
+            current_fingerprint = getattr(
+                root_custody_module, "accepted_build_root_fingerprint", None
+            )
+            if not callable(current_fingerprint):
+                raise SelectedXcodeBuildOrchestratorError(
+                    "accepted build-root helper exposes no fingerprint callable"
+                )
+            if current_fingerprint(accepted_root) != accepted_root_fingerprint:
+                raise SelectedXcodeBuildOrchestratorError(
+                    "accepted build root changed during the compiler window"
+                )
         return stage_root, fingerprint
     finally:
         if lease is not None and (lease._opened or lease._principal):
             lease.revoke(suppress_errors=True)
-        _destroy_guard_bundle(bundle)
+        try:
+            if accepted_root is not None and root_custody_module is not None:
+                destroy_root = getattr(
+                    root_custody_module, "destroy_accepted_build_root", None
+                )
+                if not callable(destroy_root):
+                    raise SelectedXcodeBuildOrchestratorError(
+                        "accepted build-root helper exposes no destroy callable"
+                    )
+                destroy_root(accepted_root)
+        finally:
+            _destroy_guard_bundle(root_bundle)
+            _destroy_guard_bundle(bundle)
 
 
 def _parse(argv: Sequence[str]) -> argparse.Namespace:
@@ -852,6 +1008,7 @@ def _parse(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--build-origin-blob", required=True)
     parser.add_argument("--install-custody-base64", required=True)
     parser.add_argument("--install-custody-blob", required=True)
+    parser.add_argument("--accepted-generated-manifest-sha256")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args(list(argv))
     if args.command and args.command[0] == "--":
@@ -873,6 +1030,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             build_origin_blob=args.build_origin_blob,
             install_custody_base64=args.install_custody_base64,
             install_custody_blob=args.install_custody_blob,
+            accepted_generated_manifest_sha256=(
+                args.accepted_generated_manifest_sha256.lower()
+                if args.accepted_generated_manifest_sha256
+                else None
+            ),
             command=args.command,
         )
         values = (str(stage_root), fingerprint)
