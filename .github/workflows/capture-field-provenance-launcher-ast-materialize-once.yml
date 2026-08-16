@@ -109,14 +109,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if grep -Fq "grep -Fq 'launcher_run(field_pid, source_sha, freeze_helper_base64, freeze_helper_blob)'" "$TARGET"; then
-            echo 'ERROR: stale formatting-only launcher grep survived materialization.' >&2
-            exit 1
-          fi
-          grep -Fq 'tree = ast.parse(Path(sys.argv[1]).read_text(encoding="utf-8"))' "$TARGET"
-          grep -Fq 'target.id == "freeze_result"' "$TARGET"
-          grep -Fq 'call.func.id == "launcher_run"' "$TARGET"
-          grep -Fq 'names == expected_args' "$TARGET"
+          /usr/bin/python3 -B -I - "$TARGET" <<'PY'
+          from pathlib import Path
+          import sys
+
+          source = Path(sys.argv[1]).read_text(encoding="utf-8")
+          stale = "grep -Fq 'launcher_run(field_pid, source_sha, freeze_helper_base64, freeze_helper_blob)'"
+          if stale in source:
+              raise SystemExit("stale formatting-only launcher grep survived materialization")
+          required = (
+              "import ast",
+              'tree = ast.parse(Path(sys.argv[1]).read_text(encoding="utf-8"))',
+              'target.id == "freeze_result"',
+              'call.func.id == "launcher_run"',
+              "names == expected_args",
+              "PYAST",
+          )
+          missing = [item for item in required if item not in source]
+          if missing:
+              raise SystemExit(f"semantic launcher AST contract missing: {missing}")
+          PY
           git diff --check
 
       - name: Publish clean one-file oracle repair
