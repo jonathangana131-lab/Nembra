@@ -1,128 +1,105 @@
-name: Capture Fold Generated Root Continuity Once
+name: Capture Generated Shared Ancestor Continuity
 
 on:
-  push:
-    branches:
-      - repair/v17-capture-generated-root-generation-continuity-sol-20260815
+  pull_request:
     paths:
+      - scripts/ci/capture_accepted_build_input_snapshot.py
+      - scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
       - .github/workflows/capture-generated-shared-ancestor-continuity.yml
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: capture-generated-shared-ancestor-continuity-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 env:
-  EXACT_PARENT: f1be1b584e8b568fb8c3998adad3ee0b29004fdc
-  TARGET_BRANCH: repair/v17-capture-generated-root-generation-continuity-sol-20260815
+  EXACT_PARENT: 1f9c5213d99116b93635e48061f29c88bffc2db8
 
 jobs:
-  fold:
-    runs-on: ubuntu-latest
-    timeout-minutes: 6
+  exact-portable:
+    name: Exact generated-input continuity (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: repair/v17-capture-generated-root-generation-continuity-sol-20260815
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Bind authoring lineage
+      - name: Bind serial repair delta
         shell: bash
         run: |
           set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
           test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
-          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD)"
-          test "$changed" = ".github/workflows/capture-generated-shared-ancestor-continuity.yml"
-
-      - name: Fold root-generation repair and regressions
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import base64
-          from pathlib import Path
-
-          helper = Path("scripts/ci/capture_accepted_build_input_snapshot.py")
-          text = helper.read_text(encoding="utf-8")
-          canonical_anchor = (
-              "    root_fd = _open_repository_root(root)\n"
-              "    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}\n"
-              "    try:\n"
-              "        for subject in GENERATED_SUBJECTS:\n"
-          )
-          canonical_replacement = (
-              "    root_fd = _open_repository_root(root)\n"
-              "    root_generation = os.fstat(root_fd)\n"
-              "    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}\n"
-              "    try:\n"
-              "        for subject in GENERATED_SUBJECTS:\n"
-              "            _assert_directory_generation(root_fd, root_generation, Path(\"<repository-root>\"))\n"
-          )
-          if text.count(canonical_anchor) != 1:
-              raise SystemExit("canonical root-generation anchor did not match exactly once")
-          text = text.replace(canonical_anchor, canonical_replacement)
-
-          copy_anchor = (
-              "    root_fd = _open_repository_root(source_root)\n"
-              "    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}\n"
-              "    try:\n"
-              "        for subject in GENERATED_SUBJECTS:\n"
-          )
-          copy_replacement = (
-              "    root_fd = _open_repository_root(source_root)\n"
-              "    root_generation = os.fstat(root_fd)\n"
-              "    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}\n"
-              "    try:\n"
-              "        for subject in GENERATED_SUBJECTS:\n"
-              "            _assert_directory_generation(root_fd, root_generation, Path(\"<repository-root>\"))\n"
-          )
-          if text.count(copy_anchor) != 1:
-              raise SystemExit("copy root-generation anchor did not match exactly once")
-          text = text.replace(copy_anchor, copy_replacement)
-
-          post_subject = (
-              "            finally:\n"
-              "                os.close(descriptor)\n"
-              "    finally:\n"
-              "        _close_directory_cache(directory_cache)\n"
-              "        os.close(root_fd)\n"
-          )
-          post_subject_replacement = (
-              "            finally:\n"
-              "                os.close(descriptor)\n"
-              "            _assert_directory_generation(root_fd, root_generation, Path(\"<repository-root>\"))\n"
-              "    finally:\n"
-              "        _close_directory_cache(directory_cache)\n"
-              "        os.close(root_fd)\n"
-          )
-          if text.count(post_subject) != 2:
-              raise SystemExit("post-subject root-generation anchor did not match exactly twice")
-          helper.write_text(text.replace(post_subject, post_subject_replacement), encoding="utf-8")
-
-          regression_b64 = "CgogICAgZGVmIHRlc3RfbWFuaWZlc3RfcmVqZWN0c19yb290X3NpYmxpbmdfc3BsaWNlX2JldHdlZW5fZml4ZWRfc3ViamVjdHMoc2VsZikgLT4gTm9uZToKICAgICAgICBoZWxwZXIgPSBsb2FkKCkKICAgICAgICB3aXRoIHRlbXBmaWxlLlRlbXBvcmFyeURpcmVjdG9yeSgKICAgICAgICAgICAgcHJlZml4PSJuZW1icmEtcm9vdC1zaWJsaW5nLW1hbmlmZXN0LXJlcGFpci0iLAogICAgICAgICAgICBkaXI9UkVQT1NJVE9SWSwKICAgICAgICApIGFzIHJhdzoKICAgICAgICAgICAgb3V0ZXIgPSBQYXRoKHJhdykKICAgICAgICAgICAgcm9vdCA9IG91dGVyIC8gInJlcG8iCiAgICAgICAgICAgIHJvb3QubWtkaXIoKQogICAgICAgICAgICBzZWVkX2NvbW1vbihyb290KQogICAgICAgICAgICBnZW5lcmF0aW9uID0gbWFrZV9nZW5lcmF0aW9uKHJvb3QsICJMb2NhbFNlY3JldHMuQSIsIGIiU0RLLUFcbiIsIGIiUlVOVElNRS1BXG4iKQogICAgICAgICAgICBnZW5lcmF0aW9uLnJlbmFtZShyb290IC8gIkxvY2FsU2VjcmV0cyIpCgogICAgICAgICAgICByZXBsYWNlbWVudF9sb2NrID0gb3V0ZXIgLyAicmVwbGFjZW1lbnQtUG9kZmlsZS5sb2NrIgogICAgICAgICAgICByZXBsYWNlbWVudF9sb2NrLndyaXRlX3RleHQoIlBPRFM6XG4gIC0gUmVwbGFjZW1lbnRcbiIsIGVuY29kaW5nPSJ1dGYtOCIpCiAgICAgICAgICAgIHJlcGxhY2VtZW50X3BvZHMgPSBvdXRlciAvICJyZXBsYWNlbWVudC1Qb2RzIgogICAgICAgICAgICByZXBsYWNlbWVudF9wb2RzLm1rZGlyKCkKICAgICAgICAgICAgKHJlcGxhY2VtZW50X3BvZHMgLyAiUmVwbGFjZW1lbnRQb2Quc3dpZnQiKS53cml0ZV90ZXh0KCIvLyByZXBsYWNlbWVudFxuIiwgZW5jb2Rpbmc9InV0Zi04IikKCiAgICAgICAgICAgIG9yaWdpbmFsX29wZW4gPSBoZWxwZXIuX29wZW5fc3ViamVjdAogICAgICAgICAgICBzd2FwcGVkID0gRmFsc2UKCiAgICAgICAgICAgIGRlZiBzcGxpY2VfYmVmb3JlX3BvZHMocm9vdF9mZDogaW50LCBzdWJqZWN0OiBQYXRoLCBkaXJlY3RvcnlfY2FjaGU9Tm9uZSk6CiAgICAgICAgICAgICAgICBub25sb2NhbCBzd2FwcGVkCiAgICAgICAgICAgICAgICBpZiBzdWJqZWN0ID09IFBhdGgoIlBvZHMiKSBhbmQgbm90IHN3YXBwZWQ6CiAgICAgICAgICAgICAgICAgICAgKHJvb3QgLyAiUG9kZmlsZS5sb2NrIikucmVuYW1lKHJvb3QgLyAiUG9kZmlsZS5sb2NrLkEuYXR0YWNrIikKICAgICAgICAgICAgICAgICAgICByZXBsYWNlbWVudF9sb2NrLnJlbmFtZShyb290IC8gIlBvZGZpbGUubG9jayIpCiAgICAgICAgICAgICAgICAgICAgKHJvb3QgLyAiUG9kcyIpLnJlbmFtZShyb290IC8gIlBvZHMuQS5hdHRhY2siKQogICAgICAgICAgICAgICAgICAgIHJlcGxhY2VtZW50X3BvZHMucmVuYW1lKHJvb3QgLyAiUG9kcyIpCiAgICAgICAgICAgICAgICAgICAgc3dhcHBlZCA9IFRydWUKICAgICAgICAgICAgICAgIHJldHVybiBvcmlnaW5hbF9vcGVuKHJvb3RfZmQsIHN1YmplY3QsIGRpcmVjdG9yeV9jYWNoZSkKCiAgICAgICAgICAgIHdpdGggbW9jay5wYXRjaC5vYmplY3QoaGVscGVyLCAiX29wZW5fc3ViamVjdCIsIHNpZGVfZWZmZWN0PXNwbGljZV9iZWZvcmVfcG9kcyk6CiAgICAgICAgICAgICAgICB3aXRoIHNlbGYuYXNzZXJ0UmFpc2VzKGhlbHBlci5BY2NlcHRlZEJ1aWxkSW5wdXRTbmFwc2hvdEVycm9yKToKICAgICAgICAgICAgICAgICAgICBoZWxwZXIuY2Fub25pY2FsX2dlbmVyYXRlZF9tYW5pZmVzdChyb290LCBTT1VSQ0VfU0hBKQogICAgICAgICAgICBzZWxmLmFzc2VydFRydWUoc3dhcHBlZCkKCiAgICBkZWYgdGVzdF9jb3B5X3JlamVjdHNfcm9vdF9zaWJsaW5nX3NwbGljZV9iZXR3ZWVuX2ZpeGVkX3N1YmplY3RzKHNlbGYpIC0+IE5vbmU6CiAgICAgICAgaGVscGVyID0gbG9hZCgpCiAgICAgICAgd2l0aCB0ZW1wZmlsZS5UZW1wb3JhcnlEaXJlY3RvcnkoCiAgICAgICAgICAgIHByZWZpeD0ibmVtYnJhLXJvb3Qtc2libGluZy1jb3B5LXJlcGFpci0iLAogICAgICAgICAgICBkaXI9UkVQT1NJVE9SWSwKICAgICAgICApIGFzIHJhdzoKICAgICAgICAgICAgb3V0ZXIgPSBQYXRoKHJhdykKICAgICAgICAgICAgcm9vdCA9IG91dGVyIC8gInJlcG8iCiAgICAgICAgICAgIHJvb3QubWtkaXIoKQogICAgICAgICAgICBzZWVkX2NvbW1vbihyb290KQogICAgICAgICAgICBnZW5lcmF0aW9uID0gbWFrZV9nZW5lcmF0aW9uKHJvb3QsICJMb2NhbFNlY3JldHMuQSIsIGIiU0RLLUFcbiIsIGIiUlVOVElNRS1BXG4iKQogICAgICAgICAgICBnZW5lcmF0aW9uLnJlbmFtZShyb290IC8gIkxvY2FsU2VjcmV0cyIpCiAgICAgICAgICAgIGRlc3RpbmF0aW9uID0gb3V0ZXIgLyAic3RhZ2UiCiAgICAgICAgICAgIGRlc3RpbmF0aW9uLm1rZGlyKCkKCiAgICAgICAgICAgIHJlcGxhY2VtZW50X2xvY2sgPSBvdXRlciAvICJyZXBsYWNlbWVudC1Qb2RmaWxlLmxvY2siCiAgICAgICAgICAgIHJlcGxhY2VtZW50X2xvY2sud3JpdGVfdGV4dCgiUE9EUzpcbiAgLSBSZXBsYWNlbWVudFxuIiwgZW5jb2Rpbmc9InV0Zi04IikKICAgICAgICAgICAgcmVwbGFjZW1lbnRfcG9kcyA9IG91dGVyIC8gInJlcGxhY2VtZW50LVBvZHMiCiAgICAgICAgICAgIHJlcGxhY2VtZW50X3BvZHMubWtkaXIoKQogICAgICAgICAgICAocmVwbGFjZW1lbnRfcG9kcyAvICJSZXBsYWNlbWVudFBvZC5zd2lmdCIpLndyaXRlX3RleHQoIi8vIHJlcGxhY2VtZW50XG4iLCBlbmNvZGluZz0idXRmLTgiKQoKICAgICAgICAgICAgb3JpZ2luYWxfb3BlbiA9IGhlbHBlci5fb3Blbl9zdWJqZWN0CiAgICAgICAgICAgIHN3YXBwZWQgPSBGYWxzZQoKICAgICAgICAgICAgZGVmIHNwbGljZV9iZWZvcmVfcG9kcyhyb290X2ZkOiBpbnQsIHN1YmplY3Q6IFBhdGgsIGRpcmVjdG9yeV9jYWNoZT1Ob25lKToKICAgICAgICAgICAgICAgIG5vbmxvY2FsIHN3YXBwZWQKICAgICAgICAgICAgICAgIGlmIHN1YmplY3QgPT0gUGF0aCgiUG9kcyIpIGFuZCBub3Qgc3dhcHBlZDoKICAgICAgICAgICAgICAgICAgICAocm9vdCAvICJQb2RmaWxlLmxvY2siKS5yZW5hbWUocm9vdCAvICJQb2RmaWxlLmxvY2suQS5hdHRhY2siKQogICAgICAgICAgICAgICAgICAgIHJlcGxhY2VtZW50X2xvY2sucmVuYW1lKHJvb3QgLyAiUG9kZmlsZS5sb2NrIikKICAgICAgICAgICAgICAgICAgICAocm9vdCAvICJQb2RzIikucmVuYW1lKHJvb3QgLyAiUG9kcy5BLmF0dGFjayIpCiAgICAgICAgICAgICAgICAgICAgcmVwbGFjZW1lbnRfcG9kcy5yZW5hbWUocm9vdCAvICJQb2RzIikKICAgICAgICAgICAgICAgICAgICBzd2FwcGVkID0gVHJ1ZQogICAgICAgICAgICAgICAgcmV0dXJuIG9yaWdpbmFsX29wZW4ocm9vdF9mZCwgc3ViamVjdCwgZGlyZWN0b3J5X2NhY2hlKQoKICAgICAgICAgICAgd2l0aCBtb2NrLnBhdGNoLm9iamVjdChoZWxwZXIsICJfb3Blbl9zdWJqZWN0Iiwgc2lkZV9lZmZlY3Q9c3BsaWNlX2JlZm9yZV9wb2RzKToKICAgICAgICAgICAgICAgIHdpdGggc2VsZi5hc3NlcnRSYWlzZXMoaGVscGVyLkFjY2VwdGVkQnVpbGRJbnB1dFNuYXBzaG90RXJyb3IpOgogICAgICAgICAgICAgICAgICAgIGhlbHBlci5fY29weV9nZW5lcmF0ZWRfc3ViamVjdHMocm9vdCwgZGVzdGluYXRpb24pCiAgICAgICAgICAgIHNlbGYuYXNzZXJ0VHJ1ZShzd2FwcGVkKQo="
-          regression = base64.b64decode(regression_b64).decode("utf-8")
-          test = Path("scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py")
-          test_text = test.read_text(encoding="utf-8")
-          marker = "\n\nif __name__ == \"__main__\":\n    unittest.main(verbosity=2)\n"
-          if test_text.count(marker) != 1:
-              raise SystemExit("continuity regression insertion marker did not match exactly once")
-          test.write_text(test_text.replace(marker, regression + marker), encoding="utf-8")
-          PY
-
-          git checkout "$EXACT_PARENT" -- .github/workflows/capture-generated-shared-ancestor-continuity.yml
-          export PYTHONDONTWRITEBYTECODE=1
-          python3 -m py_compile scripts/ci/capture_accepted_build_input_snapshot.py scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
-          python3 -B scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
-          python3 -B scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
-          git diff --check
-          changed="$(git diff --name-only "$EXACT_PARENT" | LC_ALL=C sort)"
-          expected="$(printf '%s\n' scripts/ci/capture_accepted_build_input_snapshot.py scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-generated-shared-ancestor-continuity.yml \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
           test "$changed" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
 
-      - name: Publish repair
+      - name: Run generated shared-ancestor continuity regression
+        id: continuity
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py \
+            2>&1 | tee "$RUNNER_TEMP/generated-shared-ancestor-continuity-${{ matrix.os }}.log"
+
+      - name: Run inherited accepted-input regression
+        id: inherited
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py \
+            2>&1 | tee "$RUNNER_TEMP/accepted-build-input-snapshot-${{ matrix.os }}.log"
+
+      - name: Capture checkout cleanliness diagnostics
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .github/workflows/capture-generated-shared-ancestor-continuity.yml scripts/ci/capture_accepted_build_input_snapshot.py scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
-          git commit -m "fix(capture): hold generated repository-root generation"
-          git push origin HEAD:"$TARGET_BRANCH"
+          git status --porcelain=v1 --untracked-files=all > "$RUNNER_TEMP/checkout-status-${{ matrix.os }}.log"
+          git diff --no-ext-diff -- > "$RUNNER_TEMP/checkout-unstaged-diff-${{ matrix.os }}.log"
+          git diff --cached --no-ext-diff -- > "$RUNNER_TEMP/checkout-staged-diff-${{ matrix.os }}.log"
+
+      - name: Retain platform diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-shared-ancestor-continuity-${{ matrix.os }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/generated-shared-ancestor-continuity-${{ matrix.os }}.log
+            ${{ runner.temp }}/accepted-build-input-snapshot-${{ matrix.os }}.log
+            ${{ runner.temp }}/checkout-status-${{ matrix.os }}.log
+            ${{ runner.temp }}/checkout-unstaged-diff-${{ matrix.os }}.log
+            ${{ runner.temp }}/checkout-staged-diff-${{ matrix.os }}.log
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Enforce regression verdict and clean checkout
+        if: always()
+        shell: bash
+        env:
+          CONTINUITY_OUTCOME: ${{ steps.continuity.outcome }}
+          INHERITED_OUTCOME: ${{ steps.inherited.outcome }}
+        run: |
+          set -euo pipefail
+          test "$CONTINUITY_OUTCOME" = success
+          test "$INHERITED_OUTCOME" = success
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"

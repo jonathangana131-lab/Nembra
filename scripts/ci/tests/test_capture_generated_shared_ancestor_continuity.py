@@ -256,5 +256,82 @@ class CaptureGeneratedSharedAncestorContinuityTests(unittest.TestCase):
                 os.close(root_fd)
 
 
+    def test_manifest_rejects_root_sibling_splice_between_fixed_subjects(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(
+            prefix="nembra-root-sibling-manifest-repair-",
+            dir=REPOSITORY,
+        ) as raw:
+            outer = Path(raw)
+            root = outer / "repo"
+            root.mkdir()
+            seed_common(root)
+            generation = make_generation(root, "LocalSecrets.A", b"SDK-A\n", b"RUNTIME-A\n")
+            generation.rename(root / "LocalSecrets")
+
+            replacement_lock = outer / "replacement-Podfile.lock"
+            replacement_lock.write_text("PODS:\n  - Replacement\n", encoding="utf-8")
+            replacement_pods = outer / "replacement-Pods"
+            replacement_pods.mkdir()
+            (replacement_pods / "ReplacementPod.swift").write_text("// replacement\n", encoding="utf-8")
+
+            original_open = helper._open_subject
+            swapped = False
+
+            def splice_before_pods(root_fd: int, subject: Path, directory_cache=None):
+                nonlocal swapped
+                if subject == Path("Pods") and not swapped:
+                    (root / "Podfile.lock").rename(root / "Podfile.lock.A.attack")
+                    replacement_lock.rename(root / "Podfile.lock")
+                    (root / "Pods").rename(root / "Pods.A.attack")
+                    replacement_pods.rename(root / "Pods")
+                    swapped = True
+                return original_open(root_fd, subject, directory_cache)
+
+            with mock.patch.object(helper, "_open_subject", side_effect=splice_before_pods):
+                with self.assertRaises(helper.AcceptedBuildInputSnapshotError):
+                    helper.canonical_generated_manifest(root, SOURCE_SHA)
+            self.assertTrue(swapped)
+
+    def test_copy_rejects_root_sibling_splice_between_fixed_subjects(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(
+            prefix="nembra-root-sibling-copy-repair-",
+            dir=REPOSITORY,
+        ) as raw:
+            outer = Path(raw)
+            root = outer / "repo"
+            root.mkdir()
+            seed_common(root)
+            generation = make_generation(root, "LocalSecrets.A", b"SDK-A\n", b"RUNTIME-A\n")
+            generation.rename(root / "LocalSecrets")
+            destination = outer / "stage"
+            destination.mkdir()
+
+            replacement_lock = outer / "replacement-Podfile.lock"
+            replacement_lock.write_text("PODS:\n  - Replacement\n", encoding="utf-8")
+            replacement_pods = outer / "replacement-Pods"
+            replacement_pods.mkdir()
+            (replacement_pods / "ReplacementPod.swift").write_text("// replacement\n", encoding="utf-8")
+
+            original_open = helper._open_subject
+            swapped = False
+
+            def splice_before_pods(root_fd: int, subject: Path, directory_cache=None):
+                nonlocal swapped
+                if subject == Path("Pods") and not swapped:
+                    (root / "Podfile.lock").rename(root / "Podfile.lock.A.attack")
+                    replacement_lock.rename(root / "Podfile.lock")
+                    (root / "Pods").rename(root / "Pods.A.attack")
+                    replacement_pods.rename(root / "Pods")
+                    swapped = True
+                return original_open(root_fd, subject, directory_cache)
+
+            with mock.patch.object(helper, "_open_subject", side_effect=splice_before_pods):
+                with self.assertRaises(helper.AcceptedBuildInputSnapshotError):
+                    helper._copy_generated_subjects(root, destination)
+            self.assertTrue(swapped)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
