@@ -126,9 +126,50 @@ class CapturePrivateReadLeaseSymlinkAuthorityTransitionTests(unittest.TestCase):
             self.assertEqual(lease._principal, "")
             self.assertEqual(link.resolve(strict=True), external.resolve(strict=True))
 
+    def test_retarget_inside_readlink_is_rejected_by_directory_generation(self) -> None:
+        helper = load()
+        with fixture() as raw:
+            repo, subject, external, link = self._make_tree(raw)
+            original_readlink = helper.os.readlink
+            retargets = 0
+
+            def safe_readlink_then_external(path, *, dir_fd=None):
+                nonlocal retargets
+                # Simulate a concurrent field mutation that presents the safe target
+                # only for the descriptor-relative readlink, then restores the
+                # external target before the validator can return.
+                if link.is_symlink():
+                    link.unlink()
+                link.symlink_to("inside", target_is_directory=True)
+                value = original_readlink(path, dir_fd=dir_fd)
+                link.unlink()
+                link.symlink_to(external, target_is_directory=True)
+                retargets += 1
+                return value
+
+            state, listing, chmod = self._acl_transport()
+            lease = helper._PrivateReadLease((subject,), repo)
+            with (
+                mock.patch.object(helper.os, "readlink", side_effect=safe_readlink_then_external),
+                mock.patch.object(helper, "_acl_listing", side_effect=listing),
+                mock.patch.object(helper, "_chmod_acl", side_effect=chmod),
+            ):
+                with self.assertRaises(helper.SelectedXcodeBuildOrchestratorError):
+                    lease.grant("nembrasymlinkgeneration")
+
+            self.assertGreaterEqual(retargets, 1)
+            self.assertFalse(any(state.values()))
+            self.assertFalse(lease._opened)
+            self.assertEqual(lease._principal, "")
+            self.assertEqual(link.resolve(strict=True), external.resolve(strict=True))
+
     def test_grant_source_revalidates_symlinks_before_and_after_acl_loop(self) -> None:
         helper = load()
         grant = inspect.getsource(helper._PrivateReadLease.grant)
+        validator = inspect.getsource(helper._validate_subject_symlinks_from_descriptor)
+        self.assertIn("st_mtime_ns", validator)
+        self.assertIn("st_ctime_ns", validator)
+        self.assertIn("after_generation != before_generation", validator)
         marker = "_validate_lease_subject_symlinks(self._subjects, pinned_plan)"
         self.assertEqual(grant.count(marker), 2)
         first = grant.index(marker)

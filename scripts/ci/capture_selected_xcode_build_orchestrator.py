@@ -336,6 +336,14 @@ def _validate_subject_symlinks_from_descriptor(
         )
 
     def walk(directory_descriptor: int, relative_parts: tuple[str, ...]) -> None:
+        before_metadata = os.fstat(directory_descriptor)
+        before_generation = (
+            before_metadata.st_dev,
+            before_metadata.st_ino,
+            stat.S_IFMT(before_metadata.st_mode),
+            before_metadata.st_mtime_ns,
+            before_metadata.st_ctime_ns,
+        )
         try:
             names = sorted(os.listdir(directory_descriptor))
         except (OSError, TypeError) as error:
@@ -392,6 +400,19 @@ def _validate_subject_symlinks_from_descriptor(
                 walk(child, entry_parts)
             finally:
                 os.close(child)
+
+        after_metadata = os.fstat(directory_descriptor)
+        after_generation = (
+            after_metadata.st_dev,
+            after_metadata.st_ino,
+            stat.S_IFMT(after_metadata.st_mode),
+            after_metadata.st_mtime_ns,
+            after_metadata.st_ctime_ns,
+        )
+        if after_generation != before_generation:
+            raise SelectedXcodeBuildOrchestratorError(
+                "private read-lease held directory generation changed during symlink validation"
+            )
 
     walk(subject_descriptor, ())
 
