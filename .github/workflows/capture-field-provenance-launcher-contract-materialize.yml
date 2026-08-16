@@ -1,0 +1,91 @@
+name: Capture One-Time Field Provenance Launcher Contract Repair
+
+on:
+  push:
+    branches:
+      - validation/v17-capture-field-provenance-launcher-contract-sol-20260815
+    paths:
+      - .github/workflows/capture-field-provenance-launcher-contract-materialize.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    name: Replace brittle launcher source grep
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      EXACT_PARENT: 16e6ccf5d9736a8c47d4e78eaba86f1cffd02e9c
+      PRODUCT_BRANCH: validation/v17-capture-field-provenance-launcher-contract-sol-20260815
+      CARRIER: .github/workflows/capture-field-provenance-launcher-contract-materialize.yml
+      TARGET: .github/workflows/capture-field-build-provenance.yml
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact one-shot input
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD)"
+          test "$changed" = "$CARRIER"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize structural source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - "$TARGET" <<'PY'
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          source = path.read_text(encoding="utf-8")
+          old = "          grep -Fq 'launcher_run(field_pid, source_sha, freeze_helper_base64, freeze_helper_blob)' \"$selected_xcode_orchestrator\"\n"
+          new = '''          /usr/bin/python3 -B -I - "$selected_xcode_orchestrator" <<'PY'\n          import ast\n          import sys\n          from pathlib import Path\n\n          source_path = Path(sys.argv[1])\n          tree = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))\n          orchestrates = [\n              node\n              for node in tree.body\n              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "orchestrate"\n          ]\n          if len(orchestrates) != 1:\n              raise SystemExit("selected-Xcode source contract requires exactly one orchestrate function")\n          calls = [\n              node\n              for node in ast.walk(orchestrates[0])\n              if isinstance(node, ast.Call)\n              and isinstance(node.func, ast.Name)\n              and node.func.id == "launcher_run"\n          ]\n          if len(calls) != 1:\n              raise SystemExit("selected-Xcode source contract requires exactly one launcher_run call")\n          call = calls[0]\n          if call.keywords:\n              raise SystemExit("selected-Xcode launcher_run may not gain keyword authority")\n          actual = [arg.id if isinstance(arg, ast.Name) else None for arg in call.args]\n          expected = ["field_pid", "source_sha", "freeze_helper_base64", "freeze_helper_blob"]\n          if actual != expected:\n              raise SystemExit(f"selected-Xcode launcher_run authority changed: {actual!r}")\n          assignments = [\n              node\n              for node in ast.walk(orchestrates[0])\n              if isinstance(node, ast.Assign) and node.value is call\n          ]\n          if (\n              len(assignments) != 1\n              or len(assignments[0].targets) != 1\n              or not isinstance(assignments[0].targets[0], ast.Name)\n              or assignments[0].targets[0].id != "freeze_result"\n          ):\n              raise SystemExit("selected-Xcode launcher result must remain bound to freeze_result")\n          print("selected-Xcode launcher source contract: PASS")\n          PY\n'''
+          if source.count(old) != 1:
+              raise SystemExit("stale launcher source grep was not present exactly once")
+          if "selected-Xcode launcher source contract: PASS" in source:
+              raise SystemExit("structural launcher source contract already exists")
+          path.write_text(source.replace(old, new, 1), encoding="utf-8")
+          PY
+
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          /usr/bin/python3 -B -I - scripts/ci/capture_selected_xcode_build_orchestrator.py <<'PY'
+          import ast
+          import sys
+          from pathlib import Path
+
+          source_path = Path(sys.argv[1])
+          tree = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
+          orchestrates = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "orchestrate"]
+          assert len(orchestrates) == 1
+          calls = [node for node in ast.walk(orchestrates[0]) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "launcher_run"]
+          assert len(calls) == 1
+          call = calls[0]
+          assert not call.keywords
+          assert [arg.id if isinstance(arg, ast.Name) else None for arg in call.args] == ["field_pid", "source_sha", "freeze_helper_base64", "freeze_helper_blob"]
+          assignments = [node for node in ast.walk(orchestrates[0]) if isinstance(node, ast.Assign) and node.value is call]
+          assert len(assignments) == 1 and len(assignments[0].targets) == 1 and isinstance(assignments[0].targets[0], ast.Name) and assignments[0].targets[0].id == "freeze_result"
+          PY
+
+          /bin/rm -- "$CARRIER"
+          git diff --check
+          changed="$(git status --short | sed 's/^...//' | LC_ALL=C sort)"
+          expected="$(printf '%s\n%s\n' "$CARRIER" "$TARGET" | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+
+      - name: Commit durable validation child
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- "$TARGET" "$CARRIER"
+          git commit -m 'ci(capture): harden provenance launcher source oracle'
+          git push origin "HEAD:$PRODUCT_BRANCH"
