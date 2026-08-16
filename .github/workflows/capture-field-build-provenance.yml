@@ -264,7 +264,50 @@ jobs:
           fi
           grep -Fq 'def _replace_selected_xcode(' "$selected_xcode_orchestrator"
           grep -Fq 'caller supplied DEVELOPER_DIR authority is forbidden' "$selected_xcode_orchestrator"
-          grep -Fq 'launcher_run(field_pid, source_sha, freeze_helper_base64, freeze_helper_blob)' "$selected_xcode_orchestrator"
+          /usr/bin/python3 -B -I - "$selected_xcode_orchestrator" <<'PY'
+          import ast
+          import sys
+          from pathlib import Path
+
+          source_path = Path(sys.argv[1])
+          tree = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
+          orchestrates = [
+              node
+              for node in tree.body
+              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "orchestrate"
+          ]
+          if len(orchestrates) != 1:
+              raise SystemExit("selected-Xcode source contract requires exactly one orchestrate function")
+          calls = [
+              node
+              for node in ast.walk(orchestrates[0])
+              if isinstance(node, ast.Call)
+              and isinstance(node.func, ast.Name)
+              and node.func.id == "launcher_run"
+          ]
+          if len(calls) != 1:
+              raise SystemExit("selected-Xcode source contract requires exactly one launcher_run call")
+          call = calls[0]
+          if call.keywords:
+              raise SystemExit("selected-Xcode launcher_run may not gain keyword authority")
+          actual = [arg.id if isinstance(arg, ast.Name) else None for arg in call.args]
+          expected = ["field_pid", "source_sha", "freeze_helper_base64", "freeze_helper_blob"]
+          if actual != expected:
+              raise SystemExit(f"selected-Xcode launcher_run authority changed: {actual!r}")
+          assignments = [
+              node
+              for node in ast.walk(orchestrates[0])
+              if isinstance(node, ast.Assign) and node.value is call
+          ]
+          if (
+              len(assignments) != 1
+              or len(assignments[0].targets) != 1
+              or not isinstance(assignments[0].targets[0], ast.Name)
+              or assignments[0].targets[0].id != "freeze_result"
+          ):
+              raise SystemExit("selected-Xcode launcher result must remain bound to freeze_result")
+          print("selected-Xcode launcher source contract: PASS")
+          PY
           grep -Fq 'run_custodied_build(' "$selected_xcode_orchestrator"
           grep -Fq 'DEVELOPER_DIR={frozen_developer}' "$selected_xcode_orchestrator"
           grep -Fq 'def _invalidate_invoker_sudo(' "$build_origin_custody"
