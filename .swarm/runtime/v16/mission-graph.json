@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 52,
+    "classifiedPRTotal": 50,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1495,17 +1495,6 @@
         "similarity": 0.369,
         "title": "[Capture P0][RED TEAM] Replay final-child splice on current accepted-input head"
       },
-      "3478": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3478,
-        "recommendedAction": "independent-review",
-        "similarity": 0.361,
-        "title": "[Capture P0][TEST] Use structured field credentials in root-custody witness"
-      },
       "3481": {
         "classification": "superseded",
         "destructiveActionAllowed": false,
@@ -1528,17 +1517,6 @@
         "similarity": 0.381,
         "title": "[Capture P0][CI] Make launcher provenance contract semantic"
       },
-      "3490": {
-        "classification": "superseded",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "662a63cf5179d54712214d78d01542e51e71148e",
-        "lane": "capture-signed-install-custody",
-        "pr": 3490,
-        "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.376,
-        "title": "[Capture P0][VALIDATION] Re-anchor accepted build-root custody after selector repair"
-      },
       "3491": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1547,7 +1525,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3491,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.34,
+        "similarity": 0.335,
         "title": "[Capture P0][VALIDATION] Re-anchor sealed helper sibling bundle to F1BE custody"
       },
       "3492": {
@@ -1572,17 +1550,6 @@
         "similarity": 0.08,
         "title": "[Dashboard V17][RECOVERY] Ship signature battery / learned-range instrument"
       },
-      "3499": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3499,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.369,
-        "title": "[Capture P0][RED TEAM] Attack held repository-root generation across subjects"
-      },
       "3500": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1591,7 +1558,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3500,
         "recommendedAction": "independent-review",
-        "similarity": 0.383,
+        "similarity": 0.371,
         "title": "[Capture P0][TEST] Carry structured field launch onto F1BE root custody"
       },
       "3505": {
@@ -1602,7 +1569,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3505,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.361,
+        "similarity": 0.377,
         "title": "[Capture P0][REPAIR] Close postcheck sibling splice on current parent"
       },
       "3506": {
@@ -1613,7 +1580,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3506,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.373,
+        "similarity": 0.314,
         "title": "[Capture P0][REPAIR] Fence generated repository-root membership generation"
       },
       "3507": {
@@ -1635,8 +1602,19 @@
         "lane": "capture-signed-install-custody",
         "pr": 3508,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.347,
+        "similarity": 0.341,
         "title": "[Capture P0][QA] Admit composed two-OS accepted-input workflow in continuity scope"
+      },
+      "3509": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3509,
+        "recommendedAction": "independent-review",
+        "similarity": 0.338,
+        "title": "[Capture P0][CONVERGENCE] Close generated parent + root generation races"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1669,7 +1647,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:37:10Z",
+    "liveRefreshAt": "2026-08-16T06:37:30Z",
     "liveRefreshDuplicatesSuppressed": [
       3508
     ],
@@ -5454,10 +5432,10 @@
       "userValue": 7
     }
   },
-  "revision": 751,
+  "revision": 752,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:37:12Z",
+  "updatedAt": "2026-08-16T06:37:33Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5533,7 +5511,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:37:10Z",
+      "updatedAt": "2026-08-16T06:37:30Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
