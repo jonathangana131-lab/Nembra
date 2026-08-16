@@ -405,8 +405,21 @@ def _open_subject(
                 return descriptor, metadata, "file"
             child = _open_directory_at(current, component, relative)
             if not is_last and directory_cache is not None:
-                held = os.dup(child)
-                directory_cache[relative] = (held, os.fstat(held))
+                held: int | None = None
+                try:
+                    held = os.dup(child)
+                    directory_cache[relative] = (held, os.fstat(held))
+                except Exception:
+                    if held is not None:
+                        try:
+                            os.close(held)
+                        except OSError:
+                            pass
+                    try:
+                        os.close(child)
+                    except OSError:
+                        pass
+                    raise
             os.close(current)
             current = child
         metadata = os.fstat(current)
