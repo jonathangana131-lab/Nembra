@@ -1,0 +1,71 @@
+name: Capture Fold Generated Root Continuity Once
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-final-child-parent-revalidation-on-3359-sol
+    paths:
+      - scripts/ci/fold_generated_root_generation_continuity_once.py
+      - .github/workflows/capture-fold-generated-root-continuity-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  EXACT_PARENT: f1be1b584e8b568fb8c3998adad3ee0b29004fdc
+
+jobs:
+  fold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repair/v17-capture-final-child-parent-revalidation-on-3359-sol
+          fetch-depth: 0
+
+      - name: Bind exact authoring child
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-fold-generated-root-continuity-once.yml \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/fold_generated_root_generation_continuity_once.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Apply root-generation continuity repair
+        run: python3 scripts/ci/fold_generated_root_generation_continuity_once.py
+
+      - name: Verify combined chronology repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          git diff --check
+          changed="$(git diff --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+
+      - name: Publish permanent repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          git commit -m "fix(capture): bind generated root generation across subjects"
+          git push origin HEAD:repair/v17-capture-final-child-parent-revalidation-on-3359-sol
