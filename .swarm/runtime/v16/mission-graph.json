@@ -1462,17 +1462,6 @@
         "similarity": 0.062,
         "title": "[Dashboard V17][RECOVERY] Ship signature battery / learned-range instrument"
       },
-      "3512": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3512,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.228,
-        "title": "[Capture P0][RED TEAM] Reject absolute workspace escape from accepted root"
-      },
       "3513": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1505,6 +1494,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.38,
         "title": "[Capture P0][CONVERGENCE] Preserve cached-parent FD ownership"
+      },
+      "3516": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3516,
+        "recommendedAction": "independent-review",
+        "similarity": 0.229,
+        "title": "[Capture P0][REPAIR INGREDIENT] Bind strict workspace to accepted root"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1537,9 +1537,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:42:41Z",
+    "liveRefreshAt": "2026-08-16T06:43:00Z",
     "liveRefreshDuplicatesSuppressed": [
-      3512
+      3416
     ],
     "liveRefreshMainSHA": "7154479d4ea0a1914eb565b5cd235968a5985443",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5322,10 +5322,10 @@
       "userValue": 7
     }
   },
-  "revision": 768,
+  "revision": 769,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:42:42Z",
+  "updatedAt": "2026-08-16T06:43:01Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5401,7 +5401,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:42:41Z",
+      "updatedAt": "2026-08-16T06:43:00Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
