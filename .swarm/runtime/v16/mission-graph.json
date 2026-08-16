@@ -1448,7 +1448,7 @@
         "lane": "",
         "pr": 3432,
         "recommendedAction": "independent-review",
-        "similarity": 0.19,
+        "similarity": 0.205,
         "title": "[Capture P0][ADVERSARIAL] Prove sibling-entry generation splice"
       },
       "3433": {
@@ -1481,7 +1481,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3436,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.282,
+        "similarity": 0.278,
         "title": "[Capture P0][RED TEAM] Attack child entries under held generated ancestor"
       },
       "3438": {
@@ -1528,17 +1528,6 @@
         "similarity": 0.368,
         "title": "[Vehicle/Controls V15] Clear full persistent Navigation footprint"
       },
-      "3453": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3453,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.342,
-        "title": "[Capture P0][REPAIR] Bind macOS casefold regression scope"
-      },
       "3454": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1558,8 +1547,19 @@
         "lane": "capture-signed-install-custody",
         "pr": 3455,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.329,
+        "similarity": 0.3,
         "title": "[Capture P0][REPAIR] Compose macOS casefold portability into continuity gate"
+      },
+      "3456": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3456,
+        "recommendedAction": "independent-review",
+        "similarity": 0.211,
+        "title": "[Capture P0][INTERNAL] Compose shared-ancestor repair onto repaired parent"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1592,7 +1592,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:20:37Z",
+    "liveRefreshAt": "2026-08-16T06:20:55Z",
     "liveRefreshDuplicatesSuppressed": [
       3436
     ],
@@ -5377,10 +5377,10 @@
       "userValue": 7
     }
   },
-  "revision": 698,
+  "revision": 699,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:20:39Z",
+  "updatedAt": "2026-08-16T06:20:57Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5456,7 +5456,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:20:37Z",
+      "updatedAt": "2026-08-16T06:20:55Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
