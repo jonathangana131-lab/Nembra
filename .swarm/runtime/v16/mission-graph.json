@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 45,
+    "classifiedPRTotal": 42,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1385,17 +1385,6 @@
         "similarity": 0.38,
         "title": "[Capture P0][REPAIR] Bind private symlink policy to held descriptor generation"
       },
-      "3433": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3433,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.242,
-        "title": "[Capture P0][RED TEAM] Prove shared-ancestor cache-dup FD cleanup leak"
-      },
       "3435": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1406,17 +1395,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.152,
         "title": "[Capture P0][RECOVERY] Execute full numeric-principal materializer without stale rewrite"
-      },
-      "3436": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3436,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.264,
-        "title": "[Capture P0][RED TEAM] Attack child entries under held generated ancestor"
       },
       "3447": {
         "classification": "validation",
@@ -1536,19 +1514,8 @@
         "lane": "capture-signed-install-custody",
         "pr": 3506,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.357,
+        "similarity": 0.348,
         "title": "[Capture P0][REPAIR] Fence generated repository-root membership generation"
-      },
-      "3507": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "bf2f1e1d718849ef6741ec532e28975527311e95",
-        "lane": "capture-signed-install-custody",
-        "pr": 3507,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.253,
-        "title": "[Capture P0][INTEGRATION] Execute selected Xcode build from sealed accepted root"
       },
       "3508": {
         "classification": "validation",
@@ -1558,7 +1525,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3508,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.332,
+        "similarity": 0.324,
         "title": "[Capture P0][QA] Admit composed two-OS accepted-input workflow in continuity scope"
       }
     },
@@ -1592,7 +1559,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:38:53Z",
+    "liveRefreshAt": "2026-08-16T06:39:10Z",
     "liveRefreshDuplicatesSuppressed": [
       3508
     ],
@@ -5377,10 +5344,10 @@
       "userValue": 7
     }
   },
-  "revision": 757,
+  "revision": 758,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:38:55Z",
+  "updatedAt": "2026-08-16T06:39:12Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5456,7 +5423,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:38:53Z",
+      "updatedAt": "2026-08-16T06:39:10Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
