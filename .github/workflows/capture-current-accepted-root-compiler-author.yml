@@ -1,0 +1,344 @@
+name: Capture Current Accepted Root Compiler Author
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-current-accepted-root-compiler-author.yml
+      - .github/workflows/capture-current-accepted-root-compiler-composition.yml
+
+permissions:
+  contents: write
+
+jobs:
+  compose:
+    if: github.head_ref == 'integration/v17-capture-current-accepted-root-compiler-gpt56sol-20260815'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CURRENT_PARENT: 121abefc62d2663fe7eb248ec9595d882fa9d900
+      LEASE_HEAD: 598aa595a6f7c95db98d9fcae87c09f54d8e90fe
+      ROOT_BASE: 662a63cf5179d54712214d78d01542e51e71148e
+      ROOT_HEAD: bf2f1e1d718849ef6741ec532e28975527311e95
+      WORKSPACE_HEAD: 6ff2eb6320aa3c01fd142549e1140674750c5961
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind current parent and accepted ingredients
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$CURRENT_PARENT")" = "$CURRENT_PARENT"
+          for sha in "$LEASE_HEAD" "$ROOT_BASE" "$ROOT_HEAD" "$WORKSPACE_HEAD"; do
+            if ! git cat-file -e "$sha^{commit}" 2>/dev/null; then
+              git fetch --no-tags origin "$sha"
+            fi
+            git cat-file -e "$sha^{commit}"
+          done
+
+      - name: Compose latest lease with accepted-root and workspace fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          path=scripts/ci/capture_selected_xcode_build_orchestrator.py
+          tmp="$RUNNER_TEMP/nembra-current-compiler"
+          mkdir -p "$tmp"
+
+          git show "$LEASE_HEAD:$path" > "$tmp/current.py"
+          git show "$ROOT_BASE:$path" > "$tmp/root-base.py"
+          git show "$ROOT_HEAD:$path" > "$tmp/root-head.py"
+          set +e
+          git merge-file -p "$tmp/current.py" "$tmp/root-base.py" "$tmp/root-head.py" > "$tmp/merged-root.py"
+          status=$?
+          set -e
+          if (( status != 0 )); then
+            cat "$tmp/merged-root.py"
+            echo 'accepted-root merge produced conflicts' >&2
+            exit 1
+          fi
+
+          git show "$ROOT_HEAD:$path" > "$tmp/workspace-base.py"
+          git show "$WORKSPACE_HEAD:$path" > "$tmp/workspace-head.py"
+          set +e
+          git merge-file -p "$tmp/merged-root.py" "$tmp/workspace-base.py" "$tmp/workspace-head.py" > "$tmp/merged-workspace.py"
+          status=$?
+          set -e
+          if (( status != 0 )); then
+            cat "$tmp/merged-workspace.py"
+            echo 'workspace-fence merge produced conflicts' >&2
+            exit 1
+          fi
+          cp "$tmp/merged-workspace.py" "$path"
+
+          git show "$LEASE_HEAD:scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py" \
+            > scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py
+          git show "$WORKSPACE_HEAD:scripts/ci/tests/test_capture_accepted_root_build_composition.py" \
+            > scripts/ci/tests/test_capture_accepted_root_build_composition.py
+
+      - name: Close whole-root compiler read gap
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+
+          helper = Path('scripts/ci/capture_selected_xcode_build_orchestrator.py')
+          text = helper.read_text(encoding='utf-8')
+          rejected = '''            if not relative.parts:\n                raise SelectedXcodeBuildOrchestratorError(\n                    "private read-lease subject may not be the repository root"\n                )\n'''
+          if text.count(rejected) != 1:
+              raise SystemExit('whole-root rejection shape moved')
+          text = text.replace(rejected, '', 1)
+
+          narrow = '''            private_subjects = (\n                accepted_root / CANONICAL_SDK_RELATIVE,\n                accepted_root / CANONICAL_RUNTIME_RELATIVE,\n            )\n'''
+          broad = '''            private_subjects = (accepted_root,)\n'''
+          if text.count(narrow) != 1:
+              raise SystemExit('strict private-subject shape moved')
+          text = text.replace(narrow, broad, 1)
+          helper.write_text(text, encoding='utf-8')
+
+          test = Path('scripts/ci/tests/test_capture_accepted_root_build_composition.py')
+          source = test.read_text(encoding='utf-8')
+          expected = '''                (\n                    accepted_root / helper.CANONICAL_SDK_RELATIVE,\n                    accepted_root / helper.CANONICAL_RUNTIME_RELATIVE,\n                ),\n'''
+          if source.count(expected) != 1:
+              raise SystemExit('strict lease expectation shape moved')
+          source = source.replace(expected, '(accepted_root,),\n', 1)
+          test.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Add deterministic whole-root lease regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > scripts/ci/tests/test_capture_accepted_root_whole_read_lease.py <<'PY'
+          #!/usr/bin/env python3
+          """Require strict accepted-root mode to plan the complete compiler input tree."""
+          from __future__ import annotations
+          import importlib.util
+          from pathlib import Path
+          import tempfile
+          import unittest
+
+          REPOSITORY = Path(__file__).resolve().parents[3]
+          ORCHESTRATOR = REPOSITORY / "scripts/ci/capture_selected_xcode_build_orchestrator.py"
+
+          def load():
+              spec = importlib.util.spec_from_file_location("nembra_whole_root_lease", ORCHESTRATOR)
+              if spec is None or spec.loader is None:
+                  raise RuntimeError("could not load orchestrator")
+              module = importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(module)
+              return module
+
+          def seed(root: Path) -> tuple[Path, ...]:
+              (root / "NembraCapture.xcworkspace").mkdir(parents=True)
+              (root / "NembraCapture.xcworkspace/contents.xcworkspacedata").write_text("<Workspace/>\n")
+              (root / "Pods/Fixture").mkdir(parents=True)
+              (root / "Pods/Fixture/pod.swift").write_text("// pod\n")
+              (root / "Sources").mkdir()
+              (root / "Sources/App.swift").write_text("let accepted = true\n")
+              (root / "LocalSecrets/TuyaSDK").mkdir(parents=True)
+              (root / "LocalSecrets/TuyaSDK/sdk.bin").write_bytes(b"sdk")
+              (root / "LocalSecrets/TuyaRuntime").mkdir(parents=True)
+              (root / "LocalSecrets/TuyaRuntime/runtime.bin").write_bytes(b"runtime")
+              (root / "Podfile.lock").write_text("PODS:\n")
+              return (
+                  root / "Podfile.lock",
+                  root / "NembraCapture.xcworkspace",
+                  root / "NembraCapture.xcworkspace/contents.xcworkspacedata",
+                  root / "Pods",
+                  root / "Pods/Fixture/pod.swift",
+                  root / "Sources/App.swift",
+                  root / "LocalSecrets/TuyaSDK/sdk.bin",
+                  root / "LocalSecrets/TuyaRuntime/runtime.bin",
+              )
+
+          class WholeRootLeaseTests(unittest.TestCase):
+              def test_repository_root_subject_recursively_plans_all_compiler_inputs(self) -> None:
+                  helper = load()
+                  with tempfile.TemporaryDirectory(prefix="nembra-whole-root-", dir=REPOSITORY) as raw:
+                      root = Path(raw) / "accepted"
+                      root.mkdir()
+                      required = seed(root)
+                      plan = helper._lease_paths((root,), root)
+                      planned = {path for path, _host_only in plan}
+                      self.assertIn(root, planned)
+                      for path in required:
+                          self.assertIn(path, planned, path)
+
+              def test_strict_source_shape_uses_one_complete_root_subject(self) -> None:
+                  source = ORCHESTRATOR.read_text(encoding="utf-8")
+                  strict = source[source.index("if accepted_generated_manifest_sha256 is not None:"):]
+                  self.assertIn("private_subjects = (accepted_root,)", strict)
+                  self.assertIn("lease_repo = accepted_root", strict)
+                  self.assertIn("build_cwd = accepted_root", strict)
+                  self.assertNotIn(
+                      "accepted_root / CANONICAL_SDK_RELATIVE,\n                accepted_root / CANONICAL_RUNTIME_RELATIVE,",
+                      strict,
+                  )
+
+          if __name__ == "__main__":
+              unittest.main(verbosity=2)
+          PY
+
+      - name: Add real macOS root/non-root lease witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py <<'PY'
+          #!/usr/bin/env python3
+          """Real Darwin witness for ephemeral complete accepted-root compiler authority."""
+          from __future__ import annotations
+          import argparse
+          import importlib.util
+          import os
+          from pathlib import Path
+          import pwd
+          import shutil
+          import subprocess
+          import sys
+          import tempfile
+          import unittest
+
+          REPOSITORY = Path(__file__).resolve().parents[3]
+          ORCHESTRATOR = REPOSITORY / "scripts/ci/capture_selected_xcode_build_orchestrator.py"
+
+          def load():
+              spec = importlib.util.spec_from_file_location("nembra_real_whole_root_lease", ORCHESTRATOR)
+              if spec is None or spec.loader is None:
+                  raise RuntimeError("could not load orchestrator")
+              module = importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(module)
+              return module
+
+          def field_run(field, groups, source: str, *paths: Path):
+              extras = sorted({int(group) for group in groups if int(group) != field.pw_gid and int(group) > 0})
+              return subprocess.run(
+                  ["/usr/bin/python3", "-I", "-c", source, *[str(path) for path in paths]],
+                  stdin=subprocess.DEVNULL,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  text=True,
+                  check=False,
+                  user=field.pw_uid,
+                  group=field.pw_gid,
+                  extra_groups=extras,
+              )
+
+          def seed(root: Path):
+              (root / "NembraCapture.xcworkspace").mkdir(parents=True)
+              (root / "NembraCapture.xcworkspace/contents.xcworkspacedata").write_text("<Workspace/>\n")
+              (root / "Pods/FrameworkA").mkdir(parents=True)
+              (root / "Pods/FrameworkA/module.bin").write_bytes(b"module")
+              (root / "Pods/FrameworkCurrent").symlink_to("FrameworkA", target_is_directory=True)
+              (root / "Sources").mkdir()
+              (root / "Sources/App.swift").write_text("let accepted = true\n")
+              (root / "LocalSecrets/TuyaSDK").mkdir(parents=True)
+              (root / "LocalSecrets/TuyaSDK/sdk.bin").write_bytes(b"sdk")
+              (root / "LocalSecrets/TuyaRuntime").mkdir(parents=True)
+              (root / "LocalSecrets/TuyaRuntime/runtime.bin").write_bytes(b"runtime")
+              (root / "Podfile.lock").write_text("PODS:\n")
+              for current_raw, directories, files in os.walk(root, followlinks=False):
+                  current = Path(current_raw)
+                  os.chown(current, 0, 0)
+                  os.chmod(current, 0o700)
+                  for name in directories:
+                      candidate = current / name
+                      if candidate.is_symlink():
+                          os.lchown(candidate, 0, 0)
+                  for name in files:
+                      candidate = current / name
+                      if candidate.is_symlink():
+                          os.lchown(candidate, 0, 0)
+                      else:
+                          os.chown(candidate, 0, 0)
+                          os.chmod(candidate, 0o600)
+
+          class RealWholeRootLeaseTests(unittest.TestCase):
+              @classmethod
+              def setUpClass(cls):
+                  if sys.platform != "darwin" or os.geteuid() != 0:
+                      raise RuntimeError("real whole-root lease witness requires root on Darwin")
+                  cls.field = pwd.getpwnam(os.environ["NEMBRA_TEST_FIELD_USER"])
+                  cls.groups = tuple(os.getgrouplist(cls.field.pw_name, cls.field.pw_gid))
+
+              def setUp(self):
+                  self.outer = Path(tempfile.mkdtemp(prefix="nembra-real-whole-root-", dir="/private/tmp"))
+                  os.chown(self.outer, 0, 0)
+                  os.chmod(self.outer, 0o700)
+
+              def tearDown(self):
+                  shutil.rmtree(self.outer, ignore_errors=True)
+
+              def test_complete_root_is_readable_only_during_lease(self):
+                  helper = load()
+                  root = self.outer / "accepted"
+                  root.mkdir(mode=0o700)
+                  seed(root)
+                  targets = (
+                      root / "Podfile.lock",
+                      root / "NembraCapture.xcworkspace/contents.xcworkspacedata",
+                      root / "Pods/FrameworkCurrent/module.bin",
+                      root / "Sources/App.swift",
+                      root / "LocalSecrets/TuyaSDK/sdk.bin",
+                      root / "LocalSecrets/TuyaRuntime/runtime.bin",
+                  )
+                  probe = "from pathlib import Path; import sys; [Path(p).read_bytes() for p in sys.argv[1:]]"
+                  before = field_run(self.field, self.groups, probe, *targets)
+                  self.assertNotEqual(before.returncode, 0)
+
+                  lease = helper._PrivateReadLease((root,), root)
+                  lease.grant(self.field.pw_name)
+                  try:
+                      during = field_run(self.field, self.groups, probe, *targets)
+                      self.assertEqual(during.returncode, 0, during.stderr)
+                  finally:
+                      lease.revoke()
+
+                  self.assertFalse(lease._opened)
+                  self.assertEqual(lease._principal, "")
+                  after = field_run(self.field, self.groups, probe, *targets)
+                  self.assertNotEqual(after.returncode, 0)
+
+          def main():
+              parser = argparse.ArgumentParser()
+              parser.add_argument("--field-user", required=True)
+              args = parser.parse_args()
+              os.environ["NEMBRA_TEST_FIELD_USER"] = args.field_user
+              suite = unittest.defaultTestLoader.loadTestsFromTestCase(RealWholeRootLeaseTests)
+              result = unittest.TextTestRunner(verbosity=2).run(suite)
+              return 0 if result.wasSuccessful() else 1
+
+          if __name__ == "__main__":
+              raise SystemExit(main())
+          PY
+
+      - name: Run portable focused regressions before publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_root_build_composition.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_root_whole_read_lease.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          git diff --check
+
+      - name: Publish permanent convergence tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/capture-current-accepted-root-compiler-author.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_accepted_root_build_composition.py \
+            scripts/ci/tests/test_capture_accepted_root_whole_read_lease.py \
+            scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py \
+            scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py
+          git commit -m 'Capture P0: execute compiler from complete accepted root'
+          git push origin HEAD:${{ github.head_ref }}
