@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 51,
+    "classifiedPRTotal": 53,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1514,7 +1514,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3481,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.425,
+        "similarity": 0.358,
         "title": "[Capture P0][REPAIR] Revalidate held ancestor after final child admission"
       },
       "3489": {
@@ -1572,17 +1572,6 @@
         "similarity": 0.08,
         "title": "[Dashboard V17][RECOVERY] Ship signature battery / learned-range instrument"
       },
-      "3498": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3498,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.432,
-        "title": "[Capture P0][REPAIR] Revalidate cached parent after final child admission"
-      },
       "3499": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1624,8 +1613,41 @@
         "lane": "capture-signed-install-custody",
         "pr": 3503,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.453,
+        "similarity": 0.479,
         "title": "[Capture P0][REPAIR] Bind generated repository-root generation"
+      },
+      "3504": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3504,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.413,
+        "title": "[Capture P0][REPAIR] Hold repository-root generation across generated inputs"
+      },
+      "3505": {
+        "classification": "superseded",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3505,
+        "recommendedAction": "archive-after-evidence-transfer",
+        "similarity": 0.378,
+        "title": "[Capture P0][REPAIR] Close postcheck sibling splice on current parent"
+      },
+      "3506": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3506,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.48,
+        "title": "[Capture P0][REPAIR] Fence generated repository-root membership generation"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1658,7 +1680,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:35:39Z",
+    "liveRefreshAt": "2026-08-16T06:35:56Z",
     "liveRefreshDuplicatesSuppressed": [
       3499
     ],
@@ -5443,10 +5465,10 @@
       "userValue": 7
     }
   },
-  "revision": 746,
+  "revision": 747,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:35:41Z",
+  "updatedAt": "2026-08-16T06:35:59Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5522,7 +5544,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:35:39Z",
+      "updatedAt": "2026-08-16T06:35:56Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
