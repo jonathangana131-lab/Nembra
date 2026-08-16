@@ -16,7 +16,7 @@ struct VehicleControlsVisualClosureSourceTests {
         let source = try vehicleControlsSection()
 
         #expect(source.contains("persistentNavigationViewportClearance"))
-        #expect(source.contains("dynamicTypeSize.isAccessibilitySize ? 144 : 72"))
+        #expect(source.contains("dynamicTypeSize.isAccessibilitySize ? 220 : 164"))
         #expect(source.contains(".padding(.bottom, persistentNavigationViewportClearance)"))
 
         guard let scrollEnd = source.range(of: "\n        }\n        .padding(.bottom, persistentNavigationViewportClearance)") else {
