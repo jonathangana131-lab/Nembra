@@ -383,6 +383,7 @@ def _open_subject(
     root_fd: int,
     subject: Path,
     directory_cache: dict[Path, tuple[int, os.stat_result]] | None = None,
+    root_generation: os.stat_result | None = None,
 ) -> tuple[int, os.stat_result, str]:
     _safe_relative(subject)
     expected_kind = _GENERATED_SUBJECT_KINDS.get(subject)
@@ -390,6 +391,8 @@ def _open_subject(
         raise AcceptedBuildInputSnapshotError(f"unrecognized generated subject: {subject}")
     current = os.dup(root_fd)
     selection_ancestors: list[tuple[int, os.stat_result, Path]] = []
+    if root_generation is not None:
+        selection_ancestors.append((root_fd, root_generation, Path(".")))
 
     def revalidate_selection_ancestors() -> None:
         for descriptor, admitted, relative in selection_ancestors:
@@ -586,12 +589,13 @@ def canonical_generated_manifest(root: Path, source_sha: str) -> bytes:
     records: list[dict[str, object]] = []
     seen: set[Path] = set()
     root_fd = _open_repository_root(root)
+    root_generation = os.fstat(root_fd)
     directory_cache: dict[Path, tuple[int, os.stat_result]] = {}
     try:
         for subject in GENERATED_SUBJECTS:
             if subject in seen:
                 raise AcceptedBuildInputSnapshotError(f"overlapping build-input subject: {subject}")
-            descriptor, metadata, kind = _open_subject(root_fd, subject, directory_cache)
+            descriptor, metadata, kind = _open_subject(root_fd, subject, directory_cache, root_generation)
             try:
                 record: dict[str, object] = {"path": subject.as_posix()}
                 if kind == "file":
@@ -615,6 +619,7 @@ def canonical_generated_manifest(root: Path, source_sha: str) -> bytes:
                     _manifest_directory(descriptor, subject, records, seen)
             finally:
                 os.close(descriptor)
+        _assert_directory_generation(root_fd, root_generation, Path("."))
     finally:
         _close_directory_cache(directory_cache)
         os.close(root_fd)
@@ -774,10 +779,11 @@ def _copy_generated_subjects(source_root: Path, destination_root: Path) -> None:
     source_root = _absolute(source_root)
     destination_root = _absolute(destination_root)
     root_fd = _open_repository_root(source_root)
+    root_generation = os.fstat(root_fd)
     directory_cache: dict[Path, tuple[int, os.stat_result]] = {}
     try:
         for subject in GENERATED_SUBJECTS:
-            descriptor, metadata, kind = _open_subject(root_fd, subject, directory_cache)
+            descriptor, metadata, kind = _open_subject(root_fd, subject, directory_cache, root_generation)
             try:
                 if kind == "file":
                     _copy_open_file(
@@ -790,6 +796,7 @@ def _copy_generated_subjects(source_root: Path, destination_root: Path) -> None:
                     _copy_directory_fd(descriptor, destination_root, subject)
             finally:
                 os.close(descriptor)
+        _assert_directory_generation(root_fd, root_generation, Path("."))
     finally:
         _close_directory_cache(directory_cache)
         os.close(root_fd)

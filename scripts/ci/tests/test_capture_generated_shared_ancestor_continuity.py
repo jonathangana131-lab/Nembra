@@ -67,13 +67,13 @@ class CaptureGeneratedSharedAncestorContinuityTests(unittest.TestCase):
             original_open = helper._open_subject
             swapped = False
 
-            def swap_before_runtime(root_fd: int, subject: Path, directory_cache=None):
+            def swap_before_runtime(root_fd: int, subject: Path, directory_cache=None, root_generation=None):
                 nonlocal swapped
                 if subject == Path("LocalSecrets/TuyaRuntime") and not swapped:
                     (root / "LocalSecrets").rename(root / "LocalSecrets.A.attack")
                     generation_b.rename(root / "LocalSecrets")
                     swapped = True
-                return original_open(root_fd, subject, directory_cache)
+                return original_open(root_fd, subject, directory_cache, root_generation)
 
             try:
                 with mock.patch.object(helper, "_open_subject", side_effect=swap_before_runtime):
@@ -107,13 +107,13 @@ class CaptureGeneratedSharedAncestorContinuityTests(unittest.TestCase):
             original_open = helper._open_subject
             swapped = False
 
-            def swap_before_runtime(root_fd: int, subject: Path, directory_cache=None):
+            def swap_before_runtime(root_fd: int, subject: Path, directory_cache=None, root_generation=None):
                 nonlocal swapped
                 if subject == Path("LocalSecrets/TuyaRuntime") and not swapped:
                     (root / "LocalSecrets").rename(root / "LocalSecrets.A.attack")
                     generation_b.rename(root / "LocalSecrets")
                     swapped = True
-                return original_open(root_fd, subject, directory_cache)
+                return original_open(root_fd, subject, directory_cache, root_generation)
 
             try:
                 with mock.patch.object(helper, "_open_subject", side_effect=swap_before_runtime):
@@ -141,14 +141,14 @@ class CaptureGeneratedSharedAncestorContinuityTests(unittest.TestCase):
             original_open = helper._open_subject
             swapped = False
 
-            def splice_runtime_inside_parent(root_fd: int, subject: Path, directory_cache=None):
+            def splice_runtime_inside_parent(root_fd: int, subject: Path, directory_cache=None, root_generation=None):
                 nonlocal swapped
                 if subject == Path("LocalSecrets/TuyaRuntime") and not swapped:
                     active = root / "LocalSecrets"
                     (active / "TuyaRuntime").rename(active / "TuyaRuntime.A.attack")
                     (generation_b / "TuyaRuntime").rename(active / "TuyaRuntime")
                     swapped = True
-                return original_open(root_fd, subject, directory_cache)
+                return original_open(root_fd, subject, directory_cache, root_generation)
 
             try:
                 with mock.patch.object(helper, "_open_subject", side_effect=splice_runtime_inside_parent):
@@ -182,14 +182,14 @@ class CaptureGeneratedSharedAncestorContinuityTests(unittest.TestCase):
             original_open = helper._open_subject
             swapped = False
 
-            def splice_runtime_inside_parent(root_fd: int, subject: Path, directory_cache=None):
+            def splice_runtime_inside_parent(root_fd: int, subject: Path, directory_cache=None, root_generation=None):
                 nonlocal swapped
                 if subject == Path("LocalSecrets/TuyaRuntime") and not swapped:
                     active = root / "LocalSecrets"
                     (active / "TuyaRuntime").rename(active / "TuyaRuntime.A.attack")
                     (generation_b / "TuyaRuntime").rename(active / "TuyaRuntime")
                     swapped = True
-                return original_open(root_fd, subject, directory_cache)
+                return original_open(root_fd, subject, directory_cache, root_generation)
 
             try:
                 with mock.patch.object(helper, "_open_subject", side_effect=splice_runtime_inside_parent):
@@ -264,6 +264,88 @@ class CaptureGeneratedSharedAncestorContinuityTests(unittest.TestCase):
             self.assertFalse(
                 (destination / "LocalSecrets/TuyaRuntime/identity.bin").exists()
             )
+
+
+    def test_manifest_rejects_root_sibling_generation_splice(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(prefix="nembra-root-sibling-manifest-reject-") as raw:
+            root = Path(raw)
+            seed_common(root)
+            generation = make_generation(root, "LocalSecrets.A", b"SDK-A\n", b"RUNTIME-A\n")
+            generation.rename(root / "LocalSecrets")
+            attack = root / "attacker"
+            attack.mkdir()
+            replacement_lock = attack / "Podfile.lock.B"
+            replacement_lock.write_text("PODS:\n  - Replacement\n", encoding="utf-8")
+            replacement_pods = attack / "Pods.B"
+            replacement_pods.mkdir()
+            (replacement_pods / "SyntheticPod.swift").write_text("// pod B\n", encoding="utf-8")
+            original_open = helper._open_subject
+            swapped = False
+
+            def splice_before_pods(
+                root_fd: int,
+                subject: Path,
+                directory_cache=None,
+                root_generation=None,
+            ):
+                nonlocal swapped
+                if subject == Path("Pods") and not swapped:
+                    (root / "Podfile.lock").rename(attack / "Podfile.lock.A")
+                    replacement_lock.rename(root / "Podfile.lock")
+                    (root / "Pods").rename(attack / "Pods.A")
+                    replacement_pods.rename(root / "Pods")
+                    swapped = True
+                return original_open(root_fd, subject, directory_cache, root_generation)
+
+            with mock.patch.object(helper, "_open_subject", side_effect=splice_before_pods):
+                with self.assertRaises(helper.AcceptedBuildInputSnapshotError):
+                    helper.canonical_generated_manifest(root, SOURCE_SHA)
+            self.assertTrue(swapped)
+
+    def test_copy_rejects_root_sibling_generation_splice_before_new_subject_is_consumed(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(prefix="nembra-root-sibling-copy-reject-") as raw:
+            root = Path(raw)
+            seed_common(root)
+            generation = make_generation(root, "LocalSecrets.A", b"SDK-A\n", b"RUNTIME-A\n")
+            generation.rename(root / "LocalSecrets")
+            destination = root / "stage"
+            destination.mkdir()
+            attack = root / "attacker"
+            attack.mkdir()
+            replacement_lock = attack / "Podfile.lock.B"
+            replacement_lock.write_text("PODS:\n  - Replacement\n", encoding="utf-8")
+            replacement_pods = attack / "Pods.B"
+            replacement_pods.mkdir()
+            (replacement_pods / "SyntheticPod.swift").write_text("// pod B\n", encoding="utf-8")
+            original_open = helper._open_subject
+            swapped = False
+
+            def splice_before_pods(
+                root_fd: int,
+                subject: Path,
+                directory_cache=None,
+                root_generation=None,
+            ):
+                nonlocal swapped
+                if subject == Path("Pods") and not swapped:
+                    (root / "Podfile.lock").rename(attack / "Podfile.lock.A")
+                    replacement_lock.rename(root / "Podfile.lock")
+                    (root / "Pods").rename(attack / "Pods.A")
+                    replacement_pods.rename(root / "Pods")
+                    swapped = True
+                return original_open(root_fd, subject, directory_cache, root_generation)
+
+            with mock.patch.object(helper, "_open_subject", side_effect=splice_before_pods):
+                with self.assertRaises(helper.AcceptedBuildInputSnapshotError):
+                    helper._copy_generated_subjects(root, destination)
+            self.assertTrue(swapped)
+            self.assertEqual(
+                (destination / "Podfile.lock").read_text(encoding="utf-8"),
+                "PODS:\n  - Synthetic\n",
+            )
+            self.assertFalse((destination / "Pods/SyntheticPod.swift").exists())
 
 
     def test_cache_dup_failure_closes_newly_opened_child_descriptor(self) -> None:
