@@ -1,0 +1,100 @@
+name: Capture Accepted Build Root Custody Current
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/capture_accepted_build_root_custody.py
+      - scripts/ci/tests/test_capture_accepted_build_root_custody.py
+      - .github/workflows/capture-accepted-build-root-custody-current.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-accepted-build-root-custody-current-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_ACCEPTED_INPUT_PARENT: dde5074c91c077911cd40bab615ad0d0d0a9b683
+  ACCEPTED_ROOT_HELPER_BLOB: 2eb437eaf2e5d46f784c05ea666ebeb92ba9175c
+  ACCEPTED_ROOT_WITNESS_BLOB: 1532a3b728e3562c090837b0f4d62f655c9a14d1
+  PYTHONDONTWRITEBYTECODE: 1
+
+jobs:
+  custody:
+    name: Prove current-selector root custody
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact current-selector additive child
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$EXACT_ACCEPTED_INPUT_PARENT")" = "$EXACT_ACCEPTED_INPUT_PARENT"
+          actual="$(git diff --name-only "$EXACT_ACCEPTED_INPUT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-accepted-build-root-custody-current.yml \
+            scripts/ci/capture_accepted_build_root_custody.py \
+            scripts/ci/tests/test_capture_accepted_build_root_custody.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          test "$(git rev-parse "HEAD:scripts/ci/capture_accepted_build_root_custody.py")" = "$ACCEPTED_ROOT_HELPER_BLOB"
+          test "$(git rev-parse "HEAD:scripts/ci/tests/test_capture_accepted_build_root_custody.py")" = "$ACCEPTED_ROOT_WITNESS_BLOB"
+          test "$(git rev-parse "HEAD:scripts/ci/capture_accepted_build_input_snapshot.py")" = "$(git rev-parse "$EXACT_ACCEPTED_INPUT_PARENT:scripts/ci/capture_accepted_build_input_snapshot.py")"
+          git diff --check "$EXACT_ACCEPTED_INPUT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile exact helper plus current selector
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+          for raw in (
+              "scripts/ci/capture_accepted_build_input_snapshot.py",
+              "scripts/ci/capture_accepted_build_root_custody.py",
+              "scripts/ci/tests/test_capture_accepted_build_root_custody.py",
+          ):
+              path = Path(raw)
+              compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
+          PY
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Require noninteractive root authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/sudo -n /usr/bin/true
+
+      - name: Prove current selector seals against real field identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          field_user="$(/usr/bin/id -un)"
+          /usr/bin/sudo -n env \
+            NEMBRA_TEST_FIELD_USER="$field_user" \
+            PYTHONDONTWRITEBYTECODE=1 \
+            /usr/bin/python3 -B -I \
+            scripts/ci/tests/test_capture_accepted_build_root_custody.py \
+            --field-user "$field_user"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Preserve root-custody truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          helper=scripts/ci/capture_accepted_build_root_custody.py
+          grep -Fq 'snapshot.stage_accepted_build_inputs(' "$helper"
+          grep -Fq 'os.chmod(root, 0o700)' "$helper"
+          grep -Fq 'accepted_build_root_fingerprint' "$helper"
+          grep -Fq 'def create_accepted_build_root(' "$helper"
+          echo "NEMBRA_ACCEPTED_BUILD_ROOT_CURRENT currentSelectorParent=$EXACT_ACCEPTED_INPUT_PARENT rootCustodyProved=true xcodeBuildWired=false wholeRootReadLease=false workspaceBound=false signingAuthority=false installAuthority=false deviceTouched=false bluetoothTouched=false physicalAuthorityCreated=false"
