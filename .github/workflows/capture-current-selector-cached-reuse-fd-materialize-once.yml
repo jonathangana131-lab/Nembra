@@ -1,0 +1,157 @@
+name: Capture Current Selector Cached Reuse FD Materialize Once
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-current-selector-cached-reuse-fd-gpt56
+    paths:
+      - .github/workflows/capture-current-selector-cached-reuse-fd-materialize-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      EXACT_PARENT: 2c59ae0a9001987a57c3b5819f546a52d9264db0
+      PYTHONDONTWRITEBYTECODE: 1
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repair/v17-capture-current-selector-cached-reuse-fd-gpt56
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact authoring child
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXACT_PARENT"
+          test "$(git diff --name-only HEAD^...HEAD)" = ".github/workflows/capture-current-selector-cached-reuse-fd-materialize-once.yml"
+          git diff --check HEAD^...HEAD
+
+      - name: Materialize ownership transfer repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+
+          helper = Path("scripts/ci/capture_accepted_build_input_snapshot.py")
+          source = helper.read_text(encoding="utf-8")
+          old = '''                selection_ancestors.append((cached_descriptor, admitted, relative))
+                os.close(current)
+                current = os.dup(cached_descriptor)
+                continue
+'''
+          new = '''                selection_ancestors.append((cached_descriptor, admitted, relative))
+                replacement = os.dup(cached_descriptor)
+                previous = current
+                current = replacement
+                os.close(previous)
+                continue
+'''
+          if source.count(old) != 1:
+              raise SystemExit("cached-reuse ownership seam did not match exactly once")
+          helper.write_text(source.replace(old, new), encoding="utf-8")
+
+          test = Path("scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py")
+          source = test.read_text(encoding="utf-8")
+          marker = '''    def test_cache_dup_failure_closes_newly_opened_child_descriptor(self) -> None:
+'''
+          regression = '''    def test_cached_reuse_dup_failure_does_not_close_reused_fd_number(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(prefix="nembra-cached-reuse-dup-cleanup-") as raw:
+            root = Path(raw)
+            (root / "LocalSecrets/TuyaSDK").mkdir(parents=True)
+            (root / "LocalSecrets/TuyaRuntime").mkdir(parents=True)
+            sentinel_path = root / "sentinel.bin"
+            sentinel_path.write_bytes(b"sentinel\\n")
+            root_fd = helper._open_repository_root(root)
+            cache: dict[Path, tuple[int, os.stat_result]] = {}
+            opened, _metadata, _kind = helper._open_subject(
+                root_fd,
+                Path("LocalSecrets/TuyaSDK"),
+                cache,
+            )
+            os.close(opened)
+            cached_descriptor = cache[Path("LocalSecrets")][0]
+            real_dup = os.dup
+            sentinel_fd: int | None = None
+
+            def fail_cached_reuse(descriptor: int) -> int:
+                nonlocal sentinel_fd
+                if descriptor == cached_descriptor:
+                    sentinel_fd = os.open(sentinel_path, os.O_RDONLY)
+                    raise OSError(errno.EMFILE, "synthetic cached-reuse dup exhaustion")
+                return real_dup(descriptor)
+
+            try:
+                with mock.patch.object(helper.os, "dup", side_effect=fail_cached_reuse):
+                    with self.assertRaisesRegex(OSError, "synthetic cached-reuse dup exhaustion"):
+                        helper._open_subject(
+                            root_fd,
+                            Path("LocalSecrets/TuyaRuntime"),
+                            cache,
+                        )
+                self.assertIsNotNone(sentinel_fd)
+                assert sentinel_fd is not None
+                os.fstat(sentinel_fd)
+                os.fstat(cached_descriptor)
+            finally:
+                if sentinel_fd is not None:
+                    try:
+                        os.close(sentinel_fd)
+                    except OSError:
+                        pass
+                helper._close_directory_cache(cache)
+                os.close(root_fd)
+
+'''
+          if source.count(marker) != 1:
+              raise SystemExit("cached-reuse regression insertion seam did not match exactly once")
+          test.write_text(source.replace(marker, regression + marker), encoding="utf-8")
+          PY
+
+      - name: Prove focused and inherited selector suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+          for raw in (
+              "scripts/ci/capture_accepted_build_input_snapshot.py",
+              "scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py",
+          ):
+              path = Path(raw)
+              compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
+          PY
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          git diff --check
+          changed="$(git diff --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+
+      - name: Publish clean current-carrier repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          git commit -m 'fix(capture): preserve cached reuse fd ownership'
+          git rm .github/workflows/capture-current-selector-cached-reuse-fd-materialize-once.yml
+          git commit -m 'ci(capture): remove cached-reuse materializer'
+          git push origin HEAD:repair/v17-capture-current-selector-cached-reuse-fd-gpt56
+
+      - name: Preserve truth boundary
+        shell: bash
+        run: |
+          echo 'NEMBRA_CURRENT_SELECTOR_FD_REPAIR physicalAuthorityCreated=false deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false'
