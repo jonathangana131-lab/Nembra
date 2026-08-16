@@ -75,12 +75,24 @@ jobs:
         run: |
           set -euo pipefail
           field_user="$(/usr/bin/id -un)"
-          /usr/bin/sudo -n env \
+          set +e
+          output="$(/usr/bin/sudo -n env \
             NEMBRA_TEST_FIELD_USER="$field_user" \
             PYTHONDONTWRITEBYTECODE=1 \
             /usr/bin/python3 -B -I \
             scripts/ci/tests/test_capture_accepted_build_root_custody.py \
-            --field-user "$field_user"
+            --field-user "$field_user" 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if (( status != 0 )); then
+            detail="$(printf '%s\n' "$output" | tail -n 24 | tail -c 4000)"
+            detail="${detail//'%'/'%25'}"
+            detail="${detail//$'\r'/'%0D'}"
+            detail="${detail//$'\n'/'%0A'}"
+            printf '::error file=scripts/ci/tests/test_capture_accepted_build_root_custody.py,title=Root custody witness classifier::%s\n' "$detail"
+            exit "$status"
+          fi
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
       - name: Preserve production-boundary truth
