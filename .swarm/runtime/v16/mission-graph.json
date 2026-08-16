@@ -1448,7 +1448,7 @@
         "lane": "",
         "pr": 3432,
         "recommendedAction": "independent-review",
-        "similarity": 0.205,
+        "similarity": 0.216,
         "title": "[Capture P0][ADVERSARIAL] Prove sibling-entry generation splice"
       },
       "3433": {
@@ -1481,7 +1481,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3436,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.278,
+        "similarity": 0.287,
         "title": "[Capture P0][RED TEAM] Attack child entries under held generated ancestor"
       },
       "3438": {
@@ -1492,7 +1492,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3438,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.31,
+        "similarity": 0.432,
         "title": "[Capture P0][RED TEAM] Attack post-validation symlink retarget"
       },
       "3442": {
@@ -1536,30 +1536,30 @@
         "lane": "capture-private-read-lease",
         "pr": 3454,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.277,
+        "similarity": 0.325,
         "title": "[Capture P0][CI] Re-anchor inherited read-lease rollback fixtures on Darwin"
       },
-      "3455": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "7dbb126d365772bea9f851b721c6f4634e8530cc",
-        "lane": "capture-signed-install-custody",
-        "pr": 3455,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.3,
-        "title": "[Capture P0][REPAIR] Compose macOS casefold portability into continuity gate"
-      },
-      "3456": {
-        "classification": "requires-review",
+      "3457": {
+        "classification": "validation",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
-        "lane": "",
-        "pr": 3456,
-        "recommendedAction": "independent-review",
-        "similarity": 0.211,
-        "title": "[Capture P0][INTERNAL] Compose shared-ancestor repair onto repaired parent"
+        "lane": "capture-private-read-lease",
+        "pr": 3457,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.434,
+        "title": "[Capture P0][RED TEAM] Re-anchor post-validation symlink retarget on current product"
+      },
+      "3458": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3458,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.286,
+        "title": "[Capture P0][REPAIR] Make shared-ancestor acceptance portable on macOS"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1592,7 +1592,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:20:55Z",
+    "liveRefreshAt": "2026-08-16T06:21:14Z",
     "liveRefreshDuplicatesSuppressed": [
       3436
     ],
@@ -5377,10 +5377,10 @@
       "userValue": 7
     }
   },
-  "revision": 699,
+  "revision": 700,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:20:57Z",
+  "updatedAt": "2026-08-16T06:21:16Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5456,7 +5456,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:20:55Z",
+      "updatedAt": "2026-08-16T06:21:14Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
