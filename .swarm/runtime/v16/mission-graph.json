@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 39,
+    "classifiedPRTotal": 40,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1494,6 +1494,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.392,
         "title": "[Capture P0][CI] Re-earn root custody with pre-owned exec bundle"
+      },
+      "3530": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "134bdd16c2832eabfbb4433a2f1e7faf1886173f",
+        "lane": "capture-private-read-lease",
+        "pr": 3530,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.322,
+        "title": "[Capture P0][DIAGNOSTIC] Surface macOS held-symlink transition failure"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1526,7 +1537,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:55:13Z",
+    "liveRefreshAt": "2026-08-16T06:55:33Z",
     "liveRefreshDuplicatesSuppressed": [
       3416
     ],
@@ -5311,10 +5322,10 @@
       "userValue": 7
     }
   },
-  "revision": 799,
+  "revision": 800,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:55:14Z",
+  "updatedAt": "2026-08-16T06:55:34Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5390,7 +5401,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:55:13Z",
+      "updatedAt": "2026-08-16T06:55:33Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
