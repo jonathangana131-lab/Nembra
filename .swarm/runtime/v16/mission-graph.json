@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 38,
+    "classifiedPRTotal": 39,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1235,11 +1235,11 @@
         "classification": "validation",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "",
+        "headSHA": "926954c8970e83151765d11f2497e84ff32f4e37",
         "lane": "capture-signed-install-custody",
         "pr": 3359,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.189,
+        "similarity": 0.191,
         "title": "[Capture P0][VALIDATION] Bind generated CocoaPods/private inputs before source snapshot"
       },
       "3360": {
@@ -1483,6 +1483,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.337,
         "title": "[Capture P0][TEST] Assert held-directory generation failure on macOS"
+      },
+      "3534": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "e56760685ba53e63797ac4a0a5db323fb0e8ca74",
+        "lane": "capture-signed-install-custody",
+        "pr": 3534,
+        "recommendedAction": "independent-review",
+        "similarity": 0.198,
+        "title": "[Capture P0][CI] Admit composed root custody in selector gates"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1515,7 +1526,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:59:48Z",
+    "liveRefreshAt": "2026-08-16T07:00:19Z",
     "liveRefreshDuplicatesSuppressed": [
       3416
     ],
@@ -5300,10 +5311,10 @@
       "userValue": 7
     }
   },
-  "revision": 812,
+  "revision": 813,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:59:50Z",
+  "updatedAt": "2026-08-16T07:00:21Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5379,7 +5390,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:59:48Z",
+      "updatedAt": "2026-08-16T07:00:19Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
