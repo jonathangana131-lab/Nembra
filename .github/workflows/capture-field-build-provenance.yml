@@ -264,7 +264,42 @@ jobs:
           fi
           grep -Fq 'def _replace_selected_xcode(' "$selected_xcode_orchestrator"
           grep -Fq 'caller supplied DEVELOPER_DIR authority is forbidden' "$selected_xcode_orchestrator"
-          grep -Fq 'launcher_run(field_pid, source_sha, freeze_helper_base64, freeze_helper_blob)' "$selected_xcode_orchestrator"
+          /usr/bin/python3 -B -I - "$selected_xcode_orchestrator" <<'PYAST'
+          import ast
+          from pathlib import Path
+          import sys
+
+          tree = ast.parse(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          expected_args = [
+              "field_pid",
+              "source_sha",
+              "freeze_helper_base64",
+              "freeze_helper_blob",
+          ]
+          matches = []
+          for node in ast.walk(tree):
+              if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+                  continue
+              target = node.targets[0]
+              call = node.value
+              if not (isinstance(target, ast.Name) and target.id == "freeze_result"):
+                  continue
+              if not (
+                  isinstance(call, ast.Call)
+                  and isinstance(call.func, ast.Name)
+                  and call.func.id == "launcher_run"
+                  and not call.keywords
+              ):
+                  continue
+              names = [arg.id if isinstance(arg, ast.Name) else None for arg in call.args]
+              if names == expected_args:
+                  matches.append(node)
+          if len(matches) != 1:
+              raise SystemExit(
+                  "selected-Xcode orchestrator must assign freeze_result from exactly one "
+                  "launcher_run(field_pid, source_sha, freeze_helper_base64, freeze_helper_blob) call"
+              )
+          PYAST
           grep -Fq 'run_custodied_build(' "$selected_xcode_orchestrator"
           grep -Fq 'DEVELOPER_DIR={frozen_developer}' "$selected_xcode_orchestrator"
           grep -Fq 'def _invalidate_invoker_sudo(' "$build_origin_custody"
