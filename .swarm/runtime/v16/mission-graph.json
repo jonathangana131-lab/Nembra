@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 44,
+    "classifiedPRTotal": 43,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1088,17 +1088,6 @@
         "similarity": 0.096,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
-      "3320": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3320,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.318,
-        "title": "[Capture P0][VALIDATION] Prove full numeric-principal credential inventory"
-      },
       "3321": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1107,7 +1096,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3321,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.318,
+        "similarity": 0.316,
         "title": "[Capture P0][VALIDATION] Attest former-build mutation authority"
       },
       "3332": {
@@ -1305,7 +1294,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3398,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.273,
+        "similarity": 0.267,
         "title": "[Capture P0][SECURITY] Enforce full numeric-principal admission and retirement"
       },
       "3399": {
@@ -1462,17 +1451,6 @@
         "similarity": 0.381,
         "title": "[Capture P0][CI] Make launcher provenance contract semantic"
       },
-      "3491": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "46a902fae6d1e0a867aa223bdc275b1737fd034a",
-        "lane": "capture-signed-install-custody",
-        "pr": 3491,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.335,
-        "title": "[Capture P0][VALIDATION] Re-anchor sealed helper sibling bundle to F1BE custody"
-      },
       "3492": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1503,7 +1481,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3500,
         "recommendedAction": "independent-review",
-        "similarity": 0.371,
+        "similarity": 0.281,
         "title": "[Capture P0][TEST] Carry structured field launch onto F1BE root custody"
       },
       "3506": {
@@ -1547,8 +1525,19 @@
         "lane": "capture-signed-install-custody",
         "pr": 3513,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.36,
+        "similarity": 0.374,
         "title": "[Capture P0][REPAIR] Compose current selector fences with two-OS QA scope"
+      },
+      "3514": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3514,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.27,
+        "title": "[Capture P0][REPAIR] Preserve cached-reuse descriptor ownership"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1581,7 +1570,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:40:59Z",
+    "liveRefreshAt": "2026-08-16T06:41:15Z",
     "liveRefreshDuplicatesSuppressed": [
       3512
     ],
@@ -5366,10 +5355,10 @@
       "userValue": 7
     }
   },
-  "revision": 762,
+  "revision": 763,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:41:01Z",
+  "updatedAt": "2026-08-16T06:41:17Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5445,7 +5434,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:40:59Z",
+      "updatedAt": "2026-08-16T06:41:15Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
