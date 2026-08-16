@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 40,
+    "classifiedPRTotal": 42,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1239,7 +1239,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3359,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.292,
+        "similarity": 0.295,
         "title": "[Capture P0][VALIDATION] Bind generated CocoaPods/private inputs before source snapshot"
       },
       "3360": {
@@ -1492,7 +1492,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3521,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.401,
+        "similarity": 0.559,
         "title": "[Capture P0][VALIDATION] Re-anchor accepted build-root custody to selector-accepted head"
       },
       "3522": {
@@ -1505,6 +1505,28 @@
         "recommendedAction": "independent-review",
         "similarity": 0.396,
         "title": "[Capture P0][CUSTODY] Seal accepted build root on current selector head"
+      },
+      "3523": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "65b8f090321c550977ab5d1faae0ea548a52f80b",
+        "lane": "capture-signed-install-custody",
+        "pr": 3523,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.553,
+        "title": "[Capture P0][VALIDATION] Re-anchor accepted build-root custody on current selector"
+      },
+      "3524": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "728020e391bda141c8b05b8f48a6f17a2152a861",
+        "lane": "capture-signed-install-custody",
+        "pr": 3524,
+        "recommendedAction": "independent-review",
+        "similarity": 0.323,
+        "title": "[Capture P0][TEST] Restore structured field credentials on DDE root custody"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1537,9 +1559,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:49:43Z",
+    "liveRefreshAt": "2026-08-16T06:50:12Z",
     "liveRefreshDuplicatesSuppressed": [
-      3521
+      3523
     ],
     "liveRefreshMainSHA": "7154479d4ea0a1914eb565b5cd235968a5985443",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5322,10 +5344,10 @@
       "userValue": 7
     }
   },
-  "revision": 784,
+  "revision": 785,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:49:45Z",
+  "updatedAt": "2026-08-16T06:50:14Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5401,7 +5423,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:49:43Z",
+      "updatedAt": "2026-08-16T06:50:12Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
