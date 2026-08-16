@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 51,
+    "classifiedPRTotal": 52,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1587,11 +1587,11 @@
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "11461d4904480db4d750ccdcf63fee1bc1f5983c",
+        "headSHA": "c2c8465183fda69107c51877dafacc673fc3d078",
         "lane": "capture-signed-install-custody",
         "pr": 3500,
         "recommendedAction": "independent-review",
-        "similarity": 0.387,
+        "similarity": 0.383,
         "title": "[Capture P0][TEST] Carry structured field launch onto F1BE root custody"
       },
       "3505": {
@@ -1626,6 +1626,17 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.253,
         "title": "[Capture P0][INTEGRATION] Execute selected Xcode build from sealed accepted root"
+      },
+      "3508": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "b309e847d74c8494e08dad74deca733560b5db1f",
+        "lane": "capture-signed-install-custody",
+        "pr": 3508,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.347,
+        "title": "[Capture P0][QA] Admit composed two-OS accepted-input workflow in continuity scope"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1658,9 +1669,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:36:54Z",
+    "liveRefreshAt": "2026-08-16T06:37:10Z",
     "liveRefreshDuplicatesSuppressed": [
-      3499
+      3508
     ],
     "liveRefreshMainSHA": "7154479d4ea0a1914eb565b5cd235968a5985443",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5443,10 +5454,10 @@
       "userValue": 7
     }
   },
-  "revision": 750,
+  "revision": 751,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:36:57Z",
+  "updatedAt": "2026-08-16T06:37:12Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5522,7 +5533,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:36:54Z",
+      "updatedAt": "2026-08-16T06:37:10Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
