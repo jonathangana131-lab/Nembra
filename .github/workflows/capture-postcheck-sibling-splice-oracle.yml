@@ -39,7 +39,7 @@ jobs:
           changed="$(git diff --name-only "$EXACT_PRODUCT_PARENT"...HEAD | LC_ALL=C sort)"
           expected="$(printf '%s\n' \
             .github/workflows/capture-postcheck-sibling-splice-oracle.yml \
-            scripts/ci/tests/test_capture_postcheck-sibling-splice-oracle.py | LC_ALL=C sort)"
+            scripts/ci/tests/test_capture_postcheck_sibling_splice_oracle.py | LC_ALL=C sort)"
           test "$changed" = "$expected"
           git diff --check "$EXACT_PRODUCT_PARENT"...HEAD
 
