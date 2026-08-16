@@ -1,0 +1,69 @@
+name: Capture Fold Final Child Parent Revalidation Once
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-final-child-parent-revalidation-sol-20260815
+    paths:
+      - scripts/ci/fold_final_child_parent_revalidation_once.py
+      - .github/workflows/capture-fold-final-child-parent-revalidation-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  EXACT_PARENT: 3a824e5301b5e1208c955b15af0ea5b1f38f7568
+
+jobs:
+  fold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repair/v17-capture-final-child-parent-revalidation-sol-20260815
+          fetch-depth: 0
+
+      - name: Bind exact authoring child
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-fold-final-child-parent-revalidation-once.yml \
+            scripts/ci/fold_final_child_parent_revalidation_once.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Apply post-child parent revalidation repair
+        run: python3 scripts/ci/fold_final_child_parent_revalidation_once.py
+
+      - name: Verify permanent repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          git diff --check
+          changed="$(git diff --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+
+      - name: Publish permanent repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          git commit -m "fix(capture): revalidate parent after final child open"
+          git push origin HEAD:repair/v17-capture-final-child-parent-revalidation-sol-20260815
