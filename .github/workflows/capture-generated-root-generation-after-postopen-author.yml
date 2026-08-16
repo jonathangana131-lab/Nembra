@@ -1,0 +1,81 @@
+name: Capture Generated Root Generation After Postopen Author
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-generated-root-generation-after-postopen-author.yml
+      - .github/workflows/capture-generated-shared-ancestor-continuity.yml
+      - scripts/ci/capture_accepted_build_input_snapshot.py
+      - scripts/ci/tests/test_capture_generated-root-generation-continuity.py
+      - scripts/ci/tests/test_capture_generated_root_generation_continuity.py
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.head_ref == 'repair/v17-capture-generated-root-generation-after-postopen-gpt56sol-20260815'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Materialize operation-level repository-root generation custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD 385e311807fbc832b03fe894eec19f4ed624167e)" = 385e311807fbc832b03fe894eec19f4ed624167e
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/ci/capture_accepted_build_input_snapshot.py')
+          text = path.read_text(encoding='utf-8')
+          canonical_start = text.index('def canonical_generated_manifest(')
+          copy_start = text.index('def _copy_generated_subjects(')
+          canonical = text[canonical_start:copy_start]
+          prefix = text[:canonical_start]
+          suffix = text[copy_start:]
+
+          old = '''    root_fd = _open_repository_root(root)\n    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}\n    try:\n        for subject in GENERATED_SUBJECTS:\n            if subject in seen:\n'''
+          new = '''    root_fd = _open_repository_root(root)\n    root_generation = os.fstat(root_fd)\n    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}\n    try:\n        for subject in GENERATED_SUBJECTS:\n            _assert_directory_generation(root_fd, root_generation, Path("."))\n            if subject in seen:\n'''
+          if canonical.count(old) != 1:
+              raise SystemExit('canonical root admission shape moved')
+          canonical = canonical.replace(old, new, 1)
+
+          old_tail = '''            finally:\n                os.close(descriptor)\n    finally:\n        _close_directory_cache(directory_cache)\n        os.close(root_fd)\n    payload = {\n'''
+          new_tail = '''            finally:\n                os.close(descriptor)\n        _assert_directory_generation(root_fd, root_generation, Path("."))\n    finally:\n        _close_directory_cache(directory_cache)\n        os.close(root_fd)\n    payload = {\n'''
+          if canonical.count(old_tail) != 1:
+              raise SystemExit('canonical root promotion shape moved')
+          canonical = canonical.replace(old_tail, new_tail, 1)
+
+          old_copy = '''    root_fd = _open_repository_root(source_root)\n    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}\n    try:\n        for subject in GENERATED_SUBJECTS:\n            descriptor, metadata, kind = _open_subject(root_fd, subject, directory_cache)\n'''
+          new_copy = '''    root_fd = _open_repository_root(source_root)\n    root_generation = os.fstat(root_fd)\n    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}\n    try:\n        for subject in GENERATED_SUBJECTS:\n            _assert_directory_generation(root_fd, root_generation, Path("."))\n            descriptor, metadata, kind = _open_subject(root_fd, subject, directory_cache)\n'''
+          if suffix.count(old_copy) != 1:
+              raise SystemExit('copy root admission shape moved')
+          suffix = suffix.replace(old_copy, new_copy, 1)
+
+          old_copy_tail = '''            finally:\n                os.close(descriptor)\n    finally:\n        _close_directory_cache(directory_cache)\n        os.close(root_fd)\n\n\ndef stage_accepted_build_inputs(\n'''
+          new_copy_tail = '''            finally:\n                os.close(descriptor)\n        _assert_directory_generation(root_fd, root_generation, Path("."))\n    finally:\n        _close_directory_cache(directory_cache)\n        os.close(root_fd)\n\n\ndef stage_accepted_build_inputs(\n'''
+          if suffix.count(old_copy_tail) != 1:
+              raise SystemExit('copy root promotion shape moved')
+          suffix = suffix.replace(old_copy_tail, new_copy_tail, 1)
+          path.write_text(prefix + canonical + suffix, encoding='utf-8')
+          PY
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_root_generation_continuity.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          git diff --check
+
+      - name: Publish permanent three-path serial repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/capture-generated-root-generation-after-postopen-author.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/ci/capture_accepted_build_input_snapshot.py
+          git commit -m 'Capture P0: hold repository-root generation across accepted inputs'
+          git push origin HEAD:${{ github.head_ref }}
