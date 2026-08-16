@@ -1,0 +1,240 @@
+name: Vehicle Controls Real Surface Witness
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/vehicle-controls-real-surface-witness.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  vehicle-controls-surface:
+    name: Exact iPhone 12 Simulator Vehicle Controls surface
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false
+    runs-on: xcode-27
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout immutable PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Verify immutable PR head
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          printf 'expected_sha=%s\nactual_sha=%s\n' "$EXPECTED_SHA" "$actual"
+          test "$actual" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain)"
+
+      - name: Inject witness-only XCUITests
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraUITests/NembraUITests.swift')
+          source = path.read_text()
+          anchor = '''    @MainActor
+              private func selectDashboardMode('''
+          if anchor not in source:
+              raise SystemExit('NembraUITests injection anchor missing')
+
+          witness = r'''    @MainActor
+              func testVehicleControlsRealSurfaceVisualWitnesses() {
+                  let connected = launch(scenario: "connected-stopped", orientation: .portrait)
+                  navigateToVehicleControls(in: connected)
+
+                  XCTAssertTrue(connected.descendants(matching: .any)["vehicle-controls.status"].waitForExistence(timeout: 3))
+                  XCTAssertTrue(connected.descendants(matching: .any)["vehicle-controls.battery-range"].waitForExistence(timeout: 2))
+                  XCTAssertTrue(connected.descendants(matching: .any)["vehicle-controls.headlight.off"].waitForExistence(timeout: 2))
+                  XCTAssertTrue(connected.descendants(matching: .any)["vehicle-controls.lock.locked"].waitForExistence(timeout: 2))
+                  keepScreenshot(named: "Vehicle Controls Connected Upper")
+
+                  let connectedSurface = connected.scrollViews.firstMatch
+                  XCTAssertTrue(connectedSurface.waitForExistence(timeout: 2))
+                  connectedSurface.swipeUp()
+                  XCTAssertTrue(connected.staticTexts["Ride Mode"].waitForExistence(timeout: 2))
+                  keepScreenshot(named: "Vehicle Controls Connected Middle")
+                  connectedSurface.swipeUp()
+                  keepScreenshot(named: "Vehicle Controls Connected Lower")
+                  connected.terminate()
+
+                  let unavailable = launch(scenario: "cold-disconnected", orientation: .portrait)
+                  navigateToVehicleControls(in: unavailable)
+                  XCTAssertTrue(unavailable.descendants(matching: .any)["vehicle-controls.status"].waitForExistence(timeout: 3))
+                  XCTAssertFalse(unavailable.staticTexts["Connected"].exists)
+                  keepScreenshot(named: "Vehicle Controls Unavailable Upper")
+                  unavailable.scrollViews.firstMatch.swipeUp()
+                  keepScreenshot(named: "Vehicle Controls Unavailable Lower")
+                  unavailable.terminate()
+              }
+
+              @MainActor
+              func testVehicleControlsAccessibilityXXXLWitness() {
+                  let app = launch(scenario: "connected-stopped", orientation: .portrait)
+                  navigateToVehicleControls(in: app)
+
+                  XCTAssertTrue(app.descendants(matching: .any)["vehicle-controls.status"].waitForExistence(timeout: 3))
+                  XCTAssertTrue(app.descendants(matching: .any)["vehicle-controls.battery-range"].waitForExistence(timeout: 2))
+                  keepScreenshot(named: "Vehicle Controls Accessibility XXXL Upper")
+
+                  let surface = app.scrollViews.firstMatch
+                  XCTAssertTrue(surface.waitForExistence(timeout: 2))
+                  surface.swipeUp()
+                  keepScreenshot(named: "Vehicle Controls Accessibility XXXL Middle")
+                  surface.swipeUp()
+                  keepScreenshot(named: "Vehicle Controls Accessibility XXXL Lower")
+                  app.terminate()
+              }
+
+              @MainActor
+              private func navigateToVehicleControls(in app: XCUIApplication) {
+                  let controls = app.buttons["Vehicle controls"]
+                  if !controls.waitForExistence(timeout: 2) || !controls.isHittable {
+                      app.scrollViews.firstMatch.swipeUp()
+                  }
+                  XCTAssertTrue(controls.waitForExistence(timeout: 3))
+                  controls.tap()
+                  XCTAssertTrue(app.navigationBars["Vehicle Controls"].waitForExistence(timeout: 3))
+              }
+
+          '''
+
+          path.write_text(source.replace(anchor, witness + anchor, 1))
+          Path('/tmp/nembra-vehicle-controls-injected-tests.swift').write_text(path.read_text())
+          PY
+
+      - name: Capture normal and exact Accessibility XXXL Vehicle Controls states
+        id: witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARTIFACTS="$RUNNER_TEMP/vehicle-controls-real-surface"
+          DERIVED="$RUNNER_TEMP/vehicle-controls-real-surface-derived"
+          NORMAL_RESULT="$ARTIFACTS/NembraVehicleControlsNormal.xcresult"
+          AX_RESULT="$ARTIFACTS/NembraVehicleControlsAX.xcresult"
+          NORMAL_ATTACHMENTS="$ARTIFACTS/normal-attachments"
+          AX_ATTACHMENTS="$ARTIFACTS/ax-attachments"
+          mkdir -p "$ARTIFACTS" "$NORMAL_ATTACHMENTS" "$AX_ATTACHMENTS"
+
+          cp /tmp/nembra-vehicle-controls-injected-tests.swift "$ARTIFACTS/injected-test-source.swift"
+          shasum -a 256 "$ARTIFACTS/injected-test-source.swift" > "$ARTIFACTS/injected-test-source.sha256"
+
+          runtime="$({ xcrun simctl list runtimes -j | /usr/bin/python3 -c '
+          import json,sys
+          rows=json.load(sys.stdin)["runtimes"]
+          candidates=[r for r in rows if r.get("isAvailable", True) and str(r.get("identifier", "")).startswith("com.apple.CoreSimulator.SimRuntime.iOS-27")]
+          if not candidates: raise SystemExit(1)
+          candidates.sort(key=lambda r: tuple(int(p) for p in str(r.get("version", "0")).split(".") if p.isdigit()), reverse=True)
+          print(candidates[0]["identifier"])
+          '; } 2>/dev/null)" || { echo 'No iOS 27 runtime' >&2; exit 2; }
+
+          device_type="$({ xcrun simctl list devicetypes -j | /usr/bin/python3 -c '
+          import json,sys
+          rows=json.load(sys.stdin)["devicetypes"]
+          for row in rows:
+              if row.get("name") == "iPhone 12":
+                  print(row["identifier"]); raise SystemExit(0)
+          raise SystemExit(1)
+          '; } 2>/dev/null)" || { echo 'No iPhone 12 Simulator device type' >&2; exit 3; }
+
+          udid="$(xcrun simctl create "Nembra Vehicle Controls ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" "$device_type" "$runtime")"
+          cleanup() {
+            xcrun simctl shutdown "$udid" >/dev/null 2>&1 || true
+            xcrun simctl delete "$udid" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT INT TERM
+
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+
+          {
+            printf 'source_sha=%s\n' "$(git rev-parse HEAD)"
+            printf 'runtime=%s\n' "$runtime"
+            printf 'device_type=%s\n' "$device_type"
+            printf 'simulator_udid=%s\n' "$udid"
+            xcodebuild -version
+          } > "$ARTIFACTS/environment.txt"
+
+          set +e
+          set -o pipefail
+          xcodebuild \
+            -project Nembra.xcodeproj \
+            -scheme Nembra \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=$udid" \
+            -derivedDataPath "$DERIVED" \
+            -resultBundlePath "$NORMAL_RESULT" \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 180 \
+            -maximum-test-execution-time-allowance 180 \
+            -collect-test-diagnostics never \
+            -only-testing:NembraUITests/NembraUITests/testVehicleControlsRealSurfaceVisualWitnesses \
+            CODE_SIGNING_ALLOWED=NO \
+            ONLY_ACTIVE_ARCH=YES \
+            test | tee "$ARTIFACTS/normal-xcodebuild.log"
+          normal_status=${PIPESTATUS[0]}
+          set -e
+
+          xcrun simctl ui "$udid" content_size accessibility-extra-extra-extra-large >/dev/null
+          applied_size="$(xcrun simctl ui "$udid" content_size 2>/dev/null | tr -d '\r' | tail -1)"
+          printf 'accessibility_content_size=%s\n' "$applied_size" >> "$ARTIFACTS/environment.txt"
+          printf '%s\n' "$applied_size" | grep -q 'accessibility-extra-extra-extra-large'
+
+          set +e
+          set -o pipefail
+          xcodebuild \
+            -project Nembra.xcodeproj \
+            -scheme Nembra \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=$udid" \
+            -derivedDataPath "$DERIVED" \
+            -resultBundlePath "$AX_RESULT" \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 180 \
+            -maximum-test-execution-time-allowance 180 \
+            -collect-test-diagnostics never \
+            -only-testing:NembraUITests/NembraUITests/testVehicleControlsAccessibilityXXXLWitness \
+            CODE_SIGNING_ALLOWED=NO \
+            ONLY_ACTIVE_ARCH=YES \
+            test | tee "$ARTIFACTS/ax-xcodebuild.log"
+          ax_status=${PIPESTATUS[0]}
+          set -e
+
+          for spec in "$NORMAL_RESULT:$NORMAL_ATTACHMENTS" "$AX_RESULT:$AX_ATTACHMENTS"; do
+            result="${spec%%:*}"
+            attachments="${spec#*:}"
+            if [[ -d "$result" ]]; then
+              xcrun xcresulttool export attachments \
+                --path "$result" \
+                --output-path "$attachments" \
+                >> "$ARTIFACTS/xcresult-attachments.log" 2>&1 || true
+            fi
+          done
+
+          find "$NORMAL_ATTACHMENTS" -type f -maxdepth 2 -print | sort > "$ARTIFACTS/normal-attachments.txt" || true
+          find "$AX_ATTACHMENTS" -type f -maxdepth 2 -print | sort > "$ARTIFACTS/ax-attachments.txt" || true
+
+          test "$normal_status" -eq 0 || exit "$normal_status"
+          test "$ax_status" -eq 0 || exit "$ax_status"
+          test -s "$ARTIFACTS/normal-attachments.txt"
+          test -s "$ARTIFACTS/ax-attachments.txt"
+          printf 'artifact_dir=%s\n' "$ARTIFACTS" >> "$GITHUB_OUTPUT"
+
+      - name: Upload exact Vehicle Controls surface evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nembra-vehicle-controls-real-surface-${{ github.event.pull_request.number }}-${{ github.run_number }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/vehicle-controls-real-surface
+          if-no-files-found: error
+          retention-days: 30
