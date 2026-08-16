@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 51,
+    "classifiedPRTotal": 50,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1495,17 +1495,6 @@
         "similarity": 0.369,
         "title": "[Capture P0][RED TEAM] Replay final-child splice on current accepted-input head"
       },
-      "3481": {
-        "classification": "superseded",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3481,
-        "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.358,
-        "title": "[Capture P0][REPAIR] Revalidate held ancestor after final child admission"
-      },
       "3489": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1569,7 +1558,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3505,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.377,
+        "similarity": 0.34,
         "title": "[Capture P0][REPAIR] Close postcheck sibling splice on current parent"
       },
       "3506": {
@@ -1591,7 +1580,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3507,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.326,
+        "similarity": 0.463,
         "title": "[Capture P0][INTEGRATION] Execute selected Xcode build from sealed accepted root"
       },
       "3508": {
@@ -1605,17 +1594,6 @@
         "similarity": 0.36,
         "title": "[Capture P0][QA] Admit composed two-OS accepted-input workflow in continuity scope"
       },
-      "3509": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3509,
-        "recommendedAction": "independent-review",
-        "similarity": 0.295,
-        "title": "[Capture P0][CONVERGENCE] Close generated parent + root generation races"
-      },
       "3510": {
         "classification": "superseded",
         "destructiveActionAllowed": false,
@@ -1624,8 +1602,19 @@
         "lane": "capture-signed-install-custody",
         "pr": 3510,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.356,
+        "similarity": 0.39,
         "title": "[Capture P0][VALIDATION] Re-anchor accepted build-root custody after macOS admission gate"
+      },
+      "3511": {
+        "classification": "superseded",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "c56064733580c1601e5f8545f9b6ef26cd999ffd",
+        "lane": "capture-signed-install-custody",
+        "pr": 3511,
+        "recommendedAction": "archive-after-evidence-transfer",
+        "similarity": 0.478,
+        "title": "[Capture P0][INTEGRATION] Execute current accepted-root build through selected Xcode"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1658,7 +1647,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:38:06Z",
+    "liveRefreshAt": "2026-08-16T06:38:24Z",
     "liveRefreshDuplicatesSuppressed": [
       3508
     ],
@@ -5443,10 +5432,10 @@
       "userValue": 7
     }
   },
-  "revision": 754,
+  "revision": 755,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:38:09Z",
+  "updatedAt": "2026-08-16T06:38:26Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5522,7 +5511,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:38:06Z",
+      "updatedAt": "2026-08-16T06:38:24Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
