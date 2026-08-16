@@ -681,6 +681,49 @@ def _rebase_private_guard_paths(
     return rebased
 
 
+def _rebase_accepted_root_compiler_paths(
+    command: Sequence[str], *, live_repo: Path, accepted_root: Path
+) -> list[str]:
+    live_repo = _absolute_lexical(live_repo)
+    accepted_root = _absolute_lexical(accepted_root)
+    _require_real_directory(accepted_root, "accepted build root")
+
+    separators = [index for index, value in enumerate(command) if value == "--"]
+    if len(separators) != 1:
+        raise SelectedXcodeBuildOrchestratorError(
+            "strict accepted-root build requires exactly one compiler separator"
+        )
+    compiler_start = separators[0] + 1
+    compiler = list(command[compiler_start:])
+    workspace_matches = [index for index, value in enumerate(compiler) if value == "-workspace"]
+    project_matches = [index for index, value in enumerate(compiler) if value == "-project"]
+    if project_matches:
+        raise SelectedXcodeBuildOrchestratorError(
+            "strict accepted-root build does not admit project-path compiler authority"
+        )
+    if len(workspace_matches) != 1 or workspace_matches[0] + 1 >= len(compiler):
+        raise SelectedXcodeBuildOrchestratorError(
+            "strict accepted-root build requires exactly one workspace path"
+        )
+
+    workspace_index = compiler_start + workspace_matches[0] + 1
+    supplied = Path(command[workspace_index])
+    canonical_live = live_repo / "NembraCapture.xcworkspace"
+    if supplied.is_absolute():
+        if _absolute_lexical(supplied) != canonical_live:
+            raise SelectedXcodeBuildOrchestratorError(
+                "strict accepted-root workspace escaped the canonical live subject"
+            )
+    elif supplied != Path("NembraCapture.xcworkspace"):
+        raise SelectedXcodeBuildOrchestratorError(
+            "strict accepted-root workspace must be the canonical Capture workspace"
+        )
+
+    rebased = list(command)
+    rebased[workspace_index] = str(accepted_root / "NembraCapture.xcworkspace")
+    return rebased
+
+
 def _replace_live_guard(command: Sequence[str], *, live_guard: Path, accepted_guard: Path) -> list[str]:
     live_guard = _absolute_lexical(live_guard)
     accepted_guard = _absolute_lexical(accepted_guard)
@@ -876,6 +919,9 @@ def orchestrate(
                     "accepted build-root helper returned invalid identity"
                 )
             canonical_command = _rebase_private_guard_paths(
+                canonical_command, live_repo=repo, accepted_root=accepted_root
+            )
+            canonical_command = _rebase_accepted_root_compiler_paths(
                 canonical_command, live_repo=repo, accepted_root=accepted_root
             )
             private_subjects = (

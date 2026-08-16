@@ -46,7 +46,10 @@ def canonical_command(helper, repo: Path) -> list[str]:
         str(repo / "LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig"),
         "--",
         "/usr/bin/xcodebuild",
-        "-version",
+        "-workspace",
+        str(repo / "NembraCapture.xcworkspace"),
+        "-scheme",
+        "Nembra Capture",
     ]
 
 
@@ -79,6 +82,39 @@ class CaptureAcceptedRootBuildCompositionTests(unittest.TestCase):
                     str(accepted_root / relative),
                 )
             self.assertEqual(command, canonical_command(helper, REPOSITORY))
+
+            compiler_rebased = helper._rebase_accepted_root_compiler_paths(
+                rebased, live_repo=REPOSITORY, accepted_root=accepted_root
+            )
+            workspace_index = compiler_rebased.index("-workspace")
+            self.assertEqual(
+                compiler_rebased[workspace_index + 1],
+                str(accepted_root / "NembraCapture.xcworkspace"),
+            )
+
+            relative_workspace = list(rebased)
+            relative_workspace[relative_workspace.index("-workspace") + 1] = "NembraCapture.xcworkspace"
+            relative_rebased = helper._rebase_accepted_root_compiler_paths(
+                relative_workspace, live_repo=REPOSITORY, accepted_root=accepted_root
+            )
+            self.assertEqual(
+                relative_rebased[relative_rebased.index("-workspace") + 1],
+                str(accepted_root / "NembraCapture.xcworkspace"),
+            )
+
+            escaped_workspace = list(rebased)
+            escaped_workspace[escaped_workspace.index("-workspace") + 1] = str(REPOSITORY.parent / "attacker.xcworkspace")
+            with self.assertRaises(helper.SelectedXcodeBuildOrchestratorError):
+                helper._rebase_accepted_root_compiler_paths(
+                    escaped_workspace, live_repo=REPOSITORY, accepted_root=accepted_root
+                )
+
+            project_command = list(rebased)
+            project_command[project_command.index("-workspace")] = "-project"
+            with self.assertRaises(helper.SelectedXcodeBuildOrchestratorError):
+                helper._rebase_accepted_root_compiler_paths(
+                    project_command, live_repo=REPOSITORY, accepted_root=accepted_root
+                )
 
             escaped = list(command)
             escaped[escaped.index("--security-build") + 1] = str(REPOSITORY / "other")
@@ -185,6 +221,7 @@ def _run_exec_bound_build(command, *, name, uid, gid, baseline_groups, environme
     assert _value(command, "--security-build") == EXPECTED_ROOT + "/LocalSecrets/TuyaSDK/Build"
     assert _value(command, "--identity-podspec") == EXPECTED_ROOT + "/LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec"
     assert _value(command, "--identity-sources") == EXPECTED_ROOT + "/LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig"
+    assert _value(command, "-workspace") == EXPECTED_ROOT + "/NembraCapture.xcworkspace"
     developer = "/Library/NembraSelectedXcodeFreeze.fixture/Xcode.app/Contents/Developer"
     selected = developer + "/usr/bin/xcodebuild"
     marker = command.index("/usr/bin/env")
