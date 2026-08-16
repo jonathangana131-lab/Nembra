@@ -1,0 +1,79 @@
+name: Capture Fold Cached Reuse FD Ownership Once
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-root-fence-cached-reuse-fd-sol-20260815
+    paths:
+      - .github/workflows/capture-fold-cached-reuse-fd-ownership-once.yml
+
+permissions:
+  contents: write
+
+env:
+  EXACT_PARENT: 88515c72fb5ec87934747dc2bf68251251be51fa
+
+jobs:
+  fold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repair/v17-capture-root-fence-cached-reuse-fd-sol-20260815
+          fetch-depth: 0
+
+      - name: Bind exact selected carrier parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-fold-cached-reuse-fd-ownership-once.yml \
+            scripts/ci/fold_cached_reuse_fd_ownership_once.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Apply exact ownership transform
+        run: python3 scripts/ci/fold_cached_reuse_fd_ownership_once.py
+
+      - name: Verify permanent suites and scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -m py_compile \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          git diff --check
+          changed="$(git diff --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+
+      - name: Publish permanent two-path ownership repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          git rm \
+            scripts/ci/fold_cached_reuse_fd_ownership_once.py \
+            .github/workflows/capture-fold-cached-reuse-fd-ownership-once.yml
+          staged="$(git diff --cached --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-fold-cached-reuse-fd-ownership-once.yml \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/fold_cached_reuse_fd_ownership_once.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
+          test "$staged" = "$expected"
+          git diff --cached --check
+          git commit -m "fix(capture): preserve fd ownership on cached reuse"
+          git push origin HEAD:repair/v17-capture-root-fence-cached-reuse-fd-sol-20260815
