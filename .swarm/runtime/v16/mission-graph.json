@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 56,
+    "classifiedPRTotal": 55,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1561,17 +1561,6 @@
         "similarity": 0.473,
         "title": "[Capture P0][REPAIR] Revalidate held ancestor after final child admission"
       },
-      "3486": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "804dc58ede0c9dd62bafb5eb0dd1dd4c8170d623",
-        "lane": "capture-field-build-provenance",
-        "pr": 3486,
-        "recommendedAction": "independent-review",
-        "similarity": 0.143,
-        "title": "[Capture P0][CI] Make field-provenance launcher contract structural"
-      },
       "3487": {
         "classification": "superseded",
         "destructiveActionAllowed": false,
@@ -1638,17 +1627,6 @@
         "similarity": 0.47,
         "title": "[Capture P0][REPAIR] Revalidate generated parent after final child open"
       },
-      "3494": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3494,
-        "recommendedAction": "independent-review",
-        "similarity": 0.353,
-        "title": "[Capture P0][INTERNAL] Carry structured field credentials onto f1be root custody"
-      },
       "3495": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1681,6 +1659,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.08,
         "title": "[Dashboard V17][RECOVERY] Ship signature battery / learned-range instrument"
+      },
+      "3498": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3498,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.402,
+        "title": "[Capture P0][REPAIR] Revalidate cached parent after final child admission"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1713,7 +1702,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:33:05Z",
+    "liveRefreshAt": "2026-08-16T06:33:19Z",
     "liveRefreshDuplicatesSuppressed": [
       3491
     ],
@@ -5498,10 +5487,10 @@
       "userValue": 7
     }
   },
-  "revision": 737,
+  "revision": 738,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:33:08Z",
+  "updatedAt": "2026-08-16T06:33:23Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5577,7 +5566,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:33:05Z",
+      "updatedAt": "2026-08-16T06:33:19Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
