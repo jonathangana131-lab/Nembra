@@ -389,6 +389,12 @@ def _open_subject(
     if expected_kind is None:
         raise AcceptedBuildInputSnapshotError(f"unrecognized generated subject: {subject}")
     current = os.dup(root_fd)
+    selection_ancestors: list[tuple[int, os.stat_result, Path]] = []
+
+    def revalidate_selection_ancestors() -> None:
+        for descriptor, admitted, relative in selection_ancestors:
+            _assert_directory_generation(descriptor, admitted, relative)
+
     try:
         for index, component in enumerate(subject.parts):
             relative = Path(*subject.parts[: index + 1])
@@ -396,11 +402,17 @@ def _open_subject(
             if not is_last and directory_cache is not None and relative in directory_cache:
                 cached_descriptor, admitted = directory_cache[relative]
                 _assert_directory_generation(cached_descriptor, admitted, relative)
+                selection_ancestors.append((cached_descriptor, admitted, relative))
                 os.close(current)
                 current = os.dup(cached_descriptor)
                 continue
             if is_last and expected_kind == "file":
                 descriptor, metadata = _open_file_at(current, component, relative)
+                try:
+                    revalidate_selection_ancestors()
+                except Exception:
+                    os.close(descriptor)
+                    raise
                 os.close(current)
                 return descriptor, metadata, "file"
             child = _open_directory_at(current, component, relative)
@@ -410,6 +422,7 @@ def _open_subject(
                     held = os.dup(child)
                     admitted = os.fstat(held)
                     directory_cache[relative] = (held, admitted)
+                    selection_ancestors.append((held, admitted, relative))
                     held = None
             except Exception:
                 if held is not None:
@@ -419,6 +432,12 @@ def _open_subject(
                         pass
                 os.close(child)
                 raise
+            if is_last:
+                try:
+                    revalidate_selection_ancestors()
+                except Exception:
+                    os.close(child)
+                    raise
             os.close(current)
             current = child
         metadata = os.fstat(current)
@@ -567,6 +586,7 @@ def canonical_generated_manifest(root: Path, source_sha: str) -> bytes:
     records: list[dict[str, object]] = []
     seen: set[Path] = set()
     root_fd = _open_repository_root(root)
+    root_generation = os.fstat(root_fd)
     directory_cache: dict[Path, tuple[int, os.stat_result]] = {}
     try:
         for subject in GENERATED_SUBJECTS:
@@ -574,6 +594,7 @@ def canonical_generated_manifest(root: Path, source_sha: str) -> bytes:
                 raise AcceptedBuildInputSnapshotError(f"overlapping build-input subject: {subject}")
             descriptor, metadata, kind = _open_subject(root_fd, subject, directory_cache)
             try:
+                _assert_directory_generation(root_fd, root_generation, Path("."))
                 record: dict[str, object] = {"path": subject.as_posix()}
                 if kind == "file":
                     digest, size, after = _hash_open_file(descriptor, subject)
@@ -755,11 +776,13 @@ def _copy_generated_subjects(source_root: Path, destination_root: Path) -> None:
     source_root = _absolute(source_root)
     destination_root = _absolute(destination_root)
     root_fd = _open_repository_root(source_root)
+    root_generation = os.fstat(root_fd)
     directory_cache: dict[Path, tuple[int, os.stat_result]] = {}
     try:
         for subject in GENERATED_SUBJECTS:
             descriptor, metadata, kind = _open_subject(root_fd, subject, directory_cache)
             try:
+                _assert_directory_generation(root_fd, root_generation, Path("."))
                 if kind == "file":
                     _copy_open_file(
                         descriptor,
