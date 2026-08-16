@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 env:
-  EXACT_PARENT: 16e6ccf5d9736a8c47d4e78eaba86f1cffd02e9c
+  EXACT_PARENT: ca5de78540957f34abc2cbff53b564a93a519078
   PYTHONDONTWRITEBYTECODE: 1
 
 jobs:
@@ -50,37 +50,37 @@ jobs:
           path = Path('scripts/ci/capture_selected_xcode_build_orchestrator.py')
           source = path.read_text(encoding='utf-8')
           old = '''                diagnostic = _open_pinned_path(
-                      path, is_directory, accepted_signature
-                  )
-                  os.close(diagnostic)
-          except Exception as error:
+                    path, is_directory, accepted_signature
+                )
+                os.close(diagnostic)
+        except Exception as error:
           '''
           new = '''                diagnostic = _open_pinned_path(
-                      path, is_directory, accepted_signature
-                  )
-                  os.close(diagnostic)
+                    path, is_directory, accepted_signature
+                )
+                os.close(diagnostic)
 
-              # A held directory descriptor does not freeze mutable symlink entries.
-              # Reclassify every admitted directory subject after all ACLs materialize,
-              # immediately before authority is handed to the exec-bound build guard.
-              # The guard's initial generation snapshot and vnode monitoring then cover
-              # the subsequent compiler window.
-              opened_by_path = {
-                  Path(record["path"]): record for record in self._opened
-              }
-              for subject in self._subjects:
-                  subject_record = opened_by_path.get(subject)
-                  if subject_record is None:
-                      raise SelectedXcodeBuildOrchestratorError(
-                          "accepted private read-lease subject has no held descriptor"
-                      )
-                  if not bool(subject_record["is_directory"]):
-                      continue
-                  _validate_subject_symlinks_from_descriptor(
-                      subject,
-                      int(subject_record["descriptor"]),
-                  )
-          except Exception as error:
+            # A held directory descriptor does not freeze mutable symlink entries.
+            # Reclassify every admitted directory subject after all ACLs materialize,
+            # immediately before authority is handed to the exec-bound build guard.
+            # The guard's initial generation snapshot and vnode monitoring then cover
+            # the subsequent compiler window.
+            opened_by_path = {
+                Path(record["path"]): record for record in self._opened
+            }
+            for subject in self._subjects:
+                subject_record = opened_by_path.get(subject)
+                if subject_record is None:
+                    raise SelectedXcodeBuildOrchestratorError(
+                        "accepted private read-lease subject has no held descriptor"
+                    )
+                if not bool(subject_record["is_directory"]):
+                    continue
+                _validate_subject_symlinks_from_descriptor(
+                    subject,
+                    int(subject_record["descriptor"]),
+                )
+        except Exception as error:
           '''
           if source.count(old) != 1:
               raise SystemExit('production insertion seam is not exact')
