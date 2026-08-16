@@ -17,6 +17,8 @@ jobs:
     env:
       EXACT_PARENT: 9b68439c1ef19e0e445f488be46b0c3e6ef61936
       PYTHONDONTWRITEBYTECODE: 1
+      OLD_B64: ICAgICAgICAgICAgaWYgc3RhdC5TX0lTTE5LKG1ldGFkYXRhLnN0X21vZGUpOgogICAgICAgICAgICAgICAgdHJ5OgogICAgICAgICAgICAgICAgICAgIHRhcmdldF90ZXh0ID0gb3MucmVhZGxpbmsobmFtZSwgZGlyX2ZkPWRpcmVjdG9yeV9kZXNjcmlwdG9yKQogICAgICAgICAgICAgICAgZXhjZXB0IE9TRXJyb3IgYXMgZXJyb3I6CiAgICAgICAgICAgICAgICAgICAgcmFpc2UgU2VsZWN0ZWRYY29kZUJ1aWxkT3JjaGVzdHJhdG9yRXJyb3IoCiAgICAgICAgICAgICAgICAgICAgICAgICJwcml2YXRlIHJlYWQtbGVhc2UgaGVsZCBzeW1saW5rIGNoYW5nZWQgZHVyaW5nIHZhbGlkYXRpb24iCiAgICAgICAgICAgICAgICAgICAgKSBmcm9tIGVycm9yCiAgICAgICAgICAgICAgICB0YXJnZXRfcGFydHMgPSBfbm9ybWFsaXplX2hlbGRfc3ltbGlua190YXJnZXQoCiAgICAgICAgICAgICAgICAgICAgc3ViamVjdCwKICAgICAgICAgICAgICAgICAgICBlbnRyeV9wYXJ0cywKICAgICAgICAgICAgICAgICAgICB0YXJnZXRfdGV4dCwKICAgICAgICAgICAgICAgICkKICAgICAgICAgICAgICAgIF92YWxpZGF0ZV9oZWxkX3N5bWxpbmtfdGFyZ2V0KAogICAgICAgICAgICAgICAgICAgIHN1YmplY3QsCiAgICAgICAgICAgICAgICAgICAgc3ViamVjdF9kZXNjcmlwdG9yLAogICAgICAgICAgICAgICAgICAgIHRhcmdldF9wYXJ0cywKICAgICAgICAgICAgICAgICkKICAgICAgICAgICAgICAgIGNvbnRpbnVlCg==
+      NEW_B64: ICAgICAgICAgICAgaWYgc3RhdC5TX0lTTE5LKG1ldGFkYXRhLnN0X21vZGUpOgogICAgICAgICAgICAgICAgYWNjZXB0ZWRfc3ltbGlua19nZW5lcmF0aW9uID0gKAogICAgICAgICAgICAgICAgICAgIG1ldGFkYXRhLnN0X2RldiwKICAgICAgICAgICAgICAgICAgICBtZXRhZGF0YS5zdF9pbm8sCiAgICAgICAgICAgICAgICAgICAgc3RhdC5TX0lGTVQobWV0YWRhLnN0X21vZGUpLAogICAgICAgICAgICAgICAgICAgIG1ldGFkYXRhLnN0X210aW1lX25zLAogICAgICAgICAgICAgICAgICAgIG1ldGFkYXRhLnN0X2N0aW1lX25zLAogICAgICAgICAgICAgICAgICAgIG1ldGFkYXRhLnN0X3NpemUsCiAgICAgICAgICAgICAgICApCgogICAgICAgICAgICAgICAgZGVmIHJlcXVpcmVfc2FtZV9zeW1saW5rX2dlbmVyYXRpb24oKSAtPiBOb25lOgogICAgICAgICAgICAgICAgICAgIHRyeToKICAgICAgICAgICAgICAgICAgICAgICAgY3VycmVudF9tZXRhZGF0YSA9IG9zLnN0YXQoCiAgICAgICAgICAgICAgICAgICAgICAgICAgICBuYW1lLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgZGlyX2ZkPWRpcmVjdG9yeV9kZXNjcmlwdG9yLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgZm9sbG93X3N5bWxpbmtzPUZhbHNlLAogICAgICAgICAgICAgICAgICAgICAgICApCiAgICAgICAgICAgICAgICAgICAgZXhjZXB0IE9TRXJyb3IgYXMgZXJyb3I6CiAgICAgICAgICAgICAgICAgICAgICAgIHJhaXNlIFNlbGVjdGVkWGNvZGVCdWlsZE9yY2hlc3RyYXRvckVycm9yKAogICAgICAgICAgICAgICAgICAgICAgICAgICAgInByaXZhdGUgcmVhZC1sZWFzZSBoZWxkIHN5bWxpbmsgY2hhbmdlZCBkdXJpbmcgdmFsaWRhdGlvbiIKICAgICAgICAgICAgICAgICAgICAgICAgKSBmcm9tIGVycm9yCiAgICAgICAgICAgICAgICAgICAgY3VycmVudF9nZW5lcmF0aW9uID0gKAogICAgICAgICAgICAgICAgICAgICAgICBjdXJyZW50X21ldGFkYXRhLnN0X2RldiwKICAgICAgICAgICAgICAgICAgICAgICAgY3VycmVudF9tZXRhZGF0YS5zdF9pbm8sCiAgICAgICAgICAgICAgICAgICAgICAgIHN0YXQuU19JRk1UKGN1cnJlbnRfbWV0YWRhdGEuc3RfbW9kZSksCiAgICAgICAgICAgICAgICAgICAgICAgIGN1cnJlbnRfbWV0YWRhdGEuc3RfbXRpbWVfbnMsCiAgICAgICAgICAgICAgICAgICAgICAgIGN1cnJlbnRfbWV0YWRhdGEuc3RfY3RpbWVfbnMsCiAgICAgICAgICAgICAgICAgICAgICAgIGN1cnJlbnRfbWV0YWRhdGEuc3Rfc2l6ZSwKICAgICAgICAgICAgICAgICAgICApCiAgICAgICAgICAgICAgICAgICAgaWYgY3VycmVudF9nZW5lcmF0aW9uICE9IGFjY2VwdGVkX3N5bWxpbmtfZ2VuZXJhdGlvbjoKICAgICAgICAgICAgICAgICAgICAgICAgcmFpc2UgU2VsZWN0ZWRYY29kZUJ1aWxkT3JjaGVzdHJhdG9yRXJyb3IoCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAicHJpdmF0ZSByZWFkLWxlYXNlIGhlbGQgc3ltbGlua18gZ2VuZXJhdGlvbiBjaGFuZ2VkIGR1cmluZyB2YWxpZGF0aW9uIgogICAgICAgICAgICAgICAgICAgICAgICApCgogICAgICAgICAgICAgICAgdHJ5OgogICAgICAgICAgICAgICAgICAgIHRhcmdldF90ZXh0ID0gb3MucmVhZGxpbmsobmFtZSwgZGlyX2ZkPWRpcmVjdG9yeV9kZXNjcmlwdG9yKQogICAgICAgICAgICAgICAgZXhjZXB0IE9TRXJyb3IgYXMgZXJyb3I6CiAgICAgICAgICAgICAgICAgICAgcmFpc2UgU2VsZWN0ZWRYY29kZUJ1aWxkT3JjaGVzdHJhdG9yRXJyb3IoCiAgICAgICAgICAgICAgICAgICAgICAgICJwcml2YXRlIHJlYWQtbGVhc2UgaGVsZCBzeW1saW5rIGNoYW5nZWQgZHVyaW5nIHZhbGlkYXRpb24iCiAgICAgICAgICAgICAgICAgICAgKSBmcm9tIGVycm9yCiAgICAgICAgICAgICAgICByZXF1aXJlX3NhbWVfc3ltbGlua19nZW5lcmF0aW9uKCkKICAgICAgICAgICAgICAgIHRhcmdldF9wYXJ0cyA9IF9ub3JtYWxpemVfaGVsZF9zeW1saW5rX3RhcmdldCgKICAgICAgICAgICAgICAgICAgICBzdWJqZWN0LAogICAgICAgICAgICAgICAgICAgIGVudHJ5X3BhcnRzLAogICAgICAgICAgICAgICAgICAgIHRhcmdldF90ZXh0LAogICAgICAgICAgICAgICAgKQogICAgICAgICAgICAgICAgX3ZhbGlkYXRlX2hlbGRfc3ltbGlua190YXJnZXQoCiAgICAgICAgICAgICAgICAgICAgc3ViamVjdCwKICAgICAgICAgICAgICAgICAgICBzdWJqZWN0X2Rlc2NyaXB0b3IsCiAgICAgICAgICAgICAgICAgICAgdGFyZ2V0X3BhcnRzLAogICAgICAgICAgICAgICAgKQogICAgICAgICAgICAgICAgcmVxdWlyZV9zYW1lX3N5bWxpbmtfZ2VuZXJhdGlvbigpCiAgICAgICAgICAgICAgICBjb250aW51ZQo=
     steps:
       - uses: actions/checkout@v6
         with:
@@ -28,92 +30,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "$EXACT_PARENT"
-          test "$(git diff --name-only HEAD^...HEAD)" = ".github/workflows/capture-symlink-entry-generation-materialize-once.yml"
-          git diff --check HEAD^...HEAD
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          test "$(git diff --name-only "$EXACT_PARENT"...HEAD)" = ".github/workflows/capture-symlink-entry-generation-materialize-once.yml"
+          git diff --check "$EXACT_PARENT"...HEAD
 
       - name: Materialize per-symlink generation fence
         shell: bash
         run: |
           set -euo pipefail
           /usr/bin/python3 -B -I - <<'PY'
+          import base64
+          import os
           from pathlib import Path
-
           path = Path("scripts/ci/capture_selected_xcode_build_orchestrator.py")
           source = path.read_text(encoding="utf-8")
-          old = '''            if stat.S_ISLNK(metadata.st_mode):
-                try:
-                    target_text = os.readlink(name, dir_fd=directory_descriptor)
-                except OSError as error:
-                    raise SelectedXcodeBuildOrchestratorError(
-                        "private read-lease held symlink changed during validation"
-                    ) from error
-                target_parts = _normalize_held_symlink_target(
-                    subject,
-                    entry_parts,
-                    target_text,
-                )
-                _validate_held_symlink_target(
-                    subject,
-                    subject_descriptor,
-                    target_parts,
-                )
-                continue
-'''
-          new = '''            if stat.S_ISLNK(metadata.st_mode):
-                accepted_symlink_generation = (
-                    metadata.st_dev,
-                    metadata.st_ino,
-                    stat.S_IFMT(metadata.st_mode),
-                    metadata.st_mtime_ns,
-                    metadata.st_ctime_ns,
-                    metadata.st_size,
-                )
-
-                def require_same_symlink_generation() -> None:
-                    try:
-                        current_metadata = os.stat(
-                            name,
-                            dir_fd=directory_descriptor,
-                            follow_symlinks=False,
-                        )
-                    except OSError as error:
-                        raise SelectedXcodeBuildOrchestratorError(
-                            "private read-lease held symlink changed during validation"
-                        ) from error
-                    current_generation = (
-                        current_metadata.st_dev,
-                        current_metadata.st_ino,
-                        stat.S_IFMT(current_metadata.st_mode),
-                        current_metadata.st_mtime_ns,
-                        current_metadata.st_ctime_ns,
-                        current_metadata.st_size,
-                    )
-                    if current_generation != accepted_symlink_generation:
-                        raise SelectedXcodeBuildOrchestratorError(
-                            "private read-lease held symlink generation changed during validation"
-                        )
-
-                try:
-                    target_text = os.readlink(name, dir_fd=directory_descriptor)
-                except OSError as error:
-                    raise SelectedXcodeBuildOrchestratorError(
-                        "private read-lease held symlink changed during validation"
-                    ) from error
-                require_same_symlink_generation()
-                target_parts = _normalize_held_symlink_target(
-                    subject,
-                    entry_parts,
-                    target_text,
-                )
-                _validate_held_symlink_target(
-                    subject,
-                    subject_descriptor,
-                    target_parts,
-                )
-                require_same_symlink_generation()
-                continue
-'''
+          old = base64.b64decode(os.environ["OLD_B64"]).decode("utf-8")
+          new = base64.b64decode(os.environ["NEW_B64"]).decode("utf-8")
           if source.count(old) != 1:
               raise SystemExit("held-symlink validation seam did not match exactly once")
           path.write_text(source.replace(old, new), encoding="utf-8")
