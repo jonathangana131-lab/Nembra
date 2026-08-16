@@ -1,0 +1,189 @@
+name: Capture Generated Generation Convergence Author
+
+on:
+  push:
+    branches:
+      - converge/v17-capture-generated-generation-continuity-gpt56-20260815
+
+permissions:
+  contents: write
+
+env:
+  EXACT_PARENT: 1cdeac67a40e8fc6dd19a87a7ec8c067a6a6c60f
+  AUTHOR_WORKFLOW: .github/workflows/capture-generated-generation-convergence-author.yml
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact convergence parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD)"
+          test "$changed" = "$AUTHOR_WORKFLOW"
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Compose repository-root generation continuity
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+
+          helper_path = Path('scripts/ci/capture_accepted_build_input_snapshot.py')
+          source = helper_path.read_text(encoding='utf-8')
+
+          replacements = [
+              (
+                  '''    root_fd = _open_repository_root(root)\n    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}\n    try:\n        for subject in GENERATED_SUBJECTS:\n            if subject in seen:\n''',
+                  '''    root_fd = _open_repository_root(root)\n    root_generation = os.fstat(root_fd)\n    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}\n    try:\n        for subject in GENERATED_SUBJECTS:\n            _assert_directory_generation(root_fd, root_generation, Path("<repository-root>"))\n            if subject in seen:\n''',
+              ),
+              (
+                  '''            finally:\n                os.close(descriptor)\n    finally:\n        _close_directory_cache(directory_cache)\n        os.close(root_fd)\n    payload = {\n''',
+                  '''            finally:\n                os.close(descriptor)\n            _assert_directory_generation(root_fd, root_generation, Path("<repository-root>"))\n    finally:\n        _close_directory_cache(directory_cache)\n        os.close(root_fd)\n    payload = {\n''',
+              ),
+              (
+                  '''    root_fd = _open_repository_root(source_root)\n    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}\n    try:\n        for subject in GENERATED_SUBJECTS:\n            descriptor, metadata, kind = _open_subject(root_fd, subject, directory_cache)\n''',
+                  '''    root_fd = _open_repository_root(source_root)\n    root_generation = os.fstat(root_fd)\n    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}\n    try:\n        for subject in GENERATED_SUBJECTS:\n            _assert_directory_generation(root_fd, root_generation, Path("<repository-root>"))\n            descriptor, metadata, kind = _open_subject(root_fd, subject, directory_cache)\n''',
+              ),
+              (
+                  '''            finally:\n                os.close(descriptor)\n    finally:\n        _close_directory_cache(directory_cache)\n        os.close(root_fd)\n\n\ndef stage_accepted_build_inputs(\n''',
+                  '''            finally:\n                os.close(descriptor)\n            _assert_directory_generation(root_fd, root_generation, Path("<repository-root>"))\n    finally:\n        _close_directory_cache(directory_cache)\n        os.close(root_fd)\n\n\ndef stage_accepted_build_inputs(\n''',
+              ),
+          ]
+          for old, new in replacements:
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'helper transform cardinality mismatch: expected 1, got {count}')
+              source = source.replace(old, new, 1)
+          helper_path.write_text(source, encoding='utf-8')
+
+          test_path = Path('scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py')
+          tests = test_path.read_text(encoding='utf-8')
+          marker = '\n\nif __name__ == "__main__":\n    unittest.main(verbosity=2)\n'
+          if tests.count(marker) != 1:
+              raise SystemExit('test insertion marker cardinality mismatch')
+          addition = r'''
+
+    def test_manifest_rejects_root_sibling_splice_between_fixed_subjects(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(
+            prefix="nembra-root-sibling-manifest-convergence-",
+            dir=REPOSITORY,
+        ) as raw:
+            outer = Path(raw)
+            root = outer / "repo"
+            root.mkdir()
+            seed_common(root)
+            generation = make_generation(root, "LocalSecrets.A", b"SDK-A\n", b"RUNTIME-A\n")
+            generation.rename(root / "LocalSecrets")
+
+            replacement_lock = outer / "replacement-Podfile.lock"
+            replacement_lock.write_text("PODS:\n  - Replacement\n", encoding="utf-8")
+            replacement_pods = outer / "replacement-Pods"
+            replacement_pods.mkdir()
+            (replacement_pods / "ReplacementPod.swift").write_text("// replacement\n", encoding="utf-8")
+
+            original_open = helper._open_subject
+            swapped = False
+
+            def splice_before_pods(root_fd: int, subject: Path, directory_cache=None):
+                nonlocal swapped
+                if subject == Path("Pods") and not swapped:
+                    (root / "Podfile.lock").rename(root / "Podfile.lock.A.attack")
+                    replacement_lock.rename(root / "Podfile.lock")
+                    (root / "Pods").rename(root / "Pods.A.attack")
+                    replacement_pods.rename(root / "Pods")
+                    swapped = True
+                return original_open(root_fd, subject, directory_cache)
+
+            with mock.patch.object(helper, "_open_subject", side_effect=splice_before_pods):
+                with self.assertRaises(helper.AcceptedBuildInputSnapshotError):
+                    helper.canonical_generated_manifest(root, SOURCE_SHA)
+            self.assertTrue(swapped)
+
+    def test_copy_rejects_root_sibling_splice_between_fixed_subjects(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(
+            prefix="nembra-root-sibling-copy-convergence-",
+            dir=REPOSITORY,
+        ) as raw:
+            outer = Path(raw)
+            root = outer / "repo"
+            root.mkdir()
+            seed_common(root)
+            generation = make_generation(root, "LocalSecrets.A", b"SDK-A\n", b"RUNTIME-A\n")
+            generation.rename(root / "LocalSecrets")
+            destination = outer / "stage"
+            destination.mkdir()
+
+            replacement_lock = outer / "replacement-Podfile.lock"
+            replacement_lock.write_text("PODS:\n  - Replacement\n", encoding="utf-8")
+            replacement_pods = outer / "replacement-Pods"
+            replacement_pods.mkdir()
+            (replacement_pods / "ReplacementPod.swift").write_text("// replacement\n", encoding="utf-8")
+
+            original_open = helper._open_subject
+            swapped = False
+
+            def splice_before_pods(root_fd: int, subject: Path, directory_cache=None):
+                nonlocal swapped
+                if subject == Path("Pods") and not swapped:
+                    (root / "Podfile.lock").rename(root / "Podfile.lock.A.attack")
+                    replacement_lock.rename(root / "Podfile.lock")
+                    (root / "Pods").rename(root / "Pods.A.attack")
+                    replacement_pods.rename(root / "Pods")
+                    swapped = True
+                return original_open(root_fd, subject, directory_cache)
+
+            with mock.patch.object(helper, "_open_subject", side_effect=splice_before_pods):
+                with self.assertRaises(helper.AcceptedBuildInputSnapshotError):
+                    helper._copy_generated_subjects(root, destination)
+            self.assertTrue(swapped)
+'''
+          tests = tests.replace(marker, addition + marker, 1)
+          test_path.write_text(tests, encoding='utf-8')
+          PY
+
+      - name: Validate converged accepted-input chronology
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+          for raw in (
+              'scripts/ci/capture_accepted_build_input_snapshot.py',
+              'scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py',
+          ):
+              path = Path(raw)
+              compile(path.read_bytes(), str(path), 'exec', dont_inherit=True)
+          PY
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+
+      - name: Publish permanent convergence tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm "$AUTHOR_WORKFLOW"
+          git diff --check "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT" | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(capture): converge generated generation continuity'
+          git push origin HEAD:converge/v17-capture-generated-generation-continuity-gpt56-20260815
