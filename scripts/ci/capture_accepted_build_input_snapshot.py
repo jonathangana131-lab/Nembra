@@ -586,9 +586,11 @@ def canonical_generated_manifest(root: Path, source_sha: str) -> bytes:
     records: list[dict[str, object]] = []
     seen: set[Path] = set()
     root_fd = _open_repository_root(root)
+    root_generation = os.fstat(root_fd)
     directory_cache: dict[Path, tuple[int, os.stat_result]] = {}
     try:
         for subject in GENERATED_SUBJECTS:
+            _assert_directory_generation(root_fd, root_generation, Path("<repository-root>"))
             if subject in seen:
                 raise AcceptedBuildInputSnapshotError(f"overlapping build-input subject: {subject}")
             descriptor, metadata, kind = _open_subject(root_fd, subject, directory_cache)
@@ -615,6 +617,7 @@ def canonical_generated_manifest(root: Path, source_sha: str) -> bytes:
                     _manifest_directory(descriptor, subject, records, seen)
             finally:
                 os.close(descriptor)
+            _assert_directory_generation(root_fd, root_generation, Path("<repository-root>"))
     finally:
         _close_directory_cache(directory_cache)
         os.close(root_fd)
@@ -774,9 +777,11 @@ def _copy_generated_subjects(source_root: Path, destination_root: Path) -> None:
     source_root = _absolute(source_root)
     destination_root = _absolute(destination_root)
     root_fd = _open_repository_root(source_root)
+    root_generation = os.fstat(root_fd)
     directory_cache: dict[Path, tuple[int, os.stat_result]] = {}
     try:
         for subject in GENERATED_SUBJECTS:
+            _assert_directory_generation(root_fd, root_generation, Path("<repository-root>"))
             descriptor, metadata, kind = _open_subject(root_fd, subject, directory_cache)
             try:
                 if kind == "file":
@@ -790,6 +795,7 @@ def _copy_generated_subjects(source_root: Path, destination_root: Path) -> None:
                     _copy_directory_fd(descriptor, destination_root, subject)
             finally:
                 os.close(descriptor)
+            _assert_directory_generation(root_fd, root_generation, Path("<repository-root>"))
     finally:
         _close_directory_cache(directory_cache)
         os.close(root_fd)
