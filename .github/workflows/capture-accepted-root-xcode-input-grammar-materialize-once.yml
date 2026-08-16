@@ -1,0 +1,459 @@
+name: Capture accepted-root Xcode input grammar materialize once
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-accepted-root-xcode-input-grammar-bf2f-sol-20260815
+    paths:
+      - .github/workflows/capture-accepted-root-xcode-input-grammar-materialize-once.yml
+
+permissions:
+  contents: write
+
+env:
+  EXACT_PARENT: bf2f1e1d718849ef6741ec532e28975527311e95
+  BRANCH: repair/v17-capture-accepted-root-xcode-input-grammar-bf2f-sol-20260815
+  PYTHONDONTWRITEBYTECODE: 1
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.BRANCH }}
+          fetch-depth: 0
+
+      - name: Bind one-shot parent and scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD)"
+          test "$changed" = ".github/workflows/capture-accepted-root-xcode-input-grammar-materialize-once.yml"
+
+      - name: Materialize strict Xcode input grammar repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B - <<'PY'
+          from pathlib import Path
+
+          orchestrator = Path("scripts/ci/capture_selected_xcode_build_orchestrator.py")
+          source = orchestrator.read_text(encoding="utf-8")
+
+          marker = "\ndef _bind_private_read_lease("
+          if source.count(marker) != 1:
+              raise SystemExit("expected one private-read lease binder marker")
+          helper = r'''
+
+def _bind_accepted_root_xcode_inputs(
+    command: Sequence[str], *, accepted_root: Path
+) -> list[str]:
+    """Bind all caller-selectable Xcode source inputs to one accepted build root."""
+
+    accepted_root = _absolute_lexical(accepted_root)
+    _require_real_directory(accepted_root, "accepted compiler working root")
+    accepted_workspace = accepted_root / "NembraCapture.xcworkspace"
+    _require_real_directory(accepted_workspace, "accepted Xcode workspace")
+
+    rewritten = list(command)
+    markers = [index for index, value in enumerate(rewritten) if value == "/usr/bin/xcodebuild"]
+    if len(markers) != 1:
+        raise SelectedXcodeBuildOrchestratorError(
+            "strict accepted-root build requires exactly one canonical xcodebuild marker"
+        )
+    marker_index = markers[0]
+
+    blocked_path_flags = {
+        "-project",
+        "-xcconfig",
+        "-clonedSourcePackagesDirPath",
+        "-packageCachePath",
+    }
+    blocked_source_settings = {
+        "SRCROOT",
+        "SOURCE_ROOT",
+        "PROJECT_DIR",
+        "PROJECT_FILE_PATH",
+        "WORKSPACE_PATH",
+        "PODS_ROOT",
+        "PODS_PODFILE_DIR_PATH",
+    }
+    workspace_indexes: list[int] = []
+    index = marker_index + 1
+    while index < len(rewritten):
+        token = rewritten[index]
+        if token == "-workspace":
+            if index + 1 >= len(rewritten):
+                raise SelectedXcodeBuildOrchestratorError(
+                    "strict accepted-root xcodebuild workspace selector has no value"
+                )
+            workspace_indexes.append(index)
+            index += 2
+            continue
+        if token.startswith("-workspace="):
+            raise SelectedXcodeBuildOrchestratorError(
+                "strict accepted-root xcodebuild requires the canonical split workspace selector"
+            )
+        if token in blocked_path_flags or any(
+            token.startswith(flag + "=") for flag in blocked_path_flags
+        ):
+            raise SelectedXcodeBuildOrchestratorError(
+                f"strict accepted-root xcodebuild forbids alternate source selector: {token}"
+            )
+        if "=" in token:
+            setting = token.split("=", 1)[0]
+            if setting in blocked_source_settings:
+                raise SelectedXcodeBuildOrchestratorError(
+                    f"strict accepted-root xcodebuild forbids source-root override: {setting}"
+                )
+        index += 1
+
+    if len(workspace_indexes) != 1:
+        raise SelectedXcodeBuildOrchestratorError(
+            "strict accepted-root xcodebuild requires exactly one workspace selector"
+        )
+    workspace_index = workspace_indexes[0]
+    workspace_value = rewritten[workspace_index + 1]
+    if workspace_value != "NembraCapture.xcworkspace":
+        raise SelectedXcodeBuildOrchestratorError(
+            "strict accepted-root xcodebuild workspace must be the canonical relative Capture workspace"
+        )
+    rewritten[workspace_index + 1] = str(accepted_workspace)
+    return rewritten
+'''
+          source = source.replace(marker, helper + marker, 1)
+
+          old = '''            canonical_command = _rebase_private_guard_paths(
+                canonical_command, live_repo=repo, accepted_root=accepted_root
+            )
+            private_subjects = (
+'''
+          new = '''            canonical_command = _rebase_private_guard_paths(
+                canonical_command, live_repo=repo, accepted_root=accepted_root
+            )
+            canonical_command = _bind_accepted_root_xcode_inputs(
+                canonical_command, accepted_root=accepted_root
+            )
+            private_subjects = (
+'''
+          if source.count(old) != 1:
+              raise SystemExit("expected one strict private-input rebase seam")
+          source = source.replace(old, new, 1)
+          orchestrator.write_text(source, encoding="utf-8")
+
+          composition = Path("scripts/ci/tests/test_capture_accepted_root_build_composition.py")
+          test_source = composition.read_text(encoding="utf-8")
+          old_command = '''        "--",
+        "/usr/bin/xcodebuild",
+        "-version",
+'''
+          new_command = '''        "--",
+        "/usr/bin/xcodebuild",
+        "-workspace",
+        "NembraCapture.xcworkspace",
+        "-derivedDataPath",
+        "__NEMBRA_PROTECTED_DERIVED__",
+        "-version",
+'''
+          if test_source.count(old_command) != 1:
+              raise SystemExit("expected one strict test xcode command fixture")
+          test_source = test_source.replace(old_command, new_command, 1)
+          old_root = '''            accepted_root = fixture / "accepted-root"
+            accepted_root.mkdir()
+'''
+          new_root = '''            accepted_root = fixture / "accepted-root"
+            accepted_root.mkdir()
+            (accepted_root / "NembraCapture.xcworkspace").mkdir()
+'''
+          if test_source.count(old_root) != 1:
+              raise SystemExit("expected one accepted-root fixture")
+          test_source = test_source.replace(old_root, new_root, 1)
+          old_assert = '''    assert _value(command, "--identity-sources") == EXPECTED_ROOT + "/LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig"
+    developer = "/Library/NembraSelectedXcodeFreeze.fixture/Xcode.app/Contents/Developer"
+'''
+          new_assert = '''    assert _value(command, "--identity-sources") == EXPECTED_ROOT + "/LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig"
+    assert _value(command, "-workspace") == EXPECTED_ROOT + "/NembraCapture.xcworkspace"
+    assert _value(command, "-derivedDataPath") == "__NEMBRA_PROTECTED_DERIVED__"
+    developer = "/Library/NembraSelectedXcodeFreeze.fixture/Xcode.app/Contents/Developer"
+'''
+          if test_source.count(old_assert) != 1:
+              raise SystemExit("expected one strict build-source assertion seam")
+          composition.write_text(test_source.replace(old_assert, new_assert, 1), encoding="utf-8")
+          PY
+
+          cat > scripts/ci/tests/test_capture_accepted_root_xcode_input_grammar.py <<'PY'
+          #!/usr/bin/env python3
+          """Inverse regression for accepted-root xcodebuild input selection."""
+
+          from __future__ import annotations
+
+          import importlib.util
+          from pathlib import Path
+          import tempfile
+          import unittest
+
+          REPOSITORY = Path(__file__).resolve().parents[3]
+          ORCHESTRATOR = REPOSITORY / "scripts/ci/capture_selected_xcode_build_orchestrator.py"
+
+
+          def load():
+              spec = importlib.util.spec_from_file_location(
+                  "nembra_accepted_root_xcode_input_grammar", ORCHESTRATOR
+              )
+              if spec is None or spec.loader is None:
+                  raise RuntimeError("could not load selected-Xcode orchestrator")
+              module = importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(module)
+              return module
+
+
+          def command(*extra: str) -> list[str]:
+              return [
+                  "/usr/bin/python3",
+                  "-I",
+                  "/accepted/guard.py",
+                  "--",
+                  "/usr/bin/xcodebuild",
+                  "-workspace",
+                  "NembraCapture.xcworkspace",
+                  "-scheme",
+                  "Nembra Capture",
+                  "-configuration",
+                  "Debug",
+                  "-destination",
+                  "generic/platform=iOS",
+                  "-derivedDataPath",
+                  "__NEMBRA_PROTECTED_DERIVED__",
+                  "-allowProvisioningUpdates",
+                  "-allowProvisioningDeviceRegistration",
+                  "DEVELOPMENT_TEAM=ABCDEFGHIJ",
+                  "CODE_SIGN_STYLE=Automatic",
+                  "PRODUCT_BUNDLE_IDENTIFIER=com.example.capture",
+                  "NEMBRA_CAPTURE_BUILD_IDENTIFIER=fixture",
+                  "NEMBRA_CAPTURE_BUILD_COMMIT_SHA=" + "a" * 40,
+                  "NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256=" + "b" * 64,
+                  "NEMBRA_CAPTURE_TUYA_PRIVATE_PROVENANCE_SHA256=" + "c" * 64,
+                  "INFOPLIST_KEY_NembraCaptureProcedureIdentifier=ES80-AUTHENTICATED-STATIONARY-v1",
+                  *extra,
+              ]
+
+
+          class AcceptedRootXcodeInputGrammarTests(unittest.TestCase):
+              def setUp(self) -> None:
+                  self.helper = load()
+                  self.temporary = tempfile.TemporaryDirectory(
+                      prefix="nembra-accepted-root-xcode-input-"
+                  )
+                  self.root = Path(self.temporary.name) / "accepted"
+                  self.root.mkdir()
+                  (self.root / "NembraCapture.xcworkspace").mkdir()
+
+              def tearDown(self) -> None:
+                  self.temporary.cleanup()
+
+              def bind(self, value: list[str]) -> list[str]:
+                  return self.helper._bind_accepted_root_xcode_inputs(
+                      value, accepted_root=self.root
+                  )
+
+              def test_canonical_relative_workspace_is_rewritten_to_sealed_root(self) -> None:
+                  original = command()
+                  rebound = self.bind(original)
+                  workspace_index = rebound.index("-workspace")
+                  self.assertEqual(
+                      rebound[workspace_index + 1],
+                      str(self.root / "NembraCapture.xcworkspace"),
+                  )
+                  derived_index = rebound.index("-derivedDataPath")
+                  self.assertEqual(
+                      rebound[derived_index + 1], "__NEMBRA_PROTECTED_DERIVED__"
+                  )
+                  self.assertEqual(
+                      original[original.index("-workspace") + 1],
+                      "NembraCapture.xcworkspace",
+                  )
+
+              def test_absolute_live_or_external_workspace_is_rejected(self) -> None:
+                  for workspace in (
+                      str(REPOSITORY / "NembraCapture.xcworkspace"),
+                      "/tmp/attacker/NembraCapture.xcworkspace",
+                      "subdir/NembraCapture.xcworkspace",
+                  ):
+                      candidate = command()
+                      candidate[candidate.index("-workspace") + 1] = workspace
+                      with self.subTest(workspace=workspace):
+                          with self.assertRaises(
+                              self.helper.SelectedXcodeBuildOrchestratorError
+                          ):
+                              self.bind(candidate)
+
+              def test_alternate_path_selectors_are_rejected(self) -> None:
+                  for flag in (
+                      "-project",
+                      "-xcconfig",
+                      "-clonedSourcePackagesDirPath",
+                      "-packageCachePath",
+                  ):
+                      with self.subTest(flag=flag):
+                          with self.assertRaises(
+                              self.helper.SelectedXcodeBuildOrchestratorError
+                          ):
+                              self.bind(command(flag, "/tmp/attacker"))
+
+              def test_source_root_build_setting_overrides_are_rejected(self) -> None:
+                  for setting in (
+                      "SRCROOT",
+                      "SOURCE_ROOT",
+                      "PROJECT_DIR",
+                      "PROJECT_FILE_PATH",
+                      "WORKSPACE_PATH",
+                      "PODS_ROOT",
+                      "PODS_PODFILE_DIR_PATH",
+                  ):
+                      with self.subTest(setting=setting):
+                          with self.assertRaises(
+                              self.helper.SelectedXcodeBuildOrchestratorError
+                          ):
+                              self.bind(command(f"{setting}=/tmp/attacker"))
+
+              def test_missing_duplicate_and_joined_workspace_grammar_fail_closed(self) -> None:
+                  missing = command()
+                  index = missing.index("-workspace")
+                  del missing[index:index + 2]
+                  duplicate = command("-workspace", "NembraCapture.xcworkspace")
+                  joined = command("-workspace=/tmp/attacker")
+                  for candidate in (missing, duplicate, joined):
+                      with self.assertRaises(
+                          self.helper.SelectedXcodeBuildOrchestratorError
+                      ):
+                          self.bind(candidate)
+
+
+          if __name__ == "__main__":
+              unittest.main(verbosity=2)
+          PY
+
+          cat > .github/workflows/capture-accepted-root-build-composition.yml <<'YAML'
+          name: Capture Accepted Root Build Composition
+
+          on:
+            pull_request:
+              paths:
+                - scripts/ci/capture_selected_xcode_build_orchestrator.py
+                - scripts/ci/tests/test_capture_accepted_root_build_composition.py
+                - scripts/ci/tests/test_capture_accepted_root_xcode_input_grammar.py
+                - .github/workflows/capture-accepted-root-build-composition.yml
+            workflow_dispatch:
+
+          permissions:
+            contents: read
+
+          concurrency:
+            group: capture-accepted-root-build-composition-${{ github.event.pull_request.number || github.ref }}
+            cancel-in-progress: true
+
+          env:
+            EXACT_PARENT: bf2f1e1d718849ef6741ec532e28975527311e95
+            PYTHONDONTWRITEBYTECODE: 1
+
+          jobs:
+            composition:
+              name: Prove sealed-root Xcode input grammar
+              runs-on: ubuntu-latest
+              timeout-minutes: 8
+              steps:
+                - uses: actions/checkout@v6
+                  with:
+                    ref: ${{ github.event.pull_request.head.sha || github.sha }}
+                    fetch-depth: 0
+                    persist-credentials: false
+
+                - name: Bind exact repair child
+                  shell: bash
+                  run: |
+                    set -euo pipefail
+                    expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+                    test "$(git rev-parse HEAD)" = "$expected_head"
+                    test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+                    actual="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+                    expected="$(printf '%s\n' \
+                      .github/workflows/capture-accepted-root-build-composition.yml \
+                      scripts/ci/capture_selected_xcode_build_orchestrator.py \
+                      scripts/ci/tests/test_capture_accepted_root_build_composition.py \
+                      scripts/ci/tests/test_capture_accepted_root_xcode_input_grammar.py | LC_ALL=C sort)"
+                    test "$actual" = "$expected"
+                    git diff --check "$EXACT_PARENT"...HEAD
+                    test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+                - name: Compile exact repair surface without artifacts
+                  shell: bash
+                  run: |
+                    set -euo pipefail
+                    /usr/bin/python3 -B -I - <<'PY'
+                    from pathlib import Path
+                    for raw in (
+                        "scripts/ci/capture_selected_xcode_build_orchestrator.py",
+                        "scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py",
+                        "scripts/ci/tests/test_capture_accepted_root_build_composition.py",
+                        "scripts/ci/tests/test_capture_accepted_root_xcode_input_grammar.py",
+                    ):
+                        path = Path(raw)
+                        compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
+                    PY
+                    test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+                - name: Preserve legacy selected-Xcode composition contract
+                  shell: bash
+                  run: |
+                    set -euo pipefail
+                    /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+                    test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+                - name: Prove strict accepted-root compiler composition
+                  shell: bash
+                  run: |
+                    set -euo pipefail
+                    /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_root_build_composition.py
+                    test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+                - name: Invert absolute-workspace and alternate-input escapes
+                  shell: bash
+                  run: |
+                    set -euo pipefail
+                    /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_root_xcode_input_grammar.py
+                    test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+                - name: Preserve physical boundary truth
+                  shell: bash
+                  run: |
+                    set -euo pipefail
+                    helper=scripts/ci/capture_selected_xcode_build_orchestrator.py
+                    grep -Fq '_bind_accepted_root_xcode_inputs' "$helper"
+                    grep -Fq 'NembraCapture.xcworkspace' "$helper"
+                    grep -Fq 'strict accepted-root xcodebuild forbids source-root override' "$helper"
+                    echo "NEMBRA_ACCEPTED_ROOT_BUILD_BOUNDARY compilerInputGrammarProved=true installerWired=false signingAuthority=false installAuthority=false deviceTouched=false bluetoothTouched=false physicalAuthorityCreated=false"
+          YAML
+
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_root_build_composition.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_root_xcode_input_grammar.py
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Commit clean repair and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Nembra GO worker"
+          git config user.email "nembra-go@users.noreply.github.com"
+          rm .github/workflows/capture-accepted-root-xcode-input-grammar-materialize-once.yml
+          git add \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_accepted_root_build_composition.py \
+            scripts/ci/tests/test_capture_accepted_root_xcode_input_grammar.py \
+            .github/workflows/capture-accepted-root-build-composition.yml \
+            .github/workflows/capture-accepted-root-xcode-input-grammar-materialize-once.yml
+          git commit -m "fix(capture): bind Xcode inputs to accepted root"
+          git push origin "HEAD:$BRANCH"
