@@ -248,6 +248,79 @@ class CapturePrivateReadLeaseComponentWalkTests(unittest.TestCase):
             self.assertFalse(lease._opened)
             self.assertEqual(lease._principal, "")
 
+    def test_grant_rejects_symlink_retargeted_after_descriptor_bound_validation(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(
+            prefix="nembra-post-validate-symlink-retarget-regression-",
+            dir=REPO,
+        ) as raw:
+            outer = Path(raw)
+            repo = outer / "repo"
+            subject = repo / "LocalSecrets/TuyaSDK/Build"
+            inside = subject / "inside"
+            inside.mkdir(parents=True)
+            (inside / "inside.fixture").write_text("inside\n", encoding="utf-8")
+
+            external = outer / "outside-subject"
+            external.mkdir()
+            (external / "outside.fixture").write_text("outside\n", encoding="utf-8")
+
+            link = subject / "escape"
+            link.symlink_to("inside", target_is_directory=True)
+
+            original_validator = helper._validate_subject_symlinks_from_descriptor
+            validation_count = 0
+            retargeted = False
+
+            def validate_safe_then_retarget(
+                admitted_subject: Path,
+                subject_descriptor: int,
+            ) -> None:
+                nonlocal validation_count, retargeted
+                validation_count += 1
+                original_validator(admitted_subject, subject_descriptor)
+                if not retargeted:
+                    # Reproduce #3438 exactly: mutate only after the first held-
+                    # descriptor policy check has accepted the safe internal target.
+                    link.unlink()
+                    link.symlink_to(external, target_is_directory=True)
+                    retargeted = True
+
+            acl_state: dict[int, str] = {}
+
+            def fake_acl_listing(descriptor: int) -> str:
+                return acl_state.get(descriptor, "")
+
+            def fake_chmod_acl(descriptor: int, operation: str, acl: str) -> None:
+                if operation == "+a":
+                    acl_state[descriptor] = f"0: {acl}"
+                elif operation == "-a":
+                    acl_state[descriptor] = ""
+                else:
+                    raise AssertionError(f"unexpected ACL operation: {operation}")
+
+            lease = helper._PrivateReadLease((subject,), repo)
+            with (
+                mock.patch.object(
+                    helper,
+                    "_validate_subject_symlinks_from_descriptor",
+                    side_effect=validate_safe_then_retarget,
+                ),
+                mock.patch.object(helper, "_acl_listing", side_effect=fake_acl_listing),
+                mock.patch.object(helper, "_chmod_acl", side_effect=fake_chmod_acl),
+            ):
+                with self.assertRaisesRegex(
+                    helper.SelectedXcodeBuildOrchestratorError,
+                    "symlink escaped|symlink target",
+                ):
+                    lease.grant("nembrapostvalidate")
+
+            self.assertTrue(retargeted)
+            self.assertGreaterEqual(validation_count, 2)
+            self.assertFalse(lease._opened)
+            self.assertEqual(lease._principal, "")
+            self.assertTrue(all(not listing for listing in acl_state.values()))
+
     def test_descriptor_bound_symlink_policy_accepts_internal_framework_chain(self) -> None:
         helper = load()
         with tempfile.TemporaryDirectory(prefix="nembra-held-symlink-control-") as raw:
@@ -310,6 +383,7 @@ class CapturePrivateReadLeaseComponentWalkTests(unittest.TestCase):
         opener = inspect.getsource(helper._open_pinned_path)
         lease_paths = inspect.getsource(helper._lease_paths)
         verifier = inspect.getsource(helper._verify_descriptor_plan)
+        revalidator = inspect.getsource(helper._revalidate_held_subject_symlink_policy)
         symlink_validator = inspect.getsource(helper._validate_subject_symlinks_from_descriptor)
         symlink_target = inspect.getsource(helper._validate_held_symlink_target)
         grant = inspect.getsource(helper._PrivateReadLease.grant)
@@ -319,6 +393,8 @@ class CapturePrivateReadLeaseComponentWalkTests(unittest.TestCase):
         self.assertIn("_verify_descriptor_plan", lease_paths)
         self.assertIn("_validate_subject_symlinks_from_descriptor", lease_paths)
         self.assertIn("_open_pinned_child", verifier)
+        self.assertIn("_descriptor_signature", revalidator)
+        self.assertIn("_validate_subject_symlinks_from_descriptor", revalidator)
         self.assertIn("os.listdir(directory_descriptor)", symlink_validator)
         self.assertIn("os.readlink(name, dir_fd=directory_descriptor)", symlink_validator)
         self.assertIn("os.readlink(component, dir_fd=current)", symlink_target)
@@ -326,6 +402,7 @@ class CapturePrivateReadLeaseComponentWalkTests(unittest.TestCase):
         self.assertNotIn(".resolve(strict=True)", symlink_target)
         self.assertIn("include_descriptors=True", grant)
         self.assertIn("accepted_signature, descriptor", grant)
+        self.assertIn("_revalidate_held_subject_symlink_policy", grant)
         self.assertNotIn("include_signatures=True", grant)
 
 
