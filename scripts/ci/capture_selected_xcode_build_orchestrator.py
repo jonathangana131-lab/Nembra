@@ -754,6 +754,38 @@ def _verify_descriptor_plan(
             diagnostic = _open_pinned_path(path, is_directory, signature)
         os.close(diagnostic)
 
+
+def _validate_lease_subject_symlinks(
+    subjects: Sequence[Path],
+    plan: Sequence[tuple[Path, bool, tuple[int, int, int], int]],
+) -> None:
+    """Re-attest held subject symlink policy at an ACL authority transition.
+
+    The descriptor plan pins every ACL-bearing real object, while symlink objects
+    remain deliberately unprivileged. Rewalking each canonical subject through its
+    already-held descriptor closes the validation-to-grant gap without treating a
+    pathname snapshot as authority or granting ACLs to symlinks themselves.
+    """
+    by_path = {Path(path): entry for entry in plan for path in (entry[0],)}
+    for raw_subject in subjects:
+        subject = _absolute_lexical(Path(raw_subject))
+        held_subject = by_path.get(subject)
+        if held_subject is None or len(held_subject) != 4:
+            raise SelectedXcodeBuildOrchestratorError(
+                "private read-lease held subject descriptor is unavailable at authority transition"
+            )
+        _path, host_only, accepted_signature, descriptor = held_subject
+        if host_only:
+            raise SelectedXcodeBuildOrchestratorError(
+                "private read-lease subject was misclassified as host-only authority"
+            )
+        if _descriptor_signature(int(descriptor)) != accepted_signature:
+            raise SelectedXcodeBuildOrchestratorError(
+                "private read-lease held subject changed before authority transition"
+            )
+        _validate_subject_symlinks_from_descriptor(subject, int(descriptor))
+
+
 def _descriptor_path(descriptor: int) -> str:
     if descriptor < 0:
         raise SelectedXcodeBuildOrchestratorError("read-lease descriptor is invalid")
@@ -845,6 +877,11 @@ class _PrivateReadLease:
                 for path, _host_only, accepted_signature, descriptor in pinned_plan
             ]
 
+            # _lease_paths performs descriptor-bound symlink classification while
+            # planning. Re-attest immediately before the first ACL mutation so a
+            # retarget injected after planning cannot cross into authority.
+            _validate_lease_subject_symlinks(self._subjects, pinned_plan)
+
             for record, (path, host_only, accepted_signature, descriptor) in zip(
                 self._opened, pinned_plan
             ):
@@ -883,6 +920,12 @@ class _PrivateReadLease:
                     path, is_directory, accepted_signature
                 )
                 os.close(diagnostic)
+
+            # ACL application itself spans multiple syscalls. Re-attest the held
+            # symlink graph after the final ACL is proven and before grant returns.
+            # Any persistent retarget in that interval enters the existing exact
+            # rollback path instead of becoming build authority.
+            _validate_lease_subject_symlinks(self._subjects, pinned_plan)
         except Exception as error:
             try:
                 self.revoke()
