@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 39,
+    "classifiedPRTotal": 40,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1074,7 +1074,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.18,
+        "similarity": 0.191,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "3316": {
@@ -1239,7 +1239,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3359,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.189,
+        "similarity": 0.209,
         "title": "[Capture P0][VALIDATION] Bind generated CocoaPods/private inputs before source snapshot"
       },
       "3360": {
@@ -1459,7 +1459,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3516,
         "recommendedAction": "independent-review",
-        "similarity": 0.229,
+        "similarity": 0.238,
         "title": "[Capture P0][REPAIR INGREDIENT] Bind strict workspace to accepted root"
       },
       "3527": {
@@ -1492,8 +1492,19 @@
         "lane": "capture-signed-install-custody",
         "pr": 3531,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.246,
+        "similarity": 0.347,
         "title": "[Capture P0][REPAIR] Seal exact custody witness before root execution"
+      },
+      "3532": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3532,
+        "recommendedAction": "independent-review",
+        "similarity": 0.349,
+        "title": "[Capture P0][SYNC] Promote pre-sealed custody witness onto live carrier"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1526,7 +1537,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:57:34Z",
+    "liveRefreshAt": "2026-08-16T06:57:54Z",
     "liveRefreshDuplicatesSuppressed": [
       3416
     ],
@@ -5311,10 +5322,10 @@
       "userValue": 7
     }
   },
-  "revision": 805,
+  "revision": 806,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:57:36Z",
+  "updatedAt": "2026-08-16T06:57:56Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5390,7 +5401,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:57:34Z",
+      "updatedAt": "2026-08-16T06:57:54Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
