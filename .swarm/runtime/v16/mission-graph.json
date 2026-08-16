@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 50,
+    "classifiedPRTotal": 49,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1506,17 +1506,6 @@
         "similarity": 0.368,
         "title": "[Vehicle/Controls V15] Clear full persistent Navigation footprint"
       },
-      "3454": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "e0052466c3aca45c2e65101722adc82f2ddd27f5",
-        "lane": "capture-private-read-lease",
-        "pr": 3454,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.366,
-        "title": "[Capture P0][CI] Re-anchor inherited read-lease rollback fixtures on Darwin"
-      },
       "3457": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1647,7 +1636,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:27:22Z",
+    "liveRefreshAt": "2026-08-16T06:27:39Z",
     "liveRefreshDuplicatesSuppressed": [
       3470
     ],
@@ -5432,10 +5421,10 @@
       "userValue": 7
     }
   },
-  "revision": 719,
+  "revision": 720,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:27:25Z",
+  "updatedAt": "2026-08-16T06:27:42Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5511,7 +5500,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:27:22Z",
+      "updatedAt": "2026-08-16T06:27:39Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
