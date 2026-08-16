@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 41,
+    "classifiedPRTotal": 40,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1132,17 +1132,6 @@
         "similarity": 0.405,
         "title": "[Capture P0][RED TEAM] Preserve exact private guard execution through selected-Xcode composition"
       },
-      "3337": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "96509c7f8a9411df2ddebb65233bcead88388915",
-        "lane": "capture-signed-install-custody",
-        "pr": 3337,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.442,
-        "title": "[Capture P0][VALIDATION] Classify kernel PID 0 in numeric-principal witness"
-      },
       "3343": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1151,7 +1140,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3343,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.45,
+        "similarity": 0.286,
         "title": "[Capture P0][REPAIR] Make full numeric-principal witness PID-0 aware"
       },
       "3345": {
@@ -1492,7 +1481,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3513,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.272,
+        "similarity": 0.327,
         "title": "[Capture P0][REPAIR] Compose current selector fences with two-OS QA scope"
       },
       "3514": {
@@ -1503,7 +1492,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3514,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.417,
+        "similarity": 0.382,
         "title": "[Capture P0][REPAIR] Preserve cached-reuse descriptor ownership"
       },
       "3515": {
@@ -1514,7 +1503,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3515,
         "recommendedAction": "independent-review",
-        "similarity": 0.433,
+        "similarity": 0.38,
         "title": "[Capture P0][CONVERGENCE] Preserve cached-parent FD ownership"
       }
     },
@@ -1548,7 +1537,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:42:06Z",
+    "liveRefreshAt": "2026-08-16T06:42:25Z",
     "liveRefreshDuplicatesSuppressed": [
       3512
     ],
@@ -5333,10 +5322,10 @@
       "userValue": 7
     }
   },
-  "revision": 766,
+  "revision": 767,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:42:08Z",
+  "updatedAt": "2026-08-16T06:42:26Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5412,7 +5401,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:42:06Z",
+      "updatedAt": "2026-08-16T06:42:25Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
