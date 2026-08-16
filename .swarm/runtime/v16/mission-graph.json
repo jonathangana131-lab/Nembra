@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 52,
+    "classifiedPRTotal": 51,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1459,7 +1459,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3433,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.345,
+        "similarity": 0.283,
         "title": "[Capture P0][RED TEAM] Prove shared-ancestor cache-dup FD cleanup leak"
       },
       "3435": {
@@ -1483,17 +1483,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.373,
         "title": "[Capture P0][RED TEAM] Attack child entries under held generated ancestor"
-      },
-      "3439": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3439,
-        "recommendedAction": "independent-review",
-        "similarity": 0.335,
-        "title": "[Capture P0][HARDENING] Close shared-ancestor cache-dup child FD on failure"
       },
       "3442": {
         "classification": "requires-review",
@@ -1669,7 +1658,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:26:14Z",
+    "liveRefreshAt": "2026-08-16T06:26:34Z",
     "liveRefreshDuplicatesSuppressed": [
       3470
     ],
@@ -5454,10 +5443,10 @@
       "userValue": 7
     }
   },
-  "revision": 715,
+  "revision": 716,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:26:18Z",
+  "updatedAt": "2026-08-16T06:26:37Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5533,7 +5522,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:26:14Z",
+      "updatedAt": "2026-08-16T06:26:34Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
