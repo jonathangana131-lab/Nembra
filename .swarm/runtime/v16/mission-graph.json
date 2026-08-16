@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 52,
+    "classifiedPRTotal": 50,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1492,7 +1492,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3477,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.462,
+        "similarity": 0.369,
         "title": "[Capture P0][RED TEAM] Replay final-child splice on current accepted-input head"
       },
       "3478": {
@@ -1514,7 +1514,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3481,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.473,
+        "similarity": 0.405,
         "title": "[Capture P0][REPAIR] Revalidate held ancestor after final child admission"
       },
       "3489": {
@@ -1561,28 +1561,6 @@
         "similarity": 0.374,
         "title": "[Capture P0][CI] Anchor private UID lease fixtures under real Darwin temp"
       },
-      "3493": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3493,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.47,
-        "title": "[Capture P0][REPAIR] Revalidate generated parent after final child open"
-      },
-      "3495": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3495,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.508,
-        "title": "[Capture P0][REPAIR] Carry structured field credentials onto F1BE root custody"
-      },
       "3497": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1624,7 +1602,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3500,
         "recommendedAction": "independent-review",
-        "similarity": 0.525,
+        "similarity": 0.387,
         "title": "[Capture P0][TEST] Carry structured field launch onto F1BE root custody"
       },
       "3501": {
@@ -1635,7 +1613,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3501,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.394,
+        "similarity": 0.353,
         "title": "[Capture P0][REPAIR] Hold generated repository-root generation"
       }
     },
@@ -1669,7 +1647,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:35:04Z",
+    "liveRefreshAt": "2026-08-16T06:35:21Z",
     "liveRefreshDuplicatesSuppressed": [
       3499
     ],
@@ -5454,10 +5432,10 @@
       "userValue": 7
     }
   },
-  "revision": 744,
+  "revision": 745,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:35:07Z",
+  "updatedAt": "2026-08-16T06:35:24Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5533,7 +5511,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:35:04Z",
+      "updatedAt": "2026-08-16T06:35:21Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
