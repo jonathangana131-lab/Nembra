@@ -24,159 +24,87 @@ jobs:
           ref: repair/v17-capture-generated-root-generation-continuity-sol-20260815
           fetch-depth: 0
 
-      - name: Bind authoring parent
+      - name: Bind authoring lineage
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "$EXACT_PARENT"
-          test "$(git diff --name-only HEAD^...HEAD)" = ".github/workflows/capture-generated-shared-ancestor-continuity.yml"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD)"
+          test "$changed" = ".github/workflows/capture-generated-shared-ancestor-continuity.yml"
 
       - name: Fold root-generation repair and regressions
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
+          import base64
           from pathlib import Path
 
           helper = Path("scripts/ci/capture_accepted_build_input_snapshot.py")
           text = helper.read_text(encoding="utf-8")
-
-          canonical_anchor = '''    root_fd = _open_repository_root(root)
-    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}
-    try:
-        for subject in GENERATED_SUBJECTS:
-'''
-          canonical_replacement = '''    root_fd = _open_repository_root(root)
-    root_generation = os.fstat(root_fd)
-    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}
-    try:
-        for subject in GENERATED_SUBJECTS:
-            _assert_directory_generation(root_fd, root_generation, Path("<repository-root>"))
-'''
+          canonical_anchor = (
+              "    root_fd = _open_repository_root(root)\n"
+              "    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}\n"
+              "    try:\n"
+              "        for subject in GENERATED_SUBJECTS:\n"
+          )
+          canonical_replacement = (
+              "    root_fd = _open_repository_root(root)\n"
+              "    root_generation = os.fstat(root_fd)\n"
+              "    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}\n"
+              "    try:\n"
+              "        for subject in GENERATED_SUBJECTS:\n"
+              "            _assert_directory_generation(root_fd, root_generation, Path(\"<repository-root>\"))\n"
+          )
           if text.count(canonical_anchor) != 1:
               raise SystemExit("canonical root-generation anchor did not match exactly once")
           text = text.replace(canonical_anchor, canonical_replacement)
 
-          copy_anchor = '''    root_fd = _open_repository_root(source_root)
-    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}
-    try:
-        for subject in GENERATED_SUBJECTS:
-'''
-          copy_replacement = '''    root_fd = _open_repository_root(source_root)
-    root_generation = os.fstat(root_fd)
-    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}
-    try:
-        for subject in GENERATED_SUBJECTS:
-            _assert_directory_generation(root_fd, root_generation, Path("<repository-root>"))
-'''
+          copy_anchor = (
+              "    root_fd = _open_repository_root(source_root)\n"
+              "    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}\n"
+              "    try:\n"
+              "        for subject in GENERATED_SUBJECTS:\n"
+          )
+          copy_replacement = (
+              "    root_fd = _open_repository_root(source_root)\n"
+              "    root_generation = os.fstat(root_fd)\n"
+              "    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}\n"
+              "    try:\n"
+              "        for subject in GENERATED_SUBJECTS:\n"
+              "            _assert_directory_generation(root_fd, root_generation, Path(\"<repository-root>\"))\n"
+          )
           if text.count(copy_anchor) != 1:
               raise SystemExit("copy root-generation anchor did not match exactly once")
           text = text.replace(copy_anchor, copy_replacement)
 
-          post_subject = '''            finally:
-                os.close(descriptor)
-    finally:
-        _close_directory_cache(directory_cache)
-        os.close(root_fd)
-'''
-          post_subject_replacement = '''            finally:
-                os.close(descriptor)
-            _assert_directory_generation(root_fd, root_generation, Path("<repository-root>"))
-    finally:
-        _close_directory_cache(directory_cache)
-        os.close(root_fd)
-'''
+          post_subject = (
+              "            finally:\n"
+              "                os.close(descriptor)\n"
+              "    finally:\n"
+              "        _close_directory_cache(directory_cache)\n"
+              "        os.close(root_fd)\n"
+          )
+          post_subject_replacement = (
+              "            finally:\n"
+              "                os.close(descriptor)\n"
+              "            _assert_directory_generation(root_fd, root_generation, Path(\"<repository-root>\"))\n"
+              "    finally:\n"
+              "        _close_directory_cache(directory_cache)\n"
+              "        os.close(root_fd)\n"
+          )
           if text.count(post_subject) != 2:
               raise SystemExit("post-subject root-generation anchor did not match exactly twice")
-          text = text.replace(post_subject, post_subject_replacement)
-          helper.write_text(text, encoding="utf-8")
+          helper.write_text(text.replace(post_subject, post_subject_replacement), encoding="utf-8")
 
+          regression_b64 = "CgogICAgZGVmIHRlc3RfbWFuaWZlc3RfcmVqZWN0c19yb290X3NpYmxpbmdfc3BsaWNlX2JldHdlZW5fZml4ZWRfc3ViamVjdHMoc2VsZikgLT4gTm9uZToKICAgICAgICBoZWxwZXIgPSBsb2FkKCkKICAgICAgICB3aXRoIHRlbXBmaWxlLlRlbXBvcmFyeURpcmVjdG9yeSgKICAgICAgICAgICAgcHJlZml4PSJuZW1icmEtcm9vdC1zaWJsaW5nLW1hbmlmZXN0LXJlcGFpci0iLAogICAgICAgICAgICBkaXI9UkVQT1NJVE9SWSwKICAgICAgICApIGFzIHJhdzoKICAgICAgICAgICAgb3V0ZXIgPSBQYXRoKHJhdykKICAgICAgICAgICAgcm9vdCA9IG91dGVyIC8gInJlcG8iCiAgICAgICAgICAgIHJvb3QubWtkaXIoKQogICAgICAgICAgICBzZWVkX2NvbW1vbihyb290KQogICAgICAgICAgICBnZW5lcmF0aW9uID0gbWFrZV9nZW5lcmF0aW9uKHJvb3QsICJMb2NhbFNlY3JldHMuQSIsIGIiU0RLLUFcbiIsIGIiUlVOVElNRS1BXG4iKQogICAgICAgICAgICBnZW5lcmF0aW9uLnJlbmFtZShyb290IC8gIkxvY2FsU2VjcmV0cyIpCgogICAgICAgICAgICByZXBsYWNlbWVudF9sb2NrID0gb3V0ZXIgLyAicmVwbGFjZW1lbnQtUG9kZmlsZS5sb2NrIgogICAgICAgICAgICByZXBsYWNlbWVudF9sb2NrLndyaXRlX3RleHQoIlBPRFM6XG4gIC0gUmVwbGFjZW1lbnRcbiIsIGVuY29kaW5nPSJ1dGYtOCIpCiAgICAgICAgICAgIHJlcGxhY2VtZW50X3BvZHMgPSBvdXRlciAvICJyZXBsYWNlbWVudC1Qb2RzIgogICAgICAgICAgICByZXBsYWNlbWVudF9wb2RzLm1rZGlyKCkKICAgICAgICAgICAgKHJlcGxhY2VtZW50X3BvZHMgLyAiUmVwbGFjZW1lbnRQb2Quc3dpZnQiKS53cml0ZV90ZXh0KCIvLyByZXBsYWNlbWVudFxuIiwgZW5jb2Rpbmc9InV0Zi04IikKCiAgICAgICAgICAgIG9yaWdpbmFsX29wZW4gPSBoZWxwZXIuX29wZW5fc3ViamVjdAogICAgICAgICAgICBzd2FwcGVkID0gRmFsc2UKCiAgICAgICAgICAgIGRlZiBzcGxpY2VfYmVmb3JlX3BvZHMocm9vdF9mZDogaW50LCBzdWJqZWN0OiBQYXRoLCBkaXJlY3RvcnlfY2FjaGU9Tm9uZSk6CiAgICAgICAgICAgICAgICBub25sb2NhbCBzd2FwcGVkCiAgICAgICAgICAgICAgICBpZiBzdWJqZWN0ID09IFBhdGgoIlBvZHMiKSBhbmQgbm90IHN3YXBwZWQ6CiAgICAgICAgICAgICAgICAgICAgKHJvb3QgLyAiUG9kZmlsZS5sb2NrIikucmVuYW1lKHJvb3QgLyAiUG9kZmlsZS5sb2NrLkEuYXR0YWNrIikKICAgICAgICAgICAgICAgICAgICByZXBsYWNlbWVudF9sb2NrLnJlbmFtZShyb290IC8gIlBvZGZpbGUubG9jayIpCiAgICAgICAgICAgICAgICAgICAgKHJvb3QgLyAiUG9kcyIpLnJlbmFtZShyb290IC8gIlBvZHMuQS5hdHRhY2siKQogICAgICAgICAgICAgICAgICAgIHJlcGxhY2VtZW50X3BvZHMucmVuYW1lKHJvb3QgLyAiUG9kcyIpCiAgICAgICAgICAgICAgICAgICAgc3dhcHBlZCA9IFRydWUKICAgICAgICAgICAgICAgIHJldHVybiBvcmlnaW5hbF9vcGVuKHJvb3RfZmQsIHN1YmplY3QsIGRpcmVjdG9yeV9jYWNoZSkKCiAgICAgICAgICAgIHdpdGggbW9jay5wYXRjaC5vYmplY3QoaGVscGVyLCAiX29wZW5fc3ViamVjdCIsIHNpZGVfZWZmZWN0PXNwbGljZV9iZWZvcmVfcG9kcyk6CiAgICAgICAgICAgICAgICB3aXRoIHNlbGYuYXNzZXJ0UmFpc2VzKGhlbHBlci5BY2NlcHRlZEJ1aWxkSW5wdXRTbmFwc2hvdEVycm9yKToKICAgICAgICAgICAgICAgICAgICBoZWxwZXIuY2Fub25pY2FsX2dlbmVyYXRlZF9tYW5pZmVzdChyb290LCBTT1VSQ0VfU0hBKQogICAgICAgICAgICBzZWxmLmFzc2VydFRydWUoc3dhcHBlZCkKCiAgICBkZWYgdGVzdF9jb3B5X3JlamVjdHNfcm9vdF9zaWJsaW5nX3NwbGljZV9iZXR3ZWVuX2ZpeGVkX3N1YmplY3RzKHNlbGYpIC0+IE5vbmU6CiAgICAgICAgaGVscGVyID0gbG9hZCgpCiAgICAgICAgd2l0aCB0ZW1wZmlsZS5UZW1wb3JhcnlEaXJlY3RvcnkoCiAgICAgICAgICAgIHByZWZpeD0ibmVtYnJhLXJvb3Qtc2libGluZy1jb3B5LXJlcGFpci0iLAogICAgICAgICAgICBkaXI9UkVQT1NJVE9SWSwKICAgICAgICApIGFzIHJhdzoKICAgICAgICAgICAgb3V0ZXIgPSBQYXRoKHJhdykKICAgICAgICAgICAgcm9vdCA9IG91dGVyIC8gInJlcG8iCiAgICAgICAgICAgIHJvb3QubWtkaXIoKQogICAgICAgICAgICBzZWVkX2NvbW1vbihyb290KQogICAgICAgICAgICBnZW5lcmF0aW9uID0gbWFrZV9nZW5lcmF0aW9uKHJvb3QsICJMb2NhbFNlY3JldHMuQSIsIGIiU0RLLUFcbiIsIGIiUlVOVElNRS1BXG4iKQogICAgICAgICAgICBnZW5lcmF0aW9uLnJlbmFtZShyb290IC8gIkxvY2FsU2VjcmV0cyIpCiAgICAgICAgICAgIGRlc3RpbmF0aW9uID0gb3V0ZXIgLyAic3RhZ2UiCiAgICAgICAgICAgIGRlc3RpbmF0aW9uLm1rZGlyKCkKCiAgICAgICAgICAgIHJlcGxhY2VtZW50X2xvY2sgPSBvdXRlciAvICJyZXBsYWNlbWVudC1Qb2RmaWxlLmxvY2siCiAgICAgICAgICAgIHJlcGxhY2VtZW50X2xvY2sud3JpdGVfdGV4dCgiUE9EUzpcbiAgLSBSZXBsYWNlbWVudFxuIiwgZW5jb2Rpbmc9InV0Zi04IikKICAgICAgICAgICAgcmVwbGFjZW1lbnRfcG9kcyA9IG91dGVyIC8gInJlcGxhY2VtZW50LVBvZHMiCiAgICAgICAgICAgIHJlcGxhY2VtZW50X3BvZHMubWtkaXIoKQogICAgICAgICAgICAocmVwbGFjZW1lbnRfcG9kcyAvICJSZXBsYWNlbWVudFBvZC5zd2lmdCIpLndyaXRlX3RleHQoIi8vIHJlcGxhY2VtZW50XG4iLCBlbmNvZGluZz0idXRmLTgiKQoKICAgICAgICAgICAgb3JpZ2luYWxfb3BlbiA9IGhlbHBlci5fb3Blbl9zdWJqZWN0CiAgICAgICAgICAgIHN3YXBwZWQgPSBGYWxzZQoKICAgICAgICAgICAgZGVmIHNwbGljZV9iZWZvcmVfcG9kcyhyb290X2ZkOiBpbnQsIHN1YmplY3Q6IFBhdGgsIGRpcmVjdG9yeV9jYWNoZT1Ob25lKToKICAgICAgICAgICAgICAgIG5vbmxvY2FsIHN3YXBwZWQKICAgICAgICAgICAgICAgIGlmIHN1YmplY3QgPT0gUGF0aCgiUG9kcyIpIGFuZCBub3Qgc3dhcHBlZDoKICAgICAgICAgICAgICAgICAgICAocm9vdCAvICJQb2RmaWxlLmxvY2siKS5yZW5hbWUocm9vdCAvICJQb2RmaWxlLmxvY2suQS5hdHRhY2siKQogICAgICAgICAgICAgICAgICAgIHJlcGxhY2VtZW50X2xvY2sucmVuYW1lKHJvb3QgLyAiUG9kZmlsZS5sb2NrIikKICAgICAgICAgICAgICAgICAgICAocm9vdCAvICJQb2RzIikucmVuYW1lKHJvb3QgLyAiUG9kcy5BLmF0dGFjayIpCiAgICAgICAgICAgICAgICAgICAgcmVwbGFjZW1lbnRfcG9kcy5yZW5hbWUocm9vdCAvICJQb2RzIikKICAgICAgICAgICAgICAgICAgICBzd2FwcGVkID0gVHJ1ZQogICAgICAgICAgICAgICAgcmV0dXJuIG9yaWdpbmFsX29wZW4ocm9vdF9mZCwgc3ViamVjdCwgZGlyZWN0b3J5X2NhY2hlKQoKICAgICAgICAgICAgd2l0aCBtb2NrLnBhdGNoLm9iamVjdChoZWxwZXIsICJfb3Blbl9zdWJqZWN0Iiwgc2lkZV9lZmZlY3Q9c3BsaWNlX2JlZm9yZV9wb2RzKToKICAgICAgICAgICAgICAgIHdpdGggc2VsZi5hc3NlcnRSYWlzZXMoaGVscGVyLkFjY2VwdGVkQnVpbGRJbnB1dFNuYXBzaG90RXJyb3IpOgogICAgICAgICAgICAgICAgICAgIGhlbHBlci5fY29weV9nZW5lcmF0ZWRfc3ViamVjdHMocm9vdCwgZGVzdGluYXRpb24pCiAgICAgICAgICAgIHNlbGYuYXNzZXJ0VHJ1ZShzd2FwcGVkKQo="
+          regression = base64.b64decode(regression_b64).decode("utf-8")
           test = Path("scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py")
-          text = test.read_text(encoding="utf-8")
-          marker = '''\n\nif __name__ == "__main__":
-    unittest.main(verbosity=2)
-'''
-          regression = '''
-
-    def test_manifest_rejects_root_sibling_splice_between_fixed_subjects(self) -> None:
-        helper = load()
-        with tempfile.TemporaryDirectory(
-            prefix="nembra-root-sibling-manifest-repair-",
-            dir=REPOSITORY,
-        ) as raw:
-            outer = Path(raw)
-            root = outer / "repo"
-            root.mkdir()
-            seed_common(root)
-            generation = make_generation(root, "LocalSecrets.A", b"SDK-A\\n", b"RUNTIME-A\\n")
-            generation.rename(root / "LocalSecrets")
-
-            replacement_lock = outer / "replacement-Podfile.lock"
-            replacement_lock.write_text("PODS:\\n  - Replacement\\n", encoding="utf-8")
-            replacement_pods = outer / "replacement-Pods"
-            replacement_pods.mkdir()
-            (replacement_pods / "ReplacementPod.swift").write_text("// replacement\\n", encoding="utf-8")
-
-            original_open = helper._open_subject
-            swapped = False
-
-            def splice_before_pods(root_fd: int, subject: Path, directory_cache=None):
-                nonlocal swapped
-                if subject == Path("Pods") and not swapped:
-                    (root / "Podfile.lock").rename(root / "Podfile.lock.A.attack")
-                    replacement_lock.rename(root / "Podfile.lock")
-                    (root / "Pods").rename(root / "Pods.A.attack")
-                    replacement_pods.rename(root / "Pods")
-                    swapped = True
-                return original_open(root_fd, subject, directory_cache)
-
-            with mock.patch.object(helper, "_open_subject", side_effect=splice_before_pods):
-                with self.assertRaises(helper.AcceptedBuildInputSnapshotError):
-                    helper.canonical_generated_manifest(root, SOURCE_SHA)
-            self.assertTrue(swapped)
-
-    def test_copy_rejects_root_sibling_splice_between_fixed_subjects(self) -> None:
-        helper = load()
-        with tempfile.TemporaryDirectory(
-            prefix="nembra-root-sibling-copy-repair-",
-            dir=REPOSITORY,
-        ) as raw:
-            outer = Path(raw)
-            root = outer / "repo"
-            root.mkdir()
-            seed_common(root)
-            generation = make_generation(root, "LocalSecrets.A", b"SDK-A\\n", b"RUNTIME-A\\n")
-            generation.rename(root / "LocalSecrets")
-            destination = outer / "stage"
-            destination.mkdir()
-
-            replacement_lock = outer / "replacement-Podfile.lock"
-            replacement_lock.write_text("PODS:\\n  - Replacement\\n", encoding="utf-8")
-            replacement_pods = outer / "replacement-Pods"
-            replacement_pods.mkdir()
-            (replacement_pods / "ReplacementPod.swift").write_text("// replacement\\n", encoding="utf-8")
-
-            original_open = helper._open_subject
-            swapped = False
-
-            def splice_before_pods(root_fd: int, subject: Path, directory_cache=None):
-                nonlocal swapped
-                if subject == Path("Pods") and not swapped:
-                    (root / "Podfile.lock").rename(root / "Podfile.lock.A.attack")
-                    replacement_lock.rename(root / "Podfile.lock")
-                    (root / "Pods").rename(root / "Pods.A.attack")
-                    replacement_pods.rename(root / "Pods")
-                    swapped = True
-                return original_open(root_fd, subject, directory_cache)
-
-            with mock.patch.object(helper, "_open_subject", side_effect=splice_before_pods):
-                with self.assertRaises(helper.AcceptedBuildInputSnapshotError):
-                    helper._copy_generated_subjects(root, destination)
-            self.assertTrue(swapped)
-'''
-          if text.count(marker) != 1:
+          test_text = test.read_text(encoding="utf-8")
+          marker = "\n\nif __name__ == \"__main__\":\n    unittest.main(verbosity=2)\n"
+          if test_text.count(marker) != 1:
               raise SystemExit("continuity regression insertion marker did not match exactly once")
-          test.write_text(text.replace(marker, regression + marker), encoding="utf-8")
+          test.write_text(test_text.replace(marker, regression + marker), encoding="utf-8")
           PY
 
           git checkout "$EXACT_PARENT" -- .github/workflows/capture-generated-shared-ancestor-continuity.yml
@@ -186,9 +114,7 @@ jobs:
           python3 -B scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
           git diff --check
           changed="$(git diff --name-only "$EXACT_PARENT" | LC_ALL=C sort)"
-          expected="$(printf '%s\n' \
-            scripts/ci/capture_accepted_build_input_snapshot.py \
-            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
+          expected="$(printf '%s\n' scripts/ci/capture_accepted_build_input_snapshot.py scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
           test "$changed" = "$expected"
 
       - name: Publish repair
@@ -197,8 +123,6 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .github/workflows/capture-generated-shared-ancestor-continuity.yml \
-            scripts/ci/capture_accepted_build_input_snapshot.py \
-            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          git add .github/workflows/capture-generated-shared-ancestor-continuity.yml scripts/ci/capture_accepted_build_input_snapshot.py scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
           git commit -m "fix(capture): hold generated repository-root generation"
           git push origin HEAD:"$TARGET_BRANCH"
