@@ -1,105 +1,204 @@
-name: Capture Generated Shared Ancestor Continuity
+name: Capture Fold Generated Root Continuity Once
 
 on:
-  pull_request:
+  push:
+    branches:
+      - repair/v17-capture-generated-root-generation-continuity-sol-20260815
     paths:
-      - scripts/ci/capture_accepted_build_input_snapshot.py
-      - scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
       - .github/workflows/capture-generated-shared-ancestor-continuity.yml
-  workflow_dispatch:
 
 permissions:
-  contents: read
-
-concurrency:
-  group: capture-generated-shared-ancestor-continuity-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  contents: write
 
 env:
-  EXACT_PARENT: 1f9c5213d99116b93635e48061f29c88bffc2db8
+  EXACT_PARENT: f1be1b584e8b568fb8c3998adad3ee0b29004fdc
+  TARGET_BRANCH: repair/v17-capture-generated-root-generation-continuity-sol-20260815
 
 jobs:
-  exact-portable:
-    name: Exact generated-input continuity (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-15]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 8
+  fold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: repair/v17-capture-generated-root-generation-continuity-sol-20260815
           fetch-depth: 0
-          persist-credentials: false
 
-      - name: Bind serial repair delta
+      - name: Bind authoring parent
         shell: bash
         run: |
           set -euo pipefail
-          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
-          test "$(git rev-parse HEAD)" = "$expected_head"
-          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
-          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          test "$(git rev-parse HEAD^)" = "$EXACT_PARENT"
+          test "$(git diff --name-only HEAD^...HEAD)" = ".github/workflows/capture-generated-shared-ancestor-continuity.yml"
+
+      - name: Fold root-generation repair and regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          helper = Path("scripts/ci/capture_accepted_build_input_snapshot.py")
+          text = helper.read_text(encoding="utf-8")
+
+          canonical_anchor = '''    root_fd = _open_repository_root(root)
+    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}
+    try:
+        for subject in GENERATED_SUBJECTS:
+'''
+          canonical_replacement = '''    root_fd = _open_repository_root(root)
+    root_generation = os.fstat(root_fd)
+    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}
+    try:
+        for subject in GENERATED_SUBJECTS:
+            _assert_directory_generation(root_fd, root_generation, Path("<repository-root>"))
+'''
+          if text.count(canonical_anchor) != 1:
+              raise SystemExit("canonical root-generation anchor did not match exactly once")
+          text = text.replace(canonical_anchor, canonical_replacement)
+
+          copy_anchor = '''    root_fd = _open_repository_root(source_root)
+    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}
+    try:
+        for subject in GENERATED_SUBJECTS:
+'''
+          copy_replacement = '''    root_fd = _open_repository_root(source_root)
+    root_generation = os.fstat(root_fd)
+    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}
+    try:
+        for subject in GENERATED_SUBJECTS:
+            _assert_directory_generation(root_fd, root_generation, Path("<repository-root>"))
+'''
+          if text.count(copy_anchor) != 1:
+              raise SystemExit("copy root-generation anchor did not match exactly once")
+          text = text.replace(copy_anchor, copy_replacement)
+
+          post_subject = '''            finally:
+                os.close(descriptor)
+    finally:
+        _close_directory_cache(directory_cache)
+        os.close(root_fd)
+'''
+          post_subject_replacement = '''            finally:
+                os.close(descriptor)
+            _assert_directory_generation(root_fd, root_generation, Path("<repository-root>"))
+    finally:
+        _close_directory_cache(directory_cache)
+        os.close(root_fd)
+'''
+          if text.count(post_subject) != 2:
+              raise SystemExit("post-subject root-generation anchor did not match exactly twice")
+          text = text.replace(post_subject, post_subject_replacement)
+          helper.write_text(text, encoding="utf-8")
+
+          test = Path("scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py")
+          text = test.read_text(encoding="utf-8")
+          marker = '''\n\nif __name__ == "__main__":
+    unittest.main(verbosity=2)
+'''
+          regression = '''
+
+    def test_manifest_rejects_root_sibling_splice_between_fixed_subjects(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(
+            prefix="nembra-root-sibling-manifest-repair-",
+            dir=REPOSITORY,
+        ) as raw:
+            outer = Path(raw)
+            root = outer / "repo"
+            root.mkdir()
+            seed_common(root)
+            generation = make_generation(root, "LocalSecrets.A", b"SDK-A\\n", b"RUNTIME-A\\n")
+            generation.rename(root / "LocalSecrets")
+
+            replacement_lock = outer / "replacement-Podfile.lock"
+            replacement_lock.write_text("PODS:\\n  - Replacement\\n", encoding="utf-8")
+            replacement_pods = outer / "replacement-Pods"
+            replacement_pods.mkdir()
+            (replacement_pods / "ReplacementPod.swift").write_text("// replacement\\n", encoding="utf-8")
+
+            original_open = helper._open_subject
+            swapped = False
+
+            def splice_before_pods(root_fd: int, subject: Path, directory_cache=None):
+                nonlocal swapped
+                if subject == Path("Pods") and not swapped:
+                    (root / "Podfile.lock").rename(root / "Podfile.lock.A.attack")
+                    replacement_lock.rename(root / "Podfile.lock")
+                    (root / "Pods").rename(root / "Pods.A.attack")
+                    replacement_pods.rename(root / "Pods")
+                    swapped = True
+                return original_open(root_fd, subject, directory_cache)
+
+            with mock.patch.object(helper, "_open_subject", side_effect=splice_before_pods):
+                with self.assertRaises(helper.AcceptedBuildInputSnapshotError):
+                    helper.canonical_generated_manifest(root, SOURCE_SHA)
+            self.assertTrue(swapped)
+
+    def test_copy_rejects_root_sibling_splice_between_fixed_subjects(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(
+            prefix="nembra-root-sibling-copy-repair-",
+            dir=REPOSITORY,
+        ) as raw:
+            outer = Path(raw)
+            root = outer / "repo"
+            root.mkdir()
+            seed_common(root)
+            generation = make_generation(root, "LocalSecrets.A", b"SDK-A\\n", b"RUNTIME-A\\n")
+            generation.rename(root / "LocalSecrets")
+            destination = outer / "stage"
+            destination.mkdir()
+
+            replacement_lock = outer / "replacement-Podfile.lock"
+            replacement_lock.write_text("PODS:\\n  - Replacement\\n", encoding="utf-8")
+            replacement_pods = outer / "replacement-Pods"
+            replacement_pods.mkdir()
+            (replacement_pods / "ReplacementPod.swift").write_text("// replacement\\n", encoding="utf-8")
+
+            original_open = helper._open_subject
+            swapped = False
+
+            def splice_before_pods(root_fd: int, subject: Path, directory_cache=None):
+                nonlocal swapped
+                if subject == Path("Pods") and not swapped:
+                    (root / "Podfile.lock").rename(root / "Podfile.lock.A.attack")
+                    replacement_lock.rename(root / "Podfile.lock")
+                    (root / "Pods").rename(root / "Pods.A.attack")
+                    replacement_pods.rename(root / "Pods")
+                    swapped = True
+                return original_open(root_fd, subject, directory_cache)
+
+            with mock.patch.object(helper, "_open_subject", side_effect=splice_before_pods):
+                with self.assertRaises(helper.AcceptedBuildInputSnapshotError):
+                    helper._copy_generated_subjects(root, destination)
+            self.assertTrue(swapped)
+'''
+          if text.count(marker) != 1:
+              raise SystemExit("continuity regression insertion marker did not match exactly once")
+          test.write_text(text.replace(marker, regression + marker), encoding="utf-8")
+          PY
+
+          git checkout "$EXACT_PARENT" -- .github/workflows/capture-generated-shared-ancestor-continuity.yml
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -m py_compile scripts/ci/capture_accepted_build_input_snapshot.py scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          python3 -B scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          python3 -B scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          git diff --check
+          changed="$(git diff --name-only "$EXACT_PARENT" | LC_ALL=C sort)"
           expected="$(printf '%s\n' \
-            .github/workflows/capture-generated-shared-ancestor-continuity.yml \
             scripts/ci/capture_accepted_build_input_snapshot.py \
             scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
           test "$changed" = "$expected"
-          git diff --check "$EXACT_PARENT"...HEAD
 
-      - name: Run generated shared-ancestor continuity regression
-        id: continuity
-        shell: bash
-        continue-on-error: true
-        run: |
-          set -o pipefail
-          export PYTHONDONTWRITEBYTECODE=1
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py \
-            2>&1 | tee "$RUNNER_TEMP/generated-shared-ancestor-continuity-${{ matrix.os }}.log"
-
-      - name: Run inherited accepted-input regression
-        id: inherited
-        shell: bash
-        continue-on-error: true
-        run: |
-          set -o pipefail
-          export PYTHONDONTWRITEBYTECODE=1
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py \
-            2>&1 | tee "$RUNNER_TEMP/accepted-build-input-snapshot-${{ matrix.os }}.log"
-
-      - name: Capture checkout cleanliness diagnostics
-        if: always()
+      - name: Publish repair
         shell: bash
         run: |
           set -euo pipefail
-          git status --porcelain=v1 --untracked-files=all > "$RUNNER_TEMP/checkout-status-${{ matrix.os }}.log"
-          git diff --no-ext-diff -- > "$RUNNER_TEMP/checkout-unstaged-diff-${{ matrix.os }}.log"
-          git diff --cached --no-ext-diff -- > "$RUNNER_TEMP/checkout-staged-diff-${{ matrix.os }}.log"
-
-      - name: Retain platform diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: generated-shared-ancestor-continuity-${{ matrix.os }}-${{ github.event.pull_request.head.sha || github.sha }}
-          path: |
-            ${{ runner.temp }}/generated-shared-ancestor-continuity-${{ matrix.os }}.log
-            ${{ runner.temp }}/accepted-build-input-snapshot-${{ matrix.os }}.log
-            ${{ runner.temp }}/checkout-status-${{ matrix.os }}.log
-            ${{ runner.temp }}/checkout-unstaged-diff-${{ matrix.os }}.log
-            ${{ runner.temp }}/checkout-staged-diff-${{ matrix.os }}.log
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Enforce regression verdict and clean checkout
-        if: always()
-        shell: bash
-        env:
-          CONTINUITY_OUTCOME: ${{ steps.continuity.outcome }}
-          INHERITED_OUTCOME: ${{ steps.inherited.outcome }}
-        run: |
-          set -euo pipefail
-          test "$CONTINUITY_OUTCOME" = success
-          test "$INHERITED_OUTCOME" = success
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/capture-generated-shared-ancestor-continuity.yml \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          git commit -m "fix(capture): hold generated repository-root generation"
+          git push origin HEAD:"$TARGET_BRANCH"
