@@ -1,0 +1,84 @@
+name: Capture Current Accepted Root Compiler Author Classifier
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-current-accepted-root-compiler-author-classifier.yml
+      - .github/workflows/capture-current-accepted-root-compiler-author.yml
+      - scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  classify:
+    if: github.head_ref == 'integration/v17-capture-current-accepted-root-compiler-gpt56sol-20260815'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CURRENT_PARENT: 121abefc62d2663fe7eb248ec9595d882fa9d900
+      LEASE_HEAD: 598aa595a6f7c95db98d9fcae87c09f54d8e90fe
+      ROOT_BASE: 662a63cf5179d54712214d78d01542e51e71148e
+      ROOT_HEAD: bf2f1e1d718849ef6741ec532e28975527311e95
+      WORKSPACE_HEAD: 6ff2eb6320aa3c01fd142549e1140674750c5961
+      PYTHONDONTWRITEBYTECODE: 1
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Reproduce author workspace without publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          author=.github/workflows/capture-current-accepted-root-compiler-author.yml
+          for step_name in \
+            'Bind current parent and accepted ingredients' \
+            'Compose latest lease with accepted-root and workspace fence' \
+            'Close whole-root compiler read gap' \
+            'Add deterministic whole-root lease regression' \
+            'Add real macOS root/non-root lease witness'; do
+            script="$(ruby - "$author" "$step_name" <<'RB'
+          require 'yaml'
+          path, wanted = ARGV
+          data = YAML.load_file(path)
+          steps = data.fetch('jobs').fetch('compose').fetch('steps')
+          step = steps.find { |entry| entry['name'] == wanted }
+          abort("missing author step: #{wanted}") unless step && step['run']
+          print step['run']
+          RB
+          )"
+            echo "::group::$step_name"
+            /bin/bash -euo pipefail -c "$script"
+            echo '::endgroup::'
+          done
+
+      - name: Accepted-root composition regression
+        shell: bash
+        run: /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_root_build_composition.py
+
+      - name: Whole-root plan regression
+        shell: bash
+        run: /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_root_whole_read_lease.py
+
+      - name: Held-symlink transition regression
+        shell: bash
+        run: /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py
+
+      - name: Component-pinning regression
+        shell: bash
+        run: /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+
+      - name: Legacy selected-Xcode composition regression
+        shell: bash
+        run: /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+
+      - name: Preserve no publication
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'NEMBRA_AUTHOR_CLASSIFIER validationOnly=true publishedProduct=false physicalAuthorityCreated=false'
