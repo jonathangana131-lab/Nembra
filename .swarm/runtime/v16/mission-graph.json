@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 57,
+    "classifiedPRTotal": 55,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1385,28 +1385,6 @@
         "similarity": 0.315,
         "title": "[Capture P0][RED TEAM] Reject mixed LocalSecrets subject generations"
       },
-      "3419": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "7900d7d1fdab3a21c51190892d11d7e4e7ef43b0",
-        "lane": "capture-signed-install-custody",
-        "pr": 3419,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.381,
-        "title": "[Capture P0][VALIDATION] Root-custody accepted build root after selector repair"
-      },
-      "3420": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3420,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.386,
-        "title": "[Capture P0][VALIDATION] Re-anchor sealed root-helper sibling bundle to 7900"
-      },
       "3428": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1591,7 +1569,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3490,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.396,
+        "similarity": 0.376,
         "title": "[Capture P0][VALIDATION] Re-anchor accepted build-root custody after selector repair"
       },
       "3491": {
@@ -1602,7 +1580,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3491,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.389,
+        "similarity": 0.34,
         "title": "[Capture P0][VALIDATION] Re-anchor sealed helper sibling bundle to F1BE custody"
       },
       "3492": {
@@ -1724,7 +1702,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:33:36Z",
+    "liveRefreshAt": "2026-08-16T06:33:56Z",
     "liveRefreshDuplicatesSuppressed": [
       3499
     ],
@@ -5509,10 +5487,10 @@
       "userValue": 7
     }
   },
-  "revision": 739,
+  "revision": 740,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:33:40Z",
+  "updatedAt": "2026-08-16T06:34:00Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5588,7 +5566,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:33:36Z",
+      "updatedAt": "2026-08-16T06:33:56Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
