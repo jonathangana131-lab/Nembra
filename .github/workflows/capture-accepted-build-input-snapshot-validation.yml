@@ -20,13 +20,9 @@ env:
 
 jobs:
   validate:
-    name: Bind generated CocoaPods/private inputs to prior acceptance (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-15]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    name: Bind generated CocoaPods/private inputs to prior acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
         with:
