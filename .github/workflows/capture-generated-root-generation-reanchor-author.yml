@@ -1,0 +1,57 @@
+name: Capture Generated Root Generation Reanchor Author
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-generated-root-generation-reanchor-author.yml
+      - .github/workflows/capture-generated-shared-ancestor-continuity.yml
+      - scripts/ci/capture_accepted_build_input_snapshot.py
+      - scripts/ci/tests/test_capture_generated_root_generation_continuity.py
+
+permissions:
+  contents: write
+
+jobs:
+  reanchor:
+    if: github.head_ref == 'repair/v17-capture-generated-root-generation-continuity-gpt56sol-20260815'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Merge exact moved parent and rebind gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin validation/v17-capture-generated-input-manifest-4da-sol-20260814
+          test "$(git rev-parse origin/validation/v17-capture-generated-input-manifest-4da-sol-20260814)" = 682e0370394b7e38c1d969c361f3e7de94afc891
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git merge --no-edit 682e0370394b7e38c1d969c361f3e7de94afc891
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/capture-generated-shared-ancestor-continuity.yml')
+          text = path.read_text(encoding='utf-8')
+          old = 'EXACT_PARENT: f1be1b584e8b568fb8c3998adad3ee0b29004fdc'
+          new = 'EXACT_PARENT: 682e0370394b7e38c1d969c361f3e7de94afc891'
+          if text.count(old) != 1:
+              raise SystemExit('permanent gate exact-parent bind moved')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_root_generation_continuity.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          git diff --check
+
+      - name: Publish reanchored permanent repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/capture-generated-root-generation-reanchor-author.yml
+          git add .github/workflows/capture-generated-shared-ancestor-continuity.yml
+          git commit -m 'Capture P0: reanchor root-generation repair to current input parent'
+          git push origin HEAD:${{ github.head_ref }}
