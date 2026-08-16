@@ -3262,7 +3262,7 @@ private struct SecureLinkView: View {
                             .accessibilityLabel("Read-only observation progress")
                             .accessibilityValue("\(Int(min(age, 45))) of 45 seconds")
                         requirementRow("Secure local link", ready: test.sdkLocalBLEOnline)
-                        requirementRow("Scooter data received", ready: test.applicationUpdateCount > 0)
+                        requirementRow("Scooter data received", ready: test.preflightVerdict == .readyForStationaryMapping)
                     }
                 }
             }
