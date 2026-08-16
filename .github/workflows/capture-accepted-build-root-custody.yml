@@ -78,20 +78,65 @@ jobs:
           expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
           bundle="/private/tmp/nembra-capture-root-custody-exec-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           /usr/bin/sudo -n /bin/rm -rf "$bundle"
-          /bin/mkdir -p "$bundle/scripts/ci/tests"
+
+          # Establish root-only pathname custody before any accepted execution byte is
+          # materialized. The field identity can neither enter nor mutate the bundle
+          # during the Git-object check -> privileged-import interval.
+          /usr/bin/sudo -n /usr/bin/install -d -o root -g wheel -m 0700 \
+            "$bundle" \
+            "$bundle/scripts" \
+            "$bundle/scripts/ci" \
+            "$bundle/scripts/ci/tests"
+
           for path in \
             scripts/ci/capture_accepted_build_input_snapshot.py \
             scripts/ci/capture_accepted_build_root_custody.py \
             scripts/ci/tests/test_capture_accepted_build_root_custody.py
           do
-            /usr/bin/git show "${expected_head}:${path}" > "$bundle/$path"
-            expected_blob="$(/usr/bin/git rev-parse "${expected_head}:${path}")"
-            actual_blob="$(/usr/bin/git hash-object "$bundle/$path")"
+            expected_blob="$(env \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              /usr/bin/git rev-parse "${expected_head}:${path}")"
+            test "${#expected_blob}" -eq 40
+
+            # Read the exact content-addressed blob under root and write it directly
+            # into the already root-only bundle; never stage execution bytes in a
+            # field-writable pathname.
+            /usr/bin/sudo -n env \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              /usr/bin/git -C "$GITHUB_WORKSPACE" cat-file blob "$expected_blob" \
+              | /usr/bin/sudo -n /usr/bin/tee "$bundle/$path" >/dev/null
+            /usr/bin/sudo -n /usr/sbin/chown root:wheel "$bundle/$path"
+            /usr/bin/sudo -n /bin/chmod 0400 "$bundle/$path"
+
+            actual_blob="$(/usr/bin/sudo -n /usr/bin/git hash-object "$bundle/$path")"
             test "$actual_blob" = "$expected_blob"
           done
-          /usr/bin/sudo -n /usr/sbin/chown -R root:wheel "$bundle"
-          /usr/bin/sudo -n /usr/bin/find "$bundle" -type d -exec /bin/chmod 0555 {} +
+
+          # Final read-only seal, followed by a second identity attestation before
+          # any root Python import. A post-execution hash is useful diagnostics but
+          # is never the authority transition.
           /usr/bin/sudo -n /usr/bin/find "$bundle" -type f -exec /bin/chmod 0444 {} +
+          /usr/bin/sudo -n /usr/bin/find "$bundle" -type d -exec /bin/chmod 0555 {} +
+          for path in \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/capture_accepted_build_root_custody.py \
+            scripts/ci/tests/test_capture_accepted_build_root_custody.py
+          do
+            expected_blob="$(env \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              /usr/bin/git rev-parse "${expected_head}:${path}")"
+            actual_blob="$(/usr/bin/sudo -n /usr/bin/git hash-object "$bundle/$path")"
+            test "$actual_blob" = "$expected_blob"
+            test "$(/usr/bin/sudo -n /usr/bin/stat -f '%Su:%Sg:%Lp' "$bundle/$path")" = 'root:wheel:444'
+          done
+          test "$(/usr/bin/sudo -n /usr/bin/stat -f '%Su:%Sg:%Lp' "$bundle")" = 'root:wheel:555'
+
           printf '%s\n' "$bundle" > "$RUNNER_TEMP/accepted-root-helper-bundle-path"
           printf 'bundle=%s\n' "$bundle" >> "$GITHUB_OUTPUT"
 
@@ -132,8 +177,12 @@ jobs:
             scripts/ci/capture_accepted_build_root_custody.py \
             scripts/ci/tests/test_capture_accepted_build_root_custody.py
           do
-            expected_blob="$(/usr/bin/git rev-parse "${expected_head}:${path}")"
-            actual_blob="$(/usr/bin/git hash-object "$SEALED_BUNDLE/$path")"
+            expected_blob="$(env \
+              GIT_NO_REPLACE_OBJECTS=1 \
+              GIT_CONFIG_NOSYSTEM=1 \
+              GIT_CONFIG_GLOBAL=/dev/null \
+              /usr/bin/git rev-parse "${expected_head}:${path}")"
+            actual_blob="$(/usr/bin/sudo -n /usr/bin/git hash-object "$SEALED_BUNDLE/$path")"
             test "$actual_blob" = "$expected_blob"
           done
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
