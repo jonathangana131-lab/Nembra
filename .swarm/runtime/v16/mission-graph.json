@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 45,
+    "classifiedPRTotal": 46,
     "classifiedPRs": {
       "2959": {
         "classification": "requires-review",
@@ -1481,7 +1481,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3436,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.255,
+        "similarity": 0.258,
         "title": "[Capture P0][RED TEAM] Attack child entries under held generated ancestor"
       },
       "3438": {
@@ -1560,6 +1560,17 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.402,
         "title": "[Capture P0][REPAIR] Revalidate symlinks at private-lease handoff"
+      },
+      "3461": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "7c1b9cb525e749356342fe26d17cc69da5423bc2",
+        "lane": "capture-signed-install-custody",
+        "pr": 3461,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.303,
+        "title": "[Capture P0][QA] Prove accepted-input admission on macOS"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1592,9 +1603,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:22:27Z",
+    "liveRefreshAt": "2026-08-16T06:22:42Z",
     "liveRefreshDuplicatesSuppressed": [
-      3436
+      3461
     ],
     "liveRefreshMainSHA": "7154479d4ea0a1914eb565b5cd235968a5985443",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5377,10 +5388,10 @@
       "userValue": 7
     }
   },
-  "revision": 704,
+  "revision": 705,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:22:29Z",
+  "updatedAt": "2026-08-16T06:22:44Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5456,7 +5467,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:22:27Z",
+      "updatedAt": "2026-08-16T06:22:42Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
