@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 39,
+    "classifiedPRTotal": 38,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1459,19 +1459,8 @@
         "lane": "capture-signed-install-custody",
         "pr": 3516,
         "recommendedAction": "independent-review",
-        "similarity": 0.345,
+        "similarity": 0.229,
         "title": "[Capture P0][REPAIR INGREDIENT] Bind strict workspace to accepted root"
-      },
-      "3519": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3519,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.359,
-        "title": "[Capture P0][RED TEAM] Prove sealed root omits compiler read lease"
       },
       "3522": {
         "classification": "requires-review",
@@ -1526,9 +1515,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:51:35Z",
+    "liveRefreshAt": "2026-08-16T06:51:54Z",
     "liveRefreshDuplicatesSuppressed": [
-      3519
+      3416
     ],
     "liveRefreshMainSHA": "7154479d4ea0a1914eb565b5cd235968a5985443",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5311,10 +5300,10 @@
       "userValue": 7
     }
   },
-  "revision": 790,
+  "revision": 791,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:51:37Z",
+  "updatedAt": "2026-08-16T06:51:56Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5390,7 +5379,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:51:35Z",
+      "updatedAt": "2026-08-16T06:51:54Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
