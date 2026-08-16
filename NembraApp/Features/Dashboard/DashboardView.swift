@@ -308,11 +308,11 @@ struct DashboardView: View {
                             lineWidth: colorSchemeContrast == .increased ? 2 : 1.2
                         )
 
-                    if let fill = batteryFillFraction {
+                    if let fill = batteryFillFraction, fill > 0 {
                         RoundedRectangle(cornerRadius: 5.5, style: .continuous)
                             .fill(batteryChargeFillColor)
                             .frame(
-                                width: max(2, innerWidth * fill),
+                                width: innerWidth * fill,
                                 height: innerHeight
                             )
                             .padding(inset)
