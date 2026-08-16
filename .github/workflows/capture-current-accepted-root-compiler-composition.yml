@@ -1,0 +1,142 @@
+name: Capture Current Accepted Root Compiler Composition
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/capture_selected_xcode_build_orchestrator.py
+      - scripts/ci/tests/test_capture_accepted_root_build_composition.py
+      - scripts/ci/tests/test_capture_accepted_root_whole_read_lease.py
+      - scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py
+      - scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py
+      - .github/workflows/capture-current-accepted-root-compiler-composition.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-current-accepted-root-compiler-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_PARENT: 121abefc62d2663fe7eb248ec9595d882fa9d900
+  PYTHONDONTWRITEBYTECODE: 1
+
+jobs:
+  portable:
+    name: Accepted-root compiler authority (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact current-parent convergence scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          actual="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-current-accepted-root-compiler-composition.yml \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_accepted_root_build_composition.py \
+            scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py \
+            scripts/ci/tests/test_capture_accepted_root_whole_read_lease.py \
+            scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Compile authority product and witnesses
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+          for raw in (
+              "scripts/ci/capture_selected_xcode_build_orchestrator.py",
+              "scripts/ci/tests/test_capture_accepted_root_build_composition.py",
+              "scripts/ci/tests/test_capture_accepted_root_whole_read_lease.py",
+              "scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py",
+              "scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py",
+          ):
+              path = Path(raw)
+              compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
+          PY
+
+      - name: Prove sealed-root compiler composition
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_root_build_composition.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_root_whole_read_lease.py
+
+      - name: Preserve strongest private-lease adversaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+
+      - name: Preserve accepted-input/root source regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Preserve truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "NEMBRA_CURRENT_ACCEPTED_ROOT_COMPILER sealedRoot=true canonicalWorkspace=true wholeRootReadLease=true rollbackRequired=true signingAuthority=false installAuthority=false deviceTouched=false bluetoothTouched=false physicalAuthorityCreated=false"
+
+  real-macos-authority:
+    name: Real whole-root compiler read lease
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact head and root capability
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          /usr/bin/sudo -n /usr/bin/true
+
+      - name: Prove ephemeral complete-root read/search then exact revoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          field_user="$(/usr/bin/id -un)"
+          /usr/bin/sudo -n env \
+            NEMBRA_TEST_FIELD_USER="$field_user" \
+            PYTHONDONTWRITEBYTECODE=1 \
+            /usr/bin/python3 -B -I \
+            scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py \
+            --field-user "$field_user"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Preserve physical boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "NEMBRA_REAL_WHOLE_ROOT_LEASE compilerReadWindow=true exactRevoke=true xcodeBuildExecuted=false signingAuthority=false installAuthority=false deviceTouched=false bluetoothTouched=false physicalAuthorityCreated=false"
