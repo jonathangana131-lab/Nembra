@@ -1261,7 +1261,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3359,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.295,
+        "similarity": 0.325,
         "title": "[Capture P0][VALIDATION] Bind generated CocoaPods/private inputs before source snapshot"
       },
       "3360": {
@@ -1492,7 +1492,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3457,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.355,
+        "similarity": 0.347,
         "title": "[Capture P0][RED TEAM] Re-anchor post-validation symlink retarget on current product"
       },
       "3462": {
@@ -1527,17 +1527,6 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.397,
         "title": "[Capture P0][REPAIR] Bind symlink witnesses through final lease plan"
-      },
-      "3474": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "83e5ed2df6b41096b445f0e7b712adc023034f39",
-        "lane": "",
-        "pr": 3474,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.242,
-        "title": "[Capture P0][REPAIR] Reprove held symlink policy at ACL grant boundary"
       },
       "3475": {
         "classification": "requires-review",
@@ -1637,6 +1626,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.407,
         "title": "[Capture P0][RED TEAM] Prove cached-parent postcheck sibling splice"
+      },
+      "3485": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "3477ac936b60bf8b584dfc40f81e2832a05669bb",
+        "lane": "capture-signed-install-custody",
+        "pr": 3485,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.311,
+        "title": "[Capture P0][QA] Prove composed accepted-input admission on macOS"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1669,9 +1669,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:29:35Z",
+    "liveRefreshAt": "2026-08-16T06:29:54Z",
     "liveRefreshDuplicatesSuppressed": [
-      3484
+      3485
     ],
     "liveRefreshMainSHA": "7154479d4ea0a1914eb565b5cd235968a5985443",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5454,10 +5454,10 @@
       "userValue": 7
     }
   },
-  "revision": 726,
+  "revision": 727,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:29:38Z",
+  "updatedAt": "2026-08-16T06:29:57Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5533,7 +5533,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:29:35Z",
+      "updatedAt": "2026-08-16T06:29:54Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
