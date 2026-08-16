@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 37,
+    "classifiedPRTotal": 36,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1374,17 +1374,6 @@
         "similarity": 0.152,
         "title": "[Capture P0][RECOVERY] Execute full numeric-principal materializer without stale rewrite"
       },
-      "3447": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3447,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.057,
-        "title": "[Vehicle/Controls V15][QA] Real surface + exact XXXL witness"
-      },
       "3457": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1504,7 +1493,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T12:07:50Z",
+    "liveRefreshAt": "2026-08-16T13:00:10Z",
     "liveRefreshDuplicatesSuppressed": [
       3416
     ],
@@ -5289,10 +5278,10 @@
       "userValue": 7
     }
   },
-  "revision": 851,
+  "revision": 852,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T12:07:52Z",
+  "updatedAt": "2026-08-16T13:00:12Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5368,7 +5357,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T12:07:50Z",
+      "updatedAt": "2026-08-16T13:00:10Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
