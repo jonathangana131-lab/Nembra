@@ -586,6 +586,7 @@ def canonical_generated_manifest(root: Path, source_sha: str) -> bytes:
     records: list[dict[str, object]] = []
     seen: set[Path] = set()
     root_fd = _open_repository_root(root)
+    root_generation = os.fstat(root_fd)
     directory_cache: dict[Path, tuple[int, os.stat_result]] = {}
     try:
         for subject in GENERATED_SUBJECTS:
@@ -593,6 +594,7 @@ def canonical_generated_manifest(root: Path, source_sha: str) -> bytes:
                 raise AcceptedBuildInputSnapshotError(f"overlapping build-input subject: {subject}")
             descriptor, metadata, kind = _open_subject(root_fd, subject, directory_cache)
             try:
+                _assert_directory_generation(root_fd, root_generation, Path("."))
                 record: dict[str, object] = {"path": subject.as_posix()}
                 if kind == "file":
                     digest, size, after = _hash_open_file(descriptor, subject)
@@ -774,11 +776,13 @@ def _copy_generated_subjects(source_root: Path, destination_root: Path) -> None:
     source_root = _absolute(source_root)
     destination_root = _absolute(destination_root)
     root_fd = _open_repository_root(source_root)
+    root_generation = os.fstat(root_fd)
     directory_cache: dict[Path, tuple[int, os.stat_result]] = {}
     try:
         for subject in GENERATED_SUBJECTS:
             descriptor, metadata, kind = _open_subject(root_fd, subject, directory_cache)
             try:
+                _assert_directory_generation(root_fd, root_generation, Path("."))
                 if kind == "file":
                     _copy_open_file(
                         descriptor,
