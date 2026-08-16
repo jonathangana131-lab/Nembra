@@ -1,0 +1,154 @@
+name: Capture Symlink Entry Generation Materialize Once
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-symlink-entry-generation-gpt56
+    paths:
+      - .github/workflows/capture-symlink-entry-generation-materialize-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      EXACT_PARENT: 9b68439c1ef19e0e445f488be46b0c3e6ef61936
+      PYTHONDONTWRITEBYTECODE: 1
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repair/v17-capture-symlink-entry-generation-gpt56
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact authoring child
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXACT_PARENT"
+          test "$(git diff --name-only HEAD^...HEAD)" = ".github/workflows/capture-symlink-entry-generation-materialize-once.yml"
+          git diff --check HEAD^...HEAD
+
+      - name: Materialize per-symlink generation fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/ci/capture_selected_xcode_build_orchestrator.py")
+          source = path.read_text(encoding="utf-8")
+          old = '''            if stat.S_ISLNK(metadata.st_mode):
+                try:
+                    target_text = os.readlink(name, dir_fd=directory_descriptor)
+                except OSError as error:
+                    raise SelectedXcodeBuildOrchestratorError(
+                        "private read-lease held symlink changed during validation"
+                    ) from error
+                target_parts = _normalize_held_symlink_target(
+                    subject,
+                    entry_parts,
+                    target_text,
+                )
+                _validate_held_symlink_target(
+                    subject,
+                    subject_descriptor,
+                    target_parts,
+                )
+                continue
+'''
+          new = '''            if stat.S_ISLNK(metadata.st_mode):
+                accepted_symlink_generation = (
+                    metadata.st_dev,
+                    metadata.st_ino,
+                    stat.S_IFMT(metadata.st_mode),
+                    metadata.st_mtime_ns,
+                    metadata.st_ctime_ns,
+                    metadata.st_size,
+                )
+
+                def require_same_symlink_generation() -> None:
+                    try:
+                        current_metadata = os.stat(
+                            name,
+                            dir_fd=directory_descriptor,
+                            follow_symlinks=False,
+                        )
+                    except OSError as error:
+                        raise SelectedXcodeBuildOrchestratorError(
+                            "private read-lease held symlink changed during validation"
+                        ) from error
+                    current_generation = (
+                        current_metadata.st_dev,
+                        current_metadata.st_ino,
+                        stat.S_IFMT(current_metadata.st_mode),
+                        current_metadata.st_mtime_ns,
+                        current_metadata.st_ctime_ns,
+                        current_metadata.st_size,
+                    )
+                    if current_generation != accepted_symlink_generation:
+                        raise SelectedXcodeBuildOrchestratorError(
+                            "private read-lease held symlink generation changed during validation"
+                        )
+
+                try:
+                    target_text = os.readlink(name, dir_fd=directory_descriptor)
+                except OSError as error:
+                    raise SelectedXcodeBuildOrchestratorError(
+                        "private read-lease held symlink changed during validation"
+                    ) from error
+                require_same_symlink_generation()
+                target_parts = _normalize_held_symlink_target(
+                    subject,
+                    entry_parts,
+                    target_text,
+                )
+                _validate_held_symlink_target(
+                    subject,
+                    subject_descriptor,
+                    target_parts,
+                )
+                require_same_symlink_generation()
+                continue
+'''
+          if source.count(old) != 1:
+              raise SystemExit("held-symlink validation seam did not match exactly once")
+          path.write_text(source.replace(old, new), encoding="utf-8")
+          PY
+
+      - name: Prove focused and inherited lease suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+          path = Path("scripts/ci/capture_selected_xcode_build_orchestrator.py")
+          compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
+          PY
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+          git diff --check
+          test "$(git diff --name-only)" = "scripts/ci/capture_selected_xcode_build_orchestrator.py"
+
+      - name: Publish clean product checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/ci/capture_selected_xcode_build_orchestrator.py
+          git commit -m 'fix(capture): bind held symlink object generation'
+          git rm .github/workflows/capture-symlink-entry-generation-materialize-once.yml
+          git commit -m 'ci(capture): remove symlink-generation materializer'
+          git push origin HEAD:repair/v17-capture-symlink-entry-generation-gpt56
+
+      - name: Preserve truth boundary
+        shell: bash
+        run: |
+          echo 'NEMBRA_SYMLINK_ENTRY_GENERATION physicalAuthorityCreated=false deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false'
