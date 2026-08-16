@@ -1580,7 +1580,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3506,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.314,
+        "similarity": 0.357,
         "title": "[Capture P0][REPAIR] Fence generated repository-root membership generation"
       },
       "3507": {
@@ -1613,7 +1613,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3509,
         "recommendedAction": "independent-review",
-        "similarity": 0.338,
+        "similarity": 0.295,
         "title": "[Capture P0][CONVERGENCE] Close generated parent + root generation races"
       },
       "3510": {
@@ -1658,7 +1658,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:37:48Z",
+    "liveRefreshAt": "2026-08-16T06:38:06Z",
     "liveRefreshDuplicatesSuppressed": [
       3508
     ],
@@ -5443,10 +5443,10 @@
       "userValue": 7
     }
   },
-  "revision": 753,
+  "revision": 754,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:37:50Z",
+  "updatedAt": "2026-08-16T06:38:09Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5522,7 +5522,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:37:48Z",
+      "updatedAt": "2026-08-16T06:38:06Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
