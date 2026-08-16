@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 51,
+    "classifiedPRTotal": 54,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1074,7 +1074,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.187,
+        "similarity": 0.18,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "3316": {
@@ -1239,7 +1239,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3356,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.347,
+        "similarity": 0.307,
         "title": "[Capture P0][REPAIR] Preaccept private Tuya provenance before field build"
       },
       "3358": {
@@ -1261,7 +1261,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3359,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.304,
+        "similarity": 0.293,
         "title": "[Capture P0][VALIDATION] Bind generated CocoaPods/private inputs before source snapshot"
       },
       "3360": {
@@ -1521,11 +1521,11 @@
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "d1628140f9eab26f0490a6a141e730b6ad50538e",
+        "headSHA": "9b68439c1ef19e0e445f488be46b0c3e6ef61936",
         "lane": "capture-private-read-lease",
         "pr": 3467,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.446,
+        "similarity": 0.406,
         "title": "[Capture P0][REPAIR] Fence held symlinks at ACL authority transition"
       },
       "3470": {
@@ -1547,18 +1547,18 @@
         "lane": "capture-private-read-lease",
         "pr": 3473,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.443,
+        "similarity": 0.397,
         "title": "[Capture P0][REPAIR] Bind symlink witnesses through final lease plan"
       },
       "3474": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "9c478371e36a23c75c4a5cfc612993cc27273d21",
+        "headSHA": "83e5ed2df6b41096b445f0e7b712adc023034f39",
         "lane": "",
         "pr": 3474,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.26,
+        "similarity": 0.242,
         "title": "[Capture P0][REPAIR] Reprove held symlink policy at ACL grant boundary"
       },
       "3475": {
@@ -1591,7 +1591,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3477,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.392,
+        "similarity": 0.439,
         "title": "[Capture P0][RED TEAM] Replay final-child splice on current accepted-input head"
       },
       "3478": {
@@ -1626,6 +1626,39 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.417,
         "title": "[Capture P0][VALIDATION] Re-run root custody with structured credentials"
+      },
+      "3481": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3481,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.504,
+        "title": "[Capture P0][REPAIR] Revalidate held ancestor after final child admission"
+      },
+      "3482": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3482,
+        "recommendedAction": "independent-review",
+        "similarity": 0.228,
+        "title": "[Capture P0][INTERNAL] Re-anchor root custody onto accepted-input shared-ancestor head"
+      },
+      "3483": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3483,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.454,
+        "title": "[Capture P0][REPAIR] Revalidate generated parent after final-child open"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1658,7 +1691,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:28:35Z",
+    "liveRefreshAt": "2026-08-16T06:28:56Z",
     "liveRefreshDuplicatesSuppressed": [
       3480
     ],
@@ -5443,10 +5476,10 @@
       "userValue": 7
     }
   },
-  "revision": 723,
+  "revision": 724,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:28:38Z",
+  "updatedAt": "2026-08-16T06:29:00Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5522,7 +5555,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:28:35Z",
+      "updatedAt": "2026-08-16T06:28:56Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
