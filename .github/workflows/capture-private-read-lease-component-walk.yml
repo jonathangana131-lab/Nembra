@@ -48,11 +48,13 @@ jobs:
           set -euo pipefail
           /usr/bin/python3 -B -I - <<'PY'
           from pathlib import Path
+          import textwrap
 
           product_path = Path("scripts/ci/capture_selected_xcode_build_orchestrator.py")
           test_path = Path("scripts/ci/tests/test_capture_private_read_lease_component_walk.py")
           product = product_path.read_text(encoding="utf-8")
           tests = test_path.read_text(encoding="utf-8")
+          D = textwrap.dedent
 
           def replace_once(text: str, old: str, new: str, label: str) -> str:
               count = text.count(old)
@@ -60,346 +62,351 @@ jobs:
                   raise SystemExit(f"{label}: expected one anchor, found {count}")
               return text.replace(old, new, 1)
 
-          metadata_anchor = '''def _metadata_signature(metadata: os.stat_result) -> tuple[int, int, int]:
-              return metadata.st_dev, metadata.st_ino, stat.S_IFMT(metadata.st_mode)
+          product = replace_once(
+              product,
+              D('''\
+              def _metadata_signature(metadata: os.stat_result) -> tuple[int, int, int]:
+                  return metadata.st_dev, metadata.st_ino, stat.S_IFMT(metadata.st_mode)
 
 
-          def _validate_internal_symlink(link: Path, subject: Path) -> None:
-          '''.replace("          ", "")
-          metadata_replacement = '''def _metadata_signature(metadata: os.stat_result) -> tuple[int, int, int]:
-              return metadata.st_dev, metadata.st_ino, stat.S_IFMT(metadata.st_mode)
+              def _validate_internal_symlink(link: Path, subject: Path) -> None:
+              '''),
+              D('''\
+              def _metadata_signature(metadata: os.stat_result) -> tuple[int, int, int]:
+                  return metadata.st_dev, metadata.st_ino, stat.S_IFMT(metadata.st_mode)
 
 
-          def _symlink_generation(
-              metadata: os.stat_result,
-          ) -> tuple[int, int, int, int, int, int]:
-              return (
-                  metadata.st_dev,
-                  metadata.st_ino,
-                  stat.S_IFMT(metadata.st_mode),
-                  metadata.st_size,
-                  metadata.st_mtime_ns,
-                  metadata.st_ctime_ns,
-              )
-
-
-          def _read_held_symlink_witness(
-              directory_descriptor: int,
-              name: str,
-          ) -> tuple[tuple[int, int, int, int, int, int], str]:
-              """Read one symlink identity + target through its already-held parent."""
-              if not name or name in (".", "..") or os.sep in name or "\\x00" in name:
-                  raise SelectedXcodeBuildOrchestratorError(
-                      "private read-lease symlink witness name is unsafe"
+              def _symlink_generation(
+                  metadata: os.stat_result,
+              ) -> tuple[int, int, int, int, int, int]:
+                  return (
+                      metadata.st_dev,
+                      metadata.st_ino,
+                      stat.S_IFMT(metadata.st_mode),
+                      metadata.st_size,
+                      metadata.st_mtime_ns,
+                      metadata.st_ctime_ns,
                   )
-              if os.stat not in os.supports_dir_fd or os.readlink not in os.supports_dir_fd:
-                  raise SelectedXcodeBuildOrchestratorError(
-                      "private read-lease symlink witness requires descriptor-relative stat/readlink"
-                  )
-              try:
-                  before = os.stat(
-                      name,
-                      dir_fd=directory_descriptor,
-                      follow_symlinks=False,
-                  )
-              except OSError as error:
-                  raise SelectedXcodeBuildOrchestratorError(
-                      "private read-lease symlink witness is unavailable"
-                  ) from error
-              if not stat.S_ISLNK(before.st_mode):
-                  raise SelectedXcodeBuildOrchestratorError(
-                      "private read-lease symlink witness changed type"
-                  )
-              try:
-                  target_text = os.readlink(name, dir_fd=directory_descriptor)
-                  after = os.stat(
-                      name,
-                      dir_fd=directory_descriptor,
-                      follow_symlinks=False,
-                  )
-              except OSError as error:
-                  raise SelectedXcodeBuildOrchestratorError(
-                      "private read-lease symlink witness changed during read"
-                  ) from error
-              before_generation = _symlink_generation(before)
-              after_generation = _symlink_generation(after)
-              if (
-                  not stat.S_ISLNK(after.st_mode)
-                  or before_generation != after_generation
-              ):
-                  raise SelectedXcodeBuildOrchestratorError(
-                      "private read-lease symlink witness changed during read"
-                  )
-              return before_generation, target_text
 
 
-          def _validate_internal_symlink(link: Path, subject: Path) -> None:
-          '''.replace("          ", "")
-          product = replace_once(product, metadata_anchor, metadata_replacement, "symlink witness helper")
+              def _read_held_symlink_witness(
+                  directory_descriptor: int,
+                  name: str,
+              ) -> tuple[tuple[int, int, int, int, int, int], str]:
+                  """Read one symlink identity + target through its already-held parent."""
+                  if not name or name in (".", "..") or os.sep in name or "\\x00" in name:
+                      raise SelectedXcodeBuildOrchestratorError(
+                          "private read-lease symlink witness name is unsafe"
+                      )
+                  if os.stat not in os.supports_dir_fd or os.readlink not in os.supports_dir_fd:
+                      raise SelectedXcodeBuildOrchestratorError(
+                          "private read-lease symlink witness requires descriptor-relative stat/readlink"
+                      )
+                  try:
+                      before = os.stat(
+                          name,
+                          dir_fd=directory_descriptor,
+                          follow_symlinks=False,
+                      )
+                  except OSError as error:
+                      raise SelectedXcodeBuildOrchestratorError(
+                          "private read-lease symlink witness is unavailable"
+                      ) from error
+                  if not stat.S_ISLNK(before.st_mode):
+                      raise SelectedXcodeBuildOrchestratorError(
+                          "private read-lease symlink witness changed type"
+                      )
+                  try:
+                      target_text = os.readlink(name, dir_fd=directory_descriptor)
+                      after = os.stat(
+                          name,
+                          dir_fd=directory_descriptor,
+                          follow_symlinks=False,
+                      )
+                  except OSError as error:
+                      raise SelectedXcodeBuildOrchestratorError(
+                          "private read-lease symlink witness changed during read"
+                      ) from error
+                  before_generation = _symlink_generation(before)
+                  after_generation = _symlink_generation(after)
+                  if (
+                      not stat.S_ISLNK(after.st_mode)
+                      or before_generation != after_generation
+                  ):
+                      raise SelectedXcodeBuildOrchestratorError(
+                          "private read-lease symlink witness changed during read"
+                      )
+                  return before_generation, target_text
+
+
+              def _validate_internal_symlink(link: Path, subject: Path) -> None:
+              '''),
+              "symlink witness helper",
+          )
 
           product = replace_once(
               product,
-              '''def _validate_subject_symlinks_from_descriptor(
-              subject: Path,
-              subject_descriptor: int,
-          ) -> None:
-          '''.replace("          ", ""),
-              '''def _validate_subject_symlinks_from_descriptor(
-              subject: Path,
-              subject_descriptor: int,
-          ) -> tuple[tuple[Path, tuple[int, int, int, int, int, int], str], ...]:
-          '''.replace("          ", ""),
+              D('''\
+              def _validate_subject_symlinks_from_descriptor(
+                  subject: Path,
+                  subject_descriptor: int,
+              ) -> None:
+              '''),
+              D('''\
+              def _validate_subject_symlinks_from_descriptor(
+                  subject: Path,
+                  subject_descriptor: int,
+              ) -> tuple[tuple[Path, tuple[int, int, int, int, int, int], str], ...]:
+              '''),
               "validator return type",
           )
           product = replace_once(
               product,
-              '''    def walk(directory_descriptor: int, relative_parts: tuple[str, ...]) -> None:
-          '''.replace("          ", ""),
-              '''    witnesses: list[
-              tuple[Path, tuple[int, int, int, int, int, int], str]
-          ] = []
+              "    def walk(directory_descriptor: int, relative_parts: tuple[str, ...]) -> None:\n",
+              D('''\
+                  witnesses: list[
+                      tuple[Path, tuple[int, int, int, int, int, int], str]
+                  ] = []
 
-              def walk(directory_descriptor: int, relative_parts: tuple[str, ...]) -> None:
-          '''.replace("          ", ""),
+                  def walk(directory_descriptor: int, relative_parts: tuple[str, ...]) -> None:
+              '''),
               "validator witness list",
           )
-
-          old_symlink_branch = '''            if stat.S_ISLNK(metadata.st_mode):
-                  try:
-                      target_text = os.readlink(name, dir_fd=directory_descriptor)
-                  except OSError as error:
-                      raise SelectedXcodeBuildOrchestratorError(
-                          "private read-lease held symlink changed during validation"
-                      ) from error
-                  target_parts = _normalize_held_symlink_target(
-                      subject,
-                      entry_parts,
-                      target_text,
-                  )
-                  _validate_held_symlink_target(
-                      subject,
-                      subject_descriptor,
-                      target_parts,
-                  )
-                  continue
-          '''.replace("          ", "")
-          new_symlink_branch = '''            if stat.S_ISLNK(metadata.st_mode):
-                  generation, target_text = _read_held_symlink_witness(
-                      directory_descriptor,
-                      name,
-                  )
-                  if _symlink_generation(metadata) != generation:
-                      raise SelectedXcodeBuildOrchestratorError(
-                          "private read-lease held symlink changed during validation"
-                      )
-                  target_parts = _normalize_held_symlink_target(
-                      subject,
-                      entry_parts,
-                      target_text,
-                  )
-                  _validate_held_symlink_target(
-                      subject,
-                      subject_descriptor,
-                      target_parts,
-                  )
-                  witnesses.append((subject.joinpath(*entry_parts), generation, target_text))
-                  continue
-          '''.replace("          ", "")
-          product = replace_once(product, old_symlink_branch, new_symlink_branch, "validator symlink branch")
           product = replace_once(
               product,
-              '''    walk(subject_descriptor, ())
-
-
-          def _lease_paths(
-          '''.replace("          ", ""),
-              '''    walk(subject_descriptor, ())
-              return tuple(witnesses)
-
-
-          def _lease_paths(
-          '''.replace("          ", ""),
+              D('''\
+                          if stat.S_ISLNK(metadata.st_mode):
+                              try:
+                                  target_text = os.readlink(name, dir_fd=directory_descriptor)
+                              except OSError as error:
+                                  raise SelectedXcodeBuildOrchestratorError(
+                                      "private read-lease held symlink changed during validation"
+                                  ) from error
+                              target_parts = _normalize_held_symlink_target(
+                                  subject,
+                                  entry_parts,
+                                  target_text,
+                              )
+                              _validate_held_symlink_target(
+                                  subject,
+                                  subject_descriptor,
+                                  target_parts,
+                              )
+                              continue
+              '''),
+              D('''\
+                          if stat.S_ISLNK(metadata.st_mode):
+                              generation, target_text = _read_held_symlink_witness(
+                                  directory_descriptor,
+                                  name,
+                              )
+                              if _symlink_generation(metadata) != generation:
+                                  raise SelectedXcodeBuildOrchestratorError(
+                                      "private read-lease held symlink changed during validation"
+                                  )
+                              target_parts = _normalize_held_symlink_target(
+                                  subject,
+                                  entry_parts,
+                                  target_text,
+                              )
+                              _validate_held_symlink_target(
+                                  subject,
+                                  subject_descriptor,
+                                  target_parts,
+                              )
+                              witnesses.append(
+                                  (subject.joinpath(*entry_parts), generation, target_text)
+                              )
+                              continue
+              '''),
+              "validator symlink branch",
+          )
+          product = replace_once(
+              product,
+              "    walk(subject_descriptor, ())\n\n\ndef _lease_paths(\n",
+              "    walk(subject_descriptor, ())\n    return tuple(witnesses)\n\n\ndef _lease_paths(\n",
               "validator return",
           )
           product = replace_once(
               product,
-              '''    ordered: list[tuple] = []
-              seen: set[Path] = set()
-          '''.replace("          ", ""),
-              '''    ordered: list[tuple] = []
-              seen: set[Path] = set()
-              symlink_witnesses: list[
-                  tuple[Path, tuple[int, int, int, int, int, int], str]
-              ] = []
-          '''.replace("          ", ""),
+              "    ordered: list[tuple] = []\n    seen: set[Path] = set()\n",
+              D('''\
+                  ordered: list[tuple] = []
+                  seen: set[Path] = set()
+                  symlink_witnesses: list[
+                      tuple[Path, tuple[int, int, int, int, int, int], str]
+                  ] = []
+              '''),
               "lease witness collection",
           )
           product = replace_once(
               product,
-              '''            _validate_subject_symlinks_from_descriptor(
-                      subject,
-                      int(held_subject[3]),
-                  )
-          '''.replace("          ", ""),
-              '''            symlink_witnesses.extend(
-                      _validate_subject_symlinks_from_descriptor(
-                          subject,
-                          int(held_subject[3]),
-                      )
-                  )
-          '''.replace("          ", ""),
+              D('''\
+                          _validate_subject_symlinks_from_descriptor(
+                              subject,
+                              int(held_subject[3]),
+                          )
+              '''),
+              D('''\
+                          symlink_witnesses.extend(
+                              _validate_subject_symlinks_from_descriptor(
+                                  subject,
+                                  int(held_subject[3]),
+                              )
+                          )
+              '''),
               "lease witness capture",
           )
           product = replace_once(
               product,
-              '''        if include_descriptors:
-                  _verify_descriptor_plan(tuple(ordered))
-          '''.replace("          ", ""),
-              '''        if include_descriptors:
-                  _verify_descriptor_plan(tuple(ordered), tuple(symlink_witnesses))
-          '''.replace("          ", ""),
+              "        _verify_descriptor_plan(tuple(ordered))\n",
+              "        _verify_descriptor_plan(tuple(ordered), tuple(symlink_witnesses))\n",
               "final witness verification call",
           )
           product = replace_once(
               product,
-              '''def _verify_descriptor_plan(
-              plan: Sequence[tuple[Path, bool, tuple[int, int, int], int]],
-          ) -> None:
-          '''.replace("          ", ""),
-              '''def _verify_descriptor_plan(
-              plan: Sequence[tuple[Path, bool, tuple[int, int, int], int]],
-              symlink_witnesses: Sequence[
-                  tuple[Path, tuple[int, int, int, int, int, int], str]
-              ] = (),
-          ) -> None:
-          '''.replace("          ", ""),
+              D('''\
+              def _verify_descriptor_plan(
+                  plan: Sequence[tuple[Path, bool, tuple[int, int, int], int]],
+              ) -> None:
+              '''),
+              D('''\
+              def _verify_descriptor_plan(
+                  plan: Sequence[tuple[Path, bool, tuple[int, int, int], int]],
+                  symlink_witnesses: Sequence[
+                      tuple[Path, tuple[int, int, int, int, int, int], str]
+                  ] = (),
+              ) -> None:
+              '''),
               "verifier signature",
           )
           product = replace_once(
               product,
-              '''        os.close(diagnostic)
+              "        os.close(diagnostic)\n\ndef _descriptor_path(descriptor: int) -> str:\n",
+              D('''\
+                      os.close(diagnostic)
 
-          def _descriptor_path(descriptor: int) -> str:
-          '''.replace("          ", ""),
-              '''        os.close(diagnostic)
+                  seen_symlinks: set[Path] = set()
+                  for link_path_raw, accepted_generation, accepted_target in symlink_witnesses:
+                      link_path = Path(link_path_raw)
+                      if link_path in seen_symlinks:
+                          raise SelectedXcodeBuildOrchestratorError(
+                              f"private read-lease symlink witness is duplicated: {link_path}"
+                          )
+                      seen_symlinks.add(link_path)
+                      parent = by_path.get(link_path.parent)
+                      if parent is None or not stat.S_ISDIR(parent[2][2]):
+                          raise SelectedXcodeBuildOrchestratorError(
+                              f"private read-lease symlink witness has no held parent: {link_path}"
+                          )
+                      current_generation, current_target = _read_held_symlink_witness(
+                          int(parent[3]),
+                          link_path.name,
+                      )
+                      if (
+                          current_generation != accepted_generation
+                          or current_target != accepted_target
+                      ):
+                          raise SelectedXcodeBuildOrchestratorError(
+                              f"private read-lease symlink changed before final plan admission: {link_path}"
+                          )
 
-              seen_symlinks: set[Path] = set()
-              for link_path_raw, accepted_generation, accepted_target in symlink_witnesses:
-                  link_path = Path(link_path_raw)
-                  if link_path in seen_symlinks:
-                      raise SelectedXcodeBuildOrchestratorError(
-                          f"private read-lease symlink witness is duplicated: {link_path}"
-                      )
-                  seen_symlinks.add(link_path)
-                  parent = by_path.get(link_path.parent)
-                  if parent is None or not stat.S_ISDIR(parent[2][2]):
-                      raise SelectedXcodeBuildOrchestratorError(
-                          f"private read-lease symlink witness has no held parent: {link_path}"
-                      )
-                  current_generation, current_target = _read_held_symlink_witness(
-                      int(parent[3]),
-                      link_path.name,
-                  )
-                  if (
-                      current_generation != accepted_generation
-                      or current_target != accepted_target
-                  ):
-                      raise SelectedXcodeBuildOrchestratorError(
-                          f"private read-lease symlink changed before final plan admission: {link_path}"
-                      )
-
-          def _descriptor_path(descriptor: int) -> str:
-          '''.replace("          ", ""),
+              def _descriptor_path(descriptor: int) -> str:
+              '''),
               "final verifier witnesses",
           )
 
-          test_anchor = '''    def test_descriptor_bound_symlink_policy_accepts_internal_framework_chain(self) -> None:
-          '''.replace("          ", "")
-          test_method = '''    def test_final_descriptor_plan_rejects_post_validation_symlink_retarget(self) -> None:
-              helper = load()
-              with tempfile.TemporaryDirectory(prefix="nembra-held-symlink-final-witness-") as raw:
-                  outer = Path(raw)
-                  outer.chmod(0o711)
-                  repo = outer / "repo"
-                  subject = repo / "LocalSecrets/TuyaSDK/Build"
-                  inside = subject / "inside"
-                  inside.mkdir(parents=True)
-                  (inside / "inside.fixture").write_text("inside\\n", encoding="utf-8")
+          anchor = "    def test_descriptor_bound_symlink_policy_accepts_internal_framework_chain(self) -> None:\n"
+          method = D('''\
+                  def test_final_descriptor_plan_rejects_post_validation_symlink_retarget(self) -> None:
+                      helper = load()
+                      with tempfile.TemporaryDirectory(prefix="nembra-held-symlink-final-witness-") as raw:
+                          outer = Path(raw)
+                          outer.chmod(0o711)
+                          repo = outer / "repo"
+                          subject = repo / "LocalSecrets/TuyaSDK/Build"
+                          inside = subject / "inside"
+                          inside.mkdir(parents=True)
+                          (inside / "inside.fixture").write_text("inside\\n", encoding="utf-8")
 
-                  external = outer / "outside-subject"
-                  external.mkdir()
-                  (external / "outside.fixture").write_text("outside\\n", encoding="utf-8")
-                  link = subject / "escape"
-                  link.symlink_to("inside", target_is_directory=True)
+                          external = outer / "outside-subject"
+                          external.mkdir()
+                          (external / "outside.fixture").write_text("outside\\n", encoding="utf-8")
+                          link = subject / "escape"
+                          link.symlink_to("inside", target_is_directory=True)
 
-                  original_validator = helper._validate_subject_symlinks_from_descriptor
-                  retargeted = False
+                          original_validator = helper._validate_subject_symlinks_from_descriptor
+                          retargeted = False
 
-                  def validate_safe_then_retarget(
-                      admitted_subject: Path,
-                      subject_descriptor: int,
-                  ):
-                      nonlocal retargeted
-                      witnesses = original_validator(admitted_subject, subject_descriptor)
-                      link.unlink()
-                      link.symlink_to(external, target_is_directory=True)
-                      retargeted = True
-                      return witnesses
+                          def validate_safe_then_retarget(
+                              admitted_subject: Path,
+                              subject_descriptor: int,
+                          ):
+                              nonlocal retargeted
+                              witnesses = original_validator(admitted_subject, subject_descriptor)
+                              link.unlink()
+                              link.symlink_to(external, target_is_directory=True)
+                              retargeted = True
+                              return witnesses
 
-                  def unexpected_acl(_descriptor: int) -> str:
-                      raise AssertionError("retargeted symlink reached ACL inspection")
+                          def unexpected_acl(_descriptor: int) -> str:
+                              raise AssertionError("retargeted symlink reached ACL inspection")
 
-                  lease = helper._PrivateReadLease((subject,), repo)
-                  with (
-                      mock.patch.object(
-                          helper,
-                          "_validate_subject_symlinks_from_descriptor",
-                          side_effect=validate_safe_then_retarget,
-                      ),
-                      mock.patch.object(helper, "_acl_listing", side_effect=unexpected_acl),
-                  ):
-                      with self.assertRaisesRegex(
-                          helper.SelectedXcodeBuildOrchestratorError,
-                          "symlink changed before final plan admission",
-                      ):
-                          lease.grant("nembraheldsymlinkfinal")
-                  self.assertTrue(retargeted)
-                  self.assertFalse(lease._opened)
-                  self.assertEqual(lease._principal, "")
+                          lease = helper._PrivateReadLease((subject,), repo)
+                          with (
+                              mock.patch.object(
+                                  helper,
+                                  "_validate_subject_symlinks_from_descriptor",
+                                  side_effect=validate_safe_then_retarget,
+                              ),
+                              mock.patch.object(helper, "_acl_listing", side_effect=unexpected_acl),
+                          ):
+                              with self.assertRaisesRegex(
+                                  helper.SelectedXcodeBuildOrchestratorError,
+                                  "symlink changed before final plan admission",
+                              ):
+                                  lease.grant("nembraheldsymlinkfinal")
+                          self.assertTrue(retargeted)
+                          self.assertFalse(lease._opened)
+                          self.assertEqual(lease._principal, "")
 
-''' + test_anchor
-          tests = replace_once(tests, test_anchor, test_method, "post-validation regression")
+              ''')
+          tests = replace_once(tests, anchor, method + anchor, "post-validation regression")
           tests = replace_once(
               tests,
-              '''        symlink_validator = inspect.getsource(helper._validate_subject_symlinks_from_descriptor)
-              symlink_target = inspect.getsource(helper._validate_held_symlink_target)
-          '''.replace("          ", ""),
-              '''        symlink_validator = inspect.getsource(helper._validate_subject_symlinks_from_descriptor)
-              symlink_witness = inspect.getsource(helper._read_held_symlink_witness)
-              symlink_target = inspect.getsource(helper._validate_held_symlink_target)
-          '''.replace("          ", ""),
+              D('''\
+                      symlink_validator = inspect.getsource(helper._validate_subject_symlinks_from_descriptor)
+                      symlink_target = inspect.getsource(helper._validate_held_symlink_target)
+              '''),
+              D('''\
+                      symlink_validator = inspect.getsource(helper._validate_subject_symlinks_from_descriptor)
+                      symlink_witness = inspect.getsource(helper._read_held_symlink_witness)
+                      symlink_target = inspect.getsource(helper._validate_held_symlink_target)
+              '''),
               "source witness inspection",
           )
           tests = replace_once(
               tests,
-              '''        self.assertIn("_verify_descriptor_plan", lease_paths)
-              self.assertIn("_validate_subject_symlinks_from_descriptor", lease_paths)
-              self.assertIn("_open_pinned_child", verifier)
-              self.assertIn("os.listdir(directory_descriptor)", symlink_validator)
-              self.assertIn("os.readlink(name, dir_fd=directory_descriptor)", symlink_validator)
-              self.assertIn("os.readlink(component, dir_fd=current)", symlink_target)
-          '''.replace("          ", ""),
-              '''        self.assertIn("_verify_descriptor_plan", lease_paths)
-              self.assertIn("_validate_subject_symlinks_from_descriptor", lease_paths)
-              self.assertIn("symlink_witnesses", lease_paths)
-              self.assertIn("_open_pinned_child", verifier)
-              self.assertIn("_read_held_symlink_witness", verifier)
-              self.assertIn("os.listdir(directory_descriptor)", symlink_validator)
-              self.assertIn("_read_held_symlink_witness", symlink_validator)
-              self.assertIn("os.readlink(name, dir_fd=directory_descriptor)", symlink_witness)
-              self.assertIn("follow_symlinks=False", symlink_witness)
-              self.assertIn("os.readlink(component, dir_fd=current)", symlink_target)
-          '''.replace("          ", ""),
+              D('''\
+                      self.assertIn("_verify_descriptor_plan", lease_paths)
+                      self.assertIn("_validate_subject_symlinks_from_descriptor", lease_paths)
+                      self.assertIn("_open_pinned_child", verifier)
+                      self.assertIn("os.listdir(directory_descriptor)", symlink_validator)
+                      self.assertIn("os.readlink(name, dir_fd=directory_descriptor)", symlink_validator)
+                      self.assertIn("os.readlink(component, dir_fd=current)", symlink_target)
+              '''),
+              D('''\
+                      self.assertIn("_verify_descriptor_plan", lease_paths)
+                      self.assertIn("_validate_subject_symlinks_from_descriptor", lease_paths)
+                      self.assertIn("symlink_witnesses", lease_paths)
+                      self.assertIn("_open_pinned_child", verifier)
+                      self.assertIn("_read_held_symlink_witness", verifier)
+                      self.assertIn("os.listdir(directory_descriptor)", symlink_validator)
+                      self.assertIn("_read_held_symlink_witness", symlink_validator)
+                      self.assertIn("os.readlink(name, dir_fd=directory_descriptor)", symlink_witness)
+                      self.assertIn("follow_symlinks=False", symlink_witness)
+                      self.assertIn("os.readlink(component, dir_fd=current)", symlink_target)
+              '''),
               "source witness assertions",
           )
 
@@ -413,7 +420,10 @@ jobs:
           set -euo pipefail
           /usr/bin/python3 -B -I - <<'PY'
           from pathlib import Path
-          for raw in ("$PRODUCT", "$TEST"):
+          for raw in (
+              "scripts/ci/capture_selected_xcode_build_orchestrator.py",
+              "scripts/ci/tests/test_capture_private_read_lease_component_walk.py",
+          ):
               path = Path(raw)
               compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
           PY
