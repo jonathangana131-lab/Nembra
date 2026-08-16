@@ -11,7 +11,7 @@ struct VehicleControlsView: View {
     }
 
     private var persistentNavigationViewportClearance: CGFloat {
-        dynamicTypeSize.isAccessibilitySize ? 144 : 72
+        dynamicTypeSize.isAccessibilitySize ? 220 : 164
     }
 
     var body: some View {
