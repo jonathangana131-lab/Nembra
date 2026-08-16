@@ -406,6 +406,16 @@ def _open_subject(
             child = _open_directory_at(current, component, relative)
             held: int | None = None
             try:
+                if directory_cache is not None:
+                    parent_relative = relative.parent
+                    cached_parent = directory_cache.get(parent_relative)
+                    if cached_parent is not None:
+                        parent_descriptor, parent_admitted = cached_parent
+                        _assert_directory_generation(
+                            parent_descriptor,
+                            parent_admitted,
+                            parent_relative,
+                        )
                 if not is_last and directory_cache is not None:
                     held = os.dup(child)
                     admitted = os.fstat(held)
