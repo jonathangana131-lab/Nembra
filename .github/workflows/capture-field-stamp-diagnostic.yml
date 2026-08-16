@@ -1,0 +1,92 @@
+name: Capture Field Stamp Diagnostic
+
+on:
+  push:
+    branches:
+      - capture/one-time-ble-dump-gpt56
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    name: Diagnose stamped Capture plist truth
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Bind exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          expected="$(printf '%s' "$GITHUB_SHA" | tr '[:upper:]' '[:lower:]')"
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Build and retain exact stamp readback
+        id: stamp
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          dependency_sha='abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789'
+          procedure='ES80-AUTHENTICATED-STATIONARY-v1'
+          label="capture-v14-${sha:0:12}"
+          derived_data="$(mktemp -d "${RUNNER_TEMP:?RUNNER_TEMP is required}/NembraCaptureStampDiagnostic.XXXXXX")"
+          log="$RUNNER_TEMP/capture-field-stamp-${sha}.log"
+          trap 'rm -rf -- "$derived_data"' EXIT
+
+          set +e
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$derived_data" \
+            CODE_SIGNING_ALLOWED=NO \
+            NEMBRA_CAPTURE_BUILD_IDENTIFIER="$label" \
+            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$sha" \
+            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="$dependency_sha" \
+            INFOPLIST_KEY_NembraCaptureProcedureIdentifier="$procedure" \
+            build >"$log" 2>&1
+          build_status=$?
+          set -e
+          printf 'xcodebuild_status=%s\n' "$build_status" | tee -a "$log"
+          test "$build_status" -eq 0
+
+          plist="$derived_data/Build/Products/Debug-iphonesimulator/Nembra Capture.app/Info.plist"
+          printf 'plist_exists=%s\n' "$([[ -f "$plist" ]] && echo yes || echo no)" | tee -a "$log"
+          test -f "$plist"
+
+          read_value() {
+            local key="$1"
+            local expected_value="$2"
+            local value
+            value="$(/usr/bin/plutil -extract "$key" raw -o - "$plist" 2>>"$log" || true)"
+            printf '%s actual=%q expected=%q\n' "$key" "$value" "$expected_value" | tee -a "$log"
+            test "$value" = "$expected_value"
+          }
+
+          status=0
+          read_value NembraCaptureBuildIdentifier "$label" || status=1
+          read_value NembraCaptureSourceCommitSHA "$sha" || status=1
+          read_value NembraCaptureTuyaDependencyLockSHA256 "$dependency_sha" || status=1
+          read_value NembraCaptureProcedureIdentifier "$procedure" || status=1
+
+          printf 'log_path=%s\n' "$log" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Upload stamped plist diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-field-stamp-diagnostic-${{ github.sha }}
+          path: ${{ steps.stamp.outputs.log_path }}
+          if-no-files-found: error
+          retention-days: 7
