@@ -1,9 +1,13 @@
 name: Capture Generated Generation Convergence Author
 
 on:
-  push:
-    branches:
-      - converge/v17-capture-generated-generation-continuity-gpt56-20260815
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - .github/workflows/capture-generated-generation-convergence-author.yml
+      - scripts/ci/capture_accepted_build_input_snapshot.py
+      - scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -19,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: true
 
@@ -41,7 +45,6 @@ jobs:
 
           helper_path = Path('scripts/ci/capture_accepted_build_input_snapshot.py')
           source = helper_path.read_text(encoding='utf-8')
-
           replacements = [
               (
                   '''    root_fd = _open_repository_root(root)\n    directory_cache: dict[Path, tuple[int, os.stat_result]] = {}\n    try:\n        for subject in GENERATED_SUBJECTS:\n            if subject in seen:\n''',
@@ -76,26 +79,20 @@ jobs:
 
     def test_manifest_rejects_root_sibling_splice_between_fixed_subjects(self) -> None:
         helper = load()
-        with tempfile.TemporaryDirectory(
-            prefix="nembra-root-sibling-manifest-convergence-",
-            dir=REPOSITORY,
-        ) as raw:
+        with tempfile.TemporaryDirectory(prefix="nembra-root-sibling-manifest-convergence-", dir=REPOSITORY) as raw:
             outer = Path(raw)
             root = outer / "repo"
             root.mkdir()
             seed_common(root)
             generation = make_generation(root, "LocalSecrets.A", b"SDK-A\n", b"RUNTIME-A\n")
             generation.rename(root / "LocalSecrets")
-
             replacement_lock = outer / "replacement-Podfile.lock"
             replacement_lock.write_text("PODS:\n  - Replacement\n", encoding="utf-8")
             replacement_pods = outer / "replacement-Pods"
             replacement_pods.mkdir()
             (replacement_pods / "ReplacementPod.swift").write_text("// replacement\n", encoding="utf-8")
-
             original_open = helper._open_subject
             swapped = False
-
             def splice_before_pods(root_fd: int, subject: Path, directory_cache=None):
                 nonlocal swapped
                 if subject == Path("Pods") and not swapped:
@@ -105,7 +102,6 @@ jobs:
                     replacement_pods.rename(root / "Pods")
                     swapped = True
                 return original_open(root_fd, subject, directory_cache)
-
             with mock.patch.object(helper, "_open_subject", side_effect=splice_before_pods):
                 with self.assertRaises(helper.AcceptedBuildInputSnapshotError):
                     helper.canonical_generated_manifest(root, SOURCE_SHA)
@@ -113,10 +109,7 @@ jobs:
 
     def test_copy_rejects_root_sibling_splice_between_fixed_subjects(self) -> None:
         helper = load()
-        with tempfile.TemporaryDirectory(
-            prefix="nembra-root-sibling-copy-convergence-",
-            dir=REPOSITORY,
-        ) as raw:
+        with tempfile.TemporaryDirectory(prefix="nembra-root-sibling-copy-convergence-", dir=REPOSITORY) as raw:
             outer = Path(raw)
             root = outer / "repo"
             root.mkdir()
@@ -125,16 +118,13 @@ jobs:
             generation.rename(root / "LocalSecrets")
             destination = outer / "stage"
             destination.mkdir()
-
             replacement_lock = outer / "replacement-Podfile.lock"
             replacement_lock.write_text("PODS:\n  - Replacement\n", encoding="utf-8")
             replacement_pods = outer / "replacement-Pods"
             replacement_pods.mkdir()
             (replacement_pods / "ReplacementPod.swift").write_text("// replacement\n", encoding="utf-8")
-
             original_open = helper._open_subject
             swapped = False
-
             def splice_before_pods(root_fd: int, subject: Path, directory_cache=None):
                 nonlocal swapped
                 if subject == Path("Pods") and not swapped:
@@ -144,14 +134,12 @@ jobs:
                     replacement_pods.rename(root / "Pods")
                     swapped = True
                 return original_open(root_fd, subject, directory_cache)
-
             with mock.patch.object(helper, "_open_subject", side_effect=splice_before_pods):
                 with self.assertRaises(helper.AcceptedBuildInputSnapshotError):
                     helper._copy_generated_subjects(root, destination)
             self.assertTrue(swapped)
 '''
-          tests = tests.replace(marker, addition + marker, 1)
-          test_path.write_text(tests, encoding='utf-8')
+          test_path.write_text(tests.replace(marker, addition + marker, 1), encoding='utf-8')
           PY
 
       - name: Validate converged accepted-input chronology
@@ -161,10 +149,7 @@ jobs:
           export PYTHONDONTWRITEBYTECODE=1
           /usr/bin/python3 -B -I - <<'PY'
           from pathlib import Path
-          for raw in (
-              'scripts/ci/capture_accepted_build_input_snapshot.py',
-              'scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py',
-          ):
+          for raw in ('scripts/ci/capture_accepted_build_input_snapshot.py', 'scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py'):
               path = Path(raw)
               compile(path.read_bytes(), str(path), 'exec', dont_inherit=True)
           PY
@@ -178,9 +163,7 @@ jobs:
           rm "$AUTHOR_WORKFLOW"
           git diff --check "$EXACT_PARENT"
           changed="$(git diff --name-only "$EXACT_PARENT" | LC_ALL=C sort)"
-          expected="$(printf '%s\n' \
-            scripts/ci/capture_accepted_build_input_snapshot.py \
-            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
+          expected="$(printf '%s\n' scripts/ci/capture_accepted_build_input_snapshot.py scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
           test "$changed" = "$expected"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
