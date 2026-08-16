@@ -1,0 +1,142 @@
+name: Capture Shared Ancestor FD Cleanup Materializer
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-shared-ancestor-fd-cleanup-gpt56-sol-20260815
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-shared-ancestor-fd-cleanup-materializer
+  cancel-in-progress: false
+
+env:
+  EXACT_PARENT: a183b50e14391b1b562966d4a56e558229d3a9a9
+  AUTHORING_WORKFLOW: .github/workflows/capture-shared-ancestor-fd-cleanup-materialize.yml
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind authoring parent and scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD)"
+          test "$changed" = "$AUTHORING_WORKFLOW"
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Materialize fail-path descriptor cleanup and regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+
+          helper = Path("scripts/ci/capture_accepted_build_input_snapshot.py")
+          text = helper.read_text(encoding="utf-8")
+          old = '''            child = _open_directory_at(current, component, relative)\n            if not is_last and directory_cache is not None:\n                held = os.dup(child)\n                directory_cache[relative] = (held, os.fstat(held))\n            os.close(current)\n            current = child\n'''
+          new = '''            child = _open_directory_at(current, component, relative)\n            if not is_last and directory_cache is not None:\n                held: int | None = None\n                try:\n                    held = os.dup(child)\n                    directory_cache[relative] = (held, os.fstat(held))\n                except Exception:\n                    if held is not None:\n                        try:\n                            os.close(held)\n                        except OSError:\n                            pass\n                    try:\n                        os.close(child)\n                    except OSError:\n                        pass\n                    raise\n            os.close(current)\n            current = child\n'''
+          if text.count(old) != 1:
+              raise SystemExit("expected exact _open_subject cache block once")
+          helper.write_text(text.replace(old, new), encoding="utf-8")
+
+          test = Path("scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py")
+          text = test.read_text(encoding="utf-8")
+          imports_old = '''import hashlib\nimport importlib.util\nimport json\n'''
+          imports_new = '''import errno\nimport hashlib\nimport importlib.util\nimport json\nimport os\n'''
+          if text.count(imports_old) != 1:
+              raise SystemExit("expected continuity import block once")
+          text = text.replace(imports_old, imports_new)
+          marker = '''\n\nif __name__ == "__main__":\n    unittest.main(verbosity=2)\n'''
+          regression = r'''
+
+    def test_cache_dup_failure_closes_newly_opened_child_descriptor(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(prefix="nembra-shared-ancestor-fd-cleanup-") as raw:
+            root = Path(raw)
+            (root / "LocalSecrets/TuyaSDK").mkdir(parents=True)
+            root_fd = helper._open_repository_root(root)
+            real_dup = os.dup
+            real_open_directory = helper._open_directory_at
+            opened_children: list[int] = []
+            dup_calls = 0
+
+            def capture_open(parent_fd: int, name: str, relative: Path) -> int:
+                descriptor = real_open_directory(parent_fd, name, relative)
+                opened_children.append(descriptor)
+                return descriptor
+
+            def fail_cache_dup(descriptor: int) -> int:
+                nonlocal dup_calls
+                dup_calls += 1
+                if dup_calls == 2:
+                    raise OSError(errno.EMFILE, "synthetic cache-dup exhaustion")
+                return real_dup(descriptor)
+
+            cache: dict[Path, tuple[int, os.stat_result]] = {}
+            try:
+                with (
+                    mock.patch.object(helper, "_open_directory_at", side_effect=capture_open),
+                    mock.patch.object(helper.os, "dup", side_effect=fail_cache_dup),
+                ):
+                    with self.assertRaisesRegex(OSError, "synthetic cache-dup exhaustion"):
+                        helper._open_subject(root_fd, Path("LocalSecrets/TuyaSDK"), cache)
+
+                self.assertEqual(dup_calls, 2)
+                self.assertEqual(cache, {})
+                self.assertEqual(len(opened_children), 1)
+                with self.assertRaises(OSError):
+                    os.fstat(opened_children[0])
+            finally:
+                for descriptor in opened_children:
+                    try:
+                        os.close(descriptor)
+                    except OSError:
+                        pass
+                os.close(root_fd)
+'''
+          if text.count(marker) != 1:
+              raise SystemExit("expected continuity unittest footer once")
+          test.write_text(text.replace(marker, regression + marker), encoding="utf-8")
+          PY
+
+      - name: Validate focused Capture contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -m py_compile \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          git diff --check
+
+      - name: Publish clean product delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf scripts/ci/__pycache__ scripts/ci/tests/__pycache__
+          git rm "$AUTHORING_WORKFLOW"
+          changed="$(git diff --name-only "$EXACT_PARENT" | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_PARENT"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/ci/capture_accepted_build_input_snapshot.py scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py "$AUTHORING_WORKFLOW"
+          git commit -m "fix(capture): close cached ancestor FD on dup failure"
+          git push origin HEAD:repair/v17-capture-shared-ancestor-fd-cleanup-gpt56-sol-20260815
