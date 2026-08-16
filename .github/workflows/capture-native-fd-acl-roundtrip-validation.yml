@@ -1,0 +1,207 @@
+name: Capture Native FD ACL Round Trip Validation
+
+on:
+  push:
+    branches:
+      - validation/v17-capture-native-fd-acl-roundtrip-gpt56
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-native-fd-acl-roundtrip-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ATTACKED_PARENT: 9b68439c1ef19e0e445f488be46b0c3e6ef61936
+
+jobs:
+  native-fd-acl:
+    name: Prove native Darwin fd ACL mutation + rollback
+    runs-on: macos-15
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact validation-only child
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$ATTACKED_PARENT")" = "$ATTACKED_PARENT"
+          actual="$(git diff --name-only "$ATTACKED_PARENT"...HEAD)"
+          test "$actual" = ".github/workflows/capture-native-fd-acl-roundtrip-validation.yml"
+          git diff --check "$ATTACKED_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Build descriptor-native ACL probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/native_fd_acl_probe.c" <<'C'
+          #include <sys/acl.h>
+          #include <sys/types.h>
+          #include <sys/wait.h>
+          #include <fcntl.h>
+          #include <grp.h>
+          #include <pwd.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <string.h>
+          #include <unistd.h>
+
+          static void die(const char *what) {
+              perror(what);
+              exit(2);
+          }
+
+          static char *acl_text(acl_t acl) {
+              char *text = acl_to_text(acl, NULL);
+              if (text == NULL) die("acl_to_text");
+              return text;
+          }
+
+          static int child_can_read(const char *path, uid_t uid, gid_t gid) {
+              pid_t pid = fork();
+              if (pid < 0) die("fork");
+              if (pid == 0) {
+                  if (setgroups(0, NULL) != 0) _exit(110);
+                  if (setgid(gid) != 0) _exit(111);
+                  if (setuid(uid) != 0) _exit(112);
+                  int fd = open(path, O_RDONLY | O_CLOEXEC);
+                  if (fd < 0) _exit(1);
+                  char byte = 0;
+                  ssize_t count = read(fd, &byte, 1);
+                  close(fd);
+                  _exit(count == 1 ? 0 : 2);
+              }
+              int status = 0;
+              if (waitpid(pid, &status, 0) != pid) die("waitpid");
+              if (!WIFEXITED(status)) return 0;
+              return WEXITSTATUS(status) == 0;
+          }
+
+          int main(int argc, char **argv) {
+              if (argc != 4) {
+                  fprintf(stderr, "usage: %s <target> <held> <scratch>\n", argv[0]);
+                  return 64;
+              }
+              const char *target = argv[1];
+              const char *held = argv[2];
+              const char *scratch = argv[3];
+              struct passwd *nobody = getpwnam("nobody");
+              if (nobody == NULL) {
+                  fprintf(stderr, "nobody account unavailable\n");
+                  return 65;
+              }
+
+              int target_fd = open(target, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+              if (target_fd < 0) die("open target");
+              acl_t before = acl_get_fd_np(target_fd, ACL_TYPE_EXTENDED);
+              if (before == NULL) die("acl_get_fd_np before");
+              char *before_text = acl_text(before);
+
+              acl_t desired = acl_get_file(scratch, ACL_TYPE_EXTENDED);
+              if (desired == NULL) die("acl_get_file desired");
+
+              if (rename(target, held) != 0) die("rename target to held");
+              int replacement = open(target, O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, 0600);
+              if (replacement < 0) die("create replacement");
+              if (write(replacement, "R", 1) != 1) die("write replacement");
+              close(replacement);
+
+              if (acl_set_fd_np(target_fd, desired, ACL_TYPE_EXTENDED) != 0) {
+                  die("acl_set_fd_np desired");
+              }
+              acl_t after = acl_get_fd_np(target_fd, ACL_TYPE_EXTENDED);
+              if (after == NULL) die("acl_get_fd_np after grant");
+              char *after_text = acl_text(after);
+              if (strstr(after_text, "nobody") == NULL) {
+                  fprintf(stderr, "descriptor ACL did not contain nobody after grant: %s\n", after_text);
+                  return 3;
+              }
+
+              if (!child_can_read(held, nobody->pw_uid, nobody->pw_gid)) {
+                  fprintf(stderr, "nobody could not read held original after fd ACL grant\n");
+                  return 4;
+              }
+              if (child_can_read(target, nobody->pw_uid, nobody->pw_gid)) {
+                  fprintf(stderr, "nobody unexpectedly read pathname replacement\n");
+                  return 5;
+              }
+
+              if (acl_set_fd_np(target_fd, before, ACL_TYPE_EXTENDED) != 0) {
+                  die("acl_set_fd_np restore");
+              }
+              acl_t restored = acl_get_fd_np(target_fd, ACL_TYPE_EXTENDED);
+              if (restored == NULL) die("acl_get_fd_np restored");
+              char *restored_text = acl_text(restored);
+              if (strcmp(before_text, restored_text) != 0) {
+                  fprintf(stderr, "exact ACL rollback mismatch\nBEFORE=%s\nRESTORED=%s\n", before_text, restored_text);
+                  return 6;
+              }
+              if (child_can_read(held, nobody->pw_uid, nobody->pw_gid)) {
+                  fprintf(stderr, "nobody retained read authority after exact fd ACL restore\n");
+                  return 7;
+              }
+
+              printf("NEMBRA_NATIVE_FD_ACL_PROOF descriptorTargeting=true replacementUnaffected=true exactRollback=true\n");
+              acl_free(before_text);
+              acl_free(after_text);
+              acl_free(restored_text);
+              acl_free(before);
+              acl_free(desired);
+              acl_free(after);
+              acl_free(restored);
+              close(target_fd);
+              return 0;
+          }
+          C
+          /usr/bin/clang -Wall -Wextra -Werror -O2 "$RUNNER_TEMP/native_fd_acl_probe.c" -o "$RUNNER_TEMP/native_fd_acl_probe"
+
+      - name: Prove held-vnode ACL grant and exact rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="/private/tmp/nembra-native-fd-acl-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          target="$root/target.txt"
+          held="$root/held-original.txt"
+          scratch="$root/desired-acl.txt"
+          cleanup() { /usr/bin/sudo -n /bin/rm -rf "$root"; }
+          trap cleanup EXIT
+
+          /bin/mkdir -m 0755 "$root"
+          printf 'O' > "$target"
+          printf 'S' > "$scratch"
+          /bin/chmod 0600 "$target" "$scratch"
+          /bin/chmod +a "user:${USER} allow readsecurity" "$target"
+          /bin/chmod +a "user:nobody allow read,readattr,readextattr,readsecurity" "$scratch"
+
+          if /usr/bin/sudo -n -u nobody /bin/cat "$target" >/dev/null 2>&1; then
+            echo 'precondition failed: nobody can already read target' >&2
+            exit 1
+          fi
+
+          /usr/bin/sudo -n "$RUNNER_TEMP/native_fd_acl_probe" "$target" "$held" "$scratch"
+          test -f "$target"
+          test -f "$held"
+          test "$(cat "$target")" = R
+          test "$(cat "$held")" = O
+          cleanup
+          trap - EXIT
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Preserve validation-only truth boundary
+        run: |
+          printf '%s\n' \
+            'nativeFdAclTransportProved=true' \
+            'productionHelperChanged=false' \
+            'compilerRootIntegrated=false' \
+            'signingAuthority=false' \
+            'installAuthority=false' \
+            'bluetoothExecuted=false' \
+            'physicalAuthorityCreated=false'
