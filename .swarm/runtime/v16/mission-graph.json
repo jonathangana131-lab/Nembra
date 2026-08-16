@@ -1066,17 +1066,6 @@
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
     "classifiedPRTotal": 50,
     "classifiedPRs": {
-      "2959": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "navigation-app-visible",
-        "pr": 2959,
-        "recommendedAction": "independent-review",
-        "similarity": 0.107,
-        "title": "[Navigation V14][A11y] Recompose lower states for accessibility Dynamic Type"
-      },
       "3142": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1470,7 +1459,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3436,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.373,
+        "similarity": 0.375,
         "title": "[Capture P0][RED TEAM] Attack child entries under held generated ancestor"
       },
       "3447": {
@@ -1615,6 +1604,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.374,
         "title": "[Capture P0][TEST] Use structured field credentials in root-custody witness"
+      },
+      "3479": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3479,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.39,
+        "title": "[Capture P0][RED TEAM] Attack generated root sibling continuity"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1647,9 +1647,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:27:57Z",
+    "liveRefreshAt": "2026-08-16T06:28:17Z",
     "liveRefreshDuplicatesSuppressed": [
-      3477
+      3479
     ],
     "liveRefreshMainSHA": "7154479d4ea0a1914eb565b5cd235968a5985443",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5432,10 +5432,10 @@
       "userValue": 7
     }
   },
-  "revision": 721,
+  "revision": 722,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:28:00Z",
+  "updatedAt": "2026-08-16T06:28:20Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5511,7 +5511,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:27:57Z",
+      "updatedAt": "2026-08-16T06:28:17Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
