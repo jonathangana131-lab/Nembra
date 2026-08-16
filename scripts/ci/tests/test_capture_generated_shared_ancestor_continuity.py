@@ -2,9 +2,11 @@
 """Regression for coherent generated-selector ancestry and directory membership."""
 from __future__ import annotations
 
+import errno
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -202,6 +204,109 @@ class CaptureGeneratedSharedAncestorContinuityTests(unittest.TestCase):
                 (destination / "LocalSecrets/TuyaRuntime/identity.bin").read_bytes(),
                 b"RUNTIME-A\n",
             )
+
+
+    def test_cache_dup_failure_closes_newly_opened_child_descriptor(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(prefix="nembra-cache-dup-cleanup-") as raw:
+            root = Path(raw)
+            (root / "LocalSecrets/TuyaSDK").mkdir(parents=True)
+            root_fd = helper._open_repository_root(root)
+            real_dup = os.dup
+            real_open_directory = helper._open_directory_at
+            opened_children: list[int] = []
+            dup_calls = 0
+
+            def capture_open(parent_fd: int, name: str, relative: Path) -> int:
+                descriptor = real_open_directory(parent_fd, name, relative)
+                opened_children.append(descriptor)
+                return descriptor
+
+            def fail_cache_dup(descriptor: int) -> int:
+                nonlocal dup_calls
+                dup_calls += 1
+                if dup_calls == 2:
+                    raise OSError(errno.EMFILE, "synthetic cache-dup exhaustion")
+                return real_dup(descriptor)
+
+            cache: dict[Path, tuple[int, os.stat_result]] = {}
+            try:
+                with (
+                    mock.patch.object(helper, "_open_directory_at", side_effect=capture_open),
+                    mock.patch.object(helper.os, "dup", side_effect=fail_cache_dup),
+                ):
+                    with self.assertRaisesRegex(OSError, "synthetic cache-dup exhaustion"):
+                        helper._open_subject(root_fd, Path("LocalSecrets/TuyaSDK"), cache)
+
+                self.assertEqual(dup_calls, 2)
+                self.assertEqual(cache, {})
+                self.assertEqual(len(opened_children), 1)
+                with self.assertRaises(OSError):
+                    os.fstat(opened_children[0])
+            finally:
+                for descriptor in opened_children:
+                    try:
+                        os.close(descriptor)
+                    except OSError:
+                        pass
+                os.close(root_fd)
+
+    def test_cache_generation_fstat_failure_closes_child_and_duplicate(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(prefix="nembra-cache-fstat-cleanup-") as raw:
+            root = Path(raw)
+            (root / "LocalSecrets/TuyaSDK").mkdir(parents=True)
+            root_fd = helper._open_repository_root(root)
+            real_dup = os.dup
+            real_fstat = os.fstat
+            real_open_directory = helper._open_directory_at
+            opened_children: list[int] = []
+            held_descriptors: list[int] = []
+            dup_calls = 0
+
+            def capture_open(parent_fd: int, name: str, relative: Path) -> int:
+                descriptor = real_open_directory(parent_fd, name, relative)
+                opened_children.append(descriptor)
+                return descriptor
+
+            def capture_cache_dup(descriptor: int) -> int:
+                nonlocal dup_calls
+                dup_calls += 1
+                duplicated = real_dup(descriptor)
+                if dup_calls == 2:
+                    held_descriptors.append(duplicated)
+                return duplicated
+
+            def fail_held_fstat(descriptor: int):
+                if held_descriptors and descriptor == held_descriptors[0]:
+                    raise OSError(errno.EIO, "synthetic cache-generation fstat failure")
+                return real_fstat(descriptor)
+
+            cache: dict[Path, tuple[int, os.stat_result]] = {}
+            try:
+                with (
+                    mock.patch.object(helper, "_open_directory_at", side_effect=capture_open),
+                    mock.patch.object(helper.os, "dup", side_effect=capture_cache_dup),
+                    mock.patch.object(helper.os, "fstat", side_effect=fail_held_fstat),
+                ):
+                    with self.assertRaisesRegex(OSError, "synthetic cache-generation fstat failure"):
+                        helper._open_subject(root_fd, Path("LocalSecrets/TuyaSDK"), cache)
+
+                self.assertEqual(dup_calls, 2)
+                self.assertEqual(cache, {})
+                self.assertEqual(len(opened_children), 1)
+                self.assertEqual(len(held_descriptors), 1)
+                with self.assertRaises(OSError):
+                    real_fstat(opened_children[0])
+                with self.assertRaises(OSError):
+                    real_fstat(held_descriptors[0])
+            finally:
+                for descriptor in (*opened_children, *held_descriptors):
+                    try:
+                        os.close(descriptor)
+                    except OSError:
+                        pass
+                os.close(root_fd)
 
 
 if __name__ == "__main__":
