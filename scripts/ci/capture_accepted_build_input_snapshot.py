@@ -389,6 +389,12 @@ def _open_subject(
     if expected_kind is None:
         raise AcceptedBuildInputSnapshotError(f"unrecognized generated subject: {subject}")
     current = os.dup(root_fd)
+    selection_ancestors: list[tuple[int, os.stat_result, Path]] = []
+
+    def revalidate_selection_ancestors() -> None:
+        for descriptor, admitted, relative in selection_ancestors:
+            _assert_directory_generation(descriptor, admitted, relative)
+
     try:
         for index, component in enumerate(subject.parts):
             relative = Path(*subject.parts[: index + 1])
@@ -396,11 +402,17 @@ def _open_subject(
             if not is_last and directory_cache is not None and relative in directory_cache:
                 cached_descriptor, admitted = directory_cache[relative]
                 _assert_directory_generation(cached_descriptor, admitted, relative)
+                selection_ancestors.append((cached_descriptor, admitted, relative))
                 os.close(current)
                 current = os.dup(cached_descriptor)
                 continue
             if is_last and expected_kind == "file":
                 descriptor, metadata = _open_file_at(current, component, relative)
+                try:
+                    revalidate_selection_ancestors()
+                except Exception:
+                    os.close(descriptor)
+                    raise
                 os.close(current)
                 return descriptor, metadata, "file"
             child = _open_directory_at(current, component, relative)
@@ -410,6 +422,7 @@ def _open_subject(
                     held = os.dup(child)
                     admitted = os.fstat(held)
                     directory_cache[relative] = (held, admitted)
+                    selection_ancestors.append((held, admitted, relative))
                     held = None
             except Exception:
                 if held is not None:
@@ -419,6 +432,12 @@ def _open_subject(
                         pass
                 os.close(child)
                 raise
+            if is_last:
+                try:
+                    revalidate_selection_ancestors()
+                except Exception:
+                    os.close(child)
+                    raise
             os.close(current)
             current = child
         metadata = os.fstat(current)
