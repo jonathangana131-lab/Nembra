@@ -133,11 +133,9 @@ def field_run(
     source: str,
     *paths: Path,
 ) -> subprocess.CompletedProcess[str]:
-    def demote() -> None:
-        os.setgroups(list(groups))
-        os.setgid(field.pw_gid)
-        os.setuid(field.pw_uid)
-
+    normalized_groups = sorted({int(group) for group in groups if int(group) != field.pw_gid})
+    if any(group <= 0 for group in normalized_groups):
+        raise ValidationError("field child supplementary groups contain invalid authority")
     return subprocess.run(
         ["/usr/bin/python3", "-I", "-c", source, *[str(path) for path in paths]],
         stdin=subprocess.DEVNULL,
@@ -145,7 +143,9 @@ def field_run(
         stderr=subprocess.PIPE,
         text=True,
         check=False,
-        preexec_fn=demote,
+        user=field.pw_uid,
+        group=field.pw_gid,
+        extra_groups=normalized_groups,
     )
 
 
