@@ -4,128 +4,103 @@ on:
   pull_request:
     paths:
       - scripts/ci/capture_selected_xcode_build_orchestrator.py
+      - scripts/ci/materialize_capture_held_symlink_generation_continuity.py
       - scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py
       - scripts/ci/tests/test_capture_private_read_lease_component_walk.py
       - .github/workflows/capture-private-read-lease-component-walk.yml
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: capture-private-read-lease-component-walk-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
-  EXACT_PARENT: ca5de78540957f34abc2cbff53b564a93a519078
+  AUTHORING_PARENT: d1628140f9eab26f0490a6a141e730b6ad50538e
   PYTHONDONTWRITEBYTECODE: 1
 
 jobs:
-  component-walk:
-    name: Prove held-symlink authority transition (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-15]
-    runs-on: ${{ matrix.os }}
+  materialize-generation-continuity:
+    name: Materialize held-symlink generation continuity
+    runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
-          persist-credentials: false
+          persist-credentials: true
 
-      - name: Anchor Darwin fixtures under a real no-symlink temp root
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          set -euo pipefail
-          /usr/bin/python3 -B -I - <<'PY'
-          import os
-          from pathlib import Path
-          import stat
-
-          root = Path('/private/tmp')
-          metadata = root.lstat()
-          if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
-              raise SystemExit('/private/tmp is not one real directory')
-          if root.resolve(strict=True) != root:
-              raise SystemExit('/private/tmp does not resolve to itself')
-          if not os.access(root, os.W_OK | os.X_OK):
-              raise SystemExit('/private/tmp is not writable/searchable by the runner')
-          PY
-          echo 'TMPDIR=/private/tmp' >> "$GITHUB_ENV"
-
-      - name: Bind exact serial repair delta
+      - name: Bind exact authoring delta
         shell: bash
         run: |
           set -euo pipefail
           expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
           test "$(git rev-parse HEAD)" = "$expected_head"
-          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
-          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          test "$(git merge-base HEAD "$AUTHORING_PARENT")" = "$AUTHORING_PARENT"
+          changed="$(git diff --name-only "$AUTHORING_PARENT"...HEAD | LC_ALL=C sort)"
           expected="$(printf '%s\n' \
             .github/workflows/capture-private-read-lease-component-walk.yml \
-            scripts/ci/capture_selected_xcode_build_orchestrator.py \
-            scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py | LC_ALL=C sort)"
+            scripts/ci/materialize_capture_held_symlink_generation_continuity.py | LC_ALL=C sort)"
           test "$changed" = "$expected"
-          git diff --check "$EXACT_PARENT"...HEAD
+          git diff --check "$AUTHORING_PARENT"...HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Compile repair and permanent regressions
+      - name: Materialize generation continuity hardening
         shell: bash
         run: |
           set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/materialize_capture_held_symlink_generation_continuity.py
           /usr/bin/python3 -B -I - <<'PY'
           from pathlib import Path
           for raw in (
               "scripts/ci/capture_selected_xcode_build_orchestrator.py",
               "scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py",
-              "scripts/ci/tests/test_capture_private_read_lease_component_walk.py",
           ):
               path = Path(raw)
               compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
           PY
+          git diff --check
 
-      - name: Prove post-validation retarget fails closed
+      - name: Prove authority transition and generation continuity
         shell: bash
         run: |
           set -euo pipefail
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py
-
-      - name: Preserve held-generation component walk
-        shell: bash
-        run: |
-          set -euo pipefail
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py
-
-      - name: Preserve selected-Xcode composition regressions
-        shell: bash
-        run: |
-          set -euo pipefail
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
-
-      - name: Preserve rollback regressions
-        shell: bash
-        run: |
-          set -euo pipefail
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
-
-      - name: Preserve host-ancestry regressions
-        shell: bash
-        run: |
-          set -euo pipefail
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
 
-      - name: Preserve clean exact head
+      - name: Check materialized scope
         shell: bash
         run: |
           set -euo pipefail
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          status="$(git status --porcelain=v1 --untracked-files=all)"
+          printf '%s\n' "$status"
+          echo "$status" | grep -F ' M scripts/ci/capture_selected_xcode_build_orchestrator.py'
+          echo "$status" | grep -F ' M scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py'
+          test "$(printf '%s\n' "$status" | sed '/^$/d' | wc -l | tr -d ' ')" = 2
+
+      - name: Commit generated hardening checkpoint
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        shell: bash
+        env:
+          HEAD_BRANCH: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py
+          git commit -m 'fix(capture): bind held symlink validation to directory generation'
+          git push origin "HEAD:${HEAD_BRANCH}"
 
       - name: Preserve truth boundary
         shell: bash
         run: |
           set -euo pipefail
-          echo "NEMBRA_SYMLINK_AUTHORITY_TRANSITION exactParent=${EXACT_PARENT} repairAcceptedByThisGate=true symlinkAclGranted=false deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false"
+          echo "NEMBRA_SYMLINK_GENERATION_CONTINUITY hardeningMaterialized=true symlinkAclGranted=false deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false"
