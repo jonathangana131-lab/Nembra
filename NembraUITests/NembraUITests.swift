@@ -321,6 +321,48 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testLandscapeDashboardBatteryTogglesToTruthfulLearnedRangeUnavailable() throws {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(scenario: "connected-stopped", orientation: .landscapeRight)
+
+        let battery = app.buttons["dashboard.battery-range"]
+        assertMinimumTouchTarget(battery, named: "Dashboard battery and range")
+        XCTAssertEqual(battery.label, "Battery")
+        XCTAssertFalse(
+            (battery.value as? String ?? "").localizedCaseInsensitiveContains("range"),
+            "Charge mode must expose accepted battery charge rather than a range-derived value."
+        )
+        keepScreenshot(named: "Dashboard Battery Charge Landscape")
+
+        battery.tap()
+
+        let learnedRange = app.buttons["dashboard.battery-range"]
+        XCTAssertTrue(learnedRange.waitForExistence(timeout: 2))
+        XCTAssertTrue(
+            waitForValue(
+                "Unavailable until a verified learned range model exists",
+                element: learnedRange
+            ),
+            "Tapping the battery must not invent range from battery percentage or advertised range."
+        )
+        XCTAssertEqual(learnedRange.label, "Learned range")
+        XCTAssertTrue(
+            app.staticTexts["RANGE UNAVAILABLE"].waitForExistence(timeout: 2),
+            "The alternate battery readout must show a designed unavailable learned-range state."
+        )
+        keepScreenshot(named: "Dashboard Learned Range Unavailable Landscape")
+
+        try app.performAccessibilityAudit(
+            for: [
+                .sufficientElementDescription,
+                .hitRegion,
+                .textClipped,
+                .trait
+            ]
+        )
+    }
+
+    @MainActor
     func testLandscapePhysicalProfileKeepsPowerUnavailableRailVisible() {
         defer { XCUIDevice.shared.orientation = .portrait }
         XCUIDevice.shared.orientation = .landscapeRight
