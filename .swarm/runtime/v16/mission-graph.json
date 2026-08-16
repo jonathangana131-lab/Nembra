@@ -1503,7 +1503,7 @@
         "lane": "",
         "pr": 3442,
         "recommendedAction": "independent-review",
-        "similarity": 0.245,
+        "similarity": 0.249,
         "title": "[Battery/Range V15][RED] Pin Accessibility XXXL Navigation clearance"
       },
       "3446": {
@@ -1525,19 +1525,19 @@
         "lane": "",
         "pr": 3447,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.26,
+        "similarity": 0.34,
         "title": "[Vehicle/Controls V15][QA] Real surface + exact XXXL witness"
       },
-      "3450": {
+      "3451": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
         "lane": "",
-        "pr": 3450,
+        "pr": 3451,
         "recommendedAction": "independent-review",
-        "similarity": 0.251,
-        "title": "[Vehicle/Controls V15][RED] Pin full persistent Navigation footprint clearance"
+        "similarity": 0.368,
+        "title": "[Vehicle/Controls V15] Clear full persistent Navigation footprint"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1570,7 +1570,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T04:03:14Z",
+    "liveRefreshAt": "2026-08-16T05:01:00Z",
     "liveRefreshDuplicatesSuppressed": [
       3436
     ],
@@ -5355,10 +5355,10 @@
       "userValue": 7
     }
   },
-  "revision": 687,
+  "revision": 688,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T04:03:17Z",
+  "updatedAt": "2026-08-16T05:01:03Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5434,7 +5434,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T04:03:14Z",
+      "updatedAt": "2026-08-16T05:01:00Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
