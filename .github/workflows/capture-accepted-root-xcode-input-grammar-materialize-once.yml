@@ -42,17 +42,29 @@ jobs:
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_root_xcode_input_grammar.py
           git diff --check "$EXACT_PARENT"...HEAD
 
-      - name: Commit clean repair and retire authoring helpers
+      - name: Publish clean four-path repair lineage
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "Nembra GO worker"
           git config user.email "nembra-go@users.noreply.github.com"
-          rm .github/workflows/capture-accepted-root-xcode-input-grammar-materialize-once.yml
-          rm scripts/ci/materialize_capture_accepted_root_xcode_input_grammar_once.py
-          git add -A
+          authoring_head="$(git rev-parse HEAD)"
+          archive="$RUNNER_TEMP/accepted-root-xcode-input-repair.tar"
+          product_paths=(
+            .github/workflows/capture-accepted-root-build-composition.yml
+            scripts/ci/capture_selected_xcode_build_orchestrator.py
+            scripts/ci/tests/test_capture_accepted_root_build_composition.py
+            scripts/ci/tests/test_capture_accepted_root_xcode_input_grammar.py
+          )
+          tar -cf "$archive" "${product_paths[@]}"
+          git reset --hard "$EXACT_PARENT"
+          tar -xf "$archive"
+          git add "${product_paths[@]}"
           actual="$(git diff --cached --name-only "$EXACT_PARENT" | LC_ALL=C sort)"
-          expected="$(printf '%s\n' .github/workflows/capture-accepted-root-build-composition.yml scripts/ci/capture_selected_xcode_build_orchestrator.py scripts/ci/tests/test_capture_accepted_root_build_composition.py scripts/ci/tests/test_capture_accepted_root_xcode_input_grammar.py | LC_ALL=C sort)"
+          expected="$(printf '%s\n' "${product_paths[@]}" | LC_ALL=C sort)"
           test "$actual" = "$expected"
+          test ! -e .github/workflows/capture-accepted-root-xcode-input-grammar-materialize-once.yml
+          test ! -e scripts/ci/materialize_capture_accepted_root_xcode-input-grammar-once.py
+          git diff --cached --check
           git commit -m "fix(capture): bind Xcode source inputs to accepted root"
-          git push origin "HEAD:$BRANCH"
+          git push --force-with-lease="$BRANCH:$authoring_head" origin "HEAD:$BRANCH"
