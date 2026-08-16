@@ -402,9 +402,11 @@ def _open_subject(
             if not is_last and directory_cache is not None and relative in directory_cache:
                 cached_descriptor, admitted = directory_cache[relative]
                 _assert_directory_generation(cached_descriptor, admitted, relative)
+                replacement = os.dup(cached_descriptor)
                 selection_ancestors.append((cached_descriptor, admitted, relative))
-                os.close(current)
-                current = os.dup(cached_descriptor)
+                previous = current
+                current = replacement
+                os.close(previous)
                 continue
             if is_last and expected_kind == "file":
                 descriptor, metadata = _open_file_at(current, component, relative)
