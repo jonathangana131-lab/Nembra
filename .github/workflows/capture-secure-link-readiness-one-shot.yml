@@ -1,0 +1,56 @@
+name: Capture Secure Link readiness one-shot
+
+on:
+  push:
+    branches:
+      - capture/one-time-ble-dump-gpt56
+    paths:
+      - .github/workflows/capture-secure-link-readiness-one-shot.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Bind exact branch and repair only presentation truth
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${GITHUB_REF_NAME}" == "capture/one-time-ble-dump-gpt56" ]]
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          text = p.read_text()
+          old = 'requirementRow("Scooter data received", ready: test.applicationUpdateCount > 0)'
+          new = 'requirementRow("Scooter data received", ready: test.preflightVerdict == .readyForStationaryMapping)'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one stale Secure Link readiness row, found {text.count(old)}')
+          if new in text:
+              raise SystemExit('canonical Secure Link readiness row already present')
+          p.write_text(text.replace(old, new, 1))
+          PY
+          git diff --check
+          changed="$(git diff --name-only)"
+          [[ "$changed" == "NembraApp/App/NembraCaptureEntrypoint.swift" ]]
+          git diff -- NembraApp/App/NembraCaptureEntrypoint.swift | tee /tmp/secure-link-readiness.patch
+          grep -F -- '-                        requirementRow("Scooter data received", ready: test.applicationUpdateCount > 0)' /tmp/secure-link-readiness.patch
+          grep -F -- '+                        requirementRow("Scooter data received", ready: test.preflightVerdict == .readyForStationaryMapping)' /tmp/secure-link-readiness.patch
+          ! grep -E '^\+.*(publishDps\(|writeValue\(|removeDevice|factoryReset)' /tmp/secure-link-readiness.patch
+      - name: Commit exact one-line product repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "nembra-gpt56-bot"
+          git config user.email "nembra-gpt56-bot@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git diff --cached --check
+          [[ "$(git diff --cached --name-only)" == "NembraApp/App/NembraCaptureEntrypoint.swift" ]]
+          git commit -m "Capture: tie Secure Link data status to canonical readiness"
+          git push origin HEAD:capture/one-time-ble-dump-gpt56
