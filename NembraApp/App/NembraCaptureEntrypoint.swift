@@ -2391,6 +2391,12 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
     }
 
     func device(_ device: ThingSmartDevice?, dpsUpdate dps: [AnyHashable: Any]?) {
+        // Application evidence belongs to the exact ThingSmartDevice instance created
+        // from the freshly re-verified Tuya device ID for this attempt. A nil, stale,
+        // or foreign delegate callback must never mint payload authority.
+        guard let callbackDevice = device,
+              let boundDevice = self.device,
+              callbackDevice === boundDevice else { return }
         guard let dps, !dps.isEmpty else { return }
         var sanitized: [String: String] = [:]
         for (key, value) in Self.sortedApplicationEntries(dps) {
