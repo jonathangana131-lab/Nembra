@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 51,
+    "classifiedPRTotal": 50,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1393,7 +1393,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3419,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.314,
+        "similarity": 0.381,
         "title": "[Capture P0][VALIDATION] Root-custody accepted build root after selector repair"
       },
       "3420": {
@@ -1404,7 +1404,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3420,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.32,
+        "similarity": 0.386,
         "title": "[Capture P0][VALIDATION] Re-anchor sealed root-helper sibling bundle to 7900"
       },
       "3428": {
@@ -1536,7 +1536,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3477,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.439,
+        "similarity": 0.387,
         "title": "[Capture P0][RED TEAM] Replay final-child splice on current accepted-input head"
       },
       "3478": {
@@ -1561,16 +1561,16 @@
         "similarity": 0.39,
         "title": "[Capture P0][RED TEAM] Attack generated root sibling continuity"
       },
-      "3483": {
-        "classification": "canonical-candidate",
+      "3481": {
+        "classification": "superseded",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
         "lane": "capture-signed-install-custody",
-        "pr": 3483,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.437,
-        "title": "[Capture P0][REPAIR] Revalidate generated parent after final-child open"
+        "pr": 3481,
+        "recommendedAction": "archive-after-evidence-transfer",
+        "similarity": 0.388,
+        "title": "[Capture P0][REPAIR] Revalidate held ancestor after final child admission"
       },
       "3485": {
         "classification": "validation",
@@ -1580,7 +1580,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3485,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.327,
+        "similarity": 0.354,
         "title": "[Capture P0][QA] Prove composed accepted-input admission on macOS"
       },
       "3486": {
@@ -1602,19 +1602,8 @@
         "lane": "capture-signed-install-custody",
         "pr": 3487,
         "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.397,
+        "similarity": 0.37,
         "title": "[Capture P0][RED TEAM] Prove composed postcheck sibling splice"
-      },
-      "3488": {
-        "classification": "superseded",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3488,
-        "recommendedAction": "archive-after-evidence-transfer",
-        "similarity": 0.456,
-        "title": "[Capture P0][REPAIR] Close final-child splice on live accepted-input carrier"
       },
       "3489": {
         "classification": "requires-review",
@@ -1658,7 +1647,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:31:04Z",
+    "liveRefreshAt": "2026-08-16T06:31:25Z",
     "liveRefreshDuplicatesSuppressed": [
       3485
     ],
@@ -5443,10 +5432,10 @@
       "userValue": 7
     }
   },
-  "revision": 731,
+  "revision": 732,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:31:07Z",
+  "updatedAt": "2026-08-16T06:31:28Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5522,7 +5511,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:31:04Z",
+      "updatedAt": "2026-08-16T06:31:25Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
