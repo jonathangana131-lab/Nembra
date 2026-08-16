@@ -1,0 +1,67 @@
+name: Capture Generated Final Child Open Race Red Team
+
+on:
+  push:
+    branches:
+      - redteam/v17-capture-final-child-open-race-gpt56-go
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_generated_final_child_open_race.py
+      - .github/workflows/capture-generated-final-child-open-race-redteam.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-generated-final-child-open-race-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  ATTACKED_HEAD: a183b50e14391b1b562966d4a56e558229d3a9a9
+
+jobs:
+  exploit-evidence:
+    name: Final-child race exploit evidence (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact red-team child
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$ATTACKED_HEAD")" = "$ATTACKED_HEAD"
+          changed="$(git diff --name-only "$ATTACKED_HEAD"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-generated-final-child-open-race-redteam.yml \
+            scripts/ci/tests/test_capture_generated_final_child_open_race.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$ATTACKED_HEAD"...HEAD
+
+      - name: Compile red-team test
+        run: python3 -m py_compile scripts/ci/tests/test_capture_generated_final_child_open_race.py
+
+      - name: Reproduce final-child generation splice
+        run: python3 -B -I scripts/ci/tests/test_capture_generated_final_child_open_race.py
+
+      - name: Preserve exploit-only truth boundary
+        run: |
+          printf '%s\n' \
+            'successMeansExploitReproduced=true' \
+            'productionFixIncluded=false' \
+            'appleSigningAuthority=false' \
+            'installAuthority=false' \
+            'bluetoothExecuted=false' \
+            'physicalAuthorityCreated=false'
