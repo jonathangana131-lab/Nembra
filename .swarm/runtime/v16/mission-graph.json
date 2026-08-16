@@ -1514,7 +1514,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3506,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.348,
+        "similarity": 0.373,
         "title": "[Capture P0][REPAIR] Fence generated repository-root membership generation"
       },
       "3508": {
@@ -1525,7 +1525,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3508,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.324,
+        "similarity": 0.373,
         "title": "[Capture P0][QA] Admit composed two-OS accepted-input workflow in continuity scope"
       },
       "3512": {
@@ -1570,7 +1570,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:39:31Z",
+    "liveRefreshAt": "2026-08-16T06:40:15Z",
     "liveRefreshDuplicatesSuppressed": [
       3512
     ],
@@ -5355,10 +5355,10 @@
       "userValue": 7
     }
   },
-  "revision": 759,
+  "revision": 760,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:39:33Z",
+  "updatedAt": "2026-08-16T06:40:17Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5434,7 +5434,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:39:31Z",
+      "updatedAt": "2026-08-16T06:40:15Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
