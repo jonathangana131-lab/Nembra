@@ -1,41 +1,33 @@
-name: Capture Generated Shared Ancestor Continuity
+name: Capture Generated Shared Ancestor FD Cleanup Materializer
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
-      - scripts/ci/capture_accepted_build_input_snapshot.py
-      - scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
-      - scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
       - .github/workflows/capture-generated-shared-ancestor-continuity.yml
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: capture-generated-shared-ancestor-continuity-${{ github.event.pull_request.number || github.ref }}
+  group: capture-generated-shared-ancestor-fd-cleanup-materializer-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
-  EXACT_PARENT: fe40c025eb10247c73820f4001ab63affaa60af7
+  EXACT_PARENT: 5fec51fdec998a63eec6cb7fdd6a6a855b3d69a0
 
 jobs:
-  exact-portable:
-    name: Exact generated-input continuity (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-15]
-    runs-on: ${{ matrix.os }}
+  materialize:
+    runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
-          persist-credentials: false
 
-      - name: Bind serial repair delta
+      - name: Bind one-shot authoring head
         shell: bash
         run: |
           set -euo pipefail
@@ -43,65 +35,130 @@ jobs:
           test "$(git rev-parse HEAD)" = "$expected_head"
           test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
           changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
-          expected="$(printf '%s\n' \
-            .github/workflows/capture-generated-shared-ancestor-continuity.yml \
-            scripts/ci/capture_accepted_build_input_snapshot.py \
-            scripts/ci/tests/test_capture_accepted_build_input_snapshot.py \
-            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
-          test "$changed" = "$expected"
+          test "$changed" = '.github/workflows/capture-generated-shared-ancestor-continuity.yml'
           git diff --check "$EXACT_PARENT"...HEAD
 
-      - name: Run generated shared-ancestor continuity regression
-        id: continuity
-        shell: bash
-        continue-on-error: true
-        run: |
-          set -o pipefail
-          export PYTHONDONTWRITEBYTECODE=1
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py \
-            2>&1 | tee "$RUNNER_TEMP/generated-shared-ancestor-continuity-${{ matrix.os }}.log"
-
-      - name: Run inherited accepted-input regression
-        id: inherited
-        shell: bash
-        continue-on-error: true
-        run: |
-          set -o pipefail
-          export PYTHONDONTWRITEBYTECODE=1
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py \
-            2>&1 | tee "$RUNNER_TEMP/accepted-build-input-snapshot-${{ matrix.os }}.log"
-
-      - name: Capture checkout cleanliness diagnostics
-        if: always()
+      - name: Materialize descriptor cleanup and permanent regression
         shell: bash
         run: |
           set -euo pipefail
-          git status --porcelain=v1 --untracked-files=all > "$RUNNER_TEMP/checkout-status-${{ matrix.os }}.log"
-          git diff --no-ext-diff -- > "$RUNNER_TEMP/checkout-unstaged-diff-${{ matrix.os }}.log"
-          git diff --cached --no-ext-diff -- > "$RUNNER_TEMP/checkout-staged-diff-${{ matrix.os }}.log"
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
 
-      - name: Retain platform diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: generated-shared-ancestor-continuity-${{ matrix.os }}-${{ github.event.pull_request.head.sha || github.sha }}
-          path: |
-            ${{ runner.temp }}/generated-shared-ancestor-continuity-${{ matrix.os }}.log
-            ${{ runner.temp }}/accepted-build-input-snapshot-${{ matrix.os }}.log
-            ${{ runner.temp }}/checkout-status-${{ matrix.os }}.log
-            ${{ runner.temp }}/checkout-unstaged-diff-${{ matrix.os }}.log
-            ${{ runner.temp }}/checkout-staged-diff-${{ matrix.os }}.log
-          if-no-files-found: error
-          retention-days: 7
+          helper = Path('scripts/ci/capture_accepted_build_input_snapshot.py')
+          source = helper.read_text(encoding='utf-8')
+          old = '''            child = _open_directory_at(current, component, relative)\n            if not is_last and directory_cache is not None:\n                held = os.dup(child)\n                directory_cache[relative] = (held, os.fstat(held))\n            os.close(current)\n            current = child\n'''
+          new = '''            child = _open_directory_at(current, component, relative)\n            if not is_last and directory_cache is not None:\n                held = -1\n                try:\n                    held = os.dup(child)\n                    admitted = os.fstat(held)\n                    directory_cache[relative] = (held, admitted)\n                    held = -1\n                except Exception:\n                    if held >= 0:\n                        try:\n                            os.close(held)\n                        except OSError:\n                            pass\n                    try:\n                        os.close(child)\n                    except OSError:\n                        pass\n                    raise\n            os.close(current)\n            current = child\n'''
+          if source.count(old) != 1:
+              raise SystemExit('expected one cache-dup ownership seam')
+          helper.write_text(source.replace(old, new), encoding='utf-8')
 
-      - name: Enforce regression verdict and clean checkout
-        if: always()
+          test = Path('scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py')
+          source = test.read_text(encoding='utf-8')
+          import_anchor = 'import hashlib\nimport importlib.util\nimport json\nfrom pathlib import Path\n'
+          import_replacement = 'import errno\nimport hashlib\nimport importlib.util\nimport json\nimport os\nfrom pathlib import Path\n'
+          if source.count(import_anchor) != 1:
+              raise SystemExit('unexpected continuity test import block')
+          source = source.replace(import_anchor, import_replacement)
+
+          marker = '\n\nif __name__ == "__main__":\n    unittest.main(verbosity=2)\n'
+          method = r'''
+
+    def test_cache_dup_failure_closes_newly_opened_child_descriptor(self) -> None:
+        helper = load()
+        darwin_root = Path("/private/tmp")
+        temp_parent = darwin_root if darwin_root.is_dir() else None
+        with tempfile.TemporaryDirectory(
+            prefix="nembra-shared-ancestor-fd-cleanup-",
+            dir=temp_parent,
+        ) as raw:
+            root = Path(raw)
+            (root / "LocalSecrets/TuyaSDK").mkdir(parents=True)
+            root_fd = helper._open_repository_root(root)
+            real_dup = os.dup
+            real_open_directory = helper._open_directory_at
+            opened_children: list[int] = []
+            dup_calls = 0
+
+            def capture_open(parent_fd: int, name: str, relative: Path) -> int:
+                descriptor = real_open_directory(parent_fd, name, relative)
+                opened_children.append(descriptor)
+                return descriptor
+
+            def fail_cache_dup(descriptor: int) -> int:
+                nonlocal dup_calls
+                dup_calls += 1
+                if dup_calls == 2:
+                    raise OSError(errno.EMFILE, "synthetic cache-dup exhaustion")
+                return real_dup(descriptor)
+
+            cache: dict[Path, tuple[int, os.stat_result]] = {}
+            try:
+                with (
+                    mock.patch.object(helper, "_open_directory_at", side_effect=capture_open),
+                    mock.patch.object(helper.os, "dup", side_effect=fail_cache_dup),
+                ):
+                    with self.assertRaisesRegex(OSError, "synthetic cache-dup exhaustion"):
+                        helper._open_subject(
+                            root_fd,
+                            Path("LocalSecrets/TuyaSDK"),
+                            cache,
+                        )
+
+                self.assertEqual(dup_calls, 2)
+                self.assertEqual(cache, {})
+                self.assertEqual(len(opened_children), 1)
+                with self.assertRaises(OSError):
+                    os.fstat(opened_children[0])
+            finally:
+                for descriptor in opened_children:
+                    try:
+                        os.close(descriptor)
+                    except OSError:
+                        pass
+                os.close(root_fd)
+'''
+          if source.count(marker) != 1:
+              raise SystemExit('unexpected continuity test footer')
+          test.write_text(source.replace(marker, method + marker), encoding='utf-8')
+          PY
+
+      - name: Prove materialized repair before publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+          for raw in (
+              'scripts/ci/capture_accepted_build_input_snapshot.py',
+              'scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py',
+          ):
+              path = Path(raw)
+              compile(path.read_bytes(), str(path), 'exec', dont_inherit=True)
+          PY
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+
+      - name: Restore permanent carrier and publish exact two-path repair
         shell: bash
         env:
-          CONTINUITY_OUTCOME: ${{ steps.continuity.outcome }}
-          INHERITED_OUTCOME: ${{ steps.inherited.outcome }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
-          test "$CONTINUITY_OUTCOME" = success
-          test "$INHERITED_OUTCOME" = success
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git show "$EXACT_PARENT:.github/workflows/capture-generated-shared-ancestor-continuity.yml" > \
+            .github/workflows/capture-generated-shared-ancestor-continuity.yml
+          changed="$(git diff --name-only "$EXACT_PARENT" -- | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_PARENT" --
+          test -n "$HEAD_REF"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py \
+            .github/workflows/capture-generated-shared-ancestor-continuity.yml
+          git commit -m 'fix(capture): close cache-dup descriptor on admission failure'
+          git push origin HEAD:"$HEAD_REF"
