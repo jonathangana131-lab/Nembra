@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 38,
+    "classifiedPRTotal": 37,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1472,17 +1472,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.322,
         "title": "[Capture P0][CI] Make launcher provenance contract semantic (clean)"
-      },
-      "3533": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "764a8edf19e1d6e607bc2b2506e24aeb044f16c8",
-        "lane": "capture-private-read-lease",
-        "pr": 3533,
-        "recommendedAction": "independent-review",
-        "similarity": 0.319,
-        "title": "[Capture P0][TEST] Assert held-directory generation failure on macOS"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1515,7 +1504,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T07:04:52Z",
+    "liveRefreshAt": "2026-08-16T07:05:32Z",
     "liveRefreshDuplicatesSuppressed": [
       3416
     ],
@@ -5300,10 +5289,10 @@
       "userValue": 7
     }
   },
-  "revision": 825,
+  "revision": 826,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T07:04:53Z",
+  "updatedAt": "2026-08-16T07:05:33Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5379,7 +5368,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T07:04:52Z",
+      "updatedAt": "2026-08-16T07:05:32Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
