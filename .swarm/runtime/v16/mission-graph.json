@@ -1426,7 +1426,7 @@
         "lane": "",
         "pr": 3432,
         "recommendedAction": "independent-review",
-        "similarity": 0.199,
+        "similarity": 0.214,
         "title": "[Capture P0][ADVERSARIAL] Prove sibling-entry generation splice"
       },
       "3433": {
@@ -1494,17 +1494,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.355,
         "title": "[Capture P0][RED TEAM] Re-anchor post-validation symlink retarget on current product"
-      },
-      "3461": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "7c1b9cb525e749356342fe26d17cc69da5423bc2",
-        "lane": "capture-signed-install-custody",
-        "pr": 3461,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.303,
-        "title": "[Capture P0][QA] Prove accepted-input admission on macOS"
       },
       "3462": {
         "classification": "validation",
@@ -1602,7 +1591,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3479,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.39,
+        "similarity": 0.411,
         "title": "[Capture P0][RED TEAM] Attack generated root sibling continuity"
       },
       "3480": {
@@ -1637,6 +1626,17 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.454,
         "title": "[Capture P0][REPAIR] Revalidate generated parent after final-child open"
+      },
+      "3484": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3484,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.407,
+        "title": "[Capture P0][RED TEAM] Prove cached-parent postcheck sibling splice"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1669,9 +1669,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:29:19Z",
+    "liveRefreshAt": "2026-08-16T06:29:35Z",
     "liveRefreshDuplicatesSuppressed": [
-      3480
+      3484
     ],
     "liveRefreshMainSHA": "7154479d4ea0a1914eb565b5cd235968a5985443",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5454,10 +5454,10 @@
       "userValue": 7
     }
   },
-  "revision": 725,
+  "revision": 726,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:29:22Z",
+  "updatedAt": "2026-08-16T06:29:38Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5533,7 +5533,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:29:19Z",
+      "updatedAt": "2026-08-16T06:29:35Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
