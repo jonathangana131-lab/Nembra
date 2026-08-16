@@ -32,6 +32,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
           test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
           changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
           expected="$(printf '%s\n' \
@@ -49,42 +50,44 @@ jobs:
 
           path = Path('scripts/ci/capture_selected_xcode_build_orchestrator.py')
           source = path.read_text(encoding='utf-8')
-          old = '''                diagnostic = _open_pinned_path(
-                    path, is_directory, accepted_signature
-                )
-                os.close(diagnostic)
-        except Exception as error:
-          '''
-          new = '''                diagnostic = _open_pinned_path(
-                    path, is_directory, accepted_signature
-                )
-                os.close(diagnostic)
-
-            # A held directory descriptor does not freeze mutable symlink entries.
-            # Reclassify every admitted directory subject after all ACLs materialize,
-            # immediately before authority is handed to the exec-bound build guard.
-            # The guard's initial generation snapshot and vnode monitoring then cover
-            # the subsequent compiler window.
-            opened_by_path = {
-                Path(record["path"]): record for record in self._opened
-            }
-            for subject in self._subjects:
-                subject_record = opened_by_path.get(subject)
-                if subject_record is None:
-                    raise SelectedXcodeBuildOrchestratorError(
-                        "accepted private read-lease subject has no held descriptor"
-                    )
-                if not bool(subject_record["is_directory"]):
-                    continue
-                _validate_subject_symlinks_from_descriptor(
-                    subject,
-                    int(subject_record["descriptor"]),
-                )
-        except Exception as error:
-          '''
-          if source.count(old) != 1:
+          anchor = (
+              '                diagnostic = _open_pinned_path(\n'
+              '                    path, is_directory, accepted_signature\n'
+              '                )\n'
+              '                os.close(diagnostic)\n'
+              '        except Exception as error:\n'
+          )
+          replacement = (
+              '                diagnostic = _open_pinned_path(\n'
+              '                    path, is_directory, accepted_signature\n'
+              '                )\n'
+              '                os.close(diagnostic)\n'
+              '\n'
+              '            # A held directory descriptor does not freeze mutable symlink entries.\n'
+              '            # Reclassify every admitted directory subject after all ACLs materialize,\n'
+              '            # immediately before authority is handed to the exec-bound build guard.\n'
+              '            # The guard\'s initial generation snapshot and vnode monitoring then cover\n'
+              '            # the subsequent compiler window.\n'
+              '            opened_by_path = {\n'
+              '                Path(record["path"]): record for record in self._opened\n'
+              '            }\n'
+              '            for subject in self._subjects:\n'
+              '                subject_record = opened_by_path.get(subject)\n'
+              '                if subject_record is None:\n'
+              '                    raise SelectedXcodeBuildOrchestratorError(\n'
+              '                        "accepted private read-lease subject has no held descriptor"\n'
+              '                    )\n'
+              '                if not bool(subject_record["is_directory"]):\n'
+              '                    continue\n'
+              '                _validate_subject_symlinks_from_descriptor(\n'
+              '                    subject,\n'
+              '                    int(subject_record["descriptor"]),\n'
+              '                )\n'
+              '        except Exception as error:\n'
+          )
+          if source.count(anchor) != 1:
               raise SystemExit('production insertion seam is not exact')
-          path.write_text(source.replace(old, new), encoding='utf-8')
+          path.write_text(source.replace(anchor, replacement, 1), encoding='utf-8')
           PY
 
       - name: Prove focused repair before publication
