@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 39,
+    "classifiedPRTotal": 40,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1492,8 +1492,19 @@
         "lane": "capture-signed-install-custody",
         "pr": 3521,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.335,
+        "similarity": 0.401,
         "title": "[Capture P0][VALIDATION] Re-anchor accepted build-root custody to selector-accepted head"
+      },
+      "3522": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "7ab137018edcc22efb513764919ce9396bc22bda",
+        "lane": "capture-signed-install-custody",
+        "pr": 3522,
+        "recommendedAction": "independent-review",
+        "similarity": 0.396,
+        "title": "[Capture P0][CUSTODY] Seal accepted build root on current selector head"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1526,7 +1537,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:49:05Z",
+    "liveRefreshAt": "2026-08-16T06:49:43Z",
     "liveRefreshDuplicatesSuppressed": [
       3521
     ],
@@ -5311,10 +5322,10 @@
       "userValue": 7
     }
   },
-  "revision": 783,
+  "revision": 784,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:49:07Z",
+  "updatedAt": "2026-08-16T06:49:45Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5390,7 +5401,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:49:05Z",
+      "updatedAt": "2026-08-16T06:49:43Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
