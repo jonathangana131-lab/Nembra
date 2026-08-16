@@ -1,0 +1,87 @@
+name: Capture Field Provenance Launcher Oracle Materializer
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - .github/workflows/capture-field-provenance-launcher-ast-materialize-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  EXACT_PARENT: 9b68439c1ef19e0e445f488be46b0c3e6ef61936
+  TARGET: .github/workflows/capture-field-build-provenance.yml
+  SELF: .github/workflows/capture-field-provenance-launcher-ast-materialize-once.yml
+
+jobs:
+  materialize:
+    name: Replace stale formatting grep with semantic AST contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact authoring input
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD)"
+          test "$changed" = "$SELF"
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Materialize semantic source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - "$TARGET" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          source = path.read_text(encoding="utf-8")
+          stale = "          grep -Fq 'launcher_run(field_pid, source_sha, freeze_helper_base64, freeze_helper_blob)' \"$selected_xcode_orchestrator\"\n"
+          replacement = '''          /usr/bin/python3 -B -I - "$selected_xcode_orchestrator" <<'PYAST'\n          import ast\n          from pathlib import Path\n          import sys\n\n          tree = ast.parse(Path(sys.argv[1]).read_text(encoding="utf-8"))\n          expected_args = [\n              "field_pid",\n              "source_sha",\n              "freeze_helper_base64",\n              "freeze_helper_blob",\n          ]\n          matches = []\n          for node in ast.walk(tree):\n              if not isinstance(node, ast.Assign) or len(node.targets) != 1:\n                  continue\n              target = node.targets[0]\n              call = node.value\n              if not (isinstance(target, ast.Name) and target.id == "freeze_result"):\n                  continue\n              if not (\n                  isinstance(call, ast.Call)\n                  and isinstance(call.func, ast.Name)\n                  and call.func.id == "launcher_run"\n                  and not call.keywords\n              ):\n                  continue\n              names = [arg.id if isinstance(arg, ast.Name) else None for arg in call.args]\n              if names == expected_args:\n                  matches.append(node)\n          if len(matches) != 1:\n              raise SystemExit(\n                  "selected-Xcode orchestrator must assign freeze_result from exactly one "\n                  "launcher_run(field_pid, source_sha, freeze_helper_base64, freeze_helper_blob) call"\n              )\n          PYAST\n'''
+          if source.count(stale) != 1:
+              raise SystemExit("stale launcher source grep seam is not exact")
+          path.write_text(source.replace(stale, replacement, 1), encoding="utf-8")
+          PY
+
+      - name: Prove permanent delta before publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(grep -Fc "grep -Fq 'launcher_run(field_pid, source_sha, freeze_helper_base64, freeze_helper_blob)'" "$TARGET")" = 0
+          grep -Fq 'tree = ast.parse(Path(sys.argv[1]).read_text(encoding="utf-8"))' "$TARGET"
+          grep -Fq 'target.id == "freeze_result"' "$TARGET"
+          grep -Fq 'call.func.id == "launcher_run"' "$TARGET"
+          grep -Fq 'names == expected_args' "$TARGET"
+          git diff --check
+
+      - name: Publish clean one-file oracle repair
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GITHUB_HEAD_REF:-}"
+          git rm "$SELF"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$TARGET"
+          changed="$(git diff --cached --name-only "$EXACT_PARENT" | LC_ALL=C sort)"
+          test "$changed" = "$TARGET"
+          git diff --cached --check
+          git commit -m 'fix(ci): make launcher source contract formatting-independent'
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
+
+      - name: Preserve truth boundary
+        shell: bash
+        run: |
+          echo 'NEMBRA_FIELD_PROVENANCE_ORACLE_MATERIALIZER physicalAuthorityCreated=false deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false'
