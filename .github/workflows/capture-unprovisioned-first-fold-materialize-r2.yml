@@ -1,0 +1,85 @@
+name: Capture Unprovisioned First Fold Materializer R2
+
+on:
+  push:
+    branches:
+      - product/v17-capture-unprovisioned-first-fold-redesign-sol-r2-20260815
+    paths:
+      - .github/workflows/capture-unprovisioned-first-fold-materialize-r2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    name: Materialize compact locked first fold
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      EXACT_PARENT: ff77967e1089a1da9c862c894396cf64d145236d
+      PRODUCT_BRANCH: product/v17-capture-unprovisioned-first-fold-redesign-sol-r2-20260815
+      SELF: .github/workflows/capture-unprovisioned-first-fold-materialize-r2.yml
+      SCRIPT: scripts/ci/capture_unprovisioned_first_fold_materialize_once.py
+      APP: NembraApp/App/NembraCaptureEntrypoint.swift
+      STRINGS: NembraApp/Resources/Localizable.strings
+      TEST: Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureFirstFoldCopySourceTests.swift
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact rejected visual subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          test "$(git rev-parse "$EXACT_PARENT:$APP")" = '59124f9528421ee060f11df706b565099fd397be'
+          test "$(git rev-parse "$EXACT_PARENT:$STRINGS")" = '5984809e96ec95049d510935f40ebfd2472aa79f'
+          test "$(git rev-parse "$EXACT_PARENT:$TEST")" = 'f6cb9419661513c08bafd3719c0adf44a01ef8a8'
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n%s\n' "$SCRIPT" "$SELF" | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Apply and statically verify product redesign
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I "$SCRIPT"
+          /usr/bin/python3 -B -I - "$APP" <<'PY'
+          import sys
+          from pathlib import Path
+          source = Path(sys.argv[1]).read_text(encoding='utf-8')
+          required = (
+              'Text("Connect your scooter")',
+              'Link Tuya Smart',
+              'Show approval QR',
+              'Capture stays locked until the reviewed field build is installed.',
+              'Physical capture locked',
+              '.accessibilitySortPriority(isAccessibilityLayout ? 100 : 0)',
+              'Technical details',
+          )
+          for marker in required:
+              assert marker in source, marker
+          for retired in ('Prepare the scooter link', 'Prepare account metadata'):
+              assert retired not in source, retired
+          PY
+          git diff --check
+
+      - name: Publish clean product-only head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm "$SELF" "$SCRIPT"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$APP" "$STRINGS" "$TEST"
+          changed="$(git diff --cached --name-only "$EXACT_PARENT" | LC_ALL=C sort)"
+          expected="$(printf '%s\n%s\n%s\n' "$APP" "$STRINGS" "$TEST" | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --cached --check
+          git commit -m 'ui(capture): simplify locked account first fold'
+          git push origin "HEAD:$PRODUCT_BRANCH"
