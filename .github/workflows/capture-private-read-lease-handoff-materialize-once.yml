@@ -26,189 +26,31 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "9ec3785561c625bb092b061545f54f75b6f7cc43"
+          test "$(git rev-parse HEAD^)" = "dec140a6db407cb76a8fa6af0cc49e4b73369ea7"
           test "$(git diff --name-only HEAD^...HEAD)" = ".github/workflows/capture-private-read-lease-handoff-materialize-once.yml"
 
       - name: Materialize product repair and final gate
         shell: bash
+        env:
+          OLD_B64: ICAgICAgICAgICAgICAgIGRpYWdub3N0aWMgPSBfb3Blbl9waW5uZWRfcGF0aCgKICAgICAgICAgICAgICAgICAgICBwYXRoLCBpc19kaXJlY3RvcnksIGFjY2VwdGVkX3NpZ25hdHVyZQogICAgICAgICAgICAgICAgKQogICAgICAgICAgICAgICAgb3MuY2xvc2UoZGlhZ25vc3RpYykKICAgICAgICBleGNlcHQgRXhjZXB0aW9uIGFzIGVycm9yOgo=
+          NEW_B64: ICAgICAgICAgICAgICAgIGRpYWdub3N0aWMgPSBfb3Blbl9waW5uZWRfcGF0aCgKICAgICAgICAgICAgICAgICAgICBwYXRoLCBpc19kaXJlY3RvcnksIGFjY2VwdGVkX3NpZ25hdHVyZQogICAgICAgICAgICAgICAgKQogICAgICAgICAgICAgICAgb3MuY2xvc2UoZGlhZ25vc3RpYykKCiAgICAgICAgICAgICMgQSBoZWxkIGRpcmVjdG9yeSBkZXNjcmlwdG9yIGRvZXMgbm90IGZyZWV6ZSBtdXRhYmxlIHN5bWxpbmsgZW50cmllcy4KICAgICAgICAgICAgIyBSZWNsYXNzaWZ5IGV2ZXJ5IGFkbWl0dGVkIGRpcmVjdG9yeSBzdWJqZWN0IGFmdGVyIGFsbCBBQ0xzIG1hdGVyaWFsaXplLAogICAgICAgICAgICAjIGltbWVkaWF0ZWx5IGJlZm9yZSBhdXRob3JpdHkgaXMgaGFuZGVkIHRvIHRoZSBleGVjLWJvdW5kIGJ1aWxkIGd1YXJkLgogICAgICAgICAgICAjIFRoZSBndWFyZCdzIGluaXRpYWwgZ2VuZXJhdGlvbiBzbmFwc2hvdCBhbmQgdm5vZGUgbW9uaXRvcmluZyB0aGVuIGNvdmVyCiAgICAgICAgICAgICMgdGhlIHN1YnNlcXVlbnQgY29tcGlsZXIgd2luZG93LgogICAgICAgICAgICBvcGVuZWRfYnlfcGF0aCA9IHsKICAgICAgICAgICAgICAgIFBhdGgocmVjb3JkWyJwYXRoIl0pOiByZWNvcmQgZm9yIHJlY29yZCBpbiBzZWxmLl9vcGVuZWQKICAgICAgICAgICAgfQogICAgICAgICAgICBmb3Igc3ViamVjdCBpbiBzZWxmLl9zdWJqZWN0czoKICAgICAgICAgICAgICAgIHN1YmplY3RfcmVjb3JkID0gb3BlbmVkX2J5X3BhdGguZ2V0KHN1YmplY3QpCiAgICAgICAgICAgICAgICBpZiBzdWJqZWN0X3JlY29yZCBpcyBOb25lOgogICAgICAgICAgICAgICAgICAgIHJhaXNlIFNlbGVjdGVkWGNvZGVCdWlsZE9yY2hlc3RyYXRvckVycm9yKAogICAgICAgICAgICAgICAgICAgICAgICAiYWNjZXB0ZWQgcHJpdmF0ZSByZWFkLWxlYXNlIHN1YmplY3QgaGFzIG5vIGhlbGQgZGVzY3JpcHRvciIKICAgICAgICAgICAgICAgICAgICApCiAgICAgICAgICAgICAgICBpZiBub3QgYm9vbChzdWJqZWN0X3JlY29yZFsiaXNfZGlyZWN0b3J5Il0pOgogICAgICAgICAgICAgICAgICAgIGNvbnRpbnVlCiAgICAgICAgICAgICAgICBfdmFsaWRhdGVfc3ViamVjdF9zeW1saW5rc19mcm9tX2Rlc2NyaXB0b3IoCiAgICAgICAgICAgICAgICAgICAgc3ViamVjdCwKICAgICAgICAgICAgICAgICAgICBpbnQoc3ViamVjdF9yZWNvcmRbImRlc2NyaXB0b3IiXSksCiAgICAgICAgICAgICAgICApCiAgICAgICAgZXhjZXB0IEV4Y2VwdGlvbiBhcyBlcnJvcjoK
+          GATE_B64: bmFtZTogQ2FwdHVyZSBQcml2YXRlIFJlYWQgTGVhc2UgQ29tcG9uZW50IFdhbGsKCm9uOgogIHB1bGxfcmVxdWVzdDoKICAgIHBhdGhzOgogICAgICAtIHNjcmlwdHMvY2kvY2FwdHVyZV9zZWxlY3RlZF94Y29kZV9idWlsZF9vcmNoZXN0cmF0b3IucHkKICAgICAgLSBzY3JpcHRzL2NpL3Rlc3RzL3Rlc3RfY2FwdHVyZV9wcml2YXRlX3JlYWRfbGVhc2VfY29tcG9uZW50X3dhbGsucHkKICAgICAgLSBzY3JpcHRzL2NpL3Rlc3RzL3Rlc3RfY2FwdHVyZV9wcml2YXRlX3JlYWRfbGVhc2VfcG9zdF92YWxpZGF0aW9uX3N5bWxpbmtfcmV0YXJnZXQucHkKICAgICAgLSAuZ2l0aHViL3dvcmtmbG93cy9jYXB0dXJlLXByaXZhdGUtcmVhZC1sZWFzZS1jb21wb25lbnQtd2Fsay55bWwKICB3b3JrZmxvd19kaXNwYXRjaDoKCnBlcm1pc3Npb25zOgogIGNvbnRlbnRzOiByZWFkCgpjb25jdXJyZW5jeToKICBncm91cDogY2FwdHVyZS1wcml2YXRlLXJlYWQtbGVhc2UtY29tcG9uZW50LXdhbGstJHt7IGdpdGh1Yi5ldmVudC5wdWxsX3JlcXVlc3QubnVtYmVyIHx8IGdpdGh1Yi5yZWYgfX0KICBjYW5jZWwtaW4tcHJvZ3Jlc3M6IHRydWUKCmVudjoKICBFWEFDVF9QQVJFTlQ6IDU3OGIzODllNzk3NGZmODgxNDAyMGQ3NzNlZTAxMTU1MzFiNjU0YmUKICBQWVRIT05ET05UV1JJVEVCWVRFQ09ERTogMQoKam9iczoKICBjb21wb25lbnQtd2FsazoKICAgIG5hbWU6IFByb3ZlIG5vLWZvbGxvdyBjb21wb25lbnQtYW5jaG9yZWQgbGVhc2UgYWRtaXNzaW9uCiAgICBzdHJhdGVneToKICAgICAgZmFpbC1mYXN0OiBmYWxzZQogICAgICBtYXRyaXg6CiAgICAgICAgb3M6IFt1YnVudHUtbGF0ZXN0LCBtYWNvcy0xNV0KICAgIHJ1bnMtb246ICR7eyBtYXRyaXgub3MgfX0KICAgIHRpbWVvdXQtbWludXRlczogNgogICAgc3RlcHM6CiAgICAgIC0gdXNlczogYWN0aW9ucy9jaGVja291dEB2NgogICAgICAgIHdpdGg6CiAgICAgICAgICByZWY6ICR7eyBnaXRodWIuZXZlbnQucHVsbF9yZXF1ZXN0LmhlYWQuc2hhIHx8IGdpdGh1Yi5zaGEgfX0KICAgICAgICAgIGZldGNoLWRlcHRoOiAwCiAgICAgICAgICBwZXJzaXN0LWNyZWRlbnRpYWxzOiBmYWxzZQoKICAgICAgLSBuYW1lOiBBbmNob3IgRGFyd2luIGZpeHR1cmVzIHVuZGVyIGEgcmVhbCBuby1zeW1saW5rIHRlbXAgcm9vdAogICAgICAgIGlmOiBydW5uZXIub3MgPT0gJ21hY09TJwogICAgICAgIHNoZWxsOiBiYXNoCiAgICAgICAgcnVuOiB8CiAgICAgICAgICBzZXQgLWV1byBwaXBlZmFpbAogICAgICAgICAgL3Vzci9iaW4vcHl0aG9uMyAtQiAtSSAtIDw8J1BZJwogICAgICAgICAgaW1wb3J0IG9zCiAgICAgICAgICBmcm9tIHBhdGhsaWIgaW1wb3J0IFBhdGgKICAgICAgICAgIGltcG9ydCBzdGF0CgogICAgICAgICAgcm9vdCA9IFBhdGgoJy9wcml2YXRlL3RtcCcpCiAgICAgICAgICBtZXRhZGF0YSA9IHJvb3QubHN0YXQoKQogICAgICAgICAgaWYgc3RhdC5TX0lTTE5LKG1ldGFkYXRhLnN0X21vZGUpIG9yIG5vdCBzdGF0LlNfSVNESVIobWV0YWRhdGEuc3RfbW9kZSk6CiAgICAgICAgICAgICAgcmFpc2UgU3lzdGVtRXhpdCgnL3ByaXZhdGUvdG1wIGlzIG5vdCBvbmUgcmVhbCBkaXJlY3RvcnknKQogICAgICAgICAgaWYgcm9vdC5yZXNvbHZlKHN0cmljdD1UcnVlKSAhPSByb290OgogICAgICAgICAgICAgIHJhaXNlIFN5c3RlbUV4aXQoJy9wcml2YXRlL3RtcCBkb2VzIG5vdCByZXNvbHZlIHRvIGl0c2VsZicpCiAgICAgICAgICBpZiBub3Qgb3MuYWNjZXNzKHJvb3QsIG9zLldfT0sgfCBvcy5YX09LKToKICAgICAgICAgICAgICByYWlzZSBTeXN0ZW1FeGl0KCcvcHJpdmF0ZS90bXAgaXMgbm90IHdyaXRhYmxlL3NlYXJjaGFibGUgYnkgdGhlIHJ1bm5lcicpCiAgICAgICAgICBQWQogICAgICAgICAgZWNobyAnVE1QRElSPS9wcml2YXRlL3RtcCcgPj4gIiRHSVRIVUJfRU5WIgoKICAgICAgLSBuYW1lOiBCaW5kIGV4YWN0IHNlcmlhbCBoYXJkZW5pbmcgZGVsdGEKICAgICAgICBzaGVsbDogYmFzaAogICAgICAgIHJ1bjogfAogICAgICAgICAgc2V0IC1ldW8gcGlwZWZhaWwKICAgICAgICAgIGV4cGVjdGVkX2hlYWQ9IiR7eyBnaXRodWIuZXZlbnQucHVsbF9yZXF1ZXN0LmhlYWQuc2hhIHx8IGdpdGh1Yi5zaGEgfX0iCiAgICAgICAgICB0ZXN0ICIkKGdpdCByZXYtcGFyc2UgSEVBRCkiID0gIiRleHBlY3RlZF9oZWFkIgogICAgICAgICAgdGVzdCAiJChnaXQgbWVyZ2UtYmFzZSBIRUFEICIkRVhBQ1RfUEFSRU5UIikiID0gIiRFWEFDVF9QQVJFTlQiCiAgICAgICAgICBjaGFuZ2VkPSIkKGdpdCBkaWZmIC0tbmFtZS1vbmx5ICIkRVhBQ1RfUEFSRU5UIi4uLkhFQUQgfCBMQ19BTEw9QyBzb3J0KSIKICAgICAgICAgIGV4cGVjdGVkPSIkKHByaW50ZiAnJXNcbicgXAogICAgICAgICAgICAuZ2l0aHViL3dvcmtmbG93cy9jYXB0dXJlLXByaXZhdGUtcmVhZC1sZWFzZS1jb21wb25lbnQtd2Fsay55bWwgXAogICAgICAgICAgICBzY3JpcHRzL2NpL2NhcHR1cmVfc2VsZWN0ZWRfeGNvZGVfYnVpbGRfb3JjaGVzdHJhdG9yLnB5IFwKICAgICAgICAgICAgc2NyaXB0cy9jaS90ZXN0cy90ZXN0X2NhcHR1cmVfcHJpdmF0ZV9yZWFkX2xlYXNlX2NvbXBvbmVudF93YWxrLnB5IFwKICAgICAgICAgICAgc2NyaXB0cy9jaS90ZXN0cy90ZXN0X2NhcHR1cmVfcHJpdmF0ZV9yZWFkX2xlYXNlX3Bvc3RfdmFsaWRhdGlvbl9zeW1saW5rX3JldGFyZ2V0LnB5IHwgTENfQUxMPUMgc29ydCkiCiAgICAgICAgICB0ZXN0ICIkY2hhbmdlZCIgPSAiJGV4cGVjdGVkIgogICAgICAgICAgZ2l0IGRpZmYgLS1jaGVjayAiJEVYQUNUX1BBUkVOVCIuLi5IRUFECiAgICAgICAgICB0ZXN0IC16ICIkKGdpdCBzdGF0dXMgLS1wb3JjZWxhaW49djEgLS11bnRyYWNrZWQtZmlsZXM9YWxsKSIKCiAgICAgIC0gbmFtZTogQ29tcGlsZSBjb21wb25lbnQtd2FsayBzb3VyY2VzIHdpdGhvdXQgYXJ0aWZhY3RzCiAgICAgICAgc2hlbGw6IGJhc2gKICAgICAgICBydW46IHwKICAgICAgICAgIHNldCAtZXVvIHBpcGVmYWlsCiAgICAgICAgICAvdXNyL2Jpbi9weXRob24zIC1CIC1JIC0gPDwnUFknCiAgICAgICAgICBmcm9tIHBhdGhsaWIgaW1wb3J0IFBhdGgKICAgICAgICAgIGZvciByYXcgaW4gKAogICAgICAgICAgICAgICJzY3JpcHRzL2NpL2NhcHR1cmVfc2VsZWN0ZWRfeGNvZGVfYnVpbGRfb3JjaGVzdHJhdG9yLnB5IiwKICAgICAgICAgICAgICAic2NyaXB0cy9jaS90ZXN0cy90ZXN0X2NhcHR1cmVfcHJpdmF0ZV9yZWFkX2xlYXNlX2NvbXBvbmVudF93YWxrLnB5IiwKICAgICAgICAgICAgICAic2NyaXB0cy9jaS90ZXN0cy90ZXN0X2NhcHR1cmVfcHJpdmF0ZV9yZWFkX2xlYXNlX3Bvc3RfdmFsaWRhdGlvbl9zeW1saW5rX3JldGFyZ2V0LnB5IiwKICAgICAgICAgICk6CiAgICAgICAgICAgICAgcGF0aCA9IFBhdGgocmF3KQogICAgICAgICAgICAgIGNvbXBpbGUocGF0aC5yZWFkX2J5dGVzKCksIHN0cihwYXRoKSwgImV4ZWMiLCBkb250X2luaGVyaXQ9VHJ1ZSkKICAgICAgICAgIFBZCgogICAgICAtIG5hbWU6IFByb3ZlIGNvbXBvbmVudC13YWxrIGFuZCBoYW5kb2ZmIGJlaGF2aW9yCiAgICAgICAgc2hlbGw6IGJhc2gKICAgICAgICBydW46IHwKICAgICAgICAgIHNldCAtZXVvIHBpcGVmYWlsCiAgICAgICAgICAvdXNyL2Jpbi9weXRob24zIC1CIC1JIHNjcmlwdHMvY2kvdGVzdHMvdGVzdF9jYXB0dXJlX3ByaXZhdGVfcmVhZF9sZWFzZV9jb21wb25lbnRfd2Fsay5weQogICAgICAgICAgL3Vzci9iaW4vcHl0aG9uMyAtQiAtSSBzY3JpcHRzL2NpL3Rlc3RzL3Rlc3RfY2FwdHVyZV9wcml2YXRlX3JlYWRfbGVhc2VfcG9zdF92YWxpZGF0aW9uX3N5bWxpbmtfcmV0YXJnZXQucHkKCiAgICAgIC0gbmFtZTogUHJlc2VydmUgc2VsZWN0ZWQtWGNvZGUgY29tcG9zaXRpb24gcmVncmVzc2lvbnMKICAgICAgICBzaGVsbDogYmFzaAogICAgICAgIHJ1bjogfAogICAgICAgICAgc2V0IC1ldW8gcGlwZWZhaWwKICAgICAgICAgIC91c3IvYmluL3B5dGhvbjMgLUIgLUkgc2NyaXB0cy9jaS90ZXN0cy90ZXN0X2NhcHR1cmVfc2VsZWN0ZWRfeGNvZGVfYnVpbGRfb3JjaGVzdHJhdG9yLnB5CgogICAgICAtIG5hbWU6IFByZXNlcnZlIHJvbGxiYWNrIHJlZ3Jlc3Npb25zCiAgICAgICAgc2hlbGw6IGJhc2gKICAgICAgICBydW46IHwKICAgICAgICAgIHNldCAtZXVvIHBpcGVmYWlsCiAgICAgICAgICAvdXNyL2Jpbi9weXRob24zIC1CIC1JIHNjcmlwdHMvY2kvdGVzdHMvdGVzdF9jYXB0dXJlX3ByaXZhdGVfcmVhZF9sZWFzZV9yb2xsYmFjay5weQoKICAgICAgLSBuYW1lOiBQcmVzZXJ2ZSBob3N0LWFuY2VzdHJ5IHJlZ3Jlc3Npb25zCiAgICAgICAgc2hlbGw6IGJhc2gKICAgICAgICBydW46IHwKICAgICAgICAgIHNldCAtZXVvIHBpcGVmYWlsCiAgICAgICAgICAvdXNyL2Jpbi9weXRob24zIC1CIC1JIHNjcmlwdHMvY2kvdGVzdHMvdGVzdF9jYXB0dXJlX3ByaXZhdGVfcmVhZF9sZWFzZV9ob3N0X2FuY2VzdHJ5LnB5CgogICAgICAtIG5hbWU6IFByZXNlcnZlIGNsZWFuIGV4YWN0IGhlYWQKICAgICAgICBzaGVsbDogYmFzaAogICAgICAgIHJ1bjogfAogICAgICAgICAgc2V0IC1ldW8gcGlwZWZhaWwKICAgICAgICAgIHRlc3QgLXogIiQoZ2l0IHN0YXR1cyAtLXBvcmNlbGFpbj12MSAtLXVudHJhY2tlZC1maWxlcz1hbGwpIgoKICAgICAgLSBuYW1lOiBQcmVzZXJ2ZSB0cnV0aCBib3VuZGFyeQogICAgICAgIHNoZWxsOiBiYXNoCiAgICAgICAgcnVuOiB8CiAgICAgICAgICBzZXQgLWV1byBwaXBlZmFpbAogICAgICAgICAgZWNobyAiTkVNQlJBX0NPTVBPTkVOVF9XQUxLX0JPVU5EQVJZIHByb2R1Y3Rpb25MZWFzZUNoYW5nZWQ9dHJ1ZSBkZXZpY2VUb3VjaGVkPWZhbHNlIGJsdWV0b290aFRvdWNoZWQ9ZmFsc2UgdGVsZW1ldHJ5Q3JlYXRlZD1mYWxzZSBjb21tYW5kQXV0aG9yaXR5Q3JlYXRlZD1mYWxzZSBwaHlzaWNhbEF1dGhvcml0eUNyZWF0ZWQ9ZmFsc2UiCg==
         run: |
           set -euo pipefail
           /usr/bin/python3 -B -I - <<'PY'
+          import base64
+          import os
           from pathlib import Path
-
           helper = Path("scripts/ci/capture_selected_xcode_build_orchestrator.py")
           source = helper.read_text(encoding="utf-8")
-          old = '''                diagnostic = _open_pinned_path(
-                    path, is_directory, accepted_signature
-                )
-                os.close(diagnostic)
-        except Exception as error:
-          '''
-          new = '''                diagnostic = _open_pinned_path(
-                    path, is_directory, accepted_signature
-                )
-                os.close(diagnostic)
-
-            # A held directory descriptor does not freeze mutable symlink entries.
-            # Reclassify every admitted directory subject after all ACLs materialize,
-            # immediately before authority is handed to the exec-bound build guard.
-            # The guard's initial generation snapshot and vnode monitoring then cover
-            # the subsequent compiler window.
-            opened_by_path = {
-                Path(record["path"]): record for record in self._opened
-            }
-            for subject in self._subjects:
-                subject_record = opened_by_path.get(subject)
-                if subject_record is None:
-                    raise SelectedXcodeBuildOrchestratorError(
-                        "accepted private read-lease subject has no held descriptor"
-                    )
-                if not bool(subject_record["is_directory"]):
-                    continue
-                _validate_subject_symlinks_from_descriptor(
-                    subject,
-                    int(subject_record["descriptor"]),
-                )
-        except Exception as error:
-          '''
+          old = base64.b64decode(os.environ["OLD_B64"]).decode("utf-8")
+          new = base64.b64decode(os.environ["NEW_B64"]).decode("utf-8")
           if source.count(old) != 1:
               raise SystemExit("production insertion seam did not match exactly once")
           helper.write_text(source.replace(old, new), encoding="utf-8")
-
-          final_gate = r'''name: Capture Private Read Lease Component Walk
-
-on:
-  pull_request:
-    paths:
-      - scripts/ci/capture_selected_xcode_build_orchestrator.py
-      - scripts/ci/tests/test_capture_private_read_lease_component_walk.py
-      - scripts/ci/tests/test_capture_private_read_lease_post_validation_symlink_retarget.py
-      - .github/workflows/capture-private-read-lease-component-walk.yml
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-concurrency:
-  group: capture-private-read-lease-component-walk-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
-env:
-  EXACT_PARENT: 578b389e7974ff8814020d773ee0115531b654be
-  PYTHONDONTWRITEBYTECODE: 1
-
-jobs:
-  component-walk:
-    name: Prove no-follow component-anchored lease admission
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-15]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 6
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Anchor Darwin fixtures under a real no-symlink temp root
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          set -euo pipefail
-          /usr/bin/python3 -B -I - <<'PY'
-          import os
-          from pathlib import Path
-          import stat
-
-          root = Path('/private/tmp')
-          metadata = root.lstat()
-          if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
-              raise SystemExit('/private/tmp is not one real directory')
-          if root.resolve(strict=True) != root:
-              raise SystemExit('/private/tmp does not resolve to itself')
-          if not os.access(root, os.W_OK | os.X_OK):
-              raise SystemExit('/private/tmp is not writable/searchable by the runner')
+          gate = base64.b64decode(os.environ["GATE_B64"]).decode("utf-8")
+          Path(".github/workflows/capture-private-read-lease-component-walk.yml").write_text(gate, encoding="utf-8")
           PY
-          echo 'TMPDIR=/private/tmp' >> "$GITHUB_ENV"
-
-      - name: Bind exact serial hardening delta
-        shell: bash
-        run: |
-          set -euo pipefail
-          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
-          test "$(git rev-parse HEAD)" = "$expected_head"
-          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
-          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
-          expected="$(printf '%s\n' \
-            .github/workflows/capture-private-read-lease-component-walk.yml \
-            scripts/ci/capture_selected_xcode_build_orchestrator.py \
-            scripts/ci/tests/test_capture_private_read_lease_component_walk.py \
-            scripts/ci/tests/test_capture_private_read_lease_post_validation_symlink_retarget.py | LC_ALL=C sort)"
-          test "$changed" = "$expected"
-          git diff --check "$EXACT_PARENT"...HEAD
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
-
-      - name: Compile component-walk sources without artifacts
-        shell: bash
-        run: |
-          set -euo pipefail
-          /usr/bin/python3 -B -I - <<'PY'
-          from pathlib import Path
-          for raw in (
-              "scripts/ci/capture_selected_xcode_build_orchestrator.py",
-              "scripts/ci/tests/test_capture_private_read_lease_component_walk.py",
-              "scripts/ci/tests/test_capture_private_read_lease_post_validation_symlink_retarget.py",
-          ):
-              path = Path(raw)
-              compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
-          PY
-
-      - name: Prove component-walk and handoff behavior
-        shell: bash
-        run: |
-          set -euo pipefail
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_post_validation_symlink_retarget.py
-
-      - name: Preserve selected-Xcode composition regressions
-        shell: bash
-        run: |
-          set -euo pipefail
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
-
-      - name: Preserve rollback regressions
-        shell: bash
-        run: |
-          set -euo pipefail
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
-
-      - name: Preserve host-ancestry regressions
-        shell: bash
-        run: |
-          set -euo pipefail
-          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
-
-      - name: Preserve clean exact head
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
-
-      - name: Preserve truth boundary
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "NEMBRA_COMPONENT_WALK_BOUNDARY productionLeaseChanged=true deviceTouched=false bluetoothTouched=false telemetryCreated=false commandAuthorityCreated=false physicalAuthorityCreated=false"
-'''
-          Path(".github/workflows/capture-private-read-lease-component-walk.yml").write_text(
-              final_gate,
-              encoding="utf-8",
-          )
-          PY
-
           /usr/bin/python3 -B -I - <<'PY'
           from pathlib import Path
           for raw in (
@@ -247,8 +89,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh workflow run capture-private-read-lease-component-walk.yml \
-            --ref repair/v17-capture-read-lease-post-validation-symlink-gpt56
+          gh workflow run capture-private-read-lease-component-walk.yml --ref repair/v17-capture-read-lease-post-validation-symlink-gpt56
 
       - name: Preserve truth boundary
         shell: bash
