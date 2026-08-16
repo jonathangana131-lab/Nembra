@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 52,
+    "classifiedPRTotal": 51,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1492,7 +1492,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3457,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.347,
+        "similarity": 0.295,
         "title": "[Capture P0][RED TEAM] Re-anchor post-validation symlink retarget on current product"
       },
       "3462": {
@@ -1514,19 +1514,8 @@
         "lane": "capture-private-read-lease",
         "pr": 3467,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.406,
+        "similarity": 0.299,
         "title": "[Capture P0][REPAIR] Fence held symlinks at ACL authority transition"
-      },
-      "3473": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-read-lease",
-        "pr": 3473,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.397,
-        "title": "[Capture P0][REPAIR] Bind symlink witnesses through final lease plan"
       },
       "3475": {
         "classification": "requires-review",
@@ -1669,7 +1658,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T06:30:12Z",
+    "liveRefreshAt": "2026-08-16T06:30:27Z",
     "liveRefreshDuplicatesSuppressed": [
       3485
     ],
@@ -5454,10 +5443,10 @@
       "userValue": 7
     }
   },
-  "revision": 728,
+  "revision": 729,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T06:30:15Z",
+  "updatedAt": "2026-08-16T06:30:30Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5533,7 +5522,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T06:30:12Z",
+      "updatedAt": "2026-08-16T06:30:27Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
