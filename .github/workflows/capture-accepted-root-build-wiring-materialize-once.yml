@@ -1,0 +1,136 @@
+name: Capture accepted-root build wiring materialize once
+
+on:
+  push:
+    branches:
+      - validation/v17-capture-accepted-root-build-wiring-662a-sol-20260815
+    paths:
+      - .github/workflows/capture-accepted-root-build-wiring-materialize-once.yml
+
+permissions:
+  contents: write
+
+env:
+  EXACT_PARENT: 662a63cf5179d54712214d78d01542e51e71148e
+  BRANCH: validation/v17-capture-accepted-root-build-wiring-662a-sol-20260815
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.BRANCH }}
+          fetch-depth: 0
+
+      - name: Bind one-shot parent and scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD)"
+          test "$changed" = ".github/workflows/capture-accepted-root-build-wiring-materialize-once.yml"
+
+      - name: Materialize strict accepted-root compiler mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/ci/capture_selected_xcode_build_orchestrator.py")
+          source = path.read_text(encoding="utf-8")
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one match, found {count}")
+              source = source.replace(old, new, 1)
+
+          replace_once(
+              "import hashlib\nimport os\n",
+              "import hashlib\nimport importlib.util\nimport os\n",
+              "importlib import",
+          )
+          replace_once(
+              'CANONICAL_RUNTIME_RELATIVE = Path("LocalSecrets/TuyaRuntime")\n',
+              'CANONICAL_RUNTIME_RELATIVE = Path("LocalSecrets/TuyaRuntime")\n'
+              'ACCEPTED_BUILD_ROOT_CUSTODY_RELATIVE = Path("scripts/ci/capture_accepted_build_root_custody.py")\n'
+              'ACCEPTED_BUILD_INPUT_SNAPSHOT_RELATIVE = Path("scripts/ci/capture_accepted_build_input_snapshot.py")\n',
+              "accepted-root constants",
+          )
+          replace_once(
+              '''def _require_callable(namespace: dict[str, object], name: str, label: str) -> Callable:\n    value = namespace.get(name)\n    if not callable(value):\n        raise SelectedXcodeBuildOrchestratorError(f"{label} exposes no {name} callable")\n    return value\n\n\n''',
+              '''def _require_callable(namespace: dict[str, object], name: str, label: str) -> Callable:\n    value = namespace.get(name)\n    if not callable(value):\n        raise SelectedXcodeBuildOrchestratorError(f"{label} exposes no {name} callable")\n    return value\n\n\ndef _load_python_module(path: Path, *, name: str):\n    spec = importlib.util.spec_from_file_location(name, path)\n    if spec is None or spec.loader is None:\n        raise SelectedXcodeBuildOrchestratorError(f"{name} could not be loaded")\n    module = importlib.util.module_from_spec(spec)\n    sys.modules[name] = module\n    try:\n        spec.loader.exec_module(module)\n    except Exception as error:\n        sys.modules.pop(name, None)\n        raise SelectedXcodeBuildOrchestratorError(f"{name} could not be loaded") from error\n    return module\n\n\n''',
+              "sealed module loader",
+          )
+
+          marker = '''def _destroy_guard_bundle(bundle: Path | None) -> None:\n    if bundle is None:\n        return\n    try:\n        os.chmod(bundle, 0o700)\n    except OSError:\n        pass\n    shutil.rmtree(bundle, ignore_errors=True)\n\n\n'''
+          insertion = marker + '''def _materialize_accepted_build_root_bundle(repo: Path, source_sha: str) -> tuple[Path, Path]:\n    custody_raw = _read_accepted_git_blob(repo, source_sha, ACCEPTED_BUILD_ROOT_CUSTODY_RELATIVE)\n    snapshot_raw = _read_accepted_git_blob(repo, source_sha, ACCEPTED_BUILD_INPUT_SNAPSHOT_RELATIVE)\n    private_tmp = Path("/private/tmp")\n    _require_real_directory(private_tmp, "private temporary root")\n    bundle = Path(tempfile.mkdtemp(prefix="nembra-accepted-build-root-helper.", dir=private_tmp))\n    custody_path = bundle / ACCEPTED_BUILD_ROOT_CUSTODY_RELATIVE.name\n    snapshot_path = bundle / ACCEPTED_BUILD_INPUT_SNAPSHOT_RELATIVE.name\n    try:\n        os.chown(bundle, 0, 0)\n        os.chmod(bundle, 0o700)\n        _remove_acl(bundle)\n        _write_root_readonly(custody_path, custody_raw)\n        _write_root_readonly(snapshot_path, snapshot_raw)\n        os.chmod(bundle, 0o555)\n        metadata = bundle.lstat()\n        if metadata.st_uid != 0 or metadata.st_gid != 0 or stat.S_IMODE(metadata.st_mode) != 0o555:\n            raise SelectedXcodeBuildOrchestratorError(\n                "accepted build-root helper bundle directory is not root read-only"\n            )\n        return bundle, custody_path\n    except Exception:\n        _destroy_guard_bundle(bundle)\n        raise\n\n\ndef _rebase_private_guard_paths(\n    command: Sequence[str], *, live_repo: Path, accepted_root: Path\n) -> list[str]:\n    live_repo = _absolute_lexical(live_repo)\n    accepted_root = _absolute_lexical(accepted_root)\n    _require_real_directory(accepted_root, "accepted build root")\n    expected = {\n        "--lockfile": Path("Podfile.lock"),\n        "--security-podspec": CANONICAL_SDK_RELATIVE / "ThingSmartCryption.podspec",\n        "--security-build": CANONICAL_SDK_RELATIVE / "Build",\n        "--identity-podspec": CANONICAL_RUNTIME_RELATIVE / "NembraTuyaPrivateConfig.podspec",\n        "--identity-sources": CANONICAL_RUNTIME_RELATIVE / "Sources/NembraTuyaPrivateConfig",\n    }\n    rebased = list(command)\n    for flag, relative in expected.items():\n        if _flag_path(command, flag) != _absolute_lexical(live_repo / relative):\n            raise SelectedXcodeBuildOrchestratorError(\n                f"private-input guard {flag} cannot be rebound from a noncanonical live subject"\n            )\n        index = rebased.index(flag)\n        rebased[index + 1] = str(accepted_root / relative)\n    return rebased\n\n\n'''
+          replace_once(marker, insertion, "accepted-root bundle/rebase helpers")
+
+          start = source.index("def _bind_private_read_lease(")
+          end = source.index("\n\ndef orchestrate(", start)
+          new_bind = '''def _bind_private_read_lease(\n    build_origin: dict[str, object],\n    lease: _PrivateReadLease,\n    *,\n    build_cwd: Path | None = None,\n) -> None:\n    original = _require_callable(build_origin, "_run_exec_bound_build", "signed build-origin helper")\n    forced_cwd = _absolute_lexical(build_cwd) if build_cwd is not None else None\n    if forced_cwd is not None:\n        _require_real_directory(forced_cwd, "accepted compiler working root")\n\n    def leased_exec_bound_build(\n        command: Sequence[str],\n        *,\n        name: str,\n        uid: int,\n        gid: int,\n        baseline_groups: Sequence[int],\n        environment: dict[str, str],\n        cwd: Path,\n    ):\n        if not isinstance(name, str) or not name:\n            raise SelectedXcodeBuildOrchestratorError(\n                "build-origin helper exposed no exact build principal"\n            )\n        lease.grant(name)\n        try:\n            return original(\n                command,\n                name=name,\n                uid=uid,\n                gid=gid,\n                baseline_groups=baseline_groups,\n                environment=environment,\n                cwd=forced_cwd if forced_cwd is not None else cwd,\n            )\n        finally:\n            lease.revoke()\n\n    # Functions loaded by exec retain this namespace as globals; rebinding this one\n    # accepted seam scopes private authority to the exact exec-bound compiler child.\n    build_origin["_run_exec_bound_build"] = leased_exec_bound_build\n'''
+          source = source[:start] + new_bind + source[end:]
+
+          replace_once(
+              "    install_custody_blob: str,\n    command: Sequence[str],\n",
+              "    install_custody_blob: str,\n    accepted_generated_manifest_sha256: str | None = None,\n    command: Sequence[str],\n",
+              "orchestrate strict-mode argument",
+          )
+          replace_once(
+              '''    if re.fullmatch(r"[0-9a-f]{40}", source_sha) is None:\n        raise SelectedXcodeBuildOrchestratorError("accepted source SHA is malformed")\n\n    repo = _absolute_lexical(Path(os.getcwd()))\n''',
+              '''    if re.fullmatch(r"[0-9a-f]{40}", source_sha) is None:\n        raise SelectedXcodeBuildOrchestratorError("accepted source SHA is malformed")\n    if (\n        accepted_generated_manifest_sha256 is not None\n        and re.fullmatch(r"[0-9a-f]{64}", accepted_generated_manifest_sha256) is None\n    ):\n        raise SelectedXcodeBuildOrchestratorError(\n            "accepted generated build-input manifest SHA-256 is malformed"\n        )\n\n    repo = _absolute_lexical(Path(os.getcwd()))\n''',
+              "strict manifest validation",
+          )
+          replace_once(
+              '''    live_guard = repo / ACCEPTED_GUARD_RELATIVE\n    private_subjects = _private_read_subjects(command, repo)\n\n    launcher_raw = _decode_verified_git_blob(\n''',
+              '''    live_guard = repo / ACCEPTED_GUARD_RELATIVE\n    live_private_subjects = _private_read_subjects(command, repo)\n\n    launcher_raw = _decode_verified_git_blob(\n''',
+              "live subject naming",
+          )
+          replace_once(
+              '''    bundle: Path | None = None\n    lease: _PrivateReadLease | None = None\n    try:\n        bundle, accepted_guard, _accepted_provenance = _materialize_accepted_guard_bundle(\n            repo, source_sha\n        )\n        guarded_command = _replace_live_guard(\n            command, live_guard=live_guard, accepted_guard=accepted_guard\n        )\n\n        launcher = _load_namespace(\n''',
+              '''    bundle: Path | None = None\n    root_bundle: Path | None = None\n    accepted_root: Path | None = None\n    accepted_root_fingerprint = ""\n    root_custody_module = None\n    lease: _PrivateReadLease | None = None\n    try:\n        canonical_command = list(command)\n        private_subjects = live_private_subjects\n        lease_repo = repo\n        build_cwd = repo\n\n        if accepted_generated_manifest_sha256 is not None:\n            root_bundle, root_helper = _materialize_accepted_build_root_bundle(repo, source_sha)\n            root_custody_module = _load_python_module(\n                root_helper, name="nembra_accepted_build_root_custody"\n            )\n            create_root = getattr(root_custody_module, "create_accepted_build_root", None)\n            if not callable(create_root):\n                raise SelectedXcodeBuildOrchestratorError(\n                    "accepted build-root helper exposes no create_accepted_build_root callable"\n                )\n            created = create_root(repo, source_sha, accepted_generated_manifest_sha256)\n            if not isinstance(created, tuple) or len(created) != 3:\n                raise SelectedXcodeBuildOrchestratorError(\n                    "accepted build-root helper returned malformed authority"\n                )\n            accepted_root, accepted_root_fingerprint, returned_manifest = created\n            if (\n                not isinstance(accepted_root, Path)\n                or not accepted_root.is_absolute()\n                or not isinstance(accepted_root_fingerprint, str)\n                or re.fullmatch(r"[0-9a-f]{64}", accepted_root_fingerprint) is None\n                or returned_manifest != accepted_generated_manifest_sha256\n            ):\n                raise SelectedXcodeBuildOrchestratorError(\n                    "accepted build-root helper returned invalid identity"\n                )\n            canonical_command = _rebase_private_guard_paths(\n                canonical_command, live_repo=repo, accepted_root=accepted_root\n            )\n            private_subjects = (\n                accepted_root / CANONICAL_SDK_RELATIVE,\n                accepted_root / CANONICAL_RUNTIME_RELATIVE,\n            )\n            lease_repo = accepted_root\n            build_cwd = accepted_root\n\n        bundle, accepted_guard, _accepted_provenance = _materialize_accepted_guard_bundle(\n            repo, source_sha\n        )\n        guarded_command = _replace_live_guard(\n            canonical_command, live_guard=live_guard, accepted_guard=accepted_guard\n        )\n\n        launcher = _load_namespace(\n''',
+              "strict accepted-root setup",
+          )
+          replace_once(
+              '''        lease = _PrivateReadLease(private_subjects, repo)\n        _bind_private_read_lease(build_origin, lease)\n''',
+              '''        lease = _PrivateReadLease(private_subjects, lease_repo)\n        _bind_private_read_lease(\n            build_origin,\n            lease,\n            build_cwd=build_cwd,\n        )\n''',
+              "accepted-root lease/cwd binding",
+          )
+          replace_once(
+              '''        if lease._opened or lease._principal:\n            raise SelectedXcodeBuildOrchestratorError(\n                "private read lease survived the guarded build window"\n            )\n        return stage_root, fingerprint\n    finally:\n        if lease is not None and (lease._opened or lease._principal):\n            lease.revoke(suppress_errors=True)\n        _destroy_guard_bundle(bundle)\n''',
+              '''        if lease._opened or lease._principal:\n            raise SelectedXcodeBuildOrchestratorError(\n                "private read lease survived the guarded build window"\n            )\n        if accepted_root is not None:\n            current_fingerprint = getattr(\n                root_custody_module, "accepted_build_root_fingerprint", None\n            )\n            if not callable(current_fingerprint):\n                raise SelectedXcodeBuildOrchestratorError(\n                    "accepted build-root helper exposes no fingerprint callable"\n                )\n            if current_fingerprint(accepted_root) != accepted_root_fingerprint:\n                raise SelectedXcodeBuildOrchestratorError(\n                    "accepted build root changed during the compiler window"\n                )\n        return stage_root, fingerprint\n    finally:\n        if lease is not None and (lease._opened or lease._principal):\n            lease.revoke(suppress_errors=True)\n        try:\n            if accepted_root is not None and root_custody_module is not None:\n                destroy_root = getattr(\n                    root_custody_module, "destroy_accepted_build_root", None\n                )\n                if not callable(destroy_root):\n                    raise SelectedXcodeBuildOrchestratorError(\n                        "accepted build-root helper exposes no destroy callable"\n                    )\n                destroy_root(accepted_root)\n        finally:\n            _destroy_guard_bundle(root_bundle)\n            _destroy_guard_bundle(bundle)\n''',
+              "accepted-root post-build verification/cleanup",
+          )
+          replace_once(
+              '''    parser.add_argument("--install-custody-blob", required=True)\n    parser.add_argument("command", nargs=argparse.REMAINDER)\n''',
+              '''    parser.add_argument("--install-custody-blob", required=True)\n    parser.add_argument("--accepted-generated-manifest-sha256")\n    parser.add_argument("command", nargs=argparse.REMAINDER)\n''',
+              "strict CLI option",
+          )
+          replace_once(
+              '''            install_custody_base64=args.install_custody_base64,\n            install_custody_blob=args.install_custody_blob,\n            command=args.command,\n''',
+              '''            install_custody_base64=args.install_custody_base64,\n            install_custody_blob=args.install_custody_blob,\n            accepted_generated_manifest_sha256=(\n                args.accepted_generated_manifest_sha256.lower()\n                if args.accepted_generated_manifest_sha256\n                else None\n            ),\n            command=args.command,\n''',
+              "strict CLI forwarding",
+          )
+
+          path.write_text(source, encoding="utf-8")
+          PY
+
+          /usr/bin/python3 -m py_compile scripts/ci/capture_selected_xcode_build_orchestrator.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Commit clean materialization and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Nembra GO worker"
+          git config user.email "nembra-go@users.noreply.github.com"
+          rm .github/workflows/capture-accepted-root-build-wiring-materialize-once.yml
+          git add scripts/ci/capture_selected_xcode_build_orchestrator.py .github/workflows/capture-accepted-root-build-wiring-materialize-once.yml
+          git commit -m "feat(capture): bind strict compiler mode to accepted root"
+          git push origin "HEAD:$BRANCH"
