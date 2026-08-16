@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - scripts/ci/capture_accepted_build_input_snapshot.py
-      - scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
       - scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
       - .github/workflows/capture-generated-shared-ancestor-continuity.yml
   workflow_dispatch:
@@ -17,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  EXACT_PARENT: fe40c025eb10247c73820f4001ab63affaa60af7
+  EXACT_PARENT: 1f9c5213d99116b93635e48061f29c88bffc2db8
 
 jobs:
   exact-portable:
@@ -46,7 +45,6 @@ jobs:
           expected="$(printf '%s\n' \
             .github/workflows/capture-generated-shared-ancestor-continuity.yml \
             scripts/ci/capture_accepted_build_input_snapshot.py \
-            scripts/ci/tests/test_capture_accepted_build_input_snapshot.py \
             scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
           test "$changed" = "$expected"
           git diff --check "$EXACT_PARENT"...HEAD
