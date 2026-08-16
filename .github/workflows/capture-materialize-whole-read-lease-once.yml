@@ -1,0 +1,72 @@
+name: Capture whole accepted-root read lease materialize once
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-accepted-root-whole-read-lease-bf2f-sol-20260815
+
+permissions:
+  contents: write
+
+env:
+  EXACT_PARENT: bf2f1e1d718849ef6741ec532e28975527311e95
+  BRANCH: repair/v17-capture-accepted-root-whole-read-lease-bf2f-sol-20260815
+  PYTHONDONTWRITEBYTECODE: 1
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: repair/v17-capture-accepted-root-whole-read-lease-bf2f-sol-20260815
+          fetch-depth: 0
+
+      - name: Bind authoring scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          actual="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-accepted-root-whole-read-lease-repair.yml \
+            .github/workflows/capture-materialize-whole-read-lease-once.yml \
+            scripts/ci/materialize_capture_accepted_root_whole_read_lease_once.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+
+      - name: Materialize and self-test repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B scripts/ci/materialize_capture_accepted_root_whole_read_lease_once.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_root_build_composition.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_root_whole_read_lease_repair.py
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Publish clean four-path repair lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Nembra GO worker"
+          git config user.email "nembra-go@users.noreply.github.com"
+          authoring_head="$(git rev-parse HEAD)"
+          product_paths=(
+            .github/workflows/capture-accepted-root-whole-read-lease-repair.yml
+            scripts/ci/capture_selected_xcode_build_orchestrator.py
+            scripts/ci/tests/test_capture_accepted_root_build_composition.py
+            scripts/ci/tests/test_capture_accepted_root_whole_read_lease_repair.py
+          )
+          git add -N "${product_paths[@]}"
+          patch="$RUNNER_TEMP/whole-read-lease-repair.patch"
+          git diff --binary --no-ext-diff -- "${product_paths[@]}" > "$patch"
+          test -s "$patch"
+          git reset --hard "$EXACT_PARENT"
+          git apply --index "$patch"
+          actual="$(git diff --cached --name-only "$EXACT_PARENT" | LC_ALL=C sort)"
+          expected="$(printf '%s\n' "${product_paths[@]}" | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git diff --cached --check
+          git commit -m "fix(capture): lease complete accepted root to compiler"
+          git push --force-with-lease="$BRANCH:$authoring_head" origin "HEAD:$BRANCH"
