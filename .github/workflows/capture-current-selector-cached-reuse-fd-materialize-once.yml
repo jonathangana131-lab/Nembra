@@ -17,6 +17,10 @@ jobs:
     env:
       EXACT_PARENT: 2c59ae0a9001987a57c3b5819f546a52d9264db0
       PYTHONDONTWRITEBYTECODE: 1
+      OLD_B64: ICAgICAgICAgICAgICAgIHNlbGVjdGlvbl9hbmNlc3RvcnMuYXBwZW5kKChjYWNoZWRfZGVzY3JpcHRvciwgYWRtaXR0ZWQsIHJlbGF0aXZlKSkKICAgICAgICAgICAgICAgIG9zLmNsb3NlKGN1cnJlbnQpCiAgICAgICAgICAgICAgICBjdXJyZW50ID0gb3MuZHVwKGNhY2hlZF9kZXNjcmlwdG9yKQogICAgICAgICAgICAgICAgY29udGludWUK
+      NEW_B64: ICAgICAgICAgICAgICAgIHNlbGVjdGlvbl9hbmNlc3RvcnMuYXBwZW5kKChjYWNoZWRfZGVzY3JpcHRvciwgYWRtaXR0ZWQsIHJlbGF0aXZlKSkKICAgICAgICAgICAgICAgIHJlcGxhY2VtZW50ID0gb3MuZHVwKGNhY2hlZF9kZXNjcmlwdG9yKQogICAgICAgICAgICAgICAgcHJldmlvdXMgPSBjdXJyZW50CiAgICAgICAgICAgICAgICBjdXJyZW50ID0gcmVwbGFjZW1lbnQKICAgICAgICAgICAgICAgIG9zLmNsb3NlKHByZXZpb3VzKQogICAgICAgICAgICAgICAgY29udGludWUK
+      MARKER_B64: ICAgIGRlZiB0ZXN0X2NhY2hlX2R1cF9mYWlsdXJlX2Nsb3Nlc19uZXdseV9vcGVuZWRfY2hpbGRfZGVzY3JpcHRvcihzZWxmKSAtPiBOb25lOgo=
+      REGRESSION_B64: ICAgIGRlZiB0ZXN0X2NhY2hlZF9yZXVzZV9kdXBfZmFpbHVyZV9kb2VzX25vdF9jbG9zZV9yZXVzZWRfZmRfbnVtYmVyKHNlbGYpIC0+IE5vbmU6CiAgICAgICAgaGVscGVyID0gbG9hZCgpCiAgICAgICAgd2l0aCB0ZW1wZmlsZS5UZW1wb3JhcnlEaXJlY3RvcnkocHJlZml4PSJuZW1icmEtY2FjaGVkLXJldXNlLWR1cC1jbGVhbnVwLSIpIGFzIHJhdzoKICAgICAgICAgICAgcm9vdCA9IFBhdGgocmF3KQogICAgICAgICAgICAocm9vdCAvICJMb2NhbFNlY3JldHMvVHV5YVNESyIpLm1rZGlyKHBhcmVudHM9VHJ1ZSkKICAgICAgICAgICAgKHJvb3QgLyAiTG9jYWxTZWNyZXRzL1R1eWFSdW50aW1lIikubWtkaXIocGFyZW50cz1UcnVlKQogICAgICAgICAgICBzZW50aW5lbF9wYXRoID0gcm9vdCAvICJzZW50aW5lbC5iaW4iCiAgICAgICAgICAgIHNlbnRpbmVsX3BhdGgud3JpdGVfYnl0ZXMoYiJzZW50aW5lbFxuIikKICAgICAgICAgICAgcm9vdF9mZCA9IGhlbHBlci5fb3Blbl9yZXBvc2l0b3J5X3Jvb3Qocm9vdCkKICAgICAgICAgICAgY2FjaGU6IGRpY3RbUGF0aCwgdHVwbGVbaW50LCBvcy5zdGF0X3Jlc3VsdF1dID0ge30KICAgICAgICAgICAgb3BlbmVkLCBfbWV0YWRhdGEsIF9raW5kID0gaGVscGVyLl9vcGVuX3N1YmplY3QoCiAgICAgICAgICAgICAgICByb290X2ZkLAogICAgICAgICAgICAgICAgUGF0aCgiTG9jYWxTZWNyZXRzL1R1eWFTREsiKSwKICAgICAgICAgICAgICAgIGNhY2hlLAogICAgICAgICAgICApCiAgICAgICAgICAgIG9zLmNsb3NlKG9wZW5lZCkKICAgICAgICAgICAgY2FjaGVkX2Rlc2NyaXB0b3IgPSBjYWNoZVtQYXRoKCJMb2NhbFNlY3JldHMiKV1bMF0KICAgICAgICAgICAgcmVhbF9kdXAgPSBvcy5kdXAKICAgICAgICAgICAgc2VudGluZWxfZmQ6IGludCB8IE5vbmUgPSBOb25lCgogICAgICAgICAgICBkZWYgZmFpbF9jYWNoZWRfcmV1c2UoZGVzY3JpcHRvcjogaW50KSAtPiBpbnQ6CiAgICAgICAgICAgICAgICBub25sb2NhbCBzZW50aW5lbF9mZAogICAgICAgICAgICAgICAgaWYgZGVzY3JpcHRvciA9PSBjYWNoZWRfZGVzY3JpcHRvcjoKICAgICAgICAgICAgICAgICAgICBzZW50aW5lbF9mZCA9IG9zLm9wZW4oc2VudGluZWxfcGF0aCwgb3MuT19SRE9OTFkpCiAgICAgICAgICAgICAgICAgICAgcmFpc2UgT1NFcnJvcihlcnJuby5FTUZJTEUsICJzeW50aGV0aWMgY2FjaGVkLXJldXNlIGR1cCBleGhhdXN0aW9uIikKICAgICAgICAgICAgICAgIHJldHVybiByZWFsX2R1cChkZXNjcmlwdG9yKQoKICAgICAgICAgICAgdHJ5OgogICAgICAgICAgICAgICAgd2l0aCBtb2NrLnBhdGNoLm9iamVjdChoZWxwZXIub3MsICJkdXAiLCBzaWRlX2VmZmVjdD1mYWlsX2NhY2hlZF9yZXVzZSk6CiAgICAgICAgICAgICAgICAgICAgd2l0aCBzZWxmLmFzc2VydFJhaXNlc1JlZ2V4KE9TRXJyb3IsICJzeW50aGV0aWMgY2FjaGVkLXJldXNlIGR1cCBleGhhdXN0aW9uIik6CiAgICAgICAgICAgICAgICAgICAgICAgIGhlbHBlci5fb3Blbl9zdWJqZWN0KAogICAgICAgICAgICAgICAgICAgICAgICAgICAgcm9vdF9mZCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgIFBhdGgoIkxvY2FsU2VjcmV0cy9UdXlhUnVudGltZSIpLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgY2FjaGUsCiAgICAgICAgICAgICAgICAgICAgICAgICkKICAgICAgICAgICAgICAgIHNlbGYuYXNzZXJ0SXNOb3ROb25lKHNlbnRpbmVsX2ZkKQogICAgICAgICAgICAgICAgYXNzZXJ0IHNlbnRpbmVsX2ZkIGlzIG5vdCBOb25lCiAgICAgICAgICAgICAgICBvcy5mc3RhdChzZW50aW5lbF9mZCkKICAgICAgICAgICAgICAgIG9zLmZzdGF0KGNhY2hlZF9kZXNjcmlwdG9yKQogICAgICAgICAgICBmaW5hbGx5OgogICAgICAgICAgICAgICAgaWYgc2VudGluZWxfZmQgaXMgbm90IE5vbmU6CiAgICAgICAgICAgICAgICAgICAgdHJ5OgogICAgICAgICAgICAgICAgICAgICAgICBvcy5jbG9zZShzZW50aW5lbF9mZCkKICAgICAgICAgICAgICAgICAgICBleGNlcHQgT1NFcnJvcjoKICAgICAgICAgICAgICAgICAgICAgICAgcGFzcwogICAgICAgICAgICAgICAgaGVscGVyLl9jbG9zZV9kaXJlY3RvcnlfY2FjaGUoY2FjaGUpCiAgICAgICAgICAgICAgICBvcy5jbG9zZShyb290X2ZkKQoK
     steps:
       - uses: actions/checkout@v6
         with:
@@ -28,88 +32,30 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "$EXACT_PARENT"
-          test "$(git diff --name-only HEAD^...HEAD)" = ".github/workflows/capture-current-selector-cached-reuse-fd-materialize-once.yml"
-          git diff --check HEAD^...HEAD
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD)"
+          test "$changed" = ".github/workflows/capture-current-selector-cached-reuse-fd-materialize-once.yml"
+          git diff --check "$EXACT_PARENT"...HEAD
 
       - name: Materialize ownership transfer repair
         shell: bash
         run: |
           set -euo pipefail
           /usr/bin/python3 -B -I - <<'PY'
+          import base64
+          import os
           from pathlib import Path
-
           helper = Path("scripts/ci/capture_accepted_build_input_snapshot.py")
           source = helper.read_text(encoding="utf-8")
-          old = '''                selection_ancestors.append((cached_descriptor, admitted, relative))
-                os.close(current)
-                current = os.dup(cached_descriptor)
-                continue
-'''
-          new = '''                selection_ancestors.append((cached_descriptor, admitted, relative))
-                replacement = os.dup(cached_descriptor)
-                previous = current
-                current = replacement
-                os.close(previous)
-                continue
-'''
+          old = base64.b64decode(os.environ["OLD_B64"]).decode("utf-8")
+          new = base64.b64decode(os.environ["NEW_B64"]).decode("utf-8")
           if source.count(old) != 1:
               raise SystemExit("cached-reuse ownership seam did not match exactly once")
           helper.write_text(source.replace(old, new), encoding="utf-8")
-
           test = Path("scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py")
           source = test.read_text(encoding="utf-8")
-          marker = '''    def test_cache_dup_failure_closes_newly_opened_child_descriptor(self) -> None:
-'''
-          regression = '''    def test_cached_reuse_dup_failure_does_not_close_reused_fd_number(self) -> None:
-        helper = load()
-        with tempfile.TemporaryDirectory(prefix="nembra-cached-reuse-dup-cleanup-") as raw:
-            root = Path(raw)
-            (root / "LocalSecrets/TuyaSDK").mkdir(parents=True)
-            (root / "LocalSecrets/TuyaRuntime").mkdir(parents=True)
-            sentinel_path = root / "sentinel.bin"
-            sentinel_path.write_bytes(b"sentinel\\n")
-            root_fd = helper._open_repository_root(root)
-            cache: dict[Path, tuple[int, os.stat_result]] = {}
-            opened, _metadata, _kind = helper._open_subject(
-                root_fd,
-                Path("LocalSecrets/TuyaSDK"),
-                cache,
-            )
-            os.close(opened)
-            cached_descriptor = cache[Path("LocalSecrets")][0]
-            real_dup = os.dup
-            sentinel_fd: int | None = None
-
-            def fail_cached_reuse(descriptor: int) -> int:
-                nonlocal sentinel_fd
-                if descriptor == cached_descriptor:
-                    sentinel_fd = os.open(sentinel_path, os.O_RDONLY)
-                    raise OSError(errno.EMFILE, "synthetic cached-reuse dup exhaustion")
-                return real_dup(descriptor)
-
-            try:
-                with mock.patch.object(helper.os, "dup", side_effect=fail_cached_reuse):
-                    with self.assertRaisesRegex(OSError, "synthetic cached-reuse dup exhaustion"):
-                        helper._open_subject(
-                            root_fd,
-                            Path("LocalSecrets/TuyaRuntime"),
-                            cache,
-                        )
-                self.assertIsNotNone(sentinel_fd)
-                assert sentinel_fd is not None
-                os.fstat(sentinel_fd)
-                os.fstat(cached_descriptor)
-            finally:
-                if sentinel_fd is not None:
-                    try:
-                        os.close(sentinel_fd)
-                    except OSError:
-                        pass
-                helper._close_directory_cache(cache)
-                os.close(root_fd)
-
-'''
+          marker = base64.b64decode(os.environ["MARKER_B64"]).decode("utf-8")
+          regression = base64.b64decode(os.environ["REGRESSION_B64"]).decode("utf-8")
           if source.count(marker) != 1:
               raise SystemExit("cached-reuse regression insertion seam did not match exactly once")
           test.write_text(source.replace(marker, regression + marker), encoding="utf-8")
