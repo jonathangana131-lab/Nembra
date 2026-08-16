@@ -1,0 +1,172 @@
+name: Capture Accepted Build Root Custody
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/capture_accepted_build_root_custody.py
+      - scripts/ci/tests/test_capture_accepted_build_root_custody.py
+      - .github/workflows/capture-accepted-build-root-custody.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-accepted-build-root-custody-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_ACCEPTED_INPUT_PARENT: dde5074c91c077911cd40bab615ad0d0d0a9b683
+  PYTHONDONTWRITEBYTECODE: 1
+
+jobs:
+  custody:
+    name: Prove sealed accepted compiler-input root + exact helper bundle
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact additive custody child
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$EXACT_ACCEPTED_INPUT_PARENT")" = "$EXACT_ACCEPTED_INPUT_PARENT"
+          actual="$(git diff --name-only "$EXACT_ACCEPTED_INPUT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-accepted-build-root-custody.yml \
+            scripts/ci/capture_accepted_build_root_custody.py \
+            scripts/ci/tests/test_capture_accepted_build_root_custody.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git diff --check "$EXACT_ACCEPTED_INPUT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile custody helper and witness without artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+          for raw in (
+              "scripts/ci/capture_accepted_build_input_snapshot.py",
+              "scripts/ci/capture_accepted_build_root_custody.py",
+              "scripts/ci/tests/test_capture_accepted_build_root_custody.py",
+          ):
+              path = Path(raw)
+              compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
+          PY
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Require noninteractive root authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/sudo -n /usr/bin/true
+
+      - name: Materialize exact root-sealed helper sibling bundle
+        id: bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          bundle="/private/tmp/nembra-capture-root-custody-exec-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          /usr/bin/sudo -n /bin/rm -rf "$bundle"
+          /bin/mkdir -p "$bundle/scripts/ci/tests"
+          for path in \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/capture_accepted_build_root_custody.py \
+            scripts/ci/tests/test_capture_accepted_build_root_custody.py
+          do
+            /usr/bin/git show "${expected_head}:${path}" > "$bundle/$path"
+            expected_blob="$(/usr/bin/git rev-parse "${expected_head}:${path}")"
+            actual_blob="$(/usr/bin/git hash-object "$bundle/$path")"
+            test "$actual_blob" = "$expected_blob"
+          done
+          /usr/bin/sudo -n /usr/sbin/chown -R root:wheel "$bundle"
+          /usr/bin/sudo -n /usr/bin/find "$bundle" -type d -exec /bin/chmod 0555 {} +
+          /usr/bin/sudo -n /usr/bin/find "$bundle" -type f -exec /bin/chmod 0444 {} +
+          printf '%s\n' "$bundle" > "$RUNNER_TEMP/accepted-root-helper-bundle-path"
+          printf 'bundle=%s\n' "$bundle" >> "$GITHUB_OUTPUT"
+
+      - name: Prove sealed bundle ignores poisoned live sibling and rejects field writes
+        shell: bash
+        env:
+          SEALED_BUNDLE: ${{ steps.bundle.outputs.bundle }}
+        run: |
+          set -euo pipefail
+          field_user="$(/usr/bin/id -un)"
+          live_snapshot="scripts/ci/capture_accepted_build_input_snapshot.py"
+          backup="$RUNNER_TEMP/live-snapshot-backup.py"
+          /bin/cp "$live_snapshot" "$backup"
+          cleanup() {
+            /bin/cp "$backup" "$live_snapshot" || true
+          }
+          trap cleanup EXIT
+
+          if /usr/bin/sudo -n -u "$field_user" /bin/sh -c "printf 'field-mutation\\n' >> '$SEALED_BUNDLE/scripts/ci/capture_accepted_build_root_custody.py'" 2>/dev/null; then
+            echo 'field identity unexpectedly mutated sealed custody helper' >&2
+            exit 1
+          fi
+
+          printf '%s\n' 'raise RuntimeError("poisoned live snapshot helper executed")' > "$live_snapshot"
+
+          /usr/bin/sudo -n env \
+            NEMBRA_TEST_FIELD_USER="$field_user" \
+            PYTHONDONTWRITEBYTECODE=1 \
+            /usr/bin/python3 -B -I \
+            "$SEALED_BUNDLE/scripts/ci/tests/test_capture_accepted_build_root_custody.py" \
+            --field-user "$field_user"
+
+          cleanup
+          trap - EXIT
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          for path in \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/capture_accepted_build_root_custody.py \
+            scripts/ci/tests/test_capture_accepted_build_root_custody.py
+          do
+            expected_blob="$(/usr/bin/git rev-parse "${expected_head}:${path}")"
+            actual_blob="$(/usr/bin/git hash-object "$SEALED_BUNDLE/$path")"
+            test "$actual_blob" = "$expected_blob"
+          done
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Preserve production-boundary truth
+        shell: bash
+        env:
+          SEALED_BUNDLE: ${{ steps.bundle.outputs.bundle }}
+        run: |
+          set -euo pipefail
+          helper="$SEALED_BUNDLE/scripts/ci/capture_accepted_build_root_custody.py"
+          grep -Fq 'snapshot.stage_accepted_build_inputs(' "$helper"
+          grep -Fq 'os.chmod(root, 0o700)' "$helper"
+          grep -Fq 'accepted_build_root_fingerprint' "$helper"
+          grep -Fq 'def create_accepted_build_root(' "$helper"
+          grep -Fq 'Path(__file__).with_name("capture_accepted_build_input_snapshot.py")' "$helper"
+          echo "NEMBRA_ACCEPTED_BUILD_ROOT_BOUNDARY rootCustodyProved=true exactSiblingBundleProved=true xcodeBuildWired=false signingAuthority=false installAuthority=false deviceTouched=false bluetoothTouched=false physicalAuthorityCreated=false"
+
+      - name: Remove sealed validation bundle
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -f "$RUNNER_TEMP/accepted-root-helper-bundle-path"; then
+            bundle="$(cat "$RUNNER_TEMP/accepted-root-helper-bundle-path")"
+            case "$bundle" in
+              /private/tmp/nembra-capture-root-custody-exec-*)
+                /usr/bin/sudo -n /bin/chmod -R u+rwX "$bundle" 2>/dev/null || true
+                /usr/bin/sudo -n /bin/rm -rf "$bundle"
+                ;;
+              *)
+                echo "refusing unexpected cleanup path: $bundle" >&2
+                exit 1
+                ;;
+            esac
+          fi
