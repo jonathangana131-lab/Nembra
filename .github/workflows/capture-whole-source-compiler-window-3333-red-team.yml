@@ -1,0 +1,64 @@
+name: Capture Whole-Source Compiler Window 3333 Red Team
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - scripts/field/install_one_time_capture.command
+      - scripts/ci/tests/test_capture_whole_source_compiler_window_current.py
+      - .github/workflows/capture-whole-source-compiler-window-3333-red-team.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-whole-source-3333-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_ATTACKED_PARENT: 0393a09c9583f5aa6bab6e65ae742bf422370de6
+  PYTHONDONTWRITEBYTECODE: 1
+
+jobs:
+  exploit-positive-current-source-window:
+    name: Prove 3333 still consumes mutable whole-source checkout
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact attacked carrier and diagnostic-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_head='${{ github.event.pull_request.head.sha || github.sha }}'
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$EXACT_ATTACKED_PARENT")" = "$EXACT_ATTACKED_PARENT"
+          actual="$(git diff --name-only "$EXACT_ATTACKED_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-whole-source-compiler-window-3333-red-team.yml \
+            scripts/ci/tests/test_capture_whole_source_compiler_window_current.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git diff --check "$EXACT_ATTACKED_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Reproduce endpoint-equality source-consumption gap on exact 3333 carrier
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_whole_source_compiler_window_current.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Preserve exploit-positive truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            'EXPLOIT-POSITIVE SUCCESS: exact #3333 carrier still lacks whole-source compiler-window custody.' \
+            'Green here is adversarial evidence, not product acceptance.' \
+            'No install, device, Bluetooth, Tuya traffic, telemetry, command, or physical ES80 authority is created.'
