@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 jobs:
   native-acl-single-process:
@@ -32,6 +33,8 @@ jobs:
           /usr/bin/git diff --quiet "$parent"...HEAD -- scripts/ci/capture_selected_xcode_build_orchestrator.py
 
       - name: Prove single-process held-fd ACL rollback after pathname replacement
+        id: oracle
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -241,11 +244,56 @@ jobs:
           replacement="$root/accepted-root"
           /usr/bin/sudo -n /bin/mkdir -m 700 "$subject"
 
-          /usr/bin/sudo -n "$work/acl_single_process" \
+          set +e
+          output="$(/usr/bin/sudo -n "$work/acl_single_process" \
             "$field_user" \
             "$subject" \
             "$moved" \
-            "$replacement"
+            "$replacement" 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          printf '%s\n' "$status" > "$RUNNER_TEMP/nembra-native-acl-single-status.txt"
+          printf '%s\n' "$output" > "$RUNNER_TEMP/nembra-native-acl-single-output.txt"
+          exit "$status"
+
+      - name: Publish exact native ACL diagnostic to PR
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const statusPath = path.join(process.env.RUNNER_TEMP, 'nembra-native-acl-single-status.txt');
+            const outputPath = path.join(process.env.RUNNER_TEMP, 'nembra-native-acl-single-output.txt');
+            const status = fs.existsSync(statusPath) ? fs.readFileSync(statusPath, 'utf8').trim() : 'missing';
+            let output = fs.existsSync(outputPath) ? fs.readFileSync(outputPath, 'utf8') : 'oracle did not persist output';
+            output = output.slice(-12000).replaceAll('```', '~~~');
+            const body = [
+              `NEMBRA_NATIVE_ACL_SINGLE_PROCESS_DIAGNOSTIC exactHead=${context.sha} exit=${status}`,
+              '',
+              '```text',
+              output,
+              '```',
+              '',
+              'Validation only. Production `_PrivateReadLease` unchanged. PHYSICAL NO-GO.'
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });
+
+      - name: Reassert oracle result after durable diagnostic
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          status_file="$RUNNER_TEMP/nembra-native-acl-single-status.txt"
+          test -f "$status_file"
+          test "$(cat "$status_file")" = '0'
 
       - name: Preserve diagnostic-only boundary
         if: always()
