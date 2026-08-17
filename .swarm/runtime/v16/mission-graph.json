@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 43,
+    "classifiedPRTotal": 42,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1484,17 +1484,6 @@
         "similarity": 0.313,
         "title": "[Capture P0][V17][CI] Repair provenance launcher ABI oracle"
       },
-      "3541": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-current-accepted-root-acl-transport",
-        "pr": 3541,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.085,
-        "title": "[Capture P0][VALIDATION] Prove native fd ACL access semantics on held root"
-      },
       "3542": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1570,7 +1559,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-17T22:39:19Z",
+    "liveRefreshAt": "2026-08-17T22:40:03Z",
     "liveRefreshDuplicatesSuppressed": [
       3545
     ],
@@ -5355,10 +5344,10 @@
       "userValue": 7
     }
   },
-  "revision": 879,
+  "revision": 880,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-17T22:39:21Z",
+  "updatedAt": "2026-08-17T22:40:05Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5434,7 +5423,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-17T22:39:19Z",
+      "updatedAt": "2026-08-17T22:40:03Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
