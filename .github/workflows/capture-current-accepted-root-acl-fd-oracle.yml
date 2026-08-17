@@ -46,9 +46,16 @@ jobs:
           #include <string.h>
           #include <unistd.h>
 
+          static int errno_exit_code = 2;
+
+          static void classify_errno_phase(int code) {
+              errno_exit_code = code;
+          }
+
           static void fail_errno(const char *label) {
-              fprintf(stderr, "%s: %s\n", label, strerror(errno));
-              exit(2);
+              fprintf(stderr, "NEMBRA_NATIVE_FD_ORACLE_FAILURE code=%d call=%s errno=%d message=%s\n",
+                      errno_exit_code, label, errno, strerror(errno));
+              exit(errno_exit_code);
           }
 
           static void fail_text(const char *label) {
@@ -151,6 +158,7 @@ jobs:
           }
 
           static void run_case(const char *root, const char *case_name, const char *principal, int seed_baseline) {
+              const int phase_base = seed_baseline ? 100 : 20;
               char subject[1024];
               char moved[1024];
               if (snprintf(subject, sizeof(subject), "%s/%s.accepted", root, case_name) >= (int)sizeof(subject) ||
@@ -158,25 +166,34 @@ jobs:
                   fail_text("path buffer exhausted");
               }
 
+              classify_errno_phase(phase_base + 0);
               if (mkdir(subject, 0700) != 0) fail_errno("mkdir subject");
               if (seed_baseline) {
+                  classify_errno_phase(phase_base + 1);
                   run_chmod_add(subject, "user:root allow readattr");
               }
 
+              classify_errno_phase(phase_base + 2);
               int fd = open(subject, O_RDONLY | O_DIRECTORY);
               if (fd < 0) fail_errno("open subject");
+              classify_errno_phase(phase_base + 3);
               require_identity(fd, subject, "pre-grant identity mismatch");
 
+              classify_errno_phase(phase_base + 4);
               acl_t baseline = get_fd_acl(fd);
+              classify_errno_phase(phase_base + 5);
               int baseline_has_entry = acl_has_entry(baseline);
               if ((!seed_baseline && baseline_has_entry) || (seed_baseline && !baseline_has_entry)) {
                   fprintf(stderr, "%s: baseline entry-presence mismatch seeded=%d observed=%d\n",
                           case_name, seed_baseline, baseline_has_entry);
                   exit(7);
               }
+              classify_errno_phase(phase_base + 6);
               acl_t baseline_restore = acl_dup(baseline);
               if (!baseline_restore) fail_errno("acl_dup baseline");
+              classify_errno_phase(phase_base + 7);
               char *baseline_text = acl_text(baseline);
+              classify_errno_phase(phase_base + 8);
               if (acl_free(baseline) != 0) fail_errno("acl_free baseline");
 
               char grant[1024];
@@ -185,39 +202,60 @@ jobs:
                            principal) >= (int)sizeof(grant)) {
                   fail_text("grant buffer exhausted");
               }
+              classify_errno_phase(phase_base + 9);
               run_chmod_add(subject, grant);
+              classify_errno_phase(phase_base + 10);
               require_identity(fd, subject, "post-grant identity mismatch");
 
+              classify_errno_phase(phase_base + 11);
               acl_t granted = get_fd_acl(fd);
+              classify_errno_phase(phase_base + 12);
               char *granted_text = acl_text(granted);
+              classify_errno_phase(phase_base + 13);
               if (acl_free(granted) != 0) fail_errno("acl_free granted");
               if (strcmp(granted_text, baseline_text) == 0) {
                   fail_text("held fd did not observe pathname grant");
               }
               free(granted_text);
 
+              classify_errno_phase(phase_base + 14);
               if (rename(subject, moved) != 0) fail_errno("rename accepted root");
+              classify_errno_phase(phase_base + 15);
               if (mkdir(subject, 0700) != 0) fail_errno("mkdir attacker replacement");
+              classify_errno_phase(phase_base + 16);
               require_identity(fd, moved, "moved accepted-root identity mismatch");
 
+              classify_errno_phase(phase_base + 17);
               acl_t replacement_before_acl = get_path_acl(subject);
+              classify_errno_phase(phase_base + 18);
               char *replacement_before = acl_text(replacement_before_acl);
+              classify_errno_phase(phase_base + 19);
               if (acl_free(replacement_before_acl) != 0) fail_errno("acl_free replacement before");
 
               if (!seed_baseline) {
+                  classify_errno_phase(phase_base + 20);
                   remove_fd_acl(fd);
               } else {
+                  classify_errno_phase(phase_base + 21);
                   if (acl_valid_fd_np(fd, ACL_TYPE_EXTENDED, baseline_restore) != 0) fail_errno("acl_valid_fd_np baseline");
+                  classify_errno_phase(phase_base + 22);
                   if (acl_set_fd_np(fd, baseline_restore, ACL_TYPE_EXTENDED) != 0) fail_errno("acl_set_fd_np restore baseline");
               }
+              classify_errno_phase(phase_base + 23);
               if (acl_free(baseline_restore) != 0) fail_errno("acl_free baseline restore");
+              classify_errno_phase(phase_base + 24);
               require_identity(fd, moved, "post-restore moved identity mismatch");
 
+              classify_errno_phase(phase_base + 25);
               require_text_equal("moved accepted-root ACL was not exactly restored", get_path_acl(moved), baseline_text);
+              classify_errno_phase(phase_base + 26);
               require_text_equal("attacker replacement ACL changed", get_path_acl(subject), replacement_before);
 
+              classify_errno_phase(phase_base + 27);
               acl_t fd_after = get_fd_acl(fd);
+              classify_errno_phase(phase_base + 28);
               char *fd_after_text = acl_text(fd_after);
+              classify_errno_phase(phase_base + 29);
               if (acl_free(fd_after) != 0) fail_errno("acl_free fd after");
               if (strcmp(fd_after_text, baseline_text) != 0) {
                   fprintf(stderr, "%s: held-fd post-restore ACL differs from baseline\n", case_name);
@@ -230,8 +268,11 @@ jobs:
               free(fd_after_text);
               free(replacement_before);
               free(baseline_text);
+              classify_errno_phase(phase_base + 30);
               if (close(fd) != 0) fail_errno("close subject fd");
+              classify_errno_phase(phase_base + 31);
               if (rmdir(subject) != 0) fail_errno("rmdir replacement");
+              classify_errno_phase(phase_base + 32);
               if (rmdir(moved) != 0) fail_errno("rmdir moved");
           }
 
