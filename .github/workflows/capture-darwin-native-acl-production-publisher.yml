@@ -1,0 +1,74 @@
+name: Capture Darwin Native ACL Production Publisher
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-darwin-native-acl-production-publisher.yml
+      - .github/workflows/capture-darwin-native-acl-production-materializer.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    if: github.head_ref == 'repair/v17-capture-darwin-native-acl-production-gpt56sol-20260817'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind recovery authoring scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='b87d375e5ae419fd5569c2cd63a6b42fc45174b0'
+          /usr/bin/git merge-base --is-ancestor "$parent" HEAD
+          changed="$(/usr/bin/git diff --name-only "$parent"...HEAD | sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-darwin-native-acl-production-materializer.yml \
+            .github/workflows/capture-darwin-native-acl-production-publisher.yml | sort)"
+          test "$changed" = "$expected"
+
+      - name: Execute exact materialization payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/capture-darwin-native-acl-production-materializer.yml')
+          text = path.read_text()
+          start_marker = '      - name: Materialize production and permanent regressions\n        shell: bash\n        run: |\n'
+          end_marker = '\n      - name: Publish clean production head\n'
+          if text.count(start_marker) != 1 or text.count(end_marker) != 1:
+              raise SystemExit('materializer payload markers moved')
+          body = text.split(start_marker, 1)[1].split(end_marker, 1)[0]
+          lines = body.splitlines()
+          if not lines or any(line and not line.startswith('          ') for line in lines):
+              raise SystemExit('materializer payload indentation is malformed')
+          script = '\n'.join(line[10:] if line else '' for line in lines) + '\n'
+          Path('/tmp/nembra-materialize.sh').write_text(script)
+          PY
+          /bin/bash -euo pipefail /tmp/nembra-materialize.sh
+
+      - name: Publish only permanent product paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/git rm \
+            .github/workflows/capture-darwin-native-acl-production-materializer.yml \
+            .github/workflows/capture-darwin-native-acl-production-publisher.yml
+          /usr/bin/git diff --check
+          /usr/bin/git config user.name 'github-actions[bot]'
+          /usr/bin/git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          /usr/bin/git add \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          /usr/bin/git commit -m 'fix(capture): restore accepted-root ACL through held fd'
+          /usr/bin/git push origin HEAD:repair/v17-capture-darwin-native-acl-production-gpt56sol-20260817
