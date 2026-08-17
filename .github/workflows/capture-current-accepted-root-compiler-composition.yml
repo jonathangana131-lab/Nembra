@@ -11,6 +11,8 @@ on:
       - scripts/ci/tests/test_capture_private_read_lease_rollback.py
       - scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py
       - scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+      - .github/workflows/capture-current-accepted-root-acl-transport-probe.yml
+      - .github/workflows/capture-current-accepted-root-real-lease-classifier.yml
       - .github/workflows/capture-current-accepted-root-compiler-composition.yml
   workflow_dispatch:
 
@@ -50,7 +52,9 @@ jobs:
           test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
           actual="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
           expected="$(printf '%s\n' \
+            .github/workflows/capture-current-accepted-root-acl-transport-probe.yml \
             .github/workflows/capture-current-accepted-root-compiler-composition.yml \
+            .github/workflows/capture-current-accepted-root-real-lease-classifier.yml \
             scripts/ci/capture_selected_xcode_build_orchestrator.py \
             scripts/ci/tests/test_capture_accepted_root_build_composition.py \
             scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py \
