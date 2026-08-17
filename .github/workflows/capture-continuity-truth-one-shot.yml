@@ -1,0 +1,110 @@
+name: Capture continuity truth one-shot
+
+on:
+  push:
+    branches:
+      - capture/one-time-ble-dump-gpt56
+    paths:
+      - .github/workflows/capture-continuity-truth-one-shot.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.repository == 'jonathangana131-lab/Nembra'
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact triggering head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Bind exact branch and authoring scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "capture/one-time-ble-dump-gpt56"
+          test -z "$(git status --porcelain)"
+
+      - name: Apply fail-closed transport-truth repair
+        shell: python3 {0}
+        run: |
+          from pathlib import Path
+
+          app_path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          test_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAlreadyTerminalObservationContinuitySourceTests.swift")
+
+          app = app_path.read_text()
+          old = '''        currentConnectionToken = nil
+          localBLESettlementToken = nil
+          sdkLocalBLEOnline = false
+          driver = nil
+          await refreshLedgerSnapshot()
+          phase = .failed
+          self.message = message
+          log(kind, ["generation": String(token.diagnosticGeneration)])
+      }
+
+      private func invalidateObservationContinuity('''
+          new = '''        currentConnectionToken = nil
+          localBLESettlementToken = nil
+          // Package-owned continuity retirement is not observed transport loss. Preserve the
+          // last actual SDK-local BLE state instead of fabricating an offline observation.
+          driver = nil
+          await refreshLedgerSnapshot()
+          phase = .failed
+          self.message = message
+          log(kind, ["generation": String(token.diagnosticGeneration)])
+      }
+
+      private func invalidateObservationContinuity('''
+          if app.count(old) != 1:
+              raise SystemExit(f"expected exactly one continuity mirror anchor, found {app.count(old)}")
+          app = app.replace(old, new, 1)
+          app_path.write_text(app)
+
+          tests = test_path.read_text()
+          old_test = '#expect(helper.contains("sdkLocalBLEOnline = false"))'
+          new_test = '#expect(!helper.contains("sdkLocalBLEOnline = false"))'
+          if tests.count(old_test) != 1:
+              raise SystemExit(f"expected exactly one stale BLE-offline assertion, found {tests.count(old_test)}")
+          tests = tests.replace(old_test, new_test, 1)
+          test_path.write_text(tests)
+
+      - name: Verify exact product delta and read-only boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(git diff --name-only | sort)
+          expected=(
+            "NembraApp/App/NembraCaptureEntrypoint.swift"
+            "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAlreadyTerminalObservationContinuitySourceTests.swift"
+          )
+          test "${#changed[@]}" -eq "${#expected[@]}"
+          for i in "${!expected[@]}"; do test "${changed[$i]}" = "${expected[$i]}"; done
+          ! git diff -- NembraApp/App/NembraCaptureEntrypoint.swift | grep -E '^[+].*(publishDps\(|writeValue\(|removeDevice|factoryReset)' 
+          grep -F 'no disconnect is claimed' NembraApp/App/NembraCaptureEntrypoint.swift >/dev/null
+          grep -F '#expect(!helper.contains("sdkLocalBLEOnline = false"))' Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAlreadyTerminalObservationContinuitySourceTests.swift >/dev/null
+
+      - name: Run focused continuity truth regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaAlreadyTerminalObservationContinuitySourceTests
+
+      - name: Self-retire workflow and publish coherent repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-continuity-truth-one-shot.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAlreadyTerminalObservationContinuitySourceTests.swift \
+            .github/workflows/capture-continuity-truth-one-shot.yml
+          git diff --cached --check
+          git config user.name "nembra-capture-bot"
+          git config user.email "nembra-capture-bot@users.noreply.github.com"
+          git commit -m "Capture: preserve BLE truth on continuity retirement"
+          git push origin HEAD:capture/one-time-ble-dump-gpt56
