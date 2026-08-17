@@ -1,0 +1,301 @@
+name: Capture Native ACL Acquisition + Revoke Classifier
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-native-acl-acquisition-revoke-classifier.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  classify:
+    if: github.head_ref == 'parallel/v17-capture-native-acl-acquisition-revoke-gpt56sol-20260817'
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact validation scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent=f85b8c586d59fe036c4fc1a5f7624cc19bcfbbe5
+          test "$(git rev-parse HEAD^)" = "$parent"
+          mapfile -t changed < <(git diff --name-only "$parent" HEAD)
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = ".github/workflows/capture-native-acl-acquisition-revoke-classifier.yml"
+          git diff --check "$parent" HEAD
+
+      - name: Classify native path vs fd ACL views and held-fd revoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/sudo -n /usr/bin/true
+          field_user="$(/usr/bin/id -un)"
+          work="$(mktemp -d "$RUNNER_TEMP/nembra-native-acl-classifier.XXXXXX")"
+          trap 'rm -rf "$work"' EXIT
+
+          cat > "$work/native_acl_classifier.c" <<'C'
+          #include <sys/types.h>
+          #include <sys/acl.h>
+          #include <sys/stat.h>
+          #include <sys/wait.h>
+          #include <errno.h>
+          #include <fcntl.h>
+          #include <stdbool.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <string.h>
+          #include <unistd.h>
+
+          static void die(const char *label) {
+              fprintf(stderr, "%s: %s\n", label, strerror(errno));
+              exit(2);
+          }
+
+          static void fail(const char *message) {
+              fprintf(stderr, "%s\n", message);
+              exit(3);
+          }
+
+          static char *acl_text(acl_t acl) {
+              ssize_t len = 0;
+              char *raw = acl_to_text(acl, &len);
+              if (!raw) die("acl_to_text");
+              char *copy = calloc((size_t)len + 1, 1);
+              if (!copy) die("calloc acl text");
+              memcpy(copy, raw, (size_t)len);
+              acl_free(raw);
+              return copy;
+          }
+
+          static acl_t get_fd_acl(int fd) {
+              acl_t acl = acl_get_fd_np(fd, ACL_TYPE_EXTENDED);
+              if (!acl) die("acl_get_fd_np");
+              return acl;
+          }
+
+          static acl_t get_path_acl(const char *path) {
+              acl_t acl = acl_get_file(path, ACL_TYPE_EXTENDED);
+              if (!acl) die("acl_get_file");
+              return acl;
+          }
+
+          static void assert_same_object(int fd, const char *path, const char *label) {
+              struct stat by_fd;
+              struct stat by_path;
+              if (fstat(fd, &by_fd) != 0) die("fstat");
+              if (lstat(path, &by_path) != 0) die("lstat");
+              if (by_fd.st_dev != by_path.st_dev ||
+                  by_fd.st_ino != by_path.st_ino ||
+                  ((by_fd.st_mode & S_IFMT) != (by_path.st_mode & S_IFMT))) {
+                  fprintf(stderr, "%s: fd/path identity diverged\n", label);
+                  exit(4);
+              }
+          }
+
+          static void run_chmod(const char *operation, const char *acl, const char *path) {
+              pid_t pid = fork();
+              if (pid < 0) die("fork chmod");
+              if (pid == 0) {
+                  execl("/bin/chmod", "chmod", operation, acl, path, (char *)NULL);
+                  _exit(127);
+              }
+              int status = 0;
+              if (waitpid(pid, &status, 0) < 0) die("waitpid chmod");
+              if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+                  fprintf(stderr, "chmod %s failed status=%d\n", operation, status);
+                  exit(5);
+              }
+          }
+
+          static char *capture_ls(const char *path) {
+              int pipefd[2];
+              if (pipe(pipefd) != 0) die("pipe ls");
+              pid_t pid = fork();
+              if (pid < 0) die("fork ls");
+              if (pid == 0) {
+                  close(pipefd[0]);
+                  if (dup2(pipefd[1], STDOUT_FILENO) < 0) _exit(126);
+                  if (dup2(pipefd[1], STDERR_FILENO) < 0) _exit(126);
+                  close(pipefd[1]);
+                  execl("/bin/ls", "ls", "-Hlde", path, (char *)NULL);
+                  _exit(127);
+              }
+              close(pipefd[1]);
+              size_t cap = 4096;
+              size_t used = 0;
+              char *buffer = calloc(cap, 1);
+              if (!buffer) die("calloc ls");
+              for (;;) {
+                  if (used + 2048 + 1 > cap) {
+                      cap *= 2;
+                      char *grown = realloc(buffer, cap);
+                      if (!grown) die("realloc ls");
+                      buffer = grown;
+                  }
+                  ssize_t n = read(pipefd[0], buffer + used, cap - used - 1);
+                  if (n < 0) die("read ls");
+                  if (n == 0) break;
+                  used += (size_t)n;
+                  buffer[used] = '\0';
+              }
+              close(pipefd[0]);
+              int status = 0;
+              if (waitpid(pid, &status, 0) < 0) die("waitpid ls");
+              if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+                  fprintf(stderr, "ls failed status=%d output=%s\n", status, buffer);
+                  exit(6);
+              }
+              return buffer;
+          }
+
+          int main(int argc, char **argv) {
+              if (argc != 2) {
+                  fprintf(stderr, "usage: %s PRINCIPAL\n", argv[0]);
+                  return 64;
+              }
+              const char *principal = argv[1];
+              char root_template[] = "/private/tmp/nembra-native-acl-classifier.XXXXXX";
+              char *root = mkdtemp(root_template);
+              if (!root) die("mkdtemp");
+
+              char subject[1024];
+              char moved[1024];
+              if (snprintf(subject, sizeof(subject), "%s/accepted-root", root) >= (int)sizeof(subject)) fail("subject path too long");
+              if (snprintf(moved, sizeof(moved), "%s/accepted-root.moved", root) >= (int)sizeof(moved)) fail("moved path too long");
+              if (mkdir(subject, 0700) != 0) die("mkdir accepted-root");
+
+              int fd = open(subject, O_RDONLY | O_DIRECTORY);
+              if (fd < 0) die("open accepted-root");
+              assert_same_object(fd, subject, "pre-grant");
+
+              acl_t baseline_fd_acl = get_fd_acl(fd);
+              acl_t baseline_path_acl = get_path_acl(subject);
+              char *baseline_fd_text = acl_text(baseline_fd_acl);
+              char *baseline_path_text = acl_text(baseline_path_acl);
+              char *baseline_shell = capture_ls(subject);
+
+              char ace[1024];
+              if (snprintf(
+                      ace,
+                      sizeof(ace),
+                      "user:%s allow list,search,readattr,readextattr,readsecurity",
+                      principal
+                  ) >= (int)sizeof(ace)) {
+                  fail("ACE too long");
+              }
+
+              assert_same_object(fd, subject, "immediately-before-grant");
+              run_chmod("+a", ace, subject);
+              assert_same_object(fd, subject, "immediately-after-grant");
+
+              acl_t after_path_acl = get_path_acl(subject);
+              acl_t after_fd_acl = get_fd_acl(fd);
+              char *after_path_text = acl_text(after_path_acl);
+              char *after_fd_text = acl_text(after_fd_acl);
+              char *after_shell = capture_ls(subject);
+
+              bool path_grant_observed = strcmp(after_path_text, baseline_path_text) != 0;
+              bool fd_grant_observed = strcmp(after_fd_text, baseline_fd_text) != 0;
+              bool shell_grant_observed =
+                  strcmp(after_shell, baseline_shell) != 0 &&
+                  strstr(after_shell, principal) != NULL;
+
+              if (!path_grant_observed) fail("path-native ACL readback did not observe canonical-path grant");
+              if (!shell_grant_observed) fail("ls -Hlde did not observe canonical-path grant");
+
+              if (rename(subject, moved) != 0) die("rename accepted-root");
+              if (mkdir(subject, 0700) != 0) die("mkdir replacement");
+
+              acl_t replacement_before_acl = get_path_acl(subject);
+              char *replacement_before_text = acl_text(replacement_before_acl);
+              char *replacement_before_shell = capture_ls(subject);
+
+              if (acl_valid_fd_np(fd, ACL_TYPE_EXTENDED, baseline_fd_acl) != 0) {
+                  die("acl_valid_fd_np baseline");
+              }
+              if (acl_set_fd_np(fd, baseline_fd_acl, ACL_TYPE_EXTENDED) != 0) {
+                  die("acl_set_fd_np baseline restore");
+              }
+
+              acl_t moved_after_acl = get_path_acl(moved);
+              acl_t replacement_after_acl = get_path_acl(subject);
+              char *moved_after_text = acl_text(moved_after_acl);
+              char *replacement_after_text = acl_text(replacement_after_acl);
+              char *moved_after_shell = capture_ls(moved);
+              char *replacement_after_shell = capture_ls(subject);
+
+              bool moved_restored = strcmp(moved_after_text, baseline_path_text) == 0;
+              bool replacement_untouched =
+                  strcmp(replacement_after_text, replacement_before_text) == 0 &&
+                  strcmp(replacement_after_shell, replacement_before_shell) == 0;
+              bool moved_shell_grant_gone = strstr(moved_after_shell, principal) == NULL;
+
+              if (!moved_restored) fail("held-fd ACL restore did not restore exact moved accepted-object path-native ACL");
+              if (!moved_shell_grant_gone) fail("held-fd ACL restore left principal grant visible on moved accepted object");
+              if (!replacement_untouched) fail("held-fd ACL restore mutated attacker replacement pathname");
+
+              printf(
+                  "NEMBRA_NATIVE_ACL_CLASSIFIER "
+                  "pathGrantObserved=true "
+                  "shellGrantObserved=true "
+                  "fdGrantObserved=%s "
+                  "heldFdRestoreSucceeded=true "
+                  "movedAcceptedObjectRestored=true "
+                  "replacementUntouched=true "
+                  "identityStableThroughGrant=true\n",
+                  fd_grant_observed ? "true" : "false"
+              );
+
+              printf("--- baseline fd ACL ---\n%s\n", baseline_fd_text);
+              printf("--- baseline path ACL ---\n%s\n", baseline_path_text);
+              printf("--- after fd ACL ---\n%s\n", after_fd_text);
+              printf("--- after path ACL ---\n%s\n", after_path_text);
+              printf("--- after shell ACL ---\n%s\n", after_shell);
+              printf("--- moved after restore ACL ---\n%s\n", moved_after_text);
+              printf("--- moved after restore shell ---\n%s\n", moved_after_shell);
+
+              acl_free(replacement_after_acl);
+              acl_free(moved_after_acl);
+              acl_free(replacement_before_acl);
+              acl_free(after_fd_acl);
+              acl_free(after_path_acl);
+              acl_free(baseline_path_acl);
+              acl_free(baseline_fd_acl);
+              free(replacement_after_text);
+              free(moved_after_text);
+              free(replacement_before_text);
+              free(replacement_after_shell);
+              free(moved_after_shell);
+              free(replacement_before_shell);
+              free(after_fd_text);
+              free(after_path_text);
+              free(after_shell);
+              free(baseline_fd_text);
+              free(baseline_path_text);
+              free(baseline_shell);
+
+              close(fd);
+              rmdir(subject);
+              rmdir(moved);
+              rmdir(root);
+              return 0;
+          }
+          C
+
+          /usr/bin/clang -Wall -Wextra -Werror "$work/native_acl_classifier.c" -o "$work/native_acl_classifier"
+          /usr/bin/sudo -n "$work/native_acl_classifier" "$field_user"
+
+      - name: Preserve validation-only truth boundary
+        if: always()
+        shell: bash
+        run: |
+          echo 'NEMBRA_NATIVE_ACL_CLASSIFIER validationOnly=true productionAuthorityChanged=false physicalAuthorityCreated=false'
+          echo 'No install, device, Bluetooth, Tuya, DP, command, telemetry, or riding authority is created by this classifier.'
