@@ -68,16 +68,14 @@ jobs:
               return copy;
           }
 
-          static int acl_entry_count(acl_t acl) {
+          static int acl_has_entry(acl_t acl) {
               acl_entry_t entry = NULL;
-              int count = 0;
+              errno = 0;
               int result = acl_get_entry(acl, ACL_FIRST_ENTRY, &entry);
-              while (result == 1) {
-                  ++count;
-                  result = acl_get_entry(acl, ACL_NEXT_ENTRY, &entry);
-              }
-              if (result < 0) fail_errno("acl_get_entry");
-              return count;
+              if (result == 0) return 1;
+              if (result == -1 && errno == EINVAL) return 0;
+              fail_errno("acl_get_entry ACL_FIRST_ENTRY");
+              return 0;
           }
 
           static void require_identity(int fd, const char *path, const char *label) {
@@ -158,9 +156,10 @@ jobs:
               require_identity(fd, subject, "pre-grant identity mismatch");
 
               acl_t baseline = get_fd_acl(fd);
-              int baseline_entries = acl_entry_count(baseline);
-              if ((!seed_baseline && baseline_entries != 0) || (seed_baseline && baseline_entries == 0)) {
-                  fprintf(stderr, "%s: unexpected baseline entry count=%d\n", case_name, baseline_entries);
+              int baseline_has_entry = acl_has_entry(baseline);
+              if ((!seed_baseline && baseline_has_entry) || (seed_baseline && !baseline_has_entry)) {
+                  fprintf(stderr, "%s: baseline entry-presence mismatch seeded=%d observed=%d\n",
+                          case_name, seed_baseline, baseline_has_entry);
                   exit(7);
               }
               acl_t baseline_restore = acl_dup(baseline);
@@ -193,7 +192,7 @@ jobs:
               char *replacement_before = acl_text(replacement_before_acl);
               if (acl_free(replacement_before_acl) != 0) fail_errno("acl_free replacement before");
 
-              if (baseline_entries == 0) {
+              if (!seed_baseline) {
                   if (acl_delete_fd_np(fd, ACL_TYPE_EXTENDED) != 0) fail_errno("acl_delete_fd_np restore absent baseline");
               } else {
                   if (acl_valid_fd_np(fd, ACL_TYPE_EXTENDED, baseline_restore) != 0) fail_errno("acl_valid_fd_np baseline");
@@ -213,8 +212,8 @@ jobs:
                   exit(8);
               }
 
-              printf("NEMBRA_NATIVE_FD_ORACLE case=%s baselineEntries=%d grantObserved=true originalIdentityRetained=true exactRollback=true replacementUntouched=true\n",
-                     case_name, baseline_entries);
+              printf("NEMBRA_NATIVE_FD_ORACLE case=%s baseline=%s grantObserved=true originalIdentityRetained=true exactRollback=true replacementUntouched=true\n",
+                     case_name, seed_baseline ? "seeded" : "absent");
 
               free(fd_after_text);
               free(replacement_before);
