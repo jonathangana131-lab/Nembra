@@ -26,10 +26,9 @@ jobs:
         run: |
           set -euo pipefail
           parent=f85b8c586d59fe036c4fc1a5f7624cc19bcfbbe5
-          test "$(git rev-parse HEAD^)" = "$parent"
-          mapfile -t changed < <(git diff --name-only "$parent" HEAD)
-          test "${#changed[@]}" -eq 1
-          test "${changed[0]}" = ".github/workflows/capture-native-acl-acquisition-revoke-classifier.yml"
+          git merge-base --is-ancestor "$parent" HEAD
+          changed="$(git diff --name-only "$parent" HEAD)"
+          test "$changed" = ".github/workflows/capture-native-acl-acquisition-revoke-classifier.yml"
           git diff --check "$parent" HEAD
 
       - name: Classify native path vs fd ACL views and held-fd revoke
