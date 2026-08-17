@@ -31,37 +31,27 @@ jobs:
           set -euo pipefail
           python3 <<'PY'
           from pathlib import Path
+          import re
 
           app_path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           test_path = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAlreadyTerminalObservationContinuitySourceTests.swift")
 
           app = app_path.read_text()
-          old = '''        currentConnectionToken = nil
-              localBLESettlementToken = nil
-              sdkLocalBLEOnline = false
-              driver = nil
-              await refreshLedgerSnapshot()
-              phase = .failed
-              self.message = message
-              log(kind, ["generation": String(token.diagnosticGeneration)])
-          }
-
-          private func invalidateObservationContinuity('''
-          new = '''        currentConnectionToken = nil
-              localBLESettlementToken = nil
-              // Package-owned continuity retirement is not observed transport loss. Preserve the
-              // last actual SDK-local BLE state instead of fabricating an offline observation.
-              driver = nil
-              await refreshLedgerSnapshot()
-              phase = .failed
-              self.message = message
-              log(kind, ["generation": String(token.diagnosticGeneration)])
-          }
-
-          private func invalidateObservationContinuity('''
-          if app.count(old) != 1:
-              raise SystemExit(f"expected exactly one continuity mirror anchor, found {app.count(old)}")
-          app_path.write_text(app.replace(old, new, 1))
+          start_marker = "private func mirrorAlreadyTerminalObservationContinuity"
+          end_marker = "private func invalidateObservationContinuity"
+          start = app.find(start_marker)
+          end = app.find(end_marker, start + len(start_marker))
+          if start < 0 or end < 0:
+              raise SystemExit("continuity mirror section not found")
+          section = app[start:end]
+          replacement = (
+              r"\1// Package-owned continuity retirement is not observed transport loss. Preserve the\n"
+              r"\1// last actual SDK-local BLE state instead of fabricating an offline observation."
+          )
+          section, count = re.subn(r"(?m)^(\s*)sdkLocalBLEOnline = false\s*$", replacement, section)
+          if count != 1:
+              raise SystemExit(f"expected exactly one BLE-offline mutation in continuity mirror, found {count}")
+          app_path.write_text(app[:start] + section + app[end:])
 
           tests = test_path.read_text()
           old_test = '#expect(helper.contains("sdkLocalBLEOnline = false"))'
