@@ -1,0 +1,267 @@
+name: Capture Native FD ACL Access Semantics
+
+on:
+  push:
+    branches:
+      - validation/v17-capture-native-fd-acl-access-semantics-sol-20260817
+  pull_request:
+    paths:
+      - .github/workflows/capture-native-fd-acl-access-semantics.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-native-fd-acl-access-semantics-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ATTACKED_PARENT: b87d375e5ae419fd5569c2cd63a6b42fc45174b0
+
+jobs:
+  access-semantics:
+    name: Prove held-directory fd ACL grant + rollback semantics
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact attacked parent and validation-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          git cat-file -e "$ATTACKED_PARENT^{commit}"
+          test "$(git rev-list --parents -n 1 HEAD | awk '{print $2}')" = "$ATTACKED_PARENT"
+          changed="$(git diff --name-only "$ATTACKED_PARENT"...HEAD)"
+          test "$changed" = '.github/workflows/capture-native-fd-acl-access-semantics.yml'
+          git diff --check "$ATTACKED_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Build exact-vnode ACL transport helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/native_fd_acl_access.c" <<'C'
+          #include <sys/types.h>
+          #include <sys/acl.h>
+          #include <errno.h>
+          #include <fcntl.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <string.h>
+          #include <unistd.h>
+
+          static void die(const char *label) {
+              fprintf(stderr, "%s: %s\n", label, strerror(errno));
+              exit(2);
+          }
+
+          static char *read_all(const char *path) {
+              FILE *f = fopen(path, "rb");
+              if (!f) die("fopen");
+              if (fseek(f, 0, SEEK_END) != 0) die("fseek");
+              long n = ftell(f);
+              if (n < 0) die("ftell");
+              rewind(f);
+              char *buf = calloc((size_t)n + 1, 1);
+              if (!buf) die("calloc");
+              if (n && fread(buf, 1, (size_t)n, f) != (size_t)n) die("fread");
+              fclose(f);
+              return buf;
+          }
+
+          static void print_acl(acl_t acl) {
+              if (!acl) die("acl_get");
+              ssize_t len = 0;
+              char *text = acl_to_text(acl, &len);
+              if (!text) die("acl_to_text");
+              if (fwrite(text, 1, (size_t)len, stdout) != (size_t)len) die("fwrite");
+              acl_free(text);
+              acl_free(acl);
+          }
+
+          int main(int argc, char **argv) {
+              if (argc < 3) return 64;
+              if (strcmp(argv[1], "get-path") == 0 && argc == 3) {
+                  print_acl(acl_get_file(argv[2], ACL_TYPE_EXTENDED));
+                  return 0;
+              }
+              if (strcmp(argv[1], "set-fd") == 0 && argc == 4) {
+                  int fd = atoi(argv[2]);
+                  char *text = read_all(argv[3]);
+                  acl_t acl = acl_from_text(text);
+                  if (!acl) {
+                      int only_space = 1;
+                      for (char *p = text; *p; ++p) {
+                          if (*p != ' ' && *p != '\t' && *p != '\r' && *p != '\n') {
+                              only_space = 0;
+                              break;
+                          }
+                      }
+                      if (!only_space) die("acl_from_text");
+                      acl = acl_init(0);
+                      if (!acl) die("acl_init");
+                  }
+                  if (acl_valid_fd_np(fd, ACL_TYPE_EXTENDED, acl) != 0) die("acl_valid_fd_np");
+                  if (acl_set_fd_np(fd, acl, ACL_TYPE_EXTENDED) != 0) die("acl_set_fd_np");
+                  acl_free(acl);
+                  free(text);
+                  return 0;
+              }
+              return 64;
+          }
+          C
+          /usr/bin/clang -Wall -Wextra -Werror -O2 "$RUNNER_TEMP/native_fd_acl_access.c" -o "$RUNNER_TEMP/native_fd_acl_access"
+
+      - name: Prove access semantics across hostile pathname replacement
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/sudo -n /usr/bin/true
+          principal=nobody
+          root="/private/tmp/nembra-native-fd-access-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          target="$root/target"
+          held="$root/held-original"
+          scratch="$root/desired-acl"
+          cleanup() { /usr/bin/sudo -n /bin/rm -rf "$root" 2>/dev/null || true; }
+          trap cleanup EXIT
+
+          /usr/bin/sudo -n /bin/mkdir -m 0755 "$root"
+          /usr/bin/sudo -n /bin/mkdir -m 0700 "$target" "$scratch"
+          printf 'O' | /usr/bin/sudo -n /usr/bin/tee "$target/payload.txt" >/dev/null
+          /usr/bin/sudo -n /bin/chmod 0644 "$target/payload.txt"
+          /usr/bin/sudo -n /bin/chmod +a "user:${principal} allow list,search,readattr,readextattr,readsecurity" "$scratch"
+
+          if /usr/bin/sudo -n -u "$principal" /bin/cat "$target/payload.txt" >/dev/null 2>&1; then
+            echo 'precondition failed: principal can already read private target payload' >&2
+            exit 1
+          fi
+
+          /usr/bin/sudo -n env \
+            NEMBRA_TOOL="$RUNNER_TEMP/native_fd_acl_access" \
+            NEMBRA_TARGET="$target" \
+            NEMBRA_HELD="$held" \
+            NEMBRA_SCRATCH="$scratch" \
+            NEMBRA_PRINCIPAL="$principal" \
+            PYTHONDONTWRITEBYTECODE=1 \
+            /usr/bin/python3 -B -I - <<'PY'
+          from __future__ import annotations
+          import os
+          from pathlib import Path
+          import stat
+          import subprocess
+
+          tool = Path(os.environ['NEMBRA_TOOL'])
+          target = Path(os.environ['NEMBRA_TARGET'])
+          held = Path(os.environ['NEMBRA_HELD'])
+          scratch = Path(os.environ['NEMBRA_SCRATCH'])
+          principal = os.environ['NEMBRA_PRINCIPAL']
+          payload = target / 'payload.txt'
+          held_payload = held / 'payload.txt'
+          replacement_payload = target / 'replacement.txt'
+
+          fd = os.open(str(target), os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
+
+          def run(argv, *, pass_fd=False, check=True):
+              completed = subprocess.run(
+                  [str(x) for x in argv],
+                  stdin=subprocess.DEVNULL,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  text=True,
+                  check=False,
+                  pass_fds=((fd,) if pass_fd else ()),
+              )
+              if check and completed.returncode != 0:
+                  raise SystemExit(
+                      f"command failed rc={completed.returncode} argv={list(map(str, argv))!r} "
+                      f"stdout={completed.stdout!r} stderr={completed.stderr!r}"
+                  )
+              return completed
+
+          def identity(value):
+              return (value.st_dev, value.st_ino, stat.S_IFMT(value.st_mode))
+
+          def subject_can_read(path):
+              return run(('/usr/bin/sudo', '-n', '-u', principal, '/bin/cat', path), check=False).returncode == 0
+
+          try:
+              initial = identity(os.fstat(fd))
+              if initial != identity(os.stat(target, follow_symlinks=False)):
+                  raise SystemExit('initial descriptor/path identity mismatch')
+
+              baseline = run((tool, 'get-path', target)).stdout
+              desired = run((tool, 'get-path', scratch)).stdout
+              if desired == baseline:
+                  raise SystemExit('desired ACL fixture did not differ from target baseline')
+              baseline_file = Path(str(target) + '.baseline.acl')
+              desired_file = Path(str(target) + '.desired.acl')
+              baseline_file.write_text(baseline, encoding='utf-8')
+              desired_file.write_text(desired, encoding='utf-8')
+
+              target.rename(held)
+              target.mkdir(mode=0o700)
+              replacement_payload.write_text('R', encoding='utf-8')
+              replacement_payload.chmod(0o644)
+
+              if identity(os.fstat(fd)) != initial or identity(os.stat(held, follow_symlinks=False)) != initial:
+                  raise SystemExit('held descriptor identity changed after pathname replacement')
+              if identity(os.stat(target, follow_symlinks=False)) == initial:
+                  raise SystemExit('replacement unexpectedly aliases held original')
+
+              replacement_before = run((tool, 'get-path', target)).stdout
+              run((tool, 'set-fd', fd, desired_file), pass_fd=True)
+
+              if not subject_can_read(held_payload):
+                  raise SystemExit('fd-native grant did not create actual subject access to held original')
+              if subject_can_read(replacement_payload):
+                  raise SystemExit('fd-native grant leaked authority to pathname replacement')
+              held_after_grant = run((tool, 'get-path', held)).stdout
+              replacement_after_grant = run((tool, 'get-path', target)).stdout
+              if held_after_grant != desired:
+                  raise SystemExit('held original pathname-native ACL does not match desired ACL after fd grant')
+              if replacement_after_grant != replacement_before:
+                  raise SystemExit('pathname replacement ACL changed during held-fd grant')
+
+              run((tool, 'set-fd', fd, baseline_file), pass_fd=True)
+              if subject_can_read(held_payload):
+                  raise SystemExit('subject retained access after exact fd baseline restore')
+              held_after_restore = run((tool, 'get-path', held)).stdout
+              replacement_after_restore = run((tool, 'get-path', target)).stdout
+              if held_after_restore != baseline:
+                  raise SystemExit('held original pathname-native ACL did not exactly restore baseline')
+              if replacement_after_restore != replacement_before:
+                  raise SystemExit('pathname replacement ACL changed across grant/rollback')
+
+              print(
+                  'NEMBRA_NATIVE_FD_ACL_ACCESS_SEMANTICS '
+                  'descriptorIdentityStable=true actualSubjectGrant=true '
+                  'replacementUnaffected=true exactBaselineRollback=true'
+              )
+          finally:
+              os.close(fd)
+          PY
+
+          cleanup
+          trap - EXIT
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Preserve validation-only truth boundary
+        if: always()
+        shell: bash
+        run: |
+          printf '%s\n' \
+            'SWARM_PROTOCOL=17.0' \
+            'validationOnly=true' \
+            'productionBytesChanged=false' \
+            'nativeFdAclAccessSemanticsClassified=true' \
+            'compilerRootIntegrated=false' \
+            'signingAuthority=false' \
+            'installAuthority=false' \
+            'bluetoothExecuted=false' \
+            'physicalAuthorityCreated=false'
