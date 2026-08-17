@@ -1,0 +1,338 @@
+name: Capture Darwin Path ACL Transport Materializer V2
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-darwin-path-acl-transport-gpt56sol-20260816
+    paths:
+      - .github/workflows/capture-darwin-path-acl-transport-materialize-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Bind exact parent and recovery scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=c4933034792f98f51067a04b80cd1de21012553a
+          test "$(git merge-base HEAD "$BASE")" = "$BASE"
+          actual="$(git diff --name-only "$BASE"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-darwin-path-acl-transport-materialize-v2.yml \
+            .github/workflows/capture-darwin-path-acl-transport-materialize.yml | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+
+      - name: Materialize production repair and permanent regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+          import textwrap
+
+          source_path = Path("scripts/ci/capture_selected_xcode_build_orchestrator.py")
+          source = source_path.read_text(encoding="utf-8")
+
+          transport_pattern = re.compile(
+              r"def _acl_listing\(descriptor: int\) -> str:\n.*?(?=def _principal_already_present)",
+              re.DOTALL,
+          )
+          transport = textwrap.dedent('''
+          def _attest_acl_path(
+              path: Path,
+              descriptor: int,
+              is_directory: bool,
+              accepted_signature: tuple[int, int, int],
+          ) -> Path:
+              """Prove the canonical ACL pathname still names the held object generation."""
+              path = _absolute_lexical(path)
+              if _descriptor_signature(descriptor) != accepted_signature:
+                  raise SelectedXcodeBuildOrchestratorError(
+                      f"private read-lease held descriptor changed before pathname ACL transport: {path}"
+                  )
+              diagnostic = _open_pinned_path(path, is_directory, accepted_signature)
+              try:
+                  if _descriptor_signature(diagnostic) != accepted_signature:
+                      raise SelectedXcodeBuildOrchestratorError(
+                          f"private read-lease pathname attestation disagrees with accepted identity: {path}"
+                      )
+              finally:
+                  os.close(diagnostic)
+              if _descriptor_signature(descriptor) != accepted_signature:
+                  raise SelectedXcodeBuildOrchestratorError(
+                      f"private read-lease held descriptor changed during pathname attestation: {path}"
+                  )
+              return path
+
+
+          def _acl_listing(path: Path) -> str:
+              path = _absolute_lexical(path)
+              completed = subprocess.run(
+                  ["/bin/ls", "-lde", str(path)],
+                  stdin=subprocess.DEVNULL,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  text=True,
+                  check=False,
+              )
+              if completed.returncode != 0:
+                  detail = (completed.stderr or "").strip()
+                  raise SelectedXcodeBuildOrchestratorError(
+                      "could not inspect path-attested private read-lease ACL"
+                      + (f": {detail[-800:]}" if detail else "")
+                  )
+              return completed.stdout
+
+
+          def _chmod_acl(path: Path, operation: str, acl: str) -> None:
+              if operation not in ("+a", "-a"):
+                  raise SelectedXcodeBuildOrchestratorError("private read-lease ACL operation is invalid")
+              path = _absolute_lexical(path)
+              completed = subprocess.run(
+                  ["/bin/chmod", operation, acl, str(path)],
+                  stdin=subprocess.DEVNULL,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  text=True,
+                  check=False,
+              )
+              if completed.returncode != 0:
+                  detail = ((completed.stdout or "") + "\\n" + (completed.stderr or "")).strip()
+                  raise SelectedXcodeBuildOrchestratorError(
+                      f"could not {operation} path-attested private read-lease ACL"
+                      + (f": {detail[-800:]}" if detail else "")
+                  )
+
+
+          ''').lstrip()
+          source, count = transport_pattern.subn(transport, source, count=1)
+          if count != 1:
+              raise SystemExit("descriptor ACL transport function block not found exactly once")
+
+          grant_pattern = re.compile(
+              r"            for record, \(path, host_only, accepted_signature, descriptor\) in zip\(\n"
+              r"                self\._opened, pinned_plan\n"
+              r"            \):\n.*?(?=            # ACL application itself spans multiple syscalls\.)",
+              re.DOTALL,
+          )
+          grant_body = textwrap.indent(textwrap.dedent('''
+          for record, (path, host_only, accepted_signature, descriptor) in zip(
+              self._opened, pinned_plan
+          ):
+              is_directory = bool(record["is_directory"])
+              acl_path = _attest_acl_path(
+                  path, descriptor, is_directory, accepted_signature
+              )
+              before = _acl_listing(acl_path)
+              if _principal_already_present(before, principal):
+                  raise SelectedXcodeBuildOrchestratorError(
+                      f"private read-lease principal already has ACL authority: {path}"
+                  )
+              acl = _acl_text(principal, is_directory, host_only)
+              record["before"] = before
+              record["acl"] = acl
+              acl_path = _attest_acl_path(
+                  path, descriptor, is_directory, accepted_signature
+              )
+              try:
+                  _chmod_acl(acl_path, "+a", acl)
+              except Exception:
+                  # A command-level failure does not prove the kernel left the ACL
+                  # unchanged. Re-attest the canonical path before classifying it.
+                  try:
+                      acl_path = _attest_acl_path(
+                          path, descriptor, is_directory, accepted_signature
+                      )
+                      after_failed = _acl_listing(acl_path)
+                  except Exception:
+                      record["added"] = True
+                  else:
+                      record["added"] = after_failed != before
+                  raise
+              record["added"] = True
+              acl_path = _attest_acl_path(
+                  path, descriptor, is_directory, accepted_signature
+              )
+              after = _acl_listing(acl_path)
+              if after == before or not _principal_already_present(after, principal):
+                  raise SelectedXcodeBuildOrchestratorError(
+                      f"private read-lease ACL did not materialize exactly: {path}"
+                  )
+              _attest_acl_path(
+                  path, descriptor, is_directory, accepted_signature
+              )
+          ''').lstrip(), "            ")
+          source, count = grant_pattern.subn(grant_body, source, count=1)
+          if count != 1:
+              raise SystemExit("private read-lease grant authority block not found exactly once")
+
+          revoke_pattern = re.compile(
+              r"                if bool\(record\[\"added\"\]\):\n.*?(?=            except Exception as error:)",
+              re.DOTALL,
+          )
+          revoke_body = textwrap.indent(textwrap.dedent('''
+          if bool(record["added"]):
+              accepted_signature = record.get("accepted_signature")
+              is_directory = record.get("is_directory")
+              if not (
+                  isinstance(accepted_signature, tuple)
+                  and len(accepted_signature) == 3
+                  and isinstance(is_directory, bool)
+              ):
+                  failures.append(
+                      f"private read-lease record lost accepted pathname identity: {path}"
+                  )
+                  continue
+              try:
+                  acl_path = _attest_acl_path(
+                      path, descriptor, is_directory, accepted_signature
+                  )
+              except Exception as error:
+                  failures.append(
+                      f"private read-lease pathname no longer identifies opened object: {path}: {error}"
+                  )
+                  continue
+              _chmod_acl(acl_path, "-a", str(record["acl"]))
+              acl_path = _attest_acl_path(
+                  path, descriptor, is_directory, accepted_signature
+              )
+              restored = _acl_listing(acl_path)
+              if restored != str(record["before"]):
+                  failures.append(
+                      f"private read-lease did not restore exact ACL listing: {path}"
+                  )
+              _attest_acl_path(
+                  path, descriptor, is_directory, accepted_signature
+              )
+          ''').lstrip(), "                ")
+          source, count = revoke_pattern.subn(revoke_body, source, count=1)
+          if count != 1:
+              raise SystemExit("private read-lease revoke authority block not found exactly once")
+          source_path.write_text(source, encoding="utf-8")
+
+          rollback_path = Path("scripts/ci/tests/test_capture_private_read_lease_rollback.py")
+          rollback = rollback_path.read_text(encoding="utf-8")
+          marker = "    def test_grant_surfaces_rollback_failure_instead_of_silently_forgetting_it(self) -> None:\n"
+          tests = textwrap.indent(textwrap.dedent('''
+          def test_path_swap_between_listing_and_grant_fails_before_acl_mutation(self) -> None:
+              helper = load()
+              with tempfile.TemporaryDirectory(prefix="nembra-lease-path-swap-grant-") as temporary:
+                  repo, subject = self._subject(temporary)
+                  retired = repo / "accepted.retired"
+                  replacement_bytes = b"replacement\\n"
+                  lease = helper._PrivateReadLease((subject,), repo)
+                  listing_calls = 0
+                  mutations: list[tuple[Path, str]] = []
+
+                  def race_listing(_path: Path) -> str:
+                      nonlocal listing_calls
+                      listing_calls += 1
+                      if listing_calls == 1:
+                          subject.rename(retired)
+                          subject.write_bytes(replacement_bytes)
+                      return ""
+
+                  def unexpected_chmod(path: Path, operation: str, _acl: str) -> None:
+                      mutations.append((Path(path), operation))
+
+                  with (
+                      mock.patch.object(helper, "_acl_listing", side_effect=race_listing),
+                      mock.patch.object(helper, "_chmod_acl", side_effect=unexpected_chmod),
+                      self.assertRaises(helper.SelectedXcodeBuildOrchestratorError),
+                  ):
+                      lease.grant("nembrapathswapgrant")
+
+                  self.assertEqual(mutations, [])
+                  self.assertEqual(subject.read_bytes(), replacement_bytes)
+                  self.assertEqual(lease._opened, [])
+                  self.assertEqual(lease._principal, "")
+
+          def test_path_swap_after_grant_never_revokes_replacement_path(self) -> None:
+              helper = load()
+              with tempfile.TemporaryDirectory(prefix="nembra-lease-path-swap-revoke-") as temporary:
+                  repo, subject = self._subject(temporary)
+                  retired = repo / "accepted.retired"
+                  replacement_bytes = b"replacement\\n"
+                  lease = helper._PrivateReadLease((subject,), repo)
+                  listing_calls = 0
+                  mutations: list[tuple[Path, str]] = []
+
+                  def race_listing(_path: Path) -> str:
+                      nonlocal listing_calls
+                      listing_calls += 1
+                      if listing_calls == 1:
+                          return ""
+                      if listing_calls == 2:
+                          subject.rename(retired)
+                          subject.write_bytes(replacement_bytes)
+                          return "0: user:nembrapathswaprevoke allow read\\n"
+                      return ""
+
+                  def fake_chmod(path: Path, operation: str, _acl: str) -> None:
+                      mutations.append((Path(path), operation))
+
+                  with (
+                      mock.patch.object(helper, "_acl_listing", side_effect=race_listing),
+                      mock.patch.object(helper, "_chmod_acl", side_effect=fake_chmod),
+                      self.assertRaisesRegex(
+                          helper.SelectedXcodeBuildOrchestratorError,
+                          "rollback",
+                      ),
+                  ):
+                      lease.grant("nembrapathswaprevoke")
+
+                  self.assertEqual([operation for _path, operation in mutations], ["+a"])
+                  self.assertEqual(subject.read_bytes(), replacement_bytes)
+                  self.assertEqual(lease._opened, [])
+                  self.assertEqual(lease._principal, "")
+
+          ''').lstrip(), "    ")
+          if rollback.count(marker) != 1:
+              raise SystemExit("rollback test insertion marker missing")
+          rollback = rollback.replace(marker, tests + marker)
+          rollback_path.write_text(rollback, encoding="utf-8")
+          PY
+
+      - name: Run focused portable authority suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          python3 scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          python3 scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+          python3 scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py
+          python3 scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          python3 scripts/ci/tests/test_capture_accepted_root_build_composition.py
+          python3 scripts/ci/tests/test_capture_accepted_root_whole_read_lease.py
+          git diff --check
+
+      - name: Publish clean two-path product repair and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=c4933034792f98f51067a04b80cd1de21012553a
+          git rm \
+            .github/workflows/capture-darwin-path-acl-transport-materialize.yml \
+            .github/workflows/capture-darwin-path-acl-transport-materialize-v2.yml
+          git add \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          expected="$(printf '%s\n' \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py | LC_ALL=C sort)"
+          actual="$(git diff --cached --name-only "$BASE" | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git config user.name "nembra-swarm"
+          git config user.email "nembra-swarm@users.noreply.github.com"
+          git commit -m "Capture: bind Darwin ACL transport to attested path"
+          git push origin HEAD:repair/v17-capture-darwin-path-acl-transport-gpt56sol-20260816
