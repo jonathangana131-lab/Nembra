@@ -264,7 +264,8 @@ jobs:
           fi
           grep -Fq 'def _replace_selected_xcode(' "$selected_xcode_orchestrator"
           grep -Fq 'caller supplied DEVELOPER_DIR authority is forbidden' "$selected_xcode_orchestrator"
-          grep -Fq 'launcher_run(field_pid, source_sha, freeze_helper_base64, freeze_helper_blob)' "$selected_xcode_orchestrator"
+          grep -Fq 'freeze_result = launcher_run(' "$selected_xcode_orchestrator"
+          grep -Fq 'field_pid, source_sha, freeze_helper_base64, freeze_helper_blob' "$selected_xcode_orchestrator"
           grep -Fq 'run_custodied_build(' "$selected_xcode_orchestrator"
           grep -Fq 'DEVELOPER_DIR={frozen_developer}' "$selected_xcode_orchestrator"
           grep -Fq 'def _invalidate_invoker_sudo(' "$build_origin_custody"
