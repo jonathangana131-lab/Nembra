@@ -177,6 +177,11 @@ class DarwinAbsentACLLease:
     def active(self) -> bool:
         return self._active
 
+    @property
+    def dirty(self) -> bool:
+        """Whether descriptor-bound cleanup is still required before safe close."""
+        return self._mutated
+
     def grant(self) -> None:
         if self._active or self._mutated:
             raise DarwinAbsentACLLeaseError("Darwin ACL lease is already active or dirty")
@@ -192,21 +197,26 @@ class DarwinAbsentACLLease:
             )
 
         try:
-            _chmod_add(self._path, self._acl_text)
+            # From this point onward a command-level failure is not proof that the
+            # kernel left the ACL untouched. Mark cleanup required *before* exec.
             self._mutated = True
+            _chmod_add(self._path, self._acl_text)
             require_bound_path(self._descriptor, self._path, self._expected)
             if path_extended_acl_absent(self._path):
                 raise DarwinAbsentACLLeaseError("temporary ACL did not materialize")
             require_bound_path(self._descriptor, self._path, self._expected)
             self._active = True
-        except Exception:
-            # Once chmod was attempted, absence cannot be assumed. Restore the proven
-            # empty baseline on the held original descriptor before surfacing failure.
-            if self._mutated:
-                _restore_empty_acl(self._descriptor)
-                self._mutated = False
+        except Exception as grant_error:
             self._active = False
-            raise
+            if self._mutated:
+                try:
+                    _restore_empty_acl(self._descriptor)
+                except Exception as rollback_error:
+                    raise DarwinAbsentACLLeaseError(
+                        "Darwin ACL grant failed and descriptor-bound rollback also failed"
+                    ) from rollback_error
+                self._mutated = False
+            raise grant_error
 
     def revoke(self) -> None:
         if not self._mutated:
@@ -214,13 +224,18 @@ class DarwinAbsentACLLease:
             return
 
         failures: list[str] = []
+        restored = False
         try:
             _restore_empty_acl(self._descriptor)
+            restored = True
         except Exception as error:
             failures.append(str(error))
         finally:
             self._active = False
-            self._mutated = False
+            # Preserve dirty state after a failed kernel restore so callers may not
+            # mistake failed cleanup for a safely revoked lease and may retry.
+            if restored:
+                self._mutated = False
 
         # Cleanup above is descriptor-bound and therefore targets the original vnode
         # even after rename/replacement. Verification through the canonical path is
@@ -234,7 +249,7 @@ class DarwinAbsentACLLease:
         except Exception as error:
             failures.append(str(error))
 
-        if path_bound:
+        if path_bound and restored:
             try:
                 if not path_extended_acl_absent(self._path):
                     failures.append("descriptor-bound revoke did not restore ACL-absent baseline")
@@ -242,7 +257,7 @@ class DarwinAbsentACLLease:
                 failures.append(str(error))
 
         if failures:
-            if not path_bound and len(failures) == 1:
+            if restored and not path_bound and len(failures) == 1:
                 raise DarwinAbsentACLPathIdentityLost(failures[0])
             raise DarwinAbsentACLLeaseError("Darwin ACL lease revoke failed: " + "; ".join(failures))
 
