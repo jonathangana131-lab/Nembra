@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 44,
+    "classifiedPRTotal": 45,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1549,6 +1549,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.126,
         "title": "[Capture P0][DIAGNOSTIC] Restore absent Darwin ACL through held fd"
+      },
+      "3553": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3553,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.355,
+        "title": "[Capture P0][REPAIR] Restore accepted-root ACL through held fd"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1581,7 +1592,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-17T22:52:11Z",
+    "liveRefreshAt": "2026-08-17T22:53:03Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5366,10 +5377,10 @@
       "userValue": 7
     }
   },
-  "revision": 897,
+  "revision": 898,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-17T22:52:12Z",
+  "updatedAt": "2026-08-17T22:53:05Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5445,7 +5456,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-17T22:52:11Z",
+      "updatedAt": "2026-08-17T22:53:03Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
