@@ -1473,16 +1473,16 @@
         "similarity": 0.419,
         "title": "[Capture P0][V17][VALIDATION] Classify native ACL acquisition and held-fd revoke"
       },
-      "3539": {
-        "classification": "validation",
+      "3540": {
+        "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "",
+        "headSHA": "9ee58dd70e2551e09626798af96fc6803b1f9404",
         "lane": "capture-signed-install-custody",
-        "pr": 3539,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.376,
-        "title": "[Capture P0][VALIDATION] Prove single-process native ACL rollback"
+        "pr": 3540,
+        "recommendedAction": "independent-review",
+        "similarity": 0.329,
+        "title": "[Capture P0][V17][CI] Repair provenance launcher ABI oracle"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1515,9 +1515,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-17T22:32:39Z",
+    "liveRefreshAt": "2026-08-17T22:32:58Z",
     "liveRefreshDuplicatesSuppressed": [
-      3539
+      3538
     ],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5300,10 +5300,10 @@
       "userValue": 7
     }
   },
-  "revision": 865,
+  "revision": 866,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-17T22:32:40Z",
+  "updatedAt": "2026-08-17T22:32:59Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5379,7 +5379,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-17T22:32:39Z",
+      "updatedAt": "2026-08-17T22:32:58Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
