@@ -72,6 +72,7 @@ jobs:
           seeded = Path(sys.argv[8])
           sys.path.insert(0, str(workspace / "scripts" / "ci"))
 
+          import capture_darwin_absent_acl_lease as lease_module
           from capture_darwin_absent_acl_lease import (
               DarwinAbsentACLLease,
               DarwinAbsentACLLeaseError,
@@ -106,15 +107,36 @@ jobs:
 
               lease = DarwinAbsentACLLease(fd, subject, ace)
               lease.grant()
-              assert lease.active
+              assert lease.active and lease.dirty
               assert not path_extended_acl_absent(subject)
               assert list_as(subject) == 0
 
               lease.revoke()
-              assert not lease.active
+              assert not lease.active and not lease.dirty
               assert path_extended_acl_absent(subject)
               assert list_as(subject) != 0
               print("NEMBRA_DARWIN_LEASE normalGrant=true normalRevoke=true separateUIDRevoked=true")
+
+              # Inject the exact partial-failure chronology production must survive:
+              # kernel mutation happens, then the grant operation reports failure.
+              original_chmod_add = lease_module._chmod_add
+              def mutate_then_fail(path, acl_text):
+                  original_chmod_add(path, acl_text)
+                  raise DarwinAbsentACLLeaseError("injected post-mutation grant failure")
+              lease_module._chmod_add = mutate_then_fail
+              partial = DarwinAbsentACLLease(fd, subject, ace)
+              saw_partial_failure = False
+              try:
+                  partial.grant()
+              except DarwinAbsentACLLeaseError as error:
+                  saw_partial_failure = "injected post-mutation" in str(error)
+              finally:
+                  lease_module._chmod_add = original_chmod_add
+              assert saw_partial_failure
+              assert not partial.active and not partial.dirty
+              assert path_extended_acl_absent(subject)
+              assert list_as(subject) != 0
+              print("NEMBRA_DARWIN_LEASE partialGrantFailureRolledBack=true")
 
               lease.grant()
               assert list_as(subject) == 0
@@ -130,7 +152,7 @@ jobs:
               except DarwinAbsentACLPathIdentityLost:
                   saw_identity_loss = True
               assert saw_identity_loss
-              assert not lease.active
+              assert not lease.active and not lease.dirty
               assert path_extended_acl_absent(moved)
               assert path_extended_acl_absent(replacement)
               assert list_as(moved) != 0
@@ -163,7 +185,7 @@ jobs:
               except DarwinAbsentACLLeaseError as error:
                   rejected = "pre-existing/non-empty" in str(error)
               assert rejected
-              assert not seeded_lease.active
+              assert not seeded_lease.active and not seeded_lease.dirty
               assert not path_extended_acl_absent(seeded)
               assert list_as(seeded) == 0
           finally:
