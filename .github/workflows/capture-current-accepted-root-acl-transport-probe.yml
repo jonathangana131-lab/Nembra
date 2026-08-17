@@ -123,9 +123,142 @@ jobs:
           detail="${detail//'%'/'%25'}"
           detail="${detail//$'\r'/'%0D'}"
           detail="${detail//$'\n'/'%0A'}"
-          printf '::error file=scripts/ci/capture_selected_xcode_build_orchestrator.py,title=Darwin ACL transport probe::%s\n' "$detail"
-          # Diagnostic is intentionally red so its output remains unambiguously non-acceptance.
+          printf '::error file=scripts/ci/capture_selected_xcode_build_orchestrator.py,title=Darwin ACL shell transport probe::%s\n' "$detail"
+          # The shell transport probe is intentionally red/non-authorizing; its
+          # purpose is to classify /dev/fd versus pathname behavior.
           exit 1
+
+      - name: Probe native Darwin fd ACL snapshot and rollback after pathname replacement
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/sudo -n /usr/bin/true
+          field_user="$(/usr/bin/id -un)"
+          work="$(mktemp -d "$RUNNER_TEMP/nembra-native-acl.XXXXXX")"
+          trap 'rm -rf "$work"' EXIT
+          cat > "$work/acl_fd.c" <<'C'
+          #include <sys/types.h>
+          #include <sys/acl.h>
+          #include <errno.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <string.h>
+          #include <unistd.h>
+
+          static void die(const char *label) {
+              fprintf(stderr, "%s: %s\n", label, strerror(errno));
+              exit(2);
+          }
+
+          static char *read_all(const char *path) {
+              FILE *f = fopen(path, "rb");
+              if (!f) die("fopen");
+              if (fseek(f, 0, SEEK_END) != 0) die("fseek");
+              long n = ftell(f);
+              if (n < 0) die("ftell");
+              rewind(f);
+              char *buf = calloc((size_t)n + 1, 1);
+              if (!buf) die("calloc");
+              if (n && fread(buf, 1, (size_t)n, f) != (size_t)n) die("fread");
+              fclose(f);
+              return buf;
+          }
+
+          int main(int argc, char **argv) {
+              if (argc < 3) return 64;
+              int fd = atoi(argv[2]);
+              if (!strcmp(argv[1], "get")) {
+                  acl_t acl = acl_get_fd_np(fd, ACL_TYPE_EXTENDED);
+                  if (!acl) die("acl_get_fd_np");
+                  ssize_t len = 0;
+                  char *text = acl_to_text(acl, &len);
+                  if (!text) die("acl_to_text");
+                  if (fwrite(text, 1, (size_t)len, stdout) != (size_t)len) die("fwrite");
+                  fputc('\n', stdout);
+                  acl_free(text);
+                  acl_free(acl);
+                  return 0;
+              }
+              if (!strcmp(argv[1], "set")) {
+                  if (argc != 4) return 64;
+                  char *text = read_all(argv[3]);
+                  acl_t acl = acl_from_text(text);
+                  if (!acl) die("acl_from_text");
+                  if (acl_valid_fd_np(fd, ACL_TYPE_EXTENDED, acl) != 0) die("acl_valid_fd_np");
+                  if (acl_set_fd_np(fd, acl, ACL_TYPE_EXTENDED) != 0) die("acl_set_fd_np");
+                  acl_free(acl);
+                  free(text);
+                  return 0;
+              }
+              return 64;
+          }
+          C
+          /usr/bin/clang -Wall -Wextra -Werror "$work/acl_fd.c" -o "$work/acl_fd"
+
+          /usr/bin/sudo -n env \
+            NEMBRA_TEST_FIELD_USER="$field_user" \
+            NEMBRA_ACL_FD_TOOL="$work/acl_fd" \
+            PYTHONDONTWRITEBYTECODE=1 \
+            /usr/bin/python3 -B -I - <<'PY'
+          from __future__ import annotations
+          import os
+          from pathlib import Path
+          import shutil
+          import subprocess
+          import tempfile
+
+          principal = os.environ['NEMBRA_TEST_FIELD_USER']
+          tool = Path(os.environ['NEMBRA_ACL_FD_TOOL'])
+          root = Path(tempfile.mkdtemp(prefix='nembra-native-fd-acl-', dir='/private/tmp'))
+          subject = root / 'accepted-root'
+          moved = root / 'accepted-root.moved'
+          subject.mkdir(mode=0o700)
+          fd = os.open(str(subject), os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
+
+          def run(argv, *, pass_fd=False, check=True):
+              return subprocess.run(
+                  [str(x) for x in argv],
+                  stdin=subprocess.DEVNULL,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  text=True,
+                  check=check,
+                  pass_fds=((fd,) if pass_fd else ()),
+              )
+
+          try:
+              before = run((tool, 'get', fd), pass_fd=True).stdout
+              baseline = root / 'baseline.acl'
+              baseline.write_text(before, encoding='utf-8')
+
+              acl = f'user:{principal} allow list,search,readattr,readextattr,readsecurity'
+              run(('/bin/chmod', '+a', acl, subject))
+              after = run((tool, 'get', fd), pass_fd=True).stdout
+              if after == before:
+                  raise SystemExit('native fd ACL readback did not observe pathname grant')
+
+              subject.rename(moved)
+              subject.mkdir(mode=0o700)
+              replacement_before = run(('/bin/ls', '-Hlde', subject)).stdout
+
+              run((tool, 'set', fd, baseline), pass_fd=True)
+              restored = run((tool, 'get', fd), pass_fd=True).stdout
+              if restored != before:
+                  raise SystemExit('native fd ACL rollback did not restore exact accepted-object ACL')
+
+              moved_listing = run(('/bin/ls', '-Hlde', moved)).stdout
+              replacement_after = run(('/bin/ls', '-Hlde', subject)).stdout
+              if principal in moved_listing:
+                  raise SystemExit('native fd ACL rollback left principal authority on moved accepted object')
+              if replacement_after != replacement_before:
+                  raise SystemExit('native fd ACL rollback mutated attacker replacement pathname')
+
+              print('NEMBRA_NATIVE_FD_ACL descriptorSnapshot=true pathnameGrantObservedByFd=true pathReplaced=true exactFdRollback=true replacementUntouched=true')
+          finally:
+              os.close(fd)
+              shutil.rmtree(root, ignore_errors=True)
+          PY
 
       - name: Preserve diagnostic-only boundary
         if: always()
