@@ -1,0 +1,448 @@
+name: Capture Darwin Native Read-Lease Materializer
+
+on:
+  push:
+    branches:
+      - recovery/v17-capture-darwin-native-read-lease-sol-20260817
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-darwin-native-read-lease-materializer
+  cancel-in-progress: true
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: recovery/v17-capture-darwin-native-read-lease-sol-20260817
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact production parent and intended pre-materialization scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent=5a6ecdf76917ec1e447d816941ada060bd4d44bd
+          git merge-base --is-ancestor "$parent" HEAD
+          changed="$(git diff --name-only "$parent"...HEAD | sort)"
+          expected=$'.github/workflows/capture-darwin-native-read-lease-materializer.yml\nscripts/ci/tests/test_capture_private_read_lease_darwin_native_transport.py'
+          test "$changed" = "$expected"
+          git diff --check "$parent"...HEAD
+
+      - name: Materialize root-Darwin native ACL grant and held-fd rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/ci/capture_selected_xcode_build_orchestrator.py')
+          source = path.read_text(encoding='utf-8')
+          if 'def _use_native_darwin_acl()' in source:
+              raise SystemExit('native Darwin ACL transport already materialized')
+
+          source = source.replace(
+              'import argparse\n',
+              'import argparse\nimport ctypes\nimport errno\n',
+              1,
+          )
+
+          helper_marker = '\n\nclass _PrivateReadLease:'
+          if helper_marker not in source:
+              raise SystemExit('private read-lease class marker missing')
+
+          native_helpers = r'''
+
+
+def _use_native_darwin_acl() -> bool:
+    """Use the validated Darwin ACL transport only in the root authority process."""
+    return sys.platform == "darwin" and os.geteuid() == 0
+
+
+def _path_acl_listing(path: Path) -> str:
+    completed = subprocess.run(
+        ["/bin/ls", "-Hlde", str(path)],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or "").strip()
+        raise SelectedXcodeBuildOrchestratorError(
+            "could not inspect canonical private read-lease ACL"
+            + (f": {detail[-800:]}" if detail else "")
+        )
+    return completed.stdout
+
+
+def _chmod_path_acl(path: Path, operation: str, acl: str) -> None:
+    if operation != "+a":
+        raise SelectedXcodeBuildOrchestratorError(
+            "Darwin canonical-path ACL transport is grant-only"
+        )
+    completed = subprocess.run(
+        ["/bin/chmod", operation, acl, str(path)],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = ((completed.stdout or "") + "\n" + (completed.stderr or "")).strip()
+        raise SelectedXcodeBuildOrchestratorError(
+            "could not grant canonical private read-lease ACL"
+            + (f": {detail[-800:]}" if detail else "")
+        )
+
+
+def _darwin_acl_libc():
+    libc = ctypes.CDLL(None, use_errno=True)
+    libc.acl_get_fd.argtypes = [ctypes.c_int]
+    libc.acl_get_fd.restype = ctypes.c_void_p
+    libc.acl_set_fd.argtypes = [ctypes.c_int, ctypes.c_void_p]
+    libc.acl_set_fd.restype = ctypes.c_int
+    libc.acl_init.argtypes = [ctypes.c_int]
+    libc.acl_init.restype = ctypes.c_void_p
+    libc.acl_to_text.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ssize_t)]
+    libc.acl_to_text.restype = ctypes.c_void_p
+    libc.acl_free.argtypes = [ctypes.c_void_p]
+    libc.acl_free.restype = ctypes.c_int
+    return libc
+
+
+def _darwin_acl_text(libc, acl_pointer: int) -> str:
+    length = ctypes.c_ssize_t(0)
+    ctypes.set_errno(0)
+    raw = libc.acl_to_text(ctypes.c_void_p(acl_pointer), ctypes.byref(length))
+    if not raw:
+        number = ctypes.get_errno()
+        raise SelectedXcodeBuildOrchestratorError(
+            "could not canonicalize descriptor ACL: " + os.strerror(number or errno.EINVAL)
+        )
+    try:
+        return ctypes.string_at(raw, max(0, int(length.value))).decode("utf-8")
+    finally:
+        if libc.acl_free(ctypes.c_void_p(raw)) != 0:
+            raise SelectedXcodeBuildOrchestratorError(
+                "could not release canonical descriptor ACL text"
+            )
+
+
+def _darwin_acl_snapshot(descriptor: int) -> dict[str, object]:
+    libc = _darwin_acl_libc()
+    ctypes.set_errno(0)
+    pointer = libc.acl_get_fd(descriptor)
+    number = ctypes.get_errno()
+    if not pointer:
+        if number == errno.ENOENT:
+            return {"present": False, "acl": None, "text": ""}
+        raise SelectedXcodeBuildOrchestratorError(
+            "could not capture descriptor ACL baseline: "
+            + os.strerror(number or errno.EINVAL)
+        )
+    acl_pointer = int(pointer)
+    try:
+        text = _darwin_acl_text(libc, acl_pointer)
+    except Exception:
+        libc.acl_free(ctypes.c_void_p(acl_pointer))
+        raise
+    return {"present": True, "acl": acl_pointer, "text": text}
+
+
+def _darwin_acl_release(snapshot: dict[str, object]) -> None:
+    pointer = snapshot.get("acl")
+    if pointer is None:
+        return
+    libc = _darwin_acl_libc()
+    if libc.acl_free(ctypes.c_void_p(int(pointer))) != 0:
+        raise SelectedXcodeBuildOrchestratorError(
+            "could not release captured descriptor ACL baseline"
+        )
+    snapshot["acl"] = None
+
+
+def _darwin_acl_restore(descriptor: int, baseline: dict[str, object]) -> None:
+    libc = _darwin_acl_libc()
+    temporary = None
+    if bool(baseline["present"]):
+        pointer = baseline.get("acl")
+        if pointer is None:
+            raise SelectedXcodeBuildOrchestratorError(
+                "captured descriptor ACL baseline was already released"
+            )
+        restore_pointer = ctypes.c_void_p(int(pointer))
+    else:
+        ctypes.set_errno(0)
+        temporary = libc.acl_init(0)
+        if not temporary:
+            number = ctypes.get_errno()
+            raise SelectedXcodeBuildOrchestratorError(
+                "could not construct empty descriptor ACL baseline: "
+                + os.strerror(number or errno.EINVAL)
+            )
+        restore_pointer = ctypes.c_void_p(int(temporary))
+
+    try:
+        ctypes.set_errno(0)
+        result = libc.acl_set_fd(descriptor, restore_pointer)
+        number = ctypes.get_errno()
+        if result != 0:
+            raise SelectedXcodeBuildOrchestratorError(
+                "could not restore descriptor ACL baseline: "
+                + os.strerror(number or errno.EINVAL)
+            )
+    finally:
+        if temporary is not None and libc.acl_free(ctypes.c_void_p(int(temporary))) != 0:
+            raise SelectedXcodeBuildOrchestratorError(
+                "could not release empty descriptor ACL baseline"
+            )
+
+    current = _darwin_acl_snapshot(descriptor)
+    try:
+        if bool(current["present"]) != bool(baseline["present"]):
+            raise SelectedXcodeBuildOrchestratorError(
+                "native ACL baseline was not restored exactly"
+            )
+        if bool(baseline["present"]) and current.get("text") != baseline.get("text"):
+            raise SelectedXcodeBuildOrchestratorError(
+                "native ACL baseline was not restored exactly"
+            )
+    finally:
+        _darwin_acl_release(current)
+'''
+          source = source.replace(helper_marker, native_helpers + helper_marker, 1)
+
+          start = source.index('class _PrivateReadLease:')
+          end = source.index('\n\ndef _git_read_environment', start)
+          replacement = r'''class _PrivateReadLease:
+    """Temporary descriptor-pinned read/search authority for one build account."""
+
+    def __init__(self, subjects: Sequence[Path], repo: Path) -> None:
+        self._subjects = tuple(_absolute_lexical(Path(subject)) for subject in subjects)
+        if not self._subjects:
+            raise SelectedXcodeBuildOrchestratorError("private read lease requires at least one subject")
+        self._repository = _absolute_lexical(repo)
+        self._opened: list[dict[str, object]] = []
+        self._principal = ""
+
+    def grant(self, principal: str) -> None:
+        if self._opened or self._principal:
+            raise SelectedXcodeBuildOrchestratorError("private read lease is already active")
+        if re.fullmatch(r"[A-Za-z0-9_.-]+", principal) is None:
+            raise SelectedXcodeBuildOrchestratorError("build principal name is malformed")
+        self._principal = principal
+        native_darwin = _use_native_darwin_acl()
+        try:
+            pinned_plan = _lease_paths(
+                self._subjects,
+                self._repository,
+                include_descriptors=True,
+            )
+            self._opened = [
+                {
+                    "descriptor": descriptor,
+                    "path": path,
+                    "before": "",
+                    "acl": "",
+                    "added": False,
+                    "accepted_signature": accepted_signature,
+                    "is_directory": stat.S_ISDIR(accepted_signature[2]),
+                    "darwin_baseline": None,
+                }
+                for path, _host_only, accepted_signature, descriptor in pinned_plan
+            ]
+
+            # _lease_paths performs descriptor-bound symlink classification while
+            # planning. Re-attest immediately before the first ACL mutation so a
+            # retarget injected after planning cannot cross into authority.
+            _validate_lease_subject_symlinks(self._subjects, pinned_plan)
+
+            for record, (path, host_only, accepted_signature, descriptor) in zip(
+                self._opened, pinned_plan
+            ):
+                is_directory = bool(record["is_directory"])
+                if native_darwin:
+                    diagnostic = _open_pinned_path(path, is_directory, accepted_signature)
+                    os.close(diagnostic)
+                    baseline = _darwin_acl_snapshot(descriptor)
+                    record["darwin_baseline"] = baseline
+                    before = _path_acl_listing(path)
+                else:
+                    before = _acl_listing(descriptor)
+                if _principal_already_present(before, principal):
+                    raise SelectedXcodeBuildOrchestratorError(
+                        f"private read-lease principal already has ACL authority: {path}"
+                    )
+                acl = _acl_text(principal, is_directory, host_only)
+                record["before"] = before
+                record["acl"] = acl
+
+                if native_darwin:
+                    # Canonical-path grant is admitted only while the path still
+                    # names the exact vnode pinned by the held descriptor. Once an
+                    # ACL mutation is attempted, exact held-fd rollback is required
+                    # even if chmod reports failure because syscall failure does not
+                    # prove that no kernel mutation occurred.
+                    diagnostic = _open_pinned_path(path, is_directory, accepted_signature)
+                    os.close(diagnostic)
+                    record["added"] = True
+                    _chmod_path_acl(path, "+a", acl)
+                    diagnostic = _open_pinned_path(path, is_directory, accepted_signature)
+                    os.close(diagnostic)
+                    after = _path_acl_listing(path)
+                else:
+                    try:
+                        _chmod_acl(descriptor, "+a", acl)
+                    except Exception:
+                        # A command-level failure does not prove the kernel left the ACL
+                        # unchanged. Classify while the exact held descriptor remains live.
+                        try:
+                            after_failed = _acl_listing(descriptor)
+                        except Exception:
+                            record["added"] = True
+                        else:
+                            record["added"] = after_failed != before
+                        raise
+                    record["added"] = True
+                    after = _acl_listing(descriptor)
+
+                if after == before or not _principal_already_present(after, principal):
+                    raise SelectedXcodeBuildOrchestratorError(
+                        f"private read-lease ACL did not materialize exactly: {path}"
+                    )
+                if _descriptor_signature(descriptor) != accepted_signature:
+                    raise SelectedXcodeBuildOrchestratorError(
+                        f"private read-lease held descriptor changed after grant: {path}"
+                    )
+                diagnostic = _open_pinned_path(
+                    path, is_directory, accepted_signature
+                )
+                os.close(diagnostic)
+
+            # ACL application itself spans multiple syscalls. Re-attest the held
+            # symlink graph after the final ACL is proven and before grant returns.
+            # Any persistent retarget in that interval enters the existing exact
+            # rollback path instead of becoming build authority.
+            _validate_lease_subject_symlinks(self._subjects, pinned_plan)
+        except Exception as error:
+            try:
+                self.revoke()
+            except Exception as rollback_error:
+                raise SelectedXcodeBuildOrchestratorError(
+                    "private read-lease admission failed and exact rollback also failed"
+                ) from rollback_error
+            raise error
+
+    def revoke(self, *, suppress_errors: bool = False) -> None:
+        failures: list[str] = []
+        native_darwin = _use_native_darwin_acl()
+        for record in reversed(self._opened):
+            descriptor = int(record["descriptor"])
+            path = Path(record["path"])
+            baseline = record.get("darwin_baseline")
+            try:
+                if bool(record["added"]):
+                    accepted_signature = record.get("accepted_signature")
+                    is_directory = record.get("is_directory")
+                    path_matches = False
+                    if (
+                        isinstance(accepted_signature, tuple)
+                        and len(accepted_signature) == 3
+                        and isinstance(is_directory, bool)
+                    ):
+                        try:
+                            diagnostic = _open_pinned_path(
+                                path, is_directory, accepted_signature
+                            )
+                        except Exception:
+                            path_matches = False
+                        else:
+                            os.close(diagnostic)
+                            path_matches = True
+                    else:
+                        try:
+                            path_matches = (
+                                _descriptor_signature(descriptor) == _path_signature(path)
+                            )
+                        except Exception:
+                            path_matches = False
+                    if not path_matches:
+                        failures.append(
+                            f"private read-lease pathname no longer identifies opened object: {path}"
+                        )
+
+                    if native_darwin:
+                        if not isinstance(baseline, dict):
+                            failures.append(
+                                f"private read-lease captured no Darwin ACL baseline: {path}"
+                            )
+                        else:
+                            _darwin_acl_restore(descriptor, baseline)
+                            if path_matches:
+                                restored = _path_acl_listing(path)
+                                if restored != str(record["before"]):
+                                    failures.append(
+                                        f"private read-lease did not restore exact ACL listing: {path}"
+                                    )
+                    else:
+                        _chmod_acl(descriptor, "-a", str(record["acl"]))
+                        restored = _acl_listing(descriptor)
+                        if restored != str(record["before"]):
+                            failures.append(
+                                f"private read-lease did not restore exact ACL listing: {path}"
+                            )
+            except Exception as error:
+                failures.append(f"{path}: {error}")
+            finally:
+                if native_darwin and isinstance(baseline, dict):
+                    try:
+                        _darwin_acl_release(baseline)
+                        record["darwin_baseline"] = None
+                    except Exception as error:
+                        failures.append(f"{path}: {error}")
+                try:
+                    os.close(descriptor)
+                except OSError as error:
+                    failures.append(f"{path}: descriptor close failed: {error}")
+        self._opened.clear()
+        self._principal = ""
+        if failures and not suppress_errors:
+            raise SelectedXcodeBuildOrchestratorError(
+                "private read-lease revocation failed: " + "; ".join(failures)
+            )
+'''
+          source = source[:start] + replacement + source[end:]
+          path.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Run focused portable regressions and source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/capture_selected_xcode_build_orchestrator.py
+          python3 scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          python3 scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+          python3 scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py
+          python3 scripts/ci/tests/test_capture_private_read_lease_darwin_native_transport.py
+          git diff --check
+
+      - name: Commit exact production materialization
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/ci/capture_selected_xcode_build_orchestrator.py
+          git diff --cached --check
+          git diff --cached --quiet && { echo 'no production change materialized' >&2; exit 1; }
+          git commit -m 'Fix Darwin private read-lease ACL transport'
+          git push origin HEAD:recovery/v17-capture-darwin-native-read-lease-sol-20260817
