@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 45,
+    "classifiedPRTotal": 44,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1473,17 +1473,6 @@
         "similarity": 0.406,
         "title": "[Capture P0][V17][VALIDATION] Classify native ACL acquisition and held-fd revoke"
       },
-      "3540": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "0fa4d56e4f6b3ce05dd3fce386b59dbc6c90fa34",
-        "lane": "capture-signed-install-custody",
-        "pr": 3540,
-        "recommendedAction": "independent-review",
-        "similarity": 0.313,
-        "title": "[Capture P0][V17][CI] Repair provenance launcher ABI oracle"
-      },
       "3541": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1592,7 +1581,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-17T22:49:01Z",
+    "liveRefreshAt": "2026-08-17T22:49:19Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5377,10 +5366,10 @@
       "userValue": 7
     }
   },
-  "revision": 893,
+  "revision": 894,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-17T22:49:03Z",
+  "updatedAt": "2026-08-17T22:49:21Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5456,7 +5445,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-17T22:49:01Z",
+      "updatedAt": "2026-08-17T22:49:19Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
