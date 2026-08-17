@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 36,
+    "classifiedPRTotal": 35,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1415,7 +1415,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3492,
         "recommendedAction": "independent-review",
-        "similarity": 0.331,
+        "similarity": 0.287,
         "title": "[Capture P0][CI] Anchor private UID lease fixtures under real Darwin temp"
       },
       "3497": {
@@ -1439,17 +1439,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.346,
         "title": "[Capture P0][REPAIR INGREDIENT] Bind strict workspace to accepted root"
-      },
-      "3527": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "b1a61758116c6e6fea5140580c592365e05d8a90",
-        "lane": "capture-private-read-lease",
-        "pr": 3527,
-        "recommendedAction": "independent-review",
-        "similarity": 0.322,
-        "title": "[Capture P0][CI] Make launcher provenance contract semantic (clean)"
       },
       "3535": {
         "classification": "canonical-candidate",
@@ -1493,7 +1482,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-16T13:00:10Z",
+    "liveRefreshAt": "2026-08-17T03:03:52Z",
     "liveRefreshDuplicatesSuppressed": [
       3416
     ],
@@ -5278,10 +5267,10 @@
       "userValue": 7
     }
   },
-  "revision": 852,
+  "revision": 853,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-16T13:00:12Z",
+  "updatedAt": "2026-08-17T03:03:53Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5357,7 +5346,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-16T13:00:10Z",
+      "updatedAt": "2026-08-17T03:03:52Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
