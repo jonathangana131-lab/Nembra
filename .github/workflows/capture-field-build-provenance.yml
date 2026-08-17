@@ -264,7 +264,28 @@ jobs:
           fi
           grep -Fq 'def _replace_selected_xcode(' "$selected_xcode_orchestrator"
           grep -Fq 'caller supplied DEVELOPER_DIR authority is forbidden' "$selected_xcode_orchestrator"
-          grep -Fq 'launcher_run(field_pid, source_sha, freeze_helper_base64, freeze_helper_blob)' "$selected_xcode_orchestrator"
+          /usr/bin/python3 -I - "$selected_xcode_orchestrator" <<'PY'
+          import ast
+          import sys
+          from pathlib import Path
+
+          source = Path(sys.argv[1]).read_text(encoding="utf-8")
+          tree = ast.parse(source, filename=sys.argv[1])
+          calls = [
+              node
+              for node in ast.walk(tree)
+              if isinstance(node, ast.Call)
+              and isinstance(node.func, ast.Name)
+              and node.func.id == "launcher_run"
+          ]
+          if len(calls) != 1:
+              raise SystemExit(f"expected exactly one launcher_run call, found {len(calls)}")
+          call = calls[0]
+          names = [arg.id if isinstance(arg, ast.Name) else None for arg in call.args]
+          expected = ["field_pid", "source_sha", "freeze_helper_base64", "freeze_helper_blob"]
+          if names != expected or call.keywords:
+              raise SystemExit(f"launcher_run authority ABI drifted: args={names!r} keywords={len(call.keywords)}")
+          PY
           grep -Fq 'run_custodied_build(' "$selected_xcode_orchestrator"
           grep -Fq 'DEVELOPER_DIR={frozen_developer}' "$selected_xcode_orchestrator"
           grep -Fq 'def _invalidate_invoker_sudo(' "$build_origin_custody"
