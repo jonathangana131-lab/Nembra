@@ -1239,7 +1239,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3359,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.198,
+        "similarity": 0.203,
         "title": "[Capture P0][VALIDATION] Bind generated CocoaPods/private inputs before source snapshot"
       },
       "3360": {
@@ -1437,7 +1437,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3516,
         "recommendedAction": "independent-review",
-        "similarity": 0.346,
+        "similarity": 0.336,
         "title": "[Capture P0][REPAIR INGREDIENT] Bind strict workspace to accepted root"
       },
       "3535": {
@@ -1448,7 +1448,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3535,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.376,
+        "similarity": 0.363,
         "title": "[Capture P0][INTEGRATION] Execute compiler from complete accepted root"
       }
     },
@@ -1482,7 +1482,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-17T06:02:32Z",
+    "liveRefreshAt": "2026-08-17T22:00:20Z",
     "liveRefreshDuplicatesSuppressed": [
       3416
     ],
@@ -5267,10 +5267,10 @@
       "userValue": 7
     }
   },
-  "revision": 856,
+  "revision": 857,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-17T06:02:33Z",
+  "updatedAt": "2026-08-17T22:00:21Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5346,7 +5346,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-17T06:02:32Z",
+      "updatedAt": "2026-08-17T22:00:20Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
