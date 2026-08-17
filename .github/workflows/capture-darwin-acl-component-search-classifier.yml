@@ -1,0 +1,231 @@
+name: Capture Darwin ACL Component Search Classifier
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-darwin-acl-component-search-classifier.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  classify:
+    if: github.head_ref == 'parallel/v17-capture-acl-component-search-gpt56sol-20260817'
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact validation scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent=f31af47b5db2f503213997fc43bc6c5820b250ba
+          test "$(git merge-base "$parent" HEAD)" = "$parent"
+          changed="$(git diff --name-only "$parent" HEAD)"
+          test "$changed" = ".github/workflows/capture-darwin-acl-component-search-classifier.yml"
+          git diff --check "$parent" HEAD
+
+      - name: Classify root, file, and intermediate-directory ACL requirements
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/sudo -n /usr/bin/true
+          field_user="$(/usr/bin/id -un)"
+          /usr/bin/sudo -n env \
+            NEMBRA_TEST_FIELD_USER="$field_user" \
+            PYTHONDONTWRITEBYTECODE=1 \
+            /usr/bin/python3 -B -I - <<'PY'
+          from __future__ import annotations
+
+          import os
+          from pathlib import Path
+          import pwd
+          import shutil
+          import subprocess
+          import tempfile
+
+          principal = os.environ["NEMBRA_TEST_FIELD_USER"]
+          account = pwd.getpwnam(principal)
+          uid = account.pw_uid
+          gid = account.pw_gid
+          payload = b"NEMBRA-ACCEPTED-ROOT-READ-ONLY\n"
+
+          root = Path(tempfile.mkdtemp(prefix="nembra-acl-component-search-", dir="/private/tmp"))
+          git_dir = root / ".git"
+          objects_dir = git_dir / "objects"
+          payload_path = objects_dir / "accepted.bin"
+
+          root_acl = f"user:{principal} allow list,search,readattr,readextattr,readsecurity"
+          search_acl = f"user:{principal} allow search,readattr,readextattr,readsecurity"
+          read_acl = f"user:{principal} allow read,readattr,readextattr,readsecurity"
+
+          def run(*argv: object, check: bool = True) -> subprocess.CompletedProcess[str]:
+              return subprocess.run(
+                  [str(value) for value in argv],
+                  stdin=subprocess.DEVNULL,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  text=True,
+                  check=check,
+              )
+
+          def listing(path: Path) -> str:
+              return run("/bin/ls", "-Hlde", path).stdout
+
+          def add_acl(path: Path, acl: str) -> None:
+              run("/bin/chmod", "+a", acl, path)
+
+          def remove_acl(path: Path, acl: str) -> None:
+              run("/bin/chmod", "-a", acl, path)
+
+          def field_attempt(path: Path, *, write: bool = False) -> tuple[bool, bytes]:
+              read_fd, write_fd = os.pipe()
+              pid = os.fork()
+              if pid == 0:
+                  try:
+                      os.close(read_fd)
+                      os.initgroups(principal, gid)
+                      os.setgid(gid)
+                      os.setuid(uid)
+                      if write:
+                          descriptor = os.open(path, os.O_WRONLY | os.O_APPEND)
+                          os.close(descriptor)
+                          message = b"OK:write"
+                      else:
+                          descriptor = os.open(path, os.O_RDONLY)
+                          try:
+                              observed = os.read(descriptor, 4096)
+                          finally:
+                              os.close(descriptor)
+                          message = b"OK:read:" + observed
+                  except OSError as error:
+                      message = f"ERR:{error.errno}:{error.strerror}".encode("utf-8", "replace")
+                  except BaseException as error:
+                      message = f"EXC:{type(error).__name__}:{error}".encode("utf-8", "replace")
+                  try:
+                      os.write(write_fd, message)
+                  finally:
+                      os.close(write_fd)
+                  os._exit(0)
+
+              os.close(write_fd)
+              chunks: list[bytes] = []
+              while True:
+                  chunk = os.read(read_fd, 4096)
+                  if not chunk:
+                      break
+                  chunks.append(chunk)
+              os.close(read_fd)
+              _, status = os.waitpid(pid, 0)
+              if not os.WIFEXITED(status) or os.WEXITSTATUS(status) != 0:
+                  raise SystemExit(f"field probe child failed status={status}")
+              message = b"".join(chunks)
+              return message.startswith(b"OK:"), message
+
+          try:
+              os.chown(root, 0, 0)
+              os.chmod(root, 0o700)
+              git_dir.mkdir(mode=0o700)
+              objects_dir.mkdir(mode=0o700)
+              payload_path.write_bytes(payload)
+              for target in (git_dir, objects_dir, payload_path):
+                  os.chown(target, 0, 0)
+              os.chmod(git_dir, 0o700)
+              os.chmod(objects_dir, 0o700)
+              os.chmod(payload_path, 0o600)
+              for target in (root, git_dir, objects_dir, payload_path):
+                  run("/bin/chmod", "-N", target)
+
+              baseline = {target: listing(target) for target in (root, git_dir, objects_dir, payload_path)}
+
+              baseline_ok, baseline_detail = field_attempt(payload_path)
+              if baseline_ok:
+                  raise SystemExit(f"baseline unexpectedly readable by field identity: {baseline_detail!r}")
+
+              add_acl(root, root_acl)
+              root_only_ok, root_only_detail = field_attempt(payload_path)
+              if root_only_ok:
+                  raise SystemExit(f"root-only ACL unexpectedly crossed private child directories: {root_only_detail!r}")
+
+              add_acl(payload_path, read_acl)
+              root_file_ok, root_file_detail = field_attempt(payload_path)
+              if root_file_ok:
+                  raise SystemExit(f"root + file ACL unexpectedly bypassed missing component search: {root_file_detail!r}")
+
+              add_acl(git_dir, search_acl)
+              one_component_ok, one_component_detail = field_attempt(payload_path)
+              if one_component_ok:
+                  raise SystemExit(f"one intermediate search ACL unexpectedly bypassed deeper private component: {one_component_detail!r}")
+
+              add_acl(objects_dir, search_acl)
+              full_component_ok, full_component_detail = field_attempt(payload_path)
+              if not full_component_ok or full_component_detail != b"OK:read:" + payload:
+                  raise SystemExit(f"complete component-search lease did not enable exact read: {full_component_detail!r}")
+
+              write_ok, write_detail = field_attempt(payload_path, write=True)
+              if write_ok:
+                  raise SystemExit(f"read/search lease accidentally granted write authority: {write_detail!r}")
+
+              remove_acl(objects_dir, search_acl)
+              remove_acl(git_dir, search_acl)
+              remove_acl(payload_path, read_acl)
+              remove_acl(root, root_acl)
+
+              restored = {target: listing(target) for target in (root, git_dir, objects_dir, payload_path)}
+              if restored != baseline:
+                  raise SystemExit("component-search classifier did not restore exact baseline ACL listings")
+
+              post_revoke_ok, post_revoke_detail = field_attempt(payload_path)
+              if post_revoke_ok:
+                  raise SystemExit(f"field identity retained read authority after revoke: {post_revoke_detail!r}")
+
+              print(
+                  "NEMBRA_DARWIN_ACL_COMPONENT_SEARCH "
+                  "baselineDenied=true "
+                  "rootOnlyDenied=true "
+                  "rootPlusFileDenied=true "
+                  "partialComponentDenied=true "
+                  "fullComponentSearchRead=true "
+                  "writeDenied=true "
+                  "exactAclRestore=true "
+                  "postRevokeDenied=true"
+              )
+              print(f"baseline={baseline_detail!r}")
+              print(f"rootOnly={root_only_detail!r}")
+              print(f"rootPlusFile={root_file_detail!r}")
+              print(f"partialComponent={one_component_detail!r}")
+              print(f"fullComponent={full_component_detail!r}")
+              print(f"writeAttempt={write_detail!r}")
+              print(f"postRevoke={post_revoke_detail!r}")
+          finally:
+              for target, acl in (
+                  (objects_dir, search_acl),
+                  (git_dir, search_acl),
+                  (payload_path, read_acl),
+                  (root, root_acl),
+              ):
+                  try:
+                      remove_acl(target, acl)
+                  except Exception:
+                      pass
+              for target in (payload_path, objects_dir, git_dir, root):
+                  try:
+                      if target.exists() or target.is_symlink():
+                          os.chmod(target, 0o700 if target.is_dir() else 0o600)
+                  except OSError:
+                      pass
+              shutil.rmtree(root, ignore_errors=True)
+          PY
+
+      - name: Preserve validation-only truth boundary
+        if: always()
+        shell: bash
+        run: |
+          echo 'NEMBRA_DARWIN_ACL_COMPONENT_SEARCH validationOnly=true productionAuthorityChanged=false physicalAuthorityCreated=false'
+          echo 'No install, device, Bluetooth, Tuya, DP, command, telemetry, or riding authority is created by this classifier.'
