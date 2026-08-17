@@ -1,6 +1,11 @@
 name: Capture Current Accepted Root Native FD ACL Oracle
 
 on:
+  push:
+    branches:
+      - diagnostic/v17-capture-darwin-native-acl-fd-oracle-sol
+    paths:
+      - .github/workflows/capture-current-accepted-root-acl-fd-oracle.yml
   pull_request:
     paths:
       - .github/workflows/capture-current-accepted-root-acl-fd-oracle.yml
