@@ -1922,7 +1922,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
         watchdog = nil
         currentConnectionToken = nil
         localBLESettlementToken = nil
-        sdkLocalBLEOnline = false
+        // Package-owned continuity retirement is not observed transport loss. Preserve the
+        // last actual SDK-local BLE state instead of fabricating an offline observation.
         driver = nil
         await refreshLedgerSnapshot()
         phase = .failed
