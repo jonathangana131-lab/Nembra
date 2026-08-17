@@ -1,0 +1,262 @@
+name: Capture ACL Real Principal Classifier
+
+on:
+  push:
+    branches:
+      - validation/v17-capture-acl-real-principal-classifier-sol-20260817
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ATTACKED_PARENT: 0a8a874ecbc85bdf68b4a63b4c50b5f4c36c2e06
+
+jobs:
+  classify:
+    name: Classify public fd ACL with real field principal
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact diagnostic parent and one-file scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          git cat-file -e "$ATTACKED_PARENT^{commit}"
+          git merge-base --is-ancestor "$ATTACKED_PARENT" HEAD
+          changed="$(git diff --name-only "$ATTACKED_PARENT"...HEAD)"
+          test "$changed" = '.github/workflows/capture-acl-real-principal-classifier.yml'
+          git diff --check "$ATTACKED_PARENT"...HEAD
+
+      - name: Build public fd ACL helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/fd_acl_helper.c" <<'C'
+          #include <sys/types.h>
+          #include <sys/acl.h>
+          #include <sys/stat.h>
+          #include <errno.h>
+          #include <fcntl.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <string.h>
+          #include <unistd.h>
+
+          static void die(const char *label) {
+              fprintf(stderr, "%s: %s\n", label, strerror(errno));
+              exit(70);
+          }
+
+          static acl_t get_path_acl(const char *path) {
+              acl_t acl = acl_get_file(path, ACL_TYPE_EXTENDED);
+              if (!acl) die("acl_get_file");
+              return acl;
+          }
+
+          static void apply_source(int fd, const char *source) {
+              acl_t acl = get_path_acl(source);
+              if (acl_set_fd(fd, acl) != 0) die("acl_set_fd");
+              if (acl_free(acl) != 0) die("acl_free");
+          }
+
+          static void require_same(int fd, const char *path) {
+              struct stat a;
+              struct stat b;
+              if (fstat(fd, &a) != 0) die("fstat");
+              if (lstat(path, &b) != 0) die("lstat");
+              if (a.st_dev != b.st_dev || a.st_ino != b.st_ino ||
+                  (a.st_mode & S_IFMT) != (b.st_mode & S_IFMT)) {
+                  fputs("descriptor identity drift\n", stderr);
+                  exit(71);
+              }
+          }
+
+          static void grant_after_rename(
+              const char *accepted,
+              const char *held,
+              const char *desired
+          ) {
+              int fd = open(accepted, O_RDONLY | O_DIRECTORY);
+              if (fd < 0) die("open accepted");
+              require_same(fd, accepted);
+              if (rename(accepted, held) != 0) die("rename");
+              if (mkdir(accepted, 0700) != 0) die("mkdir replacement");
+              char replacement[2048];
+              if (snprintf(replacement, sizeof(replacement), "%s/replacement.txt", accepted) >= (int)sizeof(replacement)) {
+                  fputs("replacement path too long\n", stderr);
+                  exit(72);
+              }
+              int replacement_fd = open(replacement, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+              if (replacement_fd < 0) die("create replacement payload");
+              if (write(replacement_fd, "R", 1) != 1) die("write replacement payload");
+              if (close(replacement_fd) != 0) die("close replacement payload");
+              require_same(fd, held);
+              struct stat original;
+              struct stat hostile;
+              if (lstat(held, &original) != 0) die("lstat held");
+              if (lstat(accepted, &hostile) != 0) die("lstat replacement");
+              if (original.st_dev == hostile.st_dev && original.st_ino == hostile.st_ino) {
+                  fputs("replacement aliases original\n", stderr);
+                  exit(73);
+              }
+              apply_source(fd, desired);
+              if (close(fd) != 0) die("close grant fd");
+          }
+
+          static void apply_path(const char *target, const char *source) {
+              int fd = open(target, O_RDONLY | O_DIRECTORY);
+              if (fd < 0) die("open target");
+              apply_source(fd, source);
+              if (close(fd) != 0) die("close target");
+          }
+
+          static void dump_acl(const char *path) {
+              acl_t acl = get_path_acl(path);
+              ssize_t length = 0;
+              char *text = acl_to_text(acl, &length);
+              if (!text) die("acl_to_text");
+              if (fwrite(text, 1, (size_t)length, stdout) != (size_t)length) die("fwrite");
+              if (acl_free(text) != 0) die("acl_free text");
+              if (acl_free(acl) != 0) die("acl_free acl");
+          }
+
+          int main(int argc, char **argv) {
+              if (argc == 5 && strcmp(argv[1], "grant-after-rename") == 0) {
+                  grant_after_rename(argv[2], argv[3], argv[4]);
+                  return 0;
+              }
+              if (argc == 4 && strcmp(argv[1], "apply") == 0) {
+                  apply_path(argv[2], argv[3]);
+                  return 0;
+              }
+              if (argc == 3 && strcmp(argv[1], "dump") == 0) {
+                  dump_acl(argv[2]);
+                  return 0;
+              }
+              return 64;
+          }
+          C
+          /usr/bin/clang -Wall -Wextra -Werror -O2 \
+            "$RUNNER_TEMP/fd_acl_helper.c" -o "$RUNNER_TEMP/fd_acl_helper"
+
+      - name: Prepare root-owned private fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="/private/tmp/nembra-real-principal-acl-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          /usr/bin/sudo -n /bin/rm -rf "$root"
+          /usr/bin/sudo -n /bin/mkdir -m 0755 "$root"
+          /usr/bin/sudo -n /bin/mkdir -m 0700 \
+            "$root/absent.accepted" \
+            "$root/seeded.accepted" \
+            "$root/baseline-absent" \
+            "$root/baseline-seeded" \
+            "$root/desired"
+          printf A | /usr/bin/sudo -n /usr/bin/tee "$root/absent.accepted/payload.txt" >/dev/null
+          printf S | /usr/bin/sudo -n /usr/bin/tee "$root/seeded.accepted/payload.txt" >/dev/null
+          /usr/bin/sudo -n /bin/chmod 0644 \
+            "$root/absent.accepted/payload.txt" \
+            "$root/seeded.accepted/payload.txt"
+          /usr/bin/sudo -n /bin/chmod -N \
+            "$root/absent.accepted" \
+            "$root/seeded.accepted" \
+            "$root/baseline-absent" \
+            "$root/baseline-seeded" \
+            "$root/desired"
+          if /usr/bin/head -c 1 "$root/absent.accepted/payload.txt" >/dev/null 2>&1; then
+            echo 'field user unexpectedly reads private fixture before grant' >&2
+            exit 1
+          fi
+          echo 'NEMBRA_REAL_PRINCIPAL_ACL privateFixture=true'
+
+      - name: Resolve real field user into Darwin ACL
+        shell: bash
+        run: |
+          set -euo pipefail
+          field_user="$(/usr/bin/id -un)"
+          root="/private/tmp/nembra-real-principal-acl-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          /usr/bin/sudo -n /bin/chmod +a 'user:root allow readattr' \
+            "$root/seeded.accepted" "$root/baseline-seeded"
+          /usr/bin/sudo -n /bin/chmod +a \
+            "user:${field_user} allow list,search,readattr,readextattr,readsecurity" \
+            "$root/desired"
+          /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_helper" dump "$root/baseline-absent" > "$RUNNER_TEMP/baseline-absent.acl"
+          /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_helper" dump "$root/baseline-seeded" > "$RUNNER_TEMP/baseline-seeded.acl"
+          echo "NEMBRA_REAL_PRINCIPAL_ACL principal=${field_user} resolved=true"
+
+      - name: Absent baseline - descriptor grant survives hostile pathname replacement
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="/private/tmp/nembra-real-principal-acl-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_helper" grant-after-rename \
+            "$root/absent.accepted" "$root/absent.held" "$root/desired"
+          echo 'NEMBRA_REAL_PRINCIPAL_ACL absentGrantSyscall=true originalVnode=true'
+
+      - name: Absent baseline - actual field access reaches original but not replacement
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="/private/tmp/nembra-real-principal-acl-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          test "$(/usr/bin/head -c 1 "$root/absent.held/payload.txt")" = A
+          if /usr/bin/head -c 1 "$root/absent.accepted/replacement.txt" >/dev/null 2>&1; then
+            echo 'hostile replacement unexpectedly readable' >&2
+            exit 1
+          fi
+          /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_helper" dump "$root/absent.accepted" > "$RUNNER_TEMP/absent-replacement.acl"
+          echo 'NEMBRA_REAL_PRINCIPAL_ACL absentActualAccess=true replacementUnaffected=true'
+
+      - name: Absent baseline - public fd setter restores empty ACL
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="/private/tmp/nembra-real-principal-acl-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_helper" apply "$root/absent.held" "$root/baseline-absent"
+          if /usr/bin/head -c 1 "$root/absent.held/payload.txt" >/dev/null 2>&1; then
+            echo 'field access survived empty ACL restore' >&2
+            exit 1
+          fi
+          /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_helper" dump "$root/absent.held" > "$RUNNER_TEMP/absent-restored.acl"
+          /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_helper" dump "$root/absent.accepted" > "$RUNNER_TEMP/absent-replacement-after.acl"
+          diff -u "$RUNNER_TEMP/baseline-absent.acl" "$RUNNER_TEMP/absent-restored.acl"
+          diff -u "$RUNNER_TEMP/absent-replacement.acl" "$RUNNER_TEMP/absent-replacement-after.acl"
+          echo 'NEMBRA_REAL_PRINCIPAL_ACL emptyBaselineRestore=true accessRevoked=true'
+
+      - name: Seeded baseline - descriptor grant and seeded rollback are exact
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="/private/tmp/nembra-real-principal-acl-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_helper" grant-after-rename \
+            "$root/seeded.accepted" "$root/seeded.held" "$root/desired"
+          test "$(/usr/bin/head -c 1 "$root/seeded.held/payload.txt")" = S
+          if /usr/bin/head -c 1 "$root/seeded.accepted/replacement.txt" >/dev/null 2>&1; then
+            echo 'seeded hostile replacement unexpectedly readable' >&2
+            exit 1
+          fi
+          /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_helper" dump "$root/seeded.accepted" > "$RUNNER_TEMP/seeded-replacement.acl"
+          /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_helper" apply "$root/seeded.held" "$root/baseline-seeded"
+          if /usr/bin/head -c 1 "$root/seeded.held/payload.txt" >/dev/null 2>&1; then
+            echo 'field access survived seeded ACL restore' >&2
+            exit 1
+          fi
+          /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_helper" dump "$root/seeded.held" > "$RUNNER_TEMP/seeded-restored.acl"
+          /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_helper" dump "$root/seeded.accepted" > "$RUNNER_TEMP/seeded-replacement-after.acl"
+          diff -u "$RUNNER_TEMP/baseline-seeded.acl" "$RUNNER_TEMP/seeded-restored.acl"
+          diff -u "$RUNNER_TEMP/seeded-replacement.acl" "$RUNNER_TEMP/seeded-replacement-after.acl"
+          echo 'NEMBRA_REAL_PRINCIPAL_ACL seededGrant=true seededRestore=true replacementUnaffected=true'
+
+      - name: Preserve validation-only boundary
+        if: always()
+        shell: bash
+        run: |
+          root="/private/tmp/nembra-real-principal-acl-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          /usr/bin/sudo -n /bin/rm -rf "$root" 2>/dev/null || true
+          echo 'NEMBRA_REAL_PRINCIPAL_ACL validationOnly=true productionChanged=false physicalAuthorityCreated=false'
