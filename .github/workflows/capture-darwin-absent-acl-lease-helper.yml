@@ -1,0 +1,179 @@
+name: Capture Darwin Absent ACL Lease Helper
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/capture_darwin_absent_acl_lease.py
+      - .github/workflows/capture-darwin-absent-acl-lease-helper.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prove-held-fd-lease:
+    if: github.head_ref == 'validation/v17-capture-darwin-absent-acl-lease-helper-sol-20260817'
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact stacked scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='5a6ecdf76917ec1e447d816941ada060bd4d44bd'
+          /usr/bin/git merge-base --is-ancestor "$parent" HEAD
+          changed="$(/usr/bin/git diff --name-only "$parent"...HEAD)"
+          expected=$'.github/workflows/capture-darwin-absent-acl-lease-helper.yml\nscripts/ci/capture_darwin_absent_acl_lease.py'
+          test "$changed" = "$expected"
+          /usr/bin/git diff --check "$parent"...HEAD
+          /usr/bin/python3 -m py_compile scripts/ci/capture_darwin_absent_acl_lease.py
+          /usr/bin/git diff --quiet "$parent"...HEAD -- scripts/ci/capture_selected_xcode_build_orchestrator.py
+
+      - name: Prove absent-baseline grant and descriptor-bound revoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/sudo -n /usr/bin/true
+          field_user="$(/usr/bin/id -un)"
+          field_uid="$(/usr/bin/id -u)"
+          field_gid="$(/usr/bin/id -g)"
+          test "$field_uid" != '0'
+
+          root="$(/usr/bin/sudo -n /usr/bin/mktemp -d /private/tmp/nembra-darwin-lease-helper.XXXXXX)"
+          trap '/usr/bin/sudo -n /bin/rm -rf "$root" >/dev/null 2>&1 || true' EXIT
+          /usr/bin/sudo -n /bin/chmod 0711 "$root"
+          subject="$root/accepted-root"
+          moved="$root/accepted-root.moved"
+          replacement="$root/accepted-root"
+          seeded="$root/preexisting-acl"
+          /usr/bin/sudo -n /bin/mkdir -m 0700 "$subject" "$seeded"
+
+          /usr/bin/sudo -n /usr/bin/python3 -I - \
+            "$GITHUB_WORKSPACE" "$field_user" "$field_uid" "$field_gid" \
+            "$subject" "$moved" "$replacement" "$seeded" <<'PY'
+          import os
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          workspace = Path(sys.argv[1])
+          principal = sys.argv[2]
+          uid = int(sys.argv[3])
+          gid = int(sys.argv[4])
+          subject = Path(sys.argv[5])
+          moved = Path(sys.argv[6])
+          replacement = Path(sys.argv[7])
+          seeded = Path(sys.argv[8])
+          sys.path.insert(0, str(workspace / "scripts" / "ci"))
+
+          from capture_darwin_absent_acl_lease import (
+              DarwinAbsentACLLease,
+              DarwinAbsentACLLeaseError,
+              DarwinAbsentACLPathIdentityLost,
+              path_extended_acl_absent,
+          )
+
+          ace = f"user:{principal} allow list,search,readattr,readextattr,readsecurity"
+
+          def list_as(path: Path) -> int:
+              pid = os.fork()
+              if pid == 0:
+                  try:
+                      os.setgroups([])
+                      os.setgid(gid)
+                      os.setuid(uid)
+                      with os.scandir(path) as entries:
+                          list(entries)
+                  except BaseException:
+                      os._exit(10)
+                  os._exit(0)
+              _, status = os.waitpid(pid, 0)
+              if not os.WIFEXITED(status):
+                  return 125
+              return os.WEXITSTATUS(status)
+
+          flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+          fd = os.open(subject, flags)
+          try:
+              assert path_extended_acl_absent(subject)
+              assert list_as(subject) != 0
+
+              lease = DarwinAbsentACLLease(fd, subject, ace)
+              lease.grant()
+              assert lease.active
+              assert not path_extended_acl_absent(subject)
+              assert list_as(subject) == 0
+
+              lease.revoke()
+              assert not lease.active
+              assert path_extended_acl_absent(subject)
+              assert list_as(subject) != 0
+              print("NEMBRA_DARWIN_LEASE normalGrant=true normalRevoke=true separateUIDRevoked=true")
+
+              lease.grant()
+              assert list_as(subject) == 0
+              os.rename(subject, moved)
+              os.mkdir(replacement, 0o700)
+              assert list_as(moved) == 0
+              assert list_as(replacement) != 0
+              assert path_extended_acl_absent(replacement)
+
+              saw_identity_loss = False
+              try:
+                  lease.revoke()
+              except DarwinAbsentACLPathIdentityLost:
+                  saw_identity_loss = True
+              assert saw_identity_loss
+              assert not lease.active
+              assert path_extended_acl_absent(moved)
+              assert path_extended_acl_absent(replacement)
+              assert list_as(moved) != 0
+              assert list_as(replacement) != 0
+              print(
+                  "NEMBRA_DARWIN_LEASE pathReplaced=true originalCleanedByFD=true "
+                  "replacementUntouched=true failClosedIdentityLoss=true"
+              )
+          finally:
+              os.close(fd)
+
+          # Production helper intentionally refuses to mutate an object that already
+          # carries an extended ACL until the non-empty restore primitive is proven.
+          completed = subprocess.run(
+              ["/bin/chmod", "+a", ace, str(seeded)],
+              stdin=subprocess.DEVNULL,
+              stdout=subprocess.PIPE,
+              stderr=subprocess.PIPE,
+              text=True,
+              check=False,
+          )
+          assert completed.returncode == 0, completed.stderr
+          assert not path_extended_acl_absent(seeded)
+          seeded_fd = os.open(seeded, flags)
+          try:
+              seeded_lease = DarwinAbsentACLLease(seeded_fd, seeded, ace)
+              rejected = False
+              try:
+                  seeded_lease.grant()
+              except DarwinAbsentACLLeaseError as error:
+                  rejected = "pre-existing/non-empty" in str(error)
+              assert rejected
+              assert not seeded_lease.active
+              assert not path_extended_acl_absent(seeded)
+              assert list_as(seeded) == 0
+          finally:
+              os.close(seeded_fd)
+          print("NEMBRA_DARWIN_LEASE nonEmptyBaselineRejectedBeforeMutation=true")
+          PY
+
+      - name: Preserve validation boundary
+        if: always()
+        shell: bash
+        run: |
+          echo 'NEMBRA_DARWIN_ABSENT_ACL_HELPER validationIngredient=true productionOrchestratorUnchanged=true physicalAuthorityCreated=false'
+          echo 'No install, device, Bluetooth, Tuya, DP, telemetry, command, or riding authority is created by this helper validation.'
