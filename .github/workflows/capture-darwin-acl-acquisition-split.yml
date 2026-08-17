@@ -27,10 +27,19 @@ jobs:
           set -euo pipefail
           parent='f85b8c586d59fe036c4fc1a5f7624cc19bcfbbe5'
           git cat-file -e "$parent^{commit}"
-          test "$(git rev-list --parents -n 1 HEAD | awk '{print $2}')" = "$parent"
+          git merge-base --is-ancestor "$parent" HEAD
+          test "$(git merge-base "$parent" HEAD)" = "$parent"
           mapfile -t changed < <(git diff --name-only "$parent"...HEAD)
           test "${#changed[@]}" -eq 1
           test "${changed[0]}" = '.github/workflows/capture-darwin-acl-acquisition-split.yml'
+
+      - name: Record xcode-27 ACL declarations
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk="$(/usr/bin/xcrun --sdk macosx --show-sdk-path)"
+          echo "NEMBRA_DARWIN_ACL_SDK=$sdk"
+          /usr/bin/grep -nE 'acl_get_(fd|file)' "$sdk/usr/include/sys/acl.h" || true
 
       - name: Classify pathname-native and held-fd extended ACL views
         shell: bash
@@ -103,7 +112,7 @@ jobs:
               }
 
               char *baseline_path = acl_text(acl_get_file(path, ACL_TYPE_EXTENDED));
-              char *baseline_fd = acl_text(acl_get_fd_np(fd, ACL_TYPE_EXTENDED));
+              char *baseline_fd = acl_text(acl_get_fd(fd));
 
               char ace[1024];
               if (snprintf(ace, sizeof(ace), "user:%s allow list,search,readattr,readextattr,readsecurity", principal) >= (int)sizeof(ace)) {
@@ -124,7 +133,7 @@ jobs:
               }
 
               char *path_after = acl_text(acl_get_file(path, ACL_TYPE_EXTENDED));
-              char *fd_after = acl_text(acl_get_fd_np(fd, ACL_TYPE_EXTENDED));
+              char *fd_after = acl_text(acl_get_fd(fd));
               int pathname_saw = strstr(path_after, principal) != NULL;
               int fd_saw = strstr(fd_after, principal) != NULL;
 
