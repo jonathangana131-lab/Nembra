@@ -31,6 +31,14 @@ jobs:
           test "$changed" = ".github/workflows/capture-native-acl-acquisition-revoke-classifier.yml"
           git diff --check "$parent" HEAD
 
+      - name: Record xcode-27 ACL descriptor declarations
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk="$(/usr/bin/xcrun --sdk macosx --show-sdk-path)"
+          echo "NEMBRA_NATIVE_ACL_SDK=$sdk"
+          /usr/bin/grep -nE 'acl_(get|set|valid)_(fd|fd_np)' "$sdk/usr/include/sys/acl.h" || true
+
       - name: Classify native path vs fd ACL views and held-fd revoke
         shell: bash
         run: |
@@ -75,8 +83,8 @@ jobs:
           }
 
           static acl_t get_fd_acl(int fd) {
-              acl_t acl = acl_get_fd_np(fd, ACL_TYPE_EXTENDED);
-              if (!acl) die("acl_get_fd_np");
+              acl_t acl = acl_get_fd(fd);
+              if (!acl) die("acl_get_fd");
               return acl;
           }
 
@@ -217,11 +225,8 @@ jobs:
               char *replacement_before_text = acl_text(replacement_before_acl);
               char *replacement_before_shell = capture_ls(subject);
 
-              if (acl_valid_fd_np(fd, ACL_TYPE_EXTENDED, baseline_fd_acl) != 0) {
-                  die("acl_valid_fd_np baseline");
-              }
-              if (acl_set_fd_np(fd, baseline_fd_acl, ACL_TYPE_EXTENDED) != 0) {
-                  die("acl_set_fd_np baseline restore");
+              if (acl_set_fd(fd, baseline_fd_acl) != 0) {
+                  die("acl_set_fd baseline restore");
               }
 
               acl_t moved_after_acl = get_path_acl(moved);
