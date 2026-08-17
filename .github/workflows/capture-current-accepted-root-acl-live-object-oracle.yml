@@ -1,0 +1,199 @@
+name: Capture Current Accepted Root ACL Live Object Oracle
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-current-accepted-root-acl-live-object-oracle.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  oracle:
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Enforce exact-parent one-file validation child
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='f31af47b5db2f503213997fc43bc6c5820b250ba'
+          expected='.github/workflows/capture-current-accepted-root-acl-live-object-oracle.yml'
+          actual="$(git diff --name-only "$parent"...HEAD)"
+          if [ "$actual" != "$expected" ]; then
+            printf 'expected exactly %s relative to %s, got:\n%s\n' "$expected" "$parent" "$actual" >&2
+            exit 1
+          fi
+          printf 'NEMBRA_ACL_LIVE_ORACLE_SCOPE exactParent=%s oneFile=true\n' "$parent"
+
+      - name: Prove preserved acl_t rollback across pathname replacement
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/sudo -n /usr/bin/true
+          field_user="$(/usr/bin/id -un)"
+          work="$(mktemp -d "$RUNNER_TEMP/nembra-acl-live.XXXXXX")"
+          trap 'rm -rf "$work"' EXIT
+
+          cat > "$work/acl_live.c" <<'C'
+          #include <sys/types.h>
+          #include <sys/acl.h>
+          #include <sys/stat.h>
+          #include <fcntl.h>
+          #include <limits.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <string.h>
+          #include <unistd.h>
+          #include <errno.h>
+          #include <sys/wait.h>
+
+          static void fail_errno(const char *label) {
+              fprintf(stderr, "FAIL %s: %s\n", label, strerror(errno));
+              exit(2);
+          }
+
+          static void fail(const char *label) {
+              fprintf(stderr, "FAIL %s\n", label);
+              exit(3);
+          }
+
+          static char *acl_text(acl_t acl) {
+              ssize_t len = 0;
+              char *raw = acl_to_text(acl, &len);
+              if (!raw) fail_errno("acl_to_text");
+              char *copy = calloc((size_t)len + 1, 1);
+              if (!copy) fail_errno("calloc acl text");
+              memcpy(copy, raw, (size_t)len);
+              acl_free(raw);
+              return copy;
+          }
+
+          static char *fd_acl_text(int fd) {
+              acl_t acl = acl_get_fd_np(fd, ACL_TYPE_EXTENDED);
+              if (!acl) fail_errno("acl_get_fd_np");
+              char *text = acl_text(acl);
+              acl_free(acl);
+              return text;
+          }
+
+          static char *path_acl_text(const char *path) {
+              acl_t acl = acl_get_file(path, ACL_TYPE_EXTENDED);
+              if (!acl) fail_errno("acl_get_file");
+              char *text = acl_text(acl);
+              acl_free(acl);
+              return text;
+          }
+
+          static void chmod_add(const char *principal, const char *path) {
+              char ace[512];
+              int n = snprintf(ace, sizeof(ace), "user:%s allow list,search,readattr,readextattr,readsecurity", principal);
+              if (n < 0 || (size_t)n >= sizeof(ace)) fail("principal too long");
+              pid_t pid = fork();
+              if (pid < 0) fail_errno("fork");
+              if (pid == 0) {
+                  execl("/bin/chmod", "chmod", "+a", ace, path, (char *)NULL);
+                  _exit(127);
+              }
+              int status = 0;
+              if (waitpid(pid, &status, 0) < 0) fail_errno("waitpid");
+              if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) fail("chmod +a");
+          }
+
+          static void require_same_object(const struct stat *a, const struct stat *b, const char *label) {
+              if (a->st_dev != b->st_dev || a->st_ino != b->st_ino) fail(label);
+          }
+
+          static void require_different_object(const struct stat *a, const struct stat *b, const char *label) {
+              if (a->st_dev == b->st_dev && a->st_ino == b->st_ino) fail(label);
+          }
+
+          int main(int argc, char **argv) {
+              if (argc != 2) {
+                  fprintf(stderr, "usage: %s FIELD_USER\n", argv[0]);
+                  return 64;
+              }
+
+              char template[] = "/private/tmp/nembra-acl-live.XXXXXX";
+              char *root = mkdtemp(template);
+              if (!root) fail_errno("mkdtemp");
+
+              char subject[PATH_MAX];
+              char moved[PATH_MAX];
+              if (snprintf(subject, sizeof(subject), "%s/accepted-root", root) >= (int)sizeof(subject)) fail("subject path too long");
+              if (snprintf(moved, sizeof(moved), "%s/accepted-root.moved", root) >= (int)sizeof(moved)) fail("moved path too long");
+              if (mkdir(subject, 0700) != 0) fail_errno("mkdir subject");
+
+              int fd = open(subject, O_RDONLY | O_DIRECTORY);
+              if (fd < 0) fail_errno("open accepted root");
+
+              struct stat accepted_before;
+              if (fstat(fd, &accepted_before) != 0) fail_errno("fstat accepted before");
+
+              /* Preserve the kernel-derived baseline object in-process. */
+              acl_t baseline = acl_get_fd_np(fd, ACL_TYPE_EXTENDED);
+              if (!baseline) fail_errno("acl_get_fd_np baseline");
+              char *baseline_text = acl_text(baseline);
+
+              chmod_add(argv[1], subject);
+              char *granted_text = fd_acl_text(fd);
+              if (strcmp(granted_text, baseline_text) == 0) fail("pathname grant was not observed through accepted-object descriptor");
+
+              if (rename(subject, moved) != 0) fail_errno("rename accepted root");
+              if (mkdir(subject, 0700) != 0) fail_errno("mkdir replacement");
+
+              struct stat accepted_after_move;
+              struct stat moved_stat;
+              struct stat replacement_stat;
+              if (fstat(fd, &accepted_after_move) != 0) fail_errno("fstat accepted after move");
+              if (stat(moved, &moved_stat) != 0) fail_errno("stat moved accepted root");
+              if (stat(subject, &replacement_stat) != 0) fail_errno("stat replacement");
+              require_same_object(&accepted_before, &accepted_after_move, "descriptor identity changed after pathname replacement");
+              require_same_object(&accepted_before, &moved_stat, "moved pathname does not identify accepted object");
+              require_different_object(&accepted_before, &replacement_stat, "replacement unexpectedly aliases accepted object");
+
+              char *replacement_before = path_acl_text(subject);
+
+              /* Critical oracle: restore the preserved live acl_t directly. */
+              if (acl_valid_fd_np(fd, ACL_TYPE_EXTENDED, baseline) != 0) fail_errno("acl_valid_fd_np live baseline");
+              if (acl_set_fd_np(fd, baseline, ACL_TYPE_EXTENDED) != 0) fail_errno("acl_set_fd_np live baseline");
+
+              char *restored_text = fd_acl_text(fd);
+              char *replacement_after = path_acl_text(subject);
+              if (strcmp(restored_text, baseline_text) != 0) fail("live acl_t rollback did not restore exact accepted-object ACL");
+              if (strcmp(replacement_after, replacement_before) != 0) fail("descriptor rollback mutated attacker replacement pathname");
+
+              struct stat accepted_after_restore;
+              if (fstat(fd, &accepted_after_restore) != 0) fail_errno("fstat accepted after restore");
+              require_same_object(&accepted_before, &accepted_after_restore, "descriptor identity changed during rollback");
+
+              printf("NEMBRA_ACL_LIVE_OBJECT_ORACLE baselineHeldLive=true grantObservedByFd=true pathReplaced=true descriptorIdentityStable=true exactFdRollback=true replacementUntouched=true textReconstructionUsed=false\n");
+
+              free(replacement_after);
+              free(restored_text);
+              free(replacement_before);
+              free(granted_text);
+              free(baseline_text);
+              acl_free(baseline);
+              close(fd);
+              if (rmdir(subject) != 0) fail_errno("rmdir replacement");
+              if (rmdir(moved) != 0) fail_errno("rmdir moved");
+              if (rmdir(root) != 0) fail_errno("rmdir root");
+              return 0;
+          }
+          C
+
+          /usr/bin/clang -std=c11 -Wall -Wextra -Werror "$work/acl_live.c" -o "$work/acl_live"
+          /usr/bin/sudo -n "$work/acl_live" "$field_user"
+
+      - name: Preserve validation-only boundary
+        if: always()
+        shell: bash
+        run: echo 'NEMBRA_ACL_LIVE_OBJECT_ORACLE_BOUNDARY validationOnly=true productAuthorityChanged=false physicalAuthorityCreated=false'
