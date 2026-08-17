@@ -126,6 +126,18 @@ jobs:
               return acl;
           }
 
+          static void remove_fd_acl(int fd) {
+              filesec_t file_security = filesec_init();
+              if (!file_security) fail_errno("filesec_init remove ACL");
+              if (filesec_set_property(file_security, FILESEC_ACL, _FILESEC_REMOVE_ACL) != 0) {
+                  fail_errno("filesec_set_property remove ACL");
+              }
+              if (fchmodx_np(fd, file_security) != 0) {
+                  fail_errno("fchmodx_np remove ACL");
+              }
+              filesec_free(file_security);
+          }
+
           static void require_text_equal(const char *label, acl_t actual, const char *expected) {
               char *actual_text = acl_text(actual);
               if (strcmp(actual_text, expected) != 0) {
@@ -193,7 +205,7 @@ jobs:
               if (acl_free(replacement_before_acl) != 0) fail_errno("acl_free replacement before");
 
               if (!seed_baseline) {
-                  if (acl_delete_fd_np(fd, ACL_TYPE_EXTENDED) != 0) fail_errno("acl_delete_fd_np restore absent baseline");
+                  remove_fd_acl(fd);
               } else {
                   if (acl_valid_fd_np(fd, ACL_TYPE_EXTENDED, baseline_restore) != 0) fail_errno("acl_valid_fd_np baseline");
                   if (acl_set_fd_np(fd, baseline_restore, ACL_TYPE_EXTENDED) != 0) fail_errno("acl_set_fd_np restore baseline");
