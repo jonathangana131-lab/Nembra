@@ -7,9 +7,10 @@
   "workerId": "gpt56-sol-20260817-1527-go",
   "leaseId": "capture-signed-install-tests-gpt56-20260817-222700",
   "generation": 10,
-  "status": "ACTIVE",
+  "status": "RELEASED",
   "claimedAt": "2026-08-17T22:27:00Z",
-  "lastHeartbeatAt": "2026-08-17T22:37:00Z",
+  "lastHeartbeatAt": "2026-08-17T22:43:30Z",
+  "releasedAt": "2026-08-17T22:43:30Z",
   "leaseSeconds": 2700,
   "branch": "validation/v17-capture-native-acl-single-process-gpt56sol-20260817",
   "pr": 3544,
@@ -17,7 +18,7 @@
   "currentHeadSHA": "4599409980545e02757c7c8ac1f43b3c22461a9f",
   "takeoverFromWorkerId": "gpt56-sol-20260814-1553-go-review",
   "takeoverFromLeaseId": "capture-signed-install-tests-gpt56-20260814-230300",
-  "takeoverReason": "Generation-9 lease expired on 2026-08-14. Recover the validation-only tests slot for the exact #3535 native Darwin ACL rollback classifier required by review 4949579019, without touching production lease bytes until the fd-native primitive is mechanically proven.",
-  "intent": "Run a diagnostic-only single-process Darwin ACL oracle over the production-equivalent #3535 f85b root while targeting the current #3535 carrier. Capture and duplicate the held object's ACL in one process, grant only after fd/path identity proof, replace the pathname, restore through acl_set_fd_np on the held fd, and prove the replacement is untouched. No production lease change and no install/device/Bluetooth/Tuya/DP/physical authority.",
-  "checkpoint": "Draft validation #3544 exact 45994099 changes exactly one workflow path. Initial exact 1539f03f Xcode-27 run 32076463769 failed; no production conclusion was inferred because connector Actions logs are unavailable. Current head wraps the oracle so exact stdout/stderr + exit code are persisted to #3544 as a durable PR comment before the workflow reasserts failure. Run 32076744241 is QUEUED. Current #3535 carrier f31af47 changes only the older ACL diagnostic workflow; production orchestrator remains byte-identical to f85b. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-9 lease expired on 2026-08-14. Recovered the validation-only tests slot to classify the native Darwin ACL rollback primitive without touching production lease bytes.",
+  "intent": "Validation-only native Darwin ACL rollback classification. No production lease/install/device/Bluetooth/Tuya/DP/physical authority.",
+  "checkpoint": "RELEASED after fresh V17 convergence. #3544@45994099 was closed without merge as redundant PR soup. Stronger sibling #3538@8a8183de8fb6c071ca48080ea39f55df313810c0 preserves the decisive xcode-27 validation evidence: canonical-path ACL grant is observable; a held directory fd restores the moved accepted object; attacker replacement remains untouched. Highest-value next rung is production consumption of that primitive in the current #3535 compiler-root lineage followed by exact-head gates. PHYSICAL NO-GO."
 }
