@@ -99,7 +99,7 @@ class RealWholeRootLeaseTests(unittest.TestCase):
         before = field_run(self.field, self.groups, probe, *targets)
         self.assertNotEqual(before.returncode, 0)
 
-        lease = helper._PrivateReadLease((root,), root)
+        lease = helper._PrivateReadLease((root,), root, use_native_darwin_acl=True)
         lease.grant(self.field.pw_name)
         try:
             during = field_run(self.field, self.groups, probe, *targets)

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -120,6 +121,63 @@ class CapturePrivateReadLeaseRollbackTests(unittest.TestCase):
                 ),
             ):
                 lease.grant("nembrabuildrollback")
+
+
+    def test_native_strict_revoke_restores_held_object_after_path_replacement(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(prefix="nembra-lease-native-revoke-") as temporary:
+            repo, subject = self._subject(temporary)
+            descriptor = os.open(subject, os.O_RDONLY)
+            signature = helper._descriptor_signature(descriptor)
+            lease = helper._PrivateReadLease(
+                (subject,), repo, use_native_darwin_acl=True
+            )
+            events: list[tuple[str, int]] = []
+            listings = iter((
+                "",
+                " 0: user:nembrabuildnative allow read,readattr,readextattr,readsecurity\n",
+            ))
+
+            with (
+                mock.patch.object(
+                    helper,
+                    "_lease_paths",
+                    return_value=((subject, False, signature, descriptor),),
+                ),
+                mock.patch.object(helper, "_validate_lease_subject_symlinks"),
+                mock.patch.object(
+                    helper, "_capture_fd_acl_baseline", return_value=4242
+                ) as capture,
+                mock.patch.object(
+                    helper, "_path_acl_listing", side_effect=lambda *_args: next(listings)
+                ),
+                mock.patch.object(helper, "_chmod_acl_path") as grant,
+                mock.patch.object(
+                    helper,
+                    "_restore_fd_acl_baseline",
+                    side_effect=lambda fd, baseline: events.append(("restore", baseline)),
+                ) as restore,
+                mock.patch.object(
+                    helper,
+                    "_free_fd_acl_baseline",
+                    side_effect=lambda baseline: events.append(("free", baseline)),
+                ) as free,
+                mock.patch.object(helper, "_chmod_acl") as legacy_chmod,
+            ):
+                lease.grant("nembrabuildnative")
+                moved = repo / "private.fixture.moved"
+                subject.rename(moved)
+                subject.write_bytes(b"attacker replacement\n")
+                lease.revoke()
+
+            capture.assert_called_once_with(descriptor)
+            grant.assert_called_once()
+            restore.assert_called_once_with(descriptor, 4242)
+            free.assert_called_once_with(4242)
+            legacy_chmod.assert_not_called()
+            self.assertEqual(events, [("restore", 4242), ("free", 4242)])
+            self.assertEqual(lease._opened, [])
+            self.assertEqual(lease._principal, "")
 
 
 if __name__ == "__main__":
