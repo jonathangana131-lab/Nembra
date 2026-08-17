@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 36,
+    "classifiedPRTotal": 37,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1459,8 +1459,19 @@
         "lane": "capture-signed-install-custody",
         "pr": 3537,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.231,
+        "similarity": 0.434,
         "title": "[Capture P0][VALIDATION] Split Darwin pathname vs fd ACL acquisition"
+      },
+      "3538": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3538,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.434,
+        "title": "[Capture P0][V17][VALIDATION] Classify native ACL acquisition and held-fd revoke"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1493,9 +1504,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-17T22:28:45Z",
+    "liveRefreshAt": "2026-08-17T22:29:38Z",
     "liveRefreshDuplicatesSuppressed": [
-      3537
+      3538
     ],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5278,10 +5289,10 @@
       "userValue": 7
     }
   },
-  "revision": 859,
+  "revision": 860,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-17T22:28:46Z",
+  "updatedAt": "2026-08-17T22:29:40Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5357,7 +5368,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-17T22:28:45Z",
+      "updatedAt": "2026-08-17T22:29:38Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
