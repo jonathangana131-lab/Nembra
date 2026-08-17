@@ -21,7 +21,7 @@ env:
 
 jobs:
   public-fd-baseline-restore:
-    name: Prove public acl_set_fd grant + captured-baseline rollback
+    name: Classify public acl_set_fd grant + baseline restore
     runs-on: xcode-27
     timeout-minutes: 10
     steps:
@@ -42,15 +42,14 @@ jobs:
           git diff --check "$ATTACKED_PARENT"...HEAD
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Build SDK-public descriptor ACL oracle
+      - name: Build staged SDK-public descriptor ACL oracle
         shell: bash
         run: |
           set -euo pipefail
-          cat > "$RUNNER_TEMP/public_fd_acl_baseline_restore.c" <<'C'
+          cat > "$RUNNER_TEMP/fd_acl_stage.c" <<'C'
           #include <sys/types.h>
           #include <sys/acl.h>
           #include <sys/stat.h>
-          #include <sys/wait.h>
           #include <errno.h>
           #include <fcntl.h>
           #include <grp.h>
@@ -60,219 +59,143 @@ jobs:
           #include <string.h>
           #include <unistd.h>
 
-          static void fail_errno(const char *label) {
+          static void die(const char *label) {
               fprintf(stderr, "%s: %s\n", label, strerror(errno));
-              exit(2);
+              exit(70);
           }
 
-          static void fail_text(const char *label) {
-              fprintf(stderr, "%s\n", label);
-              exit(3);
+          static acl_t path_acl(const char *path) {
+              acl_t acl = acl_get_file(path, ACL_TYPE_EXTENDED);
+              if (!acl) die("acl_get_file");
+              return acl;
           }
 
-          static char *acl_text(acl_t acl) {
+          static void apply_path_acl_to_fd(const char *source, int fd) {
+              acl_t acl = path_acl(source);
+              if (acl_set_fd(fd, acl) != 0) die("acl_set_fd");
+              if (acl_free(acl) != 0) die("acl_free");
+          }
+
+          static void require_same_identity(int fd, const char *path) {
+              struct stat a;
+              struct stat b;
+              if (fstat(fd, &a) != 0) die("fstat");
+              if (lstat(path, &b) != 0) die("lstat");
+              if (a.st_dev != b.st_dev || a.st_ino != b.st_ino ||
+                  (a.st_mode & S_IFMT) != (b.st_mode & S_IFMT)) {
+                  fputs("held fd no longer names original vnode\n", stderr);
+                  exit(71);
+              }
+          }
+
+          static void grant_after_rename(
+              const char *accepted,
+              const char *held,
+              const char *desired
+          ) {
+              int fd = open(accepted, O_RDONLY | O_DIRECTORY);
+              if (fd < 0) die("open accepted");
+              require_same_identity(fd, accepted);
+              if (rename(accepted, held) != 0) die("rename accepted to held");
+              if (mkdir(accepted, 0700) != 0) die("mkdir hostile replacement");
+
+              char replacement_payload[2048];
+              if (snprintf(
+                      replacement_payload,
+                      sizeof(replacement_payload),
+                      "%s/replacement.txt",
+                      accepted
+                  ) >= (int)sizeof(replacement_payload)) {
+                  fputs("replacement path too long\n", stderr);
+                  exit(72);
+              }
+              int replacement_fd = open(
+                  replacement_payload,
+                  O_WRONLY | O_CREAT | O_TRUNC,
+                  0644
+              );
+              if (replacement_fd < 0) die("create replacement payload");
+              if (write(replacement_fd, "R", 1) != 1) die("write replacement payload");
+              if (close(replacement_fd) != 0) die("close replacement payload");
+
+              require_same_identity(fd, held);
+              struct stat held_stat;
+              struct stat replacement_stat;
+              if (lstat(held, &held_stat) != 0) die("lstat held");
+              if (lstat(accepted, &replacement_stat) != 0) die("lstat replacement");
+              if (held_stat.st_dev == replacement_stat.st_dev &&
+                  held_stat.st_ino == replacement_stat.st_ino) {
+                  fputs("hostile replacement aliases original vnode\n", stderr);
+                  exit(73);
+              }
+
+              apply_path_acl_to_fd(desired, fd);
+              if (close(fd) != 0) die("close held fd");
+              puts("NEMBRA_FD_ACL_STAGE grantAfterRename=true originalVnodeRetained=true");
+          }
+
+          static void apply_to_path(const char *target, const char *source) {
+              int fd = open(target, O_RDONLY | O_DIRECTORY);
+              if (fd < 0) die("open rollback target");
+              apply_path_acl_to_fd(source, fd);
+              if (close(fd) != 0) die("close rollback target");
+              puts("NEMBRA_FD_ACL_STAGE baselineApply=true");
+          }
+
+          static int can_read_as(const char *principal, const char *path) {
+              struct passwd *pw = getpwnam(principal);
+              if (!pw) {
+                  fputs("principal lookup failed\n", stderr);
+                  return 74;
+              }
+              if (setgroups(0, NULL) != 0) die("setgroups");
+              if (setgid(pw->pw_gid) != 0) die("setgid");
+              if (setuid(pw->pw_uid) != 0) die("setuid");
+              int fd = open(path, O_RDONLY);
+              if (fd < 0) return errno == EACCES ? 1 : 75;
+              char byte = 0;
+              ssize_t got = read(fd, &byte, 1);
+              if (close(fd) != 0) return 76;
+              return got == 1 ? 0 : 77;
+          }
+
+          static void dump_acl(const char *path) {
+              acl_t acl = path_acl(path);
               ssize_t length = 0;
               char *text = acl_to_text(acl, &length);
-              if (!text) fail_errno("acl_to_text");
-              char *copy = malloc((size_t)length + 1);
-              if (!copy) fail_errno("malloc");
-              memcpy(copy, text, (size_t)length);
-              copy[length] = '\0';
-              if (acl_free(text) != 0) fail_errno("acl_free text");
-              return copy;
-          }
-
-          static acl_t get_fd_acl(int fd) {
-              acl_t acl = acl_get_fd(fd);
-              if (!acl) fail_errno("acl_get_fd");
-              return acl;
-          }
-
-          static acl_t get_path_acl(const char *path) {
-              acl_t acl = acl_get_file(path, ACL_TYPE_EXTENDED);
-              if (!acl) fail_errno("acl_get_file");
-              return acl;
-          }
-
-          static void require_identity(int fd, const char *path, const char *label) {
-              struct stat fd_stat;
-              struct stat path_stat;
-              if (fstat(fd, &fd_stat) != 0) fail_errno("fstat");
-              if (lstat(path, &path_stat) != 0) fail_errno("lstat");
-              if (fd_stat.st_dev != path_stat.st_dev ||
-                  fd_stat.st_ino != path_stat.st_ino ||
-                  (fd_stat.st_mode & S_IFMT) != (path_stat.st_mode & S_IFMT)) {
-                  fprintf(stderr,
-                          "%s fd=(%llu,%llu,%o) path=(%llu,%llu,%o)\n",
-                          label,
-                          (unsigned long long)fd_stat.st_dev,
-                          (unsigned long long)fd_stat.st_ino,
-                          fd_stat.st_mode & S_IFMT,
-                          (unsigned long long)path_stat.st_dev,
-                          (unsigned long long)path_stat.st_ino,
-                          path_stat.st_mode & S_IFMT);
-                  exit(4);
+              if (!text) die("acl_to_text");
+              if (fwrite(text, 1, (size_t)length, stdout) != (size_t)length) {
+                  die("fwrite acl text");
               }
-          }
-
-          static int subject_can_read(const char *principal, const char *path) {
-              struct passwd *pw = getpwnam(principal);
-              if (!pw) fail_text("principal lookup failed");
-              pid_t child = fork();
-              if (child < 0) fail_errno("fork access probe");
-              if (child == 0) {
-                  if (setgroups(0, NULL) != 0) _exit(110);
-                  if (setgid(pw->pw_gid) != 0) _exit(111);
-                  if (setuid(pw->pw_uid) != 0) _exit(112);
-                  int fd = open(path, O_RDONLY);
-                  if (fd < 0) _exit(1);
-                  char byte = 0;
-                  ssize_t got = read(fd, &byte, 1);
-                  close(fd);
-                  _exit(got == 1 ? 0 : 2);
-              }
-              int status = 0;
-              if (waitpid(child, &status, 0) < 0) fail_errno("waitpid access probe");
-              return WIFEXITED(status) && WEXITSTATUS(status) == 0;
-          }
-
-          static void require_text_equal(const char *label, const char *actual, const char *expected) {
-              if (strcmp(actual, expected) != 0) {
-                  fprintf(stderr, "%s\nexpected=%s\nactual=%s\n", label, expected, actual);
-                  exit(5);
-              }
-          }
-
-          static void run_case(const char *root, const char *case_name, const char *principal, const char *desired_path) {
-              char subject[1024];
-              char held[1024];
-              char payload[1024];
-              char held_payload[1024];
-              char replacement_payload[1024];
-              if (snprintf(subject, sizeof(subject), "%s/%s.accepted", root, case_name) >= (int)sizeof(subject) ||
-                  snprintf(held, sizeof(held), "%s/%s.held", root, case_name) >= (int)sizeof(held) ||
-                  snprintf(payload, sizeof(payload), "%s/payload.txt", subject) >= (int)sizeof(payload) ||
-                  snprintf(held_payload, sizeof(held_payload), "%s/payload.txt", held) >= (int)sizeof(held_payload) ||
-                  snprintf(replacement_payload, sizeof(replacement_payload), "%s/replacement.txt", subject) >= (int)sizeof(replacement_payload)) {
-                  fail_text("path buffer exhausted");
-              }
-
-              if (subject_can_read(principal, payload)) {
-                  fail_text("precondition failed: principal already reads private payload");
-              }
-
-              int fd = open(subject, O_RDONLY | O_DIRECTORY);
-              if (fd < 0) fail_errno("open accepted subject");
-              require_identity(fd, subject, "initial fd/path identity mismatch");
-
-              acl_t baseline = get_fd_acl(fd);
-              char *baseline_text = acl_text(baseline);
-              acl_t baseline_restore = acl_dup(baseline);
-              if (!baseline_restore) fail_errno("acl_dup baseline");
-              if (acl_free(baseline) != 0) fail_errno("acl_free baseline");
-
-              acl_t desired = get_path_acl(desired_path);
-              char *desired_text = acl_text(desired);
-              if (strcmp(desired_text, baseline_text) == 0) {
-                  fail_text("desired ACL fixture unexpectedly equals baseline");
-              }
-
-              if (rename(subject, held) != 0) fail_errno("rename accepted subject");
-              if (mkdir(subject, 0700) != 0) fail_errno("mkdir attacker replacement");
-              int replacement_fd = open(replacement_payload, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-              if (replacement_fd < 0) fail_errno("create replacement payload");
-              if (write(replacement_fd, "R", 1) != 1) fail_errno("write replacement payload");
-              if (close(replacement_fd) != 0) fail_errno("close replacement payload");
-
-              require_identity(fd, held, "held fd lost original vnode after rename");
-              struct stat replacement_stat;
-              struct stat held_stat;
-              if (lstat(subject, &replacement_stat) != 0 || lstat(held, &held_stat) != 0) fail_errno("lstat replacement/held");
-              if (replacement_stat.st_dev == held_stat.st_dev && replacement_stat.st_ino == held_stat.st_ino) {
-                  fail_text("attacker replacement aliases held original");
-              }
-
-              acl_t replacement_before_acl = get_path_acl(subject);
-              char *replacement_before = acl_text(replacement_before_acl);
-              if (acl_free(replacement_before_acl) != 0) fail_errno("acl_free replacement baseline");
-
-              if (acl_set_fd(fd, desired) != 0) fail_errno("acl_set_fd desired grant");
-              if (acl_free(desired) != 0) fail_errno("acl_free desired");
-
-              acl_t held_after_grant_acl = get_path_acl(held);
-              char *held_after_grant = acl_text(held_after_grant_acl);
-              if (acl_free(held_after_grant_acl) != 0) fail_errno("acl_free held after grant");
-              require_text_equal("held original canonical ACL text did not match desired grant", held_after_grant, desired_text);
-              if (!subject_can_read(principal, held_payload)) {
-                  fail_text("public acl_set_fd grant did not create actual subject access to held original");
-              }
-              if (subject_can_read(principal, replacement_payload)) {
-                  fail_text("public acl_set_fd grant leaked authority to attacker replacement");
-              }
-
-              acl_t replacement_after_grant_acl = get_path_acl(subject);
-              char *replacement_after_grant = acl_text(replacement_after_grant_acl);
-              if (acl_free(replacement_after_grant_acl) != 0) fail_errno("acl_free replacement after grant");
-              require_text_equal("attacker replacement ACL changed during held-fd grant", replacement_after_grant, replacement_before);
-
-              if (acl_set_fd(fd, baseline_restore) != 0) fail_errno("acl_set_fd captured baseline restore");
-              if (acl_free(baseline_restore) != 0) fail_errno("acl_free baseline restore");
-
-              if (subject_can_read(principal, held_payload)) {
-                  fail_text("principal retained access after captured-baseline restore");
-              }
-
-              acl_t held_after_restore_acl = get_path_acl(held);
-              char *held_after_restore = acl_text(held_after_restore_acl);
-              if (acl_free(held_after_restore_acl) != 0) fail_errno("acl_free held after restore");
-              require_text_equal("held original canonical ACL text did not restore baseline", held_after_restore, baseline_text);
-
-              acl_t replacement_after_restore_acl = get_path_acl(subject);
-              char *replacement_after_restore = acl_text(replacement_after_restore_acl);
-              if (acl_free(replacement_after_restore_acl) != 0) fail_errno("acl_free replacement after restore");
-              require_text_equal("attacker replacement ACL changed across rollback", replacement_after_restore, replacement_before);
-
-              acl_t fd_after_restore_acl = get_fd_acl(fd);
-              char *fd_after_restore = acl_text(fd_after_restore_acl);
-              if (acl_free(fd_after_restore_acl) != 0) fail_errno("acl_free fd after restore");
-              require_text_equal("held-fd canonical ACL text did not restore baseline", fd_after_restore, baseline_text);
-
-              printf(
-                  "NEMBRA_PUBLIC_FD_ACL_BASELINE_RESTORE case=%s actualSubjectGrant=true "
-                  "originalVnodeRetained=true replacementUnaffected=true canonicalAclTextRollback=true\n",
-                  case_name
-              );
-
-              free(fd_after_restore);
-              free(replacement_after_restore);
-              free(held_after_restore);
-              free(replacement_after_grant);
-              free(held_after_grant);
-              free(replacement_before);
-              free(desired_text);
-              free(baseline_text);
-              if (close(fd) != 0) fail_errno("close accepted subject fd");
+              if (acl_free(text) != 0) die("acl_free text");
+              if (acl_free(acl) != 0) die("acl_free acl");
           }
 
           int main(int argc, char **argv) {
-              if (argc != 4) {
-                  fprintf(stderr, "usage: %s ROOT PRINCIPAL DESIRED_PATH\n", argv[0]);
-                  return 64;
+              if (argc >= 2 && strcmp(argv[1], "grant-after-rename") == 0 && argc == 5) {
+                  grant_after_rename(argv[2], argv[3], argv[4]);
+                  return 0;
               }
-              run_case(argv[1], "absent-baseline", argv[2], argv[3]);
-              run_case(argv[1], "seeded-baseline", argv[2], argv[3]);
-              puts(
-                  "NEMBRA_PUBLIC_FD_ACL_BASELINE_RESTORE overall=true "
-                  "sdkPublicGetSet=true capturedEmptyBaselineRestored=true physicalAuthorityCreated=false"
-              );
-              return 0;
+              if (argc >= 2 && strcmp(argv[1], "apply") == 0 && argc == 4) {
+                  apply_to_path(argv[2], argv[3]);
+                  return 0;
+              }
+              if (argc >= 2 && strcmp(argv[1], "can-read") == 0 && argc == 4) {
+                  return can_read_as(argv[2], argv[3]);
+              }
+              if (argc >= 2 && strcmp(argv[1], "dump") == 0 && argc == 3) {
+                  dump_acl(argv[2]);
+                  return 0;
+              }
+              fputs("invalid fd_acl_stage invocation\n", stderr);
+              return 64;
           }
           C
           /usr/bin/clang -Wall -Wextra -Werror -O2 \
-            "$RUNNER_TEMP/public_fd_acl_baseline_restore.c" \
-            -o "$RUNNER_TEMP/public_fd_acl_baseline_restore"
+            "$RUNNER_TEMP/fd_acl_stage.c" \
+            -o "$RUNNER_TEMP/fd_acl_stage"
 
-      - name: Prove grant and exact captured-baseline restore on held original
+      - name: Prepare resolvable ACL fixtures
         shell: bash
         run: |
           set -euo pipefail
@@ -280,37 +203,157 @@ jobs:
           principal=nobody
           /usr/bin/id "$principal" >/dev/null
           root="/private/tmp/nembra-public-fd-acl-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          cleanup() { /usr/bin/sudo -n /bin/rm -rf "$root" 2>/dev/null || true; }
-          trap cleanup EXIT
-
+          /usr/bin/sudo -n /bin/rm -rf "$root"
           /usr/bin/sudo -n /bin/mkdir -m 0755 "$root"
           /usr/bin/sudo -n /bin/mkdir -m 0700 \
-            "$root/absent-baseline.accepted" \
-            "$root/seeded-baseline.accepted" \
-            "$root/desired-acl"
-          printf 'A' | /usr/bin/sudo -n /usr/bin/tee "$root/absent-baseline.accepted/payload.txt" >/dev/null
-          printf 'S' | /usr/bin/sudo -n /usr/bin/tee "$root/seeded-baseline.accepted/payload.txt" >/dev/null
+            "$root/absent.accepted" \
+            "$root/seeded.accepted" \
+            "$root/baseline-absent" \
+            "$root/baseline-seeded" \
+            "$root/desired"
+          printf 'A' | /usr/bin/sudo -n /usr/bin/tee "$root/absent.accepted/payload.txt" >/dev/null
+          printf 'S' | /usr/bin/sudo -n /usr/bin/tee "$root/seeded.accepted/payload.txt" >/dev/null
           /usr/bin/sudo -n /bin/chmod 0644 \
-            "$root/absent-baseline.accepted/payload.txt" \
-            "$root/seeded-baseline.accepted/payload.txt"
-          /usr/bin/sudo -n /bin/chmod -N "$root/absent-baseline.accepted"
-          /usr/bin/sudo -n /bin/chmod -N "$root/seeded-baseline.accepted"
-          /usr/bin/sudo -n /bin/chmod -N "$root/desired-acl"
-          /usr/bin/sudo -n /bin/chmod +a 'user:root allow readattr' "$root/seeded-baseline.accepted"
+            "$root/absent.accepted/payload.txt" \
+            "$root/seeded.accepted/payload.txt"
+          /usr/bin/sudo -n /bin/chmod -N \
+            "$root/absent.accepted" \
+            "$root/seeded.accepted" \
+            "$root/baseline-absent" \
+            "$root/baseline-seeded" \
+            "$root/desired"
+          /usr/bin/sudo -n /bin/chmod +a 'user:root allow readattr' \
+            "$root/seeded.accepted" "$root/baseline-seeded"
           /usr/bin/sudo -n /bin/chmod +a \
             "user:${principal} allow list,search,readattr,readextattr,readsecurity" \
-            "$root/desired-acl"
+            "$root/desired"
+          /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_stage" dump "$root/baseline-absent" \
+            > "$RUNNER_TEMP/baseline-absent.acl"
+          /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_stage" dump "$root/baseline-seeded" \
+            > "$RUNNER_TEMP/baseline-seeded.acl"
+          echo 'NEMBRA_FD_ACL_STAGE fixtures=true principalResolved=true'
 
-          /usr/bin/sudo -n \
-            "$RUNNER_TEMP/public_fd_acl_baseline_restore" \
-            "$root" "$principal" "$root/desired-acl"
+      - name: Absent baseline - descriptor grant after hostile pathname replacement
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="/private/tmp/nembra-public-fd-acl-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_stage" grant-after-rename \
+            "$root/absent.accepted" "$root/absent.held" "$root/desired"
 
-          cleanup
-          trap - EXIT
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Absent baseline - grant creates real subject access only to original
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="/private/tmp/nembra-public-fd-acl-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_stage" can-read nobody \
+            "$root/absent.held/payload.txt"
+          if /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_stage" can-read nobody \
+              "$root/absent.accepted/replacement.txt"; then
+            echo 'hostile replacement unexpectedly became readable' >&2
+            exit 1
+          else
+            rc=$?
+            test "$rc" -eq 1
+          fi
+          /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_stage" dump "$root/absent.accepted" \
+            > "$RUNNER_TEMP/absent-replacement-before-rollback.acl"
+          echo 'NEMBRA_FD_ACL_STAGE absentActualSubjectGrant=true replacementUnaffected=true'
+
+      - name: Absent baseline - public descriptor restore accepts empty baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="/private/tmp/nembra-public-fd-acl-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_stage" apply \
+            "$root/absent.held" "$root/baseline-absent"
+
+      - name: Absent baseline - restore revokes access and preserves replacement
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="/private/tmp/nembra-public-fd-acl-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          if /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_stage" can-read nobody \
+              "$root/absent.held/payload.txt"; then
+            echo 'subject retained access after empty-baseline restore' >&2
+            exit 1
+          else
+            rc=$?
+            test "$rc" -eq 1
+          fi
+          /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_stage" dump "$root/absent.held" \
+            > "$RUNNER_TEMP/absent-restored.acl"
+          /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_stage" dump "$root/absent.accepted" \
+            > "$RUNNER_TEMP/absent-replacement-after-rollback.acl"
+          diff -u "$RUNNER_TEMP/baseline-absent.acl" "$RUNNER_TEMP/absent-restored.acl"
+          diff -u \
+            "$RUNNER_TEMP/absent-replacement-before-rollback.acl" \
+            "$RUNNER_TEMP/absent-replacement-after-rollback.acl"
+          echo 'NEMBRA_FD_ACL_STAGE absentEmptyBaselineRestore=true accessRevoked=true'
+
+      - name: Seeded baseline - descriptor grant after hostile pathname replacement
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="/private/tmp/nembra-public-fd-acl-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_stage" grant-after-rename \
+            "$root/seeded.accepted" "$root/seeded.held" "$root/desired"
+
+      - name: Seeded baseline - grant creates real subject access only to original
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="/private/tmp/nembra-public-fd-acl-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_stage" can-read nobody \
+            "$root/seeded.held/payload.txt"
+          if /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_stage" can-read nobody \
+              "$root/seeded.accepted/replacement.txt"; then
+            echo 'hostile replacement unexpectedly became readable' >&2
+            exit 1
+          else
+            rc=$?
+            test "$rc" -eq 1
+          fi
+          /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_stage" dump "$root/seeded.accepted" \
+            > "$RUNNER_TEMP/seeded-replacement-before-rollback.acl"
+          echo 'NEMBRA_FD_ACL_STAGE seededActualSubjectGrant=true replacementUnaffected=true'
+
+      - name: Seeded baseline - public descriptor restore accepts nonempty baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="/private/tmp/nembra-public-fd-acl-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_stage" apply \
+            "$root/seeded.held" "$root/baseline-seeded"
+
+      - name: Seeded baseline - restore revokes access and preserves exact ACL text
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="/private/tmp/nembra-public-fd-acl-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          if /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_stage" can-read nobody \
+              "$root/seeded.held/payload.txt"; then
+            echo 'subject retained access after seeded-baseline restore' >&2
+            exit 1
+          else
+            rc=$?
+            test "$rc" -eq 1
+          fi
+          /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_stage" dump "$root/seeded.held" \
+            > "$RUNNER_TEMP/seeded-restored.acl"
+          /usr/bin/sudo -n "$RUNNER_TEMP/fd_acl_stage" dump "$root/seeded.accepted" \
+            > "$RUNNER_TEMP/seeded-replacement-after-rollback.acl"
+          diff -u "$RUNNER_TEMP/baseline-seeded.acl" "$RUNNER_TEMP/seeded-restored.acl"
+          diff -u \
+            "$RUNNER_TEMP/seeded-replacement-before-rollback.acl" \
+            "$RUNNER_TEMP/seeded-replacement-after-rollback.acl"
+          echo 'NEMBRA_FD_ACL_STAGE seededBaselineRestore=true accessRevoked=true exactCanonicalAclText=true'
 
       - name: Preserve validation-only truth boundary
         if: always()
         shell: bash
         run: |
-          echo 'NEMBRA_PUBLIC_FD_ACL_BASELINE_RESTORE validationOnly=true productionLeaseChanged=false physicalAuthorityCreated=false'
+          set -euo pipefail
+          root="/private/tmp/nembra-public-fd-acl-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          /usr/bin/sudo -n /bin/rm -rf "$root" 2>/dev/null || true
+          echo 'NEMBRA_FD_ACL_STAGE validationOnly=true productionLeaseChanged=false physicalAuthorityCreated=false'
