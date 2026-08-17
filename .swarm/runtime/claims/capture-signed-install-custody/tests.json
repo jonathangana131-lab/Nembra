@@ -9,15 +9,15 @@
   "generation": 10,
   "status": "ACTIVE",
   "claimedAt": "2026-08-17T22:27:00Z",
-  "lastHeartbeatAt": "2026-08-17T22:35:00Z",
+  "lastHeartbeatAt": "2026-08-17T22:37:00Z",
   "leaseSeconds": 2700,
   "branch": "validation/v17-capture-native-acl-single-process-gpt56sol-20260817",
   "pr": 3544,
   "sourceSHA": "f85b8c586d59fe036c4fc1a5f7624cc19bcfbbe5",
-  "currentHeadSHA": "1539f03f207cf46d19d4eb2140ab0bfdf1bfb5cd",
+  "currentHeadSHA": "4599409980545e02757c7c8ac1f43b3c22461a9f",
   "takeoverFromWorkerId": "gpt56-sol-20260814-1553-go-review",
   "takeoverFromLeaseId": "capture-signed-install-tests-gpt56-20260814-230300",
   "takeoverReason": "Generation-9 lease expired on 2026-08-14. Recover the validation-only tests slot for the exact #3535 native Darwin ACL rollback classifier required by review 4949579019, without touching production lease bytes until the fd-native primitive is mechanically proven.",
   "intent": "Run a diagnostic-only single-process Darwin ACL oracle over the production-equivalent #3535 f85b root while targeting the current #3535 carrier. Capture and duplicate the held object's ACL in one process, grant only after fd/path identity proof, replace the pathname, restore through acl_set_fd_np on the held fd, and prove the replacement is untouched. No production lease change and no install/device/Bluetooth/Tuya/DP/physical authority.",
-  "checkpoint": "Draft validation #3544 exact 1539f03f adds exactly one workflow path over #3535@f85b8c5 and targets current carrier branch now at f31af47. Concurrent f31af47 changed only the older ACL diagnostic workflow; production orchestrator bytes are unchanged, so this OS-primitive classifier remains non-conflicting. Xcode-27 native single-process runs 32076590819 and 32076463769 are QUEUED; queued != accepted. Closed #3539 was a transient zero-diff ref reconciliation and merged nothing. PHYSICAL NO-GO."
+  "checkpoint": "Draft validation #3544 exact 45994099 changes exactly one workflow path. Initial exact 1539f03f Xcode-27 run 32076463769 failed; no production conclusion was inferred because connector Actions logs are unavailable. Current head wraps the oracle so exact stdout/stderr + exit code are persisted to #3544 as a durable PR comment before the workflow reasserts failure. Run 32076744241 is QUEUED. Current #3535 carrier f31af47 changes only the older ACL diagnostic workflow; production orchestrator remains byte-identical to f85b. PHYSICAL NO-GO."
 }
