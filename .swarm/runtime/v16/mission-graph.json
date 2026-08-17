@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 46,
+    "classifiedPRTotal": 45,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1481,7 +1481,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3540,
         "recommendedAction": "independent-review",
-        "similarity": 0.343,
+        "similarity": 0.313,
         "title": "[Capture P0][V17][CI] Repair provenance launcher ABI oracle"
       },
       "3541": {
@@ -1560,17 +1560,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.361,
         "title": "[Capture P0][V17][VALIDATION] Prove public fd ACL captured-baseline restore"
-      },
-      "3551": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "c01e8b455c3beb4a6d5904ef9bf6a0a62e53eba9",
-        "lane": "capture-signed-install-custody",
-        "pr": 3551,
-        "recommendedAction": "independent-review",
-        "similarity": 0.333,
-        "title": "[Capture P0][V17][CI] Rebind compiler scope after provenance repair"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1603,7 +1592,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-17T22:48:17Z",
+    "liveRefreshAt": "2026-08-17T22:48:46Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5388,10 +5377,10 @@
       "userValue": 7
     }
   },
-  "revision": 891,
+  "revision": 892,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-17T22:48:19Z",
+  "updatedAt": "2026-08-17T22:48:47Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5467,7 +5456,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-17T22:48:17Z",
+      "updatedAt": "2026-08-17T22:48:46Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
