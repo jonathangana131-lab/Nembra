@@ -181,7 +181,7 @@ jobs:
 
               if (!strcmp(argv[1], "get-fd")) {
                   int fd = atoi(argv[2]);
-                  print_acl(acl_get_fd_np(fd, ACL_TYPE_EXTENDED));
+                  print_acl(acl_get_fd(fd));
                   return 0;
               }
 
@@ -207,8 +207,7 @@ jobs:
                       acl = acl_init(0);
                       if (!acl) die("acl_init");
                   }
-                  if (acl_valid_fd_np(fd, ACL_TYPE_EXTENDED, acl) != 0) die("acl_valid_fd_np");
-                  if (acl_set_fd_np(fd, acl, ACL_TYPE_EXTENDED) != 0) die("acl_set_fd_np");
+                  if (acl_set_fd(fd, acl) != 0) die("acl_set_fd");
                   acl_free(acl);
                   free(text);
                   return 0;
