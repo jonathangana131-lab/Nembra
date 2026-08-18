@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 19,
+    "classifiedPRTotal": 18,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1209,17 +1209,6 @@
         "similarity": 0.483,
         "title": "[Capture P0][V17][TRIGGER] Materialize current-carrier native ACL coherence"
       },
-      "3605": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-read-lease",
-        "pr": 3605,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.231,
-        "title": "[Capture P0][V17][RED TEAM] Classify native ACL path-swap mutation window"
-      },
       "3606": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1306,7 +1295,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T10:56:37Z",
+    "liveRefreshAt": "2026-08-18T10:56:52Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5091,10 +5080,10 @@
       "userValue": 7
     }
   },
-  "revision": 1040,
+  "revision": 1041,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T10:56:38Z",
+  "updatedAt": "2026-08-18T10:56:52Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5170,7 +5159,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T10:56:37Z",
+      "updatedAt": "2026-08-18T10:56:52Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
