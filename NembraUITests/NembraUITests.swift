@@ -359,6 +359,60 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testAccessibilityXXXLRetainsTruthfulBatteryRangeButton() throws {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        XCUIDevice.shared.orientation = .landscapeRight
+
+        let app = XCUIApplication()
+        app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = "connected-stopped"
+        app.launchArguments += [
+            "-UIPreferredContentSizeCategoryName",
+            "UICTContentSizeCategoryAccessibilityXXXL"
+        ]
+        app.launch()
+
+        let accessibilityCockpit = app.descendants(matching: .any)["dashboard.cockpit.accessibility"]
+        XCTAssertTrue(
+            accessibilityCockpit.waitForExistence(timeout: 4),
+            "Accessibility XXXL must select the intentionally recomposed Dashboard cockpit."
+        )
+
+        let battery = app.buttons["dashboard.battery-range"]
+        assertMinimumTouchTarget(battery, named: "Accessibility XXXL Dashboard battery and range")
+        XCTAssertEqual(battery.label, "Battery")
+        XCTAssertTrue(
+            waitForValue("92%", element: battery),
+            "Accessibility-size charge mode must expose the accepted Simulator battery value."
+        )
+        keepScreenshot(named: "Dashboard Battery Accessibility XXXL Charge Landscape")
+
+        battery.tap()
+
+        let learnedRange = app.buttons["dashboard.battery-range"]
+        XCTAssertTrue(learnedRange.waitForExistence(timeout: 2))
+        XCTAssertEqual(learnedRange.label, "Learned range")
+        XCTAssertTrue(
+            waitForValue(
+                "Unavailable until a verified learned range model exists",
+                element: learnedRange
+            ),
+            "Accessibility-size learned range must remain truthful and unavailable without verified authority."
+        )
+        assertMinimumTouchTarget(learnedRange, named: "Accessibility XXXL learned range")
+        keepScreenshot(named: "Dashboard Learned Range Accessibility XXXL Unavailable Landscape")
+
+        try app.performAccessibilityAudit(
+            for: [
+                .sufficientElementDescription,
+                .hitRegion,
+                .textClipped,
+                .trait,
+                .dynamicType
+            ]
+        )
+    }
+
+    @MainActor
     func testLandscapePhysicalProfileKeepsPowerUnavailableRailVisible() {
         defer { XCUIDevice.shared.orientation = .portrait }
         XCUIDevice.shared.orientation = .landscapeRight

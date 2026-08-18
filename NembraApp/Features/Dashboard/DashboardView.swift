@@ -165,12 +165,7 @@ struct DashboardView: View {
             }
 
             HStack(spacing: 14) {
-                compactAccessibilityMetric(
-                    title: "Battery",
-                    value: batteryText,
-                    warning: batteryInstrumentWarning,
-                    retained: isRetainedBatteryData
-                )
+                accessibilityBatteryRangeControl
                 compactAccessibilityMetric(
                     title: "Trip",
                     value: tripText,
@@ -180,6 +175,46 @@ struct DashboardView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("dashboard.accessibility-status")
+    }
+
+    /// Accessibility-size counterpart to the signature battery silhouette.
+    /// It preserves the same product interaction and truth contract without forcing
+    /// the standard fixed-width instrument into a large-text composition.
+    private var accessibilityBatteryRangeControl: some View {
+        Button {
+            batteryReadout = batteryReadout == .charge ? .range : .charge
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 5) {
+                    Text(batteryReadout == .charge ? "BATTERY" : "LEARNED RANGE")
+                        .font(.caption2.weight(.bold))
+                    Image(systemName: "arrow.left.arrow.right")
+                        .font(.caption2.weight(.bold))
+                        .accessibilityHidden(true)
+                }
+                .foregroundStyle(batteryInstrumentWarning ? Color.red : Color.secondary)
+
+                Text(batteryPrimaryText)
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(batteryPrimaryColor)
+                    .contentTransition(reduceMotion ? .identity : .numericText())
+                    .lineLimit(1)
+
+                Text(batterySecondaryStatus)
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(batterySecondaryColor)
+                    .lineLimit(1)
+            }
+            .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel(batteryReadout == .charge ? "Battery" : "Learned range")
+        .accessibilityValue(batteryAccessibilityValue)
+        .accessibilityHint("Double tap to switch between battery charge and learned range. Learned range remains unavailable until Nembra has verified battery evidence and a learned range model.")
+        .accessibilityIdentifier("dashboard.battery-range")
+        .buttonStyle(.plain)
+        .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+        .sensoryFeedback(.selection, trigger: batteryReadout)
     }
 
     private func compactAccessibilityMetric(
