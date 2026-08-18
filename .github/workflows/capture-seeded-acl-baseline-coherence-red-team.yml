@@ -30,11 +30,6 @@ jobs:
           changed="$(git diff --name-only "$parent...$head" | sort)"
           expected="$(printf '%s\n' \
             .github/workflows/capture-seeded-acl-baseline-coherence-red-team.yml \
-            scripts/ci/tests/test_capture_seeded_acl-baseline-coherence-red-team.py | sort)"
-          # Keep the explicit spelling below authoritative; the first expected
-          # construction intentionally cannot hide a filename typo.
-          expected="$(printf '%s\n' \
-            .github/workflows/capture-seeded-acl-baseline-coherence-red-team.yml \
             scripts/ci/tests/test_capture_seeded_acl_baseline_coherence_red_team.py | sort)"
           test "$changed" = "$expected"
 
