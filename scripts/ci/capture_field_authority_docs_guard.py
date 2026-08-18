@@ -9,6 +9,11 @@ ROOT = Path(__file__).resolve().parents[2]
 RETIRED_DOCS = (
     ROOT / "docs/ES80_TODAY_PRIVATE_FIELD_RUNBOOK.md",
     ROOT / "docs/ES80_TODAY_FINAL_GO_OPERATOR_ATTESTATION.md",
+    ROOT / "docs/ES80_TODAY_SIGNED_FIELD_CANDIDATE_PRODUCTION.md",
+    ROOT / "docs/ES80_TODAY_EXACT_RETAINED_IPA_INSTALL.md",
+    ROOT / "docs/ES80_TODAY_RESEARCH_AUTHORIZATION_CONTRACT.md",
+    ROOT / "docs/ES80_TODAY_EXPORT_READINESS_TRUTH.md",
+    ROOT / "docs/ES80_TODAY_PRIVATE_DEVICE_INPUT_CUSTODY.md",
 )
 ROOT_DIRECTIVE = ROOT / "CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md"
 CURRENT_GATE = ROOT / "docs/ES80_AUTHENTICATED_STATIONARY_GATE_V14.md"
@@ -24,6 +29,7 @@ LEGACY_OPERATIONAL_PINS = (
     "#833@a0f4a33451f61411d6e0541f2e70edea5438342d",
     "Capture Build V14-a0f4a33451f6",
     "scripts/ci/es80_today_final_go_hardened.py --",
+    "READY_TO_INVOKE_SIGNED_FIELD_PRODUCER",
 )
 
 ROOT_DIRECTIVE_MARKERS = (
@@ -100,6 +106,7 @@ def main() -> int:
         fail("retired runbook no longer points operators at the current secure-link procedure")
 
     print("CAPTURE_FIELD_AUTHORITY_DOCS_GUARD PASS")
+    print(f"retired_docs={len(RETIRED_DOCS)}")
     print("physical_status=NO-GO")
     print("current_procedure=ES80-AUTHENTICATED-STATIONARY-v1")
     print("current_runbook=docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
