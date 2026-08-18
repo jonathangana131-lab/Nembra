@@ -61,7 +61,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  EXACT_PARENT: 121abefc62d2663fe7eb248ec9595d882fa9d900
+  EXACT_PARENT: 51baa116c36c873156523aa47313da52a526e519
   PYTHONDONTWRITEBYTECODE: 1
 
 jobs:
@@ -89,53 +89,48 @@ jobs:
           test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
           actual="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
           expected="$(printf '%s\n' \
+            .github/workflows/capture-accepted-build-input-snapshot-validation.yml \
+            .github/workflows/capture-accepted-build-root-custody.yml \
             .github/workflows/capture-authenticated-stationary-final-go.yml \
             .github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml \
             .github/workflows/capture-authenticated-stationary-private-review-final-go.yml \
             .github/workflows/capture-current-accepted-root-acl-transport-probe.yml \
             .github/workflows/capture-current-accepted-root-compiler-composition.yml \
             .github/workflows/capture-current-accepted-root-real-lease-classifier.yml \
+            .github/workflows/capture-exact-private-guard-custody.yml \
             .github/workflows/capture-field-build-provenance.yml \
             .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml \
             .github/workflows/capture-final-go-retirement-dispatch-custody.yml \
+            .github/workflows/capture-generated-shared-ancestor-continuity.yml \
+            .github/workflows/capture-main-selective-graft-diagnostic.yml \
             .github/workflows/capture-private-build-uid-read-lease-current.yml \
+            .github/workflows/capture-private-vnode-attrib-current.yml \
             .github/workflows/capture-r3-base-loader-custody-current.yml \
+            .github/workflows/capture-signed-app-install-custody.yml \
+            .github/workflows/capture-standalone-visual-evidence.yml \
+            CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md \
             Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerSourceCustodyOrderingSourceTests.swift \
             Scripts/bootstrap_capture_tuya_sdk.sh \
+            docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/capture_accepted_build_root_custody.py \
             scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/capture_selected_xcode_freeze.py \
+            scripts/ci/capture_selected_xcode_freeze_launcher.py \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/capture_signed_app_install_custody.py \
+            scripts/ci/capture_standalone_visual_evidence.sh \
             scripts/ci/es80_authenticated_stationary_final_go.py \
             scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py \
             scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
             scripts/ci/es80_authenticated_stationary_signed_artifact.py \
-            scripts/ci/tests/test_capture_accepted_root_build_composition.py \
-            scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py \
-            scripts/ci/tests/test_capture_accepted_root_whole_read_lease.py \
-            scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py \
-            scripts/ci/tests/test_capture_private_build_uid_read_lease_current.py \
-            scripts/ci/tests/test_capture_private_read_lease_component_walk.py \
-            scripts/ci/tests/test_capture_private_read_lease_rollback.py \
-            scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py \
-            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py \
-            scripts/ci/tests/test_es80_authenticated_stationary_final_go.py \
-            scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py \
-            scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py \
-            scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py \
-            scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py \
-            scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py \
-            scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact_device_custody.py \
-            scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py \
+            scripts/ci/es80_signed_field_artifact_evidence.py \
+            scripts/ci/es80_signed_field_artifact_private_runner.py \
+            scripts/ci/es80_today_final_go_hardened.py \
             scripts/ci/tests/test_es80_final_go_control_module_execution_custody.py \
             scripts/ci/tests/test_es80_final_go_control_worktree_custody_current.py \
-            scripts/ci/tests/test_es80_final_go_current_vnode_contract.py \
-            scripts/ci/tests/test_es80_final_go_descriptor_read_custody.py \
-            scripts/ci/tests/test_es80_final_go_generated_manifest_review.py \
-            scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py \
-            scripts/ci/tests/test_es80_final_go_manifest_retirement_migration.py \
-            scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py \
-            scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py \
-            scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py \
-            scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py \
-            scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py \
+            scripts/ci/xcode27_signed_field_candidate.sh \
+            scripts/ci/xcode27_today_research_field_candidate.sh \
             scripts/field/install_one_time_capture.command | LC_ALL=C sort)"
           test "$actual" = "$expected"
           git diff --check "$EXACT_PARENT"...HEAD
