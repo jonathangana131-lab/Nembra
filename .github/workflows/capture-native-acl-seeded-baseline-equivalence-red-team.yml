@@ -1,9 +1,9 @@
 name: Capture Native ACL Seeded Baseline Equivalence Red Team
 
 on:
-  pull_request:
+  push:
     branches:
-      - repair/v17-capture-darwin-native-acl-production-gpt56sol-20260817
+      - validation/v17-capture-native-acl-seeded-baseline-equivalence-red-team-gpt56sol-20260817
     paths:
       - scripts/ci/tests/test_capture_native_acl_seeded_baseline_equivalence_red_team.py
       - .github/workflows/capture-native-acl-seeded-baseline-equivalence-red-team.yml
@@ -25,8 +25,8 @@ jobs:
           ATTACKED: 8456750395c0a5cb1472834300785a5d52c1cae4
         run: |
           set -euo pipefail
-          test "${{ github.event.pull_request.base.sha }}" = "$ATTACKED"
-          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          test "$GITHUB_REF_NAME" = "validation/v17-capture-native-acl-seeded-baseline-equivalence-red-team-gpt56sol-20260817"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           git merge-base --is-ancestor "$ATTACKED" HEAD
           changed="$(git diff --name-only "$ATTACKED"..HEAD | sort)"
           expected="$(printf '%s\n' \
