@@ -201,11 +201,16 @@ jobs:
           set -euo pipefail
           python3 scripts/ci/tests/test_es80_final_go_descriptor_read_custody.py
 
-      - name: Preserve committed-parent execution custody
+      - name: Preserve committed-parent fixture execution custody
         shell: bash
         run: |
           set -euo pipefail
           python3 scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
+
+      - name: Preserve inherited raw-filesystem parent authority
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
             CandidateRawFilesystemAuthorityTests.test_child_executes_exact_2873_parent_blob \
             CandidateRawFilesystemAuthorityTests.test_inherited_parent_candidate_runs_through_raw_authority \
