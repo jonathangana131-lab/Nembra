@@ -1,0 +1,160 @@
+name: Capture retire duplicate app timeout v2
+
+on:
+  push:
+    branches: [capture/one-time-ble-dump-gpt56]
+    paths: [.github/workflows/capture-retire-duplicate-timeout-v2.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: true
+
+      - name: Bind one-shot authoring scope
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --abbrev-ref HEAD)" = "capture/one-time-ble-dump-gpt56" || true
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/capture-retire-duplicate-timeout-v2.yml"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          test "$(git ls-remote origin refs/heads/capture/one-time-ble-dump-gpt56 | awk '{print $1}')" = "${GITHUB_SHA}"
+
+      - name: Remove duplicate app-owned timeout and pin package ownership
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          s = app.read_text()
+          start = '''                if self.applicationUpdateAdmissionsInFlight == 0,
+                   (self.canonicalObservedAgeSeconds ?? 0) > 60,
+                   self.applicationUpdateCount == 0 {
+'''
+          end = '                try? await Task.sleep(for: .seconds(1))\n'
+          assert s.count(start) == 1
+          a = s.index(start)
+          b = s.index(end, a)
+          removed = s[a:b]
+          for needle in (
+              'markApplicationObservationTimedOut(for: token)',
+              'authenticated_application_timeout',
+              'self.sdkLocalBLEOnline = false',
+          ):
+              assert needle in removed, needle
+          s = s[:a] + s[b:]
+          assert 'markApplicationObservationTimedOut(for: token)' not in s
+          assert 'authenticated_application_timeout' not in s
+          app.write_text(s)
+
+          test = Path('Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationTimeoutPresentationRaceSourceTests.swift')
+          test.write_text('''import Foundation
+import Testing
+@testable import NembraBluetoothCapture
+
+@Suite("Tuya package-owned incomplete-observation terminal")
+struct TuyaApplicationTimeoutPresentationRaceSourceTests {
+    @Test("watchdog has no competing app-owned zero-payload terminal")
+    func watchdogDefersIncompleteSessionRetirementToPackageLedger() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let watchdog = String(try section(
+            in: source,
+            from: "private func startWatchdog(token: TuyaReadOnlyConnectionToken)",
+            to: "private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken)"
+        ))
+
+        #expect(watchdog.contains("sessionLedger.observeCurrentConnection(for: token)"))
+        #expect(watchdog.contains("MutationError.incompleteObservationHorizonReached"))
+        #expect(watchdog.contains("mirrorAlreadyTerminalIncompleteObservationHorizon"))
+        #expect(!watchdog.contains("markApplicationObservationTimedOut(for: token)"))
+        #expect(!watchdog.contains("authenticated_application_timeout"))
+        #expect(!watchdog.contains("Authenticated session produced no application update before the observation deadline."))
+    }
+
+    @Test("package-owned incomplete terminal does not fabricate BLE offline")
+    func incompleteHorizonMirrorPreservesTransportTruth() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let mirror = String(try section(
+            in: source,
+            from: "private func mirrorAlreadyTerminalIncompleteObservationHorizon(",
+            to: "private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken)"
+        ))
+        #expect(!mirror.contains("sdkLocalBLEOnline = false"))
+        #expect(mirror.contains("driver = nil"))
+    }
+
+    @Test("receive path remains read-only")
+    func receivePathHasNoCommandSurface() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        #expect(!source.contains("publishDps("))
+        #expect(!source.contains("writeValue("))
+    }
+
+    private func section(in source: String, from start: String, to end: String) throws -> Substring {
+        guard let a = source.range(of: start),
+              let b = source.range(of: end, range: a.upperBound..<source.endIndex) else {
+            Issue.record("Expected source section missing: \\(start) ... \\(end)")
+            throw SourceContractError.sectionMissing
+        }
+        return source[a.lowerBound..<b.lowerBound]
+    }
+
+    private func readRepositoryFile(_ relativePath: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(contentsOf: root.appendingPathComponent(relativePath), encoding: .utf8)
+    }
+
+    private enum SourceContractError: Error { case sectionMissing }
+}
+''')
+          PY
+
+          changed="$(git status --porcelain=v1 --untracked-files=all | awk '{print $2}' | sort)"
+          expected="$(printf '%s\n' \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationTimeoutPresentationRaceSourceTests.swift | sort)"
+          test "$changed" = "$expected"
+
+      - name: Run focused package truth tests
+        run: |
+          set -euo pipefail
+          export DEVELOPER_DIR=/Applications/Xcode_26.3.app/Contents/Developer
+          xcodebuild -version
+          swift --version
+          cd Packages/NembraBluetoothCapture
+          swift test --filter TuyaApplicationTimeoutPresentationRaceSourceTests
+
+      - name: Verify read-only product delta
+        run: |
+          set -euo pipefail
+          ! grep -R --line-number --fixed-strings 'publishDps(' NembraApp/App/NembraCaptureEntrypoint.swift
+          ! grep -R --line-number --fixed-strings 'writeValue(' NembraApp/App/NembraCaptureEntrypoint.swift
+          ! grep -R --line-number --fixed-strings 'markApplicationObservationTimedOut(for: token)' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -n --fixed-strings 'sessionLedger.observeCurrentConnection(for: token)' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -n --fixed-strings 'MutationError.incompleteObservationHorizonReached' NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Publish clean successor and retire one-shot
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin refs/heads/capture/one-time-ble-dump-gpt56 | awk '{print $1}')" = "$EXPECTED_HEAD_SHA"
+          rm .github/workflows/capture-retire-duplicate-timeout-v2.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationTimeoutPresentationRaceSourceTests.swift .github/workflows/capture-retire-duplicate-timeout-v2.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Capture: let package own incomplete observation terminal'
+          git push origin HEAD:capture/one-time-ble-dump-gpt56
