@@ -1294,19 +1294,8 @@
         "lane": "capture-final-go-authority",
         "pr": 3619,
         "recommendedAction": "independent-review",
-        "similarity": 0.397,
+        "similarity": 0.345,
         "title": "[Capture P0][V17][RECOVERY] Seal Final-GO base review transport"
-      },
-      "3620": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-final-go-authority",
-        "pr": 3620,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.372,
-        "title": "[Capture P0][V17][RED TEAM] Prove base-module review authority bypass"
       },
       "3624": {
         "classification": "validation",
@@ -1318,6 +1307,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.149,
         "title": "[V17 Capture][VALIDATION] Exact strict-root field wiring head"
+      },
+      "3625": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3625,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.284,
+        "title": "[Capture P0][V17][INTEGRATION] Promote accepted-root compiler carrier"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1350,7 +1350,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T11:05:56Z",
+    "liveRefreshAt": "2026-08-18T11:06:15Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5135,10 +5135,10 @@
       "userValue": 7
     }
   },
-  "revision": 1063,
+  "revision": 1064,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T11:05:57Z",
+  "updatedAt": "2026-08-18T11:06:16Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5214,7 +5214,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T11:05:56Z",
+      "updatedAt": "2026-08-18T11:06:15Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
