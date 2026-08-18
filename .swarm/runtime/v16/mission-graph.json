@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 7,
+    "classifiedPRTotal": 6,
     "classifiedPRs": {
       "3649": {
         "classification": "requires-review",
@@ -1099,17 +1099,6 @@
         "similarity": 0.136,
         "title": "[Capture P0][V17][RECOVERY] Re-earn post-merge exact-head matrix"
       },
-      "3656": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "6ac5fa4c121fc2120d30754c9ed20f43513fe837",
-        "lane": "capture-field-authority-retirement-consistency",
-        "pr": 3656,
-        "recommendedAction": "independent-review",
-        "similarity": 0.456,
-        "title": "[Capture P0][V17][RECOVERY] Rebase retired-TODAY gate fix onto live guard"
-      },
       "3658": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1140,7 +1129,7 @@
         "lane": "capture-field-authority-retirement-consistency",
         "pr": 3663,
         "recommendedAction": "independent-review",
-        "similarity": 0.448,
+        "similarity": 0.089,
         "title": "[Capture P0][V17][HARDENING] Align current gate with retired TODAY authority"
       }
     },
@@ -1175,7 +1164,7 @@
       "live-pr-3082",
       "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T22:23:46Z",
+    "liveRefreshAt": "2026-08-18T22:24:03Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [],
@@ -4956,10 +4945,10 @@
       "userValue": 7
     }
   },
-  "revision": 1204,
+  "revision": 1205,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T22:23:46Z",
+  "updatedAt": "2026-08-18T22:24:03Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
