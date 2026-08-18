@@ -9,15 +9,16 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-18T03:22:30Z",
-  "lastHeartbeatAt": "2026-08-18T03:22:30Z",
+  "lastHeartbeatAt": "2026-08-18T03:31:30Z",
   "leaseSeconds": 2700,
   "branch": "repair/v17-capture-final-go-generated-manifest-issuer-gpt56sol-20260817",
   "pr": null,
-  "sourceSHA": "51baa116c36c873156523aa47313da52a526e519",
+  "sourceSHA": "01217c20215c31c7380405dc1e2bd1330136894e",
+  "currentHeadSHA": "01217c20215c31c7380405dc1e2bd1330136894e",
   "resource": "RELEASE_INTEGRATION",
   "takeoverFromWorkerId": "sol-20260811-1606dg",
   "takeoverFromLeaseId": "capture-final-go-integration-1606dg-20260811-2323",
   "takeoverReason": "Generation-3 Final-GO integration was explicitly RELEASED. Foundry V17 live state shows signed-install production is actively occupied, while #3606 now requires an independently preaccepted generated/private compiler-input manifest digest from Final-GO authority.",
-  "intent": "Extend the accepted external Final-GO control plane so it can bind and transport the exact reviewed generated/private compiler-input manifest digest required by #3606 without self-accepting mutable field inputs. Do not edit the active capture-signed-install-custody production branch. Preserve exact-source/review authority, private-input secrecy, no-command boundaries, and PHYSICAL NO-GO.",
-  "checkpoint": "Claimed the released non-conflicting Final-GO integration slot after fresh V17 topology inspection. Live P0 remains Capture. #3602 proves the field installer bypasses strict accepted-root mode; #3606 is actively repairing that field path and requires NEMBRA_CAPTURE_ACCEPTED_GENERATED_MANIFEST_SHA256 from the current Final-GO control plane. This lane owns only that independent issuer/composition side. PHYSICAL NO-GO."
+  "intent": "Extend exact accepted Final-GO carrier #3082@01217c20 with an independent GitHub-owner-reviewed generated/private compiler-input manifest digest bound to the exact candidate source. Inject only that reviewed digest into the inherited closed installer environment for #3606 consumption. Do not edit the active capture-signed-install-custody production branch. Preserve #3082 custody, private-input secrecy, no-command boundaries, and PHYSICAL NO-GO.",
+  "checkpoint": "Reconciled lineage split: #3553/#3606 field-build carrier does not contain the accepted authenticated-stationary Final-GO control plane. Re-anchored this branch before any code commits to accepted #3082@01217c20215c31c7380405dc1e2bd1330136894e. Implementing a successor that keeps v5 review/custody unchanged and adds a second exact owner review for NEMBRA_CAPTURE_ACCEPTED_GENERATED_MANIFEST_SHA256. PHYSICAL NO-GO."
 }
