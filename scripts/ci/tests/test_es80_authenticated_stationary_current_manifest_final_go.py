@@ -105,6 +105,19 @@ class FakeParent(types.SimpleNamespace):
 
 
 class CurrentManifestConsumerControlTests(unittest.TestCase):
+    def test_exact_blob_preserves_HEAD_revision_sentinel(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "subject.txt").write_text("accepted\n", encoding="utf-8")
+            git(root, "init")
+            git(root, "config", "user.email", "nembra-test@example.invalid")
+            git(root, "config", "user.name", "Nembra Test")
+            git(root, "add", "subject.txt")
+            git(root, "commit", "-m", "subject")
+            blob, payload = control._exact_blob(root, "HEAD", "subject.txt")
+            self.assertRegex(blob, r"^[0-9a-f]{40,64}$")
+            self.assertEqual(payload, b"accepted\n")
+
     def test_current_consumer_key_and_candidate_helper_are_bound_before_promotion(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
