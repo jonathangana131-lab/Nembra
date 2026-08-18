@@ -18,7 +18,7 @@ env:
 
 jobs:
   materialize-artifact:
-    if: github.head_ref == 'repair/v17-capture-field-strict-root-wiring-gpt56sol-20260817'
+    if: github.head_ref == 'recovery/v17-capture-field-strict-root-artifact-gpt56sol-20260817'
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
