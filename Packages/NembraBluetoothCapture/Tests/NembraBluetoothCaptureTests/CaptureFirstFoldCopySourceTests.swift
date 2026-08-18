@@ -34,6 +34,66 @@ struct CaptureFirstFoldCopySourceTests {
         #expect(project.contains("A10000000000000000000008 /* Localizable.strings in Resources */,"))
     }
 
+    @Test("human-rejected Standard account-link hierarchy is retired without weakening authority")
+    func rejectedStandardAccountLinkHierarchyIsRetired() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let root = String(try section(
+            in: app,
+            from: "private struct CaptureP0Root: View",
+            to: "@MainActor\nprivate final class SecureLinkController"
+        ))
+
+        // Direct human review of the exact #3395 Standard pixels rejected this
+        // implementation-language/form hierarchy. This contract is deliberately
+        // narrow: it retires known rejected markers without pretending source
+        // assertions can replace fresh iPhone 12 screenshots or human critique.
+        #expect(!root.contains("Prepare account metadata"))
+        #expect(!root.contains("Account setup is available. Bluetooth scanning, connection, and physical evidence stay locked until the reviewed field build is installed."))
+
+        let disclosure = String(try section(
+            in: root,
+            from: "private var engineeringDisclosure: some View",
+            to: "@ViewBuilder\n    private func rootSection"
+        ))
+        #expect(!disclosure.contains("Label(isAccessibilityLayout ? \"Details\" : \"Engineering details\""))
+
+        // Visual simplification may never erase the fail-closed rider meaning.
+        #expect(root.contains("Physical capture locked"))
+        #expect(root.contains("This public build can prepare account metadata only. Bluetooth and physical evidence collection are locked."))
+        #expect(root.contains("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings."))
+        #expect(disclosure.contains(".accessibilityLabel(\"Engineering details\")"))
+    }
+
+    @Test("account-link visual successor preserves stable read-only accessibility semantics")
+    func accountLinkSuccessorPreservesReadOnlyAccessibilitySemantics() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let root = String(try section(
+            in: app,
+            from: "private struct CaptureP0Root: View",
+            to: "@MainActor\nprivate final class SecureLinkController"
+        ))
+        let panel = String(try section(
+            in: root,
+            from: "private var accountSetupPanel: some View",
+            to: "private var statusText: some View"
+        ))
+
+        #expect(panel.contains("tuya.requestApproval()"))
+        #expect(panel.contains("nembra.capture.root.account-link-action"))
+        #expect(panel.contains(".accessibilityLabel(\"Create approval QR\")"))
+        #expect(panel.contains("Creates the account-metadata approval QR. It does not start Bluetooth or physical Capture."))
+        #expect(panel.contains("Tuya Smart user code"))
+    }
+
+    private func section(in source: String, from start: String, to end: String) throws -> Substring {
+        guard let startRange = source.range(of: start),
+              let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+            Issue.record("Expected source section missing: \(start) ... \(end)")
+            throw SourceContractError.sectionMissing
+        }
+        return source[startRange.lowerBound..<endRange.lowerBound]
+    }
+
     private func readRepositoryFile(_ relativePath: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -42,5 +102,9 @@ struct CaptureFirstFoldCopySourceTests {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+    }
+
+    private enum SourceContractError: Error {
+        case sectionMissing
     }
 }
