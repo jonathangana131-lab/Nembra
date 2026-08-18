@@ -278,6 +278,7 @@ struct DashboardView: View {
             Spacer(minLength: 0)
 
             batteryRangeInstrument
+
             dashboardMetric(
                 title: "TRIP",
                 value: tripText,
@@ -697,6 +698,7 @@ struct DashboardView: View {
         if isBatteryLow, batteryPercent != nil { return .red }
         return .secondary
     }
+
     private var batteryOutlineColor: Color {
         if isBatteryLow, !isRetainedBatteryData, batteryPercent != nil {
             return .red.opacity(colorSchemeContrast == .increased ? 1.0 : 0.88)
