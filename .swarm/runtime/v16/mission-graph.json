@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 9,
+    "classifiedPRTotal": 7,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1077,17 +1077,6 @@
         "similarity": 0.179,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
-      "3316": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-tuya-readonly-preflight",
-        "pr": 3316,
-        "recommendedAction": "independent-review",
-        "similarity": 0.096,
-        "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
-      },
       "3321": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1098,17 +1087,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.255,
         "title": "[Capture P0][VALIDATION] Attest former-build mutation authority"
-      },
-      "3333": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 3333,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.156,
-        "title": "[Capture P0][SECURITY] Converge private-input authority and frozen device custody"
       },
       "3353": {
         "classification": "canonical-candidate",
@@ -1140,7 +1118,7 @@
         "lane": "capture-build-authority",
         "pr": 3399,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.162,
+        "similarity": 0.147,
         "title": "[Capture P0][SECURITY][RECOVERY] Pre-scrub frozen tool exec on current carrier"
       },
       "3435": {
@@ -1196,7 +1174,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T16:01:39Z",
+    "liveRefreshAt": "2026-08-18T17:59:12Z",
     "liveRefreshDuplicatesSuppressed": [
       3321
     ],
@@ -4981,10 +4959,10 @@
       "userValue": 7
     }
   },
-  "revision": 1139,
+  "revision": 1140,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T16:01:40Z",
+  "updatedAt": "2026-08-18T17:59:12Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5060,7 +5038,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T16:01:39Z",
+      "updatedAt": "2026-08-18T17:59:12Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
