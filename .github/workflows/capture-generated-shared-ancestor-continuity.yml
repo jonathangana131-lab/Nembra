@@ -1,0 +1,109 @@
+name: Capture Generated Shared Ancestor Continuity
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/capture_accepted_build_input_snapshot.py
+      - scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py
+      - .github/workflows/capture-generated-shared-ancestor-continuity.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-generated-shared-ancestor-continuity-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_PARENT: 1f9c5213d99116b93635e48061f29c88bffc2db8
+
+jobs:
+  exact-portable:
+    name: Exact generated-input continuity (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind serial repair delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          changed="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-accepted-build-input-snapshot-validation.yml \
+            .github/workflows/capture-accepted-build-root-custody.yml \
+            .github/workflows/capture-generated-shared-ancestor-continuity.yml \
+            scripts/ci/capture_accepted_build_input_snapshot.py \
+            scripts/ci/capture_accepted_build_root_custody.py \
+            scripts/ci/tests/test_capture_accepted_build_root_custody.py \
+            scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
+
+      - name: Run generated shared-ancestor continuity regression
+        id: continuity
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py \
+            2>&1 | tee "$RUNNER_TEMP/generated-shared-ancestor-continuity-${{ matrix.os }}.log"
+
+      - name: Run inherited accepted-input regression
+        id: inherited
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py \
+            2>&1 | tee "$RUNNER_TEMP/accepted-build-input-snapshot-${{ matrix.os }}.log"
+
+      - name: Capture checkout cleanliness diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git status --porcelain=v1 --untracked-files=all > "$RUNNER_TEMP/checkout-status-${{ matrix.os }}.log"
+          git diff --no-ext-diff -- > "$RUNNER_TEMP/checkout-unstaged-diff-${{ matrix.os }}.log"
+          git diff --cached --no-ext-diff -- > "$RUNNER_TEMP/checkout-staged-diff-${{ matrix.os }}.log"
+
+      - name: Retain platform diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-shared-ancestor-continuity-${{ matrix.os }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/generated-shared-ancestor-continuity-${{ matrix.os }}.log
+            ${{ runner.temp }}/accepted-build-input-snapshot-${{ matrix.os }}.log
+            ${{ runner.temp }}/checkout-status-${{ matrix.os }}.log
+            ${{ runner.temp }}/checkout-unstaged-diff-${{ matrix.os }}.log
+            ${{ runner.temp }}/checkout-staged-diff-${{ matrix.os }}.log
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Enforce regression verdict and clean checkout
+        if: always()
+        shell: bash
+        env:
+          CONTINUITY_OUTCOME: ${{ steps.continuity.outcome }}
+          INHERITED_OUTCOME: ${{ steps.inherited.outcome }}
+        run: |
+          set -euo pipefail
+          test "$CONTINUITY_OUTCOME" = success
+          test "$INHERITED_OUTCOME" = success
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"

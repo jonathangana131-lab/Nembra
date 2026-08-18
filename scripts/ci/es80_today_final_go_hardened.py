@@ -253,22 +253,21 @@ def _args(argv: list[str]) -> argparse.Namespace:
     return foundation_args
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = _args(sys.argv[1:] if argv is None else argv)
-    values = vars(args).copy()
-    output = values.pop("output")
-    try:
-        record = build_final_go_record(**values)
-        raw = (json.dumps(record, indent=2, sort_keys=True) + "\n").encode()
-        record_sha = publish_record_no_replace(output, raw)
-    except (FinalGoError, FileNotFoundError, OSError) as error:
-        print(f"TODAY Final GO: NO-GO: {error}", file=sys.stderr)
-        return 2
-    print(f"TODAY Final GO record: {output.resolve(strict=True)}")
-    print(f"record_sha256={record_sha}")
-    print("PHYSICAL RESULT COLLECTED: NO")
-    return 0
+RETIRED_DIRECT_EXECUTION_MESSAGE = (
+    "retired ES80-FINGERPRINT-v1 Final GO authority is non-authorizing; "
+    "current physical authorization requires the external reviewed "
+    "ES80-AUTHENTICATED-STATIONARY-v1 control plane"
+)
 
+
+def main(argv: list[str] | None = None) -> int:
+    arguments = sys.argv[1:] if argv is None else list(argv)
+    if any(argument in {"-h", "--help"} for argument in arguments):
+        # Preserve the historical self-documentation checked by legacy QA.
+        _args(arguments)
+        return 0
+    print(f"TODAY Final GO: NO-GO: {RETIRED_DIRECT_EXECUTION_MESSAGE}", file=sys.stderr)
+    return 2
 
 if __name__ == "__main__":
     raise SystemExit(main())

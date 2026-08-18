@@ -1,0 +1,89 @@
+name: Capture Exact Private Guard Custody
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/capture_selected_xcode_build_orchestrator.py
+      - scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+      - Scripts/capture_tuya_private_input_build_guard.py
+      - Scripts/capture_tuya_private_input_provenance.py
+      - .github/workflows/capture-exact-private-guard-custody.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable-git-object-contract:
+    name: Require exact accepted Git-object guard execution
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind contract to exact checked-out source
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'Exact private-guard source: %s\n' "$actual"
+
+      - name: Prove accepted Git bytes replace the live guard marker
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-exact-private-guard-pycache"
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          grep -Fq 'def _read_accepted_git_blob(' scripts/ci/capture_selected_xcode_build_orchestrator.py
+          grep -Fq 'GIT_NO_REPLACE_OBJECTS' scripts/ci/capture_selected_xcode_build_orchestrator.py
+          grep -Fq 'GIT_CONFIG_NOSYSTEM' scripts/ci/capture_selected_xcode_build_orchestrator.py
+          grep -Fq 'GIT_CONFIG_GLOBAL' scripts/ci/capture_selected_xcode_build_orchestrator.py
+          grep -Fq 'def _materialize_accepted_guard_bundle(' scripts/ci/capture_selected_xcode_build_orchestrator.py
+          grep -Fq 'os.chmod(bundle, 0o555)' scripts/ci/capture_selected_xcode_build_orchestrator.py
+          grep -Fq 'def _replace_live_guard(' scripts/ci/capture_selected_xcode_build_orchestrator.py
+          grep -Fq 'ACCEPTED_GUARD_RELATIVE = Path("Scripts/capture_tuya_private_input_build_guard.py")' scripts/ci/capture_selected_xcode_build_orchestrator.py
+          grep -Fq 'ACCEPTED_PROVENANCE_RELATIVE = Path("Scripts/capture_tuya_private_input_provenance.py")' scripts/ci/capture_selected_xcode_build_orchestrator.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+  macos-root-snapshot-model:
+    name: Prove read-only accepted guard bundle on macOS
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind evidence to exact checked-out source
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Run exact Git-object and root-snapshot regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-exact-private-guard-pycache"
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"

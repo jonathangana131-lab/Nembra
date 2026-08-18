@@ -1,0 +1,87 @@
+name: Capture Private Build UID Read Lease
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/capture_selected_xcode_build_orchestrator.py
+      - scripts/ci/capture_signed_app_build_origin_custody.py
+      - Scripts/capture_tuya_private_input_build_guard.py
+      - scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+      - scripts/ci/tests/test_capture_private_build_uid_read_lease_current.py
+      - scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+      - scripts/ci/tests/test_capture_private_read_lease_rollback.py
+      - scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py
+      - .github/workflows/capture-private-build-uid-read-lease-current.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos-real-lease:
+    name: Prove scoped read-only lease on real macOS
+    runs-on: macos-15
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind evidence to exact checked-out source
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'Exact read-lease source: %s\n' "$actual"
+
+      - name: Anchor descriptor fixtures under a real Darwin temp root
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          import os
+          from pathlib import Path
+          import stat
+
+          root = Path('/private/tmp')
+          metadata = root.lstat()
+          if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+              raise SystemExit('/private/tmp is not one real directory')
+          if root.resolve(strict=True) != root:
+              raise SystemExit('/private/tmp does not resolve to itself')
+          if not os.access(root, os.W_OK | os.X_OK):
+              raise SystemExit('/private/tmp is not writable/searchable by the runner')
+          PY
+          echo 'TMPDIR=/private/tmp' >> "$GITHUB_ENV"
+
+      - name: Prove portable ancestry descriptor and rollback contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-private-read-lease-pycache"
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_build_uid_read_lease_current.py \
+            scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py \
+            scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py
+
+      - name: Prove dedicated identity receives read/search only and loses it after revoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-private-read-lease-pycache"
+          sudo -E /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_build_uid_read_lease_current.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"

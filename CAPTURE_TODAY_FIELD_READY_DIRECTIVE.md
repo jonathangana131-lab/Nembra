@@ -1,148 +1,71 @@
-# Nembra V14 — TODAY FIELD-READY CAPTURE DIRECTIVE
+# CAPTURE TODAY FIELD-READY DIRECTIVE — RETIRED V14 PASSIVE LANE
 
-Status: ACTIVE until the first successful stationary passive ES80 capture artifact is collected.
+Status: **RETIRED / NON-AUTHORITATIVE / PHYSICAL NO-GO.**
 
-## 0. Objective
+Feature: **Nembra Capture / ES80 physical truth**
 
-The immediate milestone is no longer “make Capture maximally hardened against every theoretical hostile-host/filesystem edge case.”
+This root document is retained only as an audit marker for the earlier private passive `ES80-FINGERPRINT-v1` Research-build lane. It no longer grants procedure precedence, field-build authority, or any path to physical GO for the current Capture product.
 
-The immediate milestone is:
+## Current authority
 
-**TODAY: produce one safe, installable, stationary, READ-ONLY Nembra Capture build that can collect the first real AOVOPRO ES80 evidence artifact, verify/export that artifact, and unlock the next Nembra development phase.**
+The current app mechanically requires procedure identifier:
 
-After the first real artifact exists, analyze it and resume the full release-grade hardening backlog in parallel with actual Nembra feature development.
+`ES80-AUTHENTICATED-STATIONARY-v1`
 
-This directive changes closure priority, not truth. Never fabricate hardware evidence, never add characteristic writes, and never bypass the stationary/charger/read-only safety boundary.
+through `NembraCaptureBuildIdentity.requiredFieldProcedureIdentifier` before a build can be treated as an authoritative field build.
 
----
+The current operational procedure is:
 
-## 1. Scope freeze now
+`docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md`
 
-Freeze new Capture feature work.
+That procedure is the continuation after physical capture `C7D09A22`. It requires the current authenticated stationary path: fresh package-owned OFF1 -> ON1 -> OFF2 -> ON2 correlation, explicit target confirmation, official Tuya SDK account authority, exact same-account scooter membership/UID lease, Tuya-owned authenticated BLE, canonical read-only observation chronology, and the final exact-build/device/provenance gates recorded there.
 
-Until the first real artifact is collected, a newly found issue may block TODAY only if it can plausibly cause one of these on the intended trusted developer phone/build:
+If this historical file conflicts with current shipping source or the authenticated stationary runbook, **current shipping source plus `docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md` wins**. A final composed exact-head GO record is still required before any physical experiment.
 
-1. app does not build/install/launch;
-2. Capture can crash/hang/corrupt its own run on the normal path;
-3. target correlation can select the wrong scooter or become ambiguous without failing closed;
-4. any application characteristic write/command can occur;
-5. charger/stationary/preflight safety can be bypassed accidentally;
-6. the generated capture bytes can be wrong, incomplete, silently mutable inside the normal app flow, or impossible to export/analyze;
-7. the exact final build cannot receive a real terminal trusted Xcode 27 acceptance run;
-8. the exact signed developer/research build cannot be installed on the intended iPhone;
-9. the field gate/runbook cannot deliberately authorize that exact safe developer research build.
+## Retired authority — MUST NOT be reused
 
-Everything else is POST-CAPTURE BACKLOG unless it is demonstrated to affect one of those nine conditions on the intended environment.
+The earlier private passive path described by this file used concepts including:
 
----
+- `ES80-FINGERPRINT-v1`;
+- `NEMBRA_ES80_TODAY_RESEARCH`;
+- `ResearchAdmission` / `makeResearchAuthorizedES80ForCurrentApplication()`;
+- a special private Research-build exception to release-grade field authorization; and
+- a passive-GATT first-artifact GO record.
 
-## 2. Explicitly defer noncritical last-mile work
+Those historical mechanisms **must not** be used to bypass, downgrade, or substitute for the current authenticated stationary gates. They do not authorize the current product, do not satisfy current Tuya account/device authority, and cannot be used to turn an otherwise NO-GO build into GO.
 
-Do not keep moving the flagship head before first capture for purely release-grade or adversarial-host hardening such as:
+The full retired procedure remains recoverable from Git history for audit purposes. It is intentionally not repeated here as runnable field instructions.
 
-- same-UID/symlink/path-retargeting attacks that require a hostile local process outside the normal Nembra flow;
-- deep directory/inode publication custody beyond what is required for normal trusted-device artifact correctness;
-- duplicate-key/parser-precedence attacks against JSON that Nembra itself deterministically generates, unless a normal app path can emit ambiguous bytes;
-- offline-analyzer filesystem authority hardening that does not affect producing the first raw capture artifact;
-- optional haptics;
-- VoiceOver rotor/heading refinements beyond a usable primary flow;
-- Reduce Transparency / Increase Contrast / Differentiate Without Color polish beyond clear/readable operation;
-- cosmetic screenshot perfection that does not hide, clip, mislabel, or block the primary capture flow;
-- generic refactors, API cleanup, schema elegance, branch hygiene, duplicate-test cleanup, and theoretical future release-security work.
+## Current physical boundary
 
-Record those findings durably in GitHub with label/wording equivalent to **POST-CAPTURE HARDENING**. Do not silently discard them.
+Physical status remains **NO-GO / DO NOT SCAN / DO NOT RUN / DO NOT REPEAT THE OLD RIDE** until the current authenticated stationary procedure explicitly earns GO for one final composed exact build and intended iPhone 12 / iOS 27 install.
 
-A reviewer may still report a noncritical finding, but it must not reset the final acceptance clock or move the flagship head before first capture unless the integration closer promotes it under the nine blocking conditions above.
+At minimum, current GO still depends on the accepted current runbook and product contracts, including:
 
----
+- final exact-head software and field-provenance acceptance on the unchanged composed source;
+- required real iPhone 12 / iOS 27 visual/runtime evidence and human review;
+- reviewed private Tuya workspace/dependency provenance;
+- signed app / provisioning identity custody and required Apple third-party-login configuration when the owning account uses Apple;
+- exact intended-device install plus runtime build/source/dependency/procedure rendezvous;
+- actual official-SDK login using the scooter-owning account method;
+- freshly proven exact scooter membership bound to that same current SDK account/UID;
+- a fresh deterministic OFF1 -> ON1 -> OFF2 -> ON2 correlation result and explicit confirmation;
+- the official Tuya SDK as sole authenticated BLE owner after handoff;
+- current-generation read-only application evidence under canonical chronology; and
+- a durable current-procedure GO record for those exact subjects.
 
-## 3. Today’s minimum field-ready acceptance ladder
+No document edit, ancestor green run, package-only result, Simulator result, historical Research admission, old passive artifact, operator assertion, or self-described build metadata can substitute for those gates.
 
-The first real ES80 Capture may earn GO when ALL of the following are true on one frozen exact head:
+## Safety and truth
 
-1. package/app compile succeeds on Xcode 27;
-2. exact-head app/Simulator smoke path succeeds;
-3. primary Capture path is visibly usable on iPhone 12/iOS 27 target sizing;
-4. OFF1 -> ON1 -> OFF2 -> ON2 correlation remains deterministic and fails closed on zero/multiple candidates;
-5. no application characteristic-value writes/commands exist in the Experiment One path;
-6. charger-disconnected + stationary operator preflight is explicit and required fresh for the run;
-7. >=60 s same-authority passive observation and final seal/export integrity remain intact;
-8. the exact final Share/capture bytes can be retained/exported and independently hashed/analyzed;
-9. a real signed installable developer/research iPhone build is produced from that frozen exact source;
-10. that exact build is deliberately field-authorized for **this stationary passive recipe only** and named in the runbook;
-11. the runbook states stop conditions and still says no riding / no writes / charger disconnected.
+This retirement creates no Bluetooth write authority, DP query/publish authority, scooter command authority, protocol semantics, telemetry semantics, physical identity, or physical acceptance. Nembra must continue to fail closed on stale/missing authority and preserve the stationary/read-only boundary of the current P0 experiment.
 
-Do not require full App-Store/release-distribution hardening to collect the first private research artifact.
+## Control-plane invariant
 
----
+Any future change of the physical procedure must keep these three subjects coherent on the same final product lineage:
 
-## 4. Developer research authorization vs release authorization
+1. the procedure identifier mechanically required by shipping source;
+2. the operator runbook used for the next physical experiment; and
+3. the final exact-build GO record.
 
-The first private ES80 capture is a developer/research procedure, not a public release.
-
-Therefore workers may separate two authority levels:
-
-### A. TODAY — Research Field Build
-A deliberately produced, exact-source, signed developer build for the intended iPhone may earn Experiment One authorization if the package can mechanically prove it is the special research configuration and the safe passive recipe is compiled in.
-
-Requirements:
-- exact source/build identity;
-- intended recipe `ES80-FINGERPRINT-v1`;
-- no application characteristic writes/commands reachable;
-- fresh stationary + charger-disconnected preflight;
-- fail-closed target correlation;
-- explicit operator action to begin;
-- exact runbook names the accepted build;
-- authorization cannot be toggled by a normal Settings preference or arbitrary imported unsigned JSON.
-
-A compile/build-time research entitlement/configuration tied to the exact signed developer build is acceptable for this private first capture if implemented fail-closed and testable.
-
-### B. LATER — Release-grade authorization
-External P-256 authority, hostile-host filesystem custody, public distribution signing policy, deeply closed-world evidence manifests, and other release-grade anti-tamper hardening remain valuable, but they are POST-CAPTURE unless independently required by the normal private research path.
-
-Do not make the first raw ES80 dataset wait for a public-release threat model.
-
----
-
-## 5. Final-head discipline
-
-Once the current integration closer declares **TODAY FREEZE CANDIDATE**:
-
-- stop merging noncritical changes into that head;
-- run one terminal trusted exact-head Xcode 27 package/app/UI/provenance acceptance;
-- inspect only defects that meet the nine blocker conditions;
-- if a noncritical issue is found, record it to post-capture backlog without changing the frozen head;
-- if a true blocker is found, fix only that blocker, freeze again, and rerun exact-head acceptance.
-
-This prevents endless “one more polish fix -> new SHA -> old green no longer counts” loops.
-
----
-
-## 6. Swarm behavior until first artifact
-
-Prioritize workers roughly as follows:
-
-1. Integration closer / freeze captain
-2. exact-head Xcode + signed developer build
-3. field-research authorization/runbook
-4. primary-path crash/hang/correlation/export QA
-5. primary-path visual usability
-6. only then adjacent noncritical hardening
-
-If a worker discovers a noncritical forensic issue, post it durably and self-reassign to a TODAY blocker instead of opening another flagship-moving repair.
-
-PR count and red-team depth are not the goal. **Time to first trustworthy real ES80 artifact is the goal.**
-
----
-
-## 7. After first real capture
-
-Immediately:
-
-1. preserve the raw artifact unchanged;
-2. run the offline analyzer;
-3. identify real services/characteristics/notifications/cadence/correlation evidence;
-4. use that truth to continue Nembra Battery / Power / Speed / Range / Controls / Dashboard integration;
-5. reopen the deferred release-grade hardening backlog in parallel, not as the only project activity.
-
-The first physical capture is the data unlock for Nembra 2.0 development. It is not the end of the app.
+Any mismatch between them is **NO-GO** until reconciled.

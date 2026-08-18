@@ -1,0 +1,81 @@
+name: Capture Private Vnode Attribute Custody
+
+on:
+  pull_request:
+    paths:
+      - Scripts/capture_tuya_private_input_build_guard.py
+      - scripts/ci/tests/test_capture_private_vnode_attrib_custody.py
+      - .github/workflows/capture-private-vnode-attrib-current.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable-contract:
+    name: Require private-input attribute custody contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind contract to exact checked-out source
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'Exact vnode-attribute source: %s\n' "$actual"
+
+      - name: Prove capability admission fails closed without KQ_NOTE_ATTRIB
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-private-vnode-attrib-pycache"
+          /usr/bin/python3 -m py_compile \
+            Scripts/capture_tuya_private_input_build_guard.py \
+            scripts/ci/tests/test_capture_private_vnode_attrib_custody.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_vnode_attrib_custody.py
+          grep -Fq '"KQ_NOTE_ATTRIB",' Scripts/capture_tuya_private_input_build_guard.py
+          grep -Fq '| select.KQ_NOTE_ATTRIB' Scripts/capture_tuya_private_input_build_guard.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+  real-macos-chmod:
+    name: Observe chmod on admitted vnode with real macOS kqueue
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bind Darwin evidence to exact checked-out source
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s' "$EXPECTED_HEAD_SHA" | tr '[:upper:]' '[:lower:]')"
+          actual="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+          [[ "$expected" =~ ^[0-9a-f]{40}$ ]]
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'Exact Darwin vnode-attribute source: %s\n' "$actual"
+
+      - name: Prove chmod emits authority-metadata invalidation evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-private-vnode-attrib-pycache"
+          /usr/bin/python3 -m py_compile \
+            Scripts/capture_tuya_private_input_build_guard.py \
+            scripts/ci/tests/test_capture_private_vnode_attrib_custody.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_vnode_attrib_custody.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
