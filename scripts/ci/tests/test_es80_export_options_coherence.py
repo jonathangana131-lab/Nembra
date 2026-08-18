@@ -99,30 +99,26 @@ class ExportOptionsCoherenceTests(unittest.TestCase):
             path.touch()
             self.assertFalse(preflight._export_options_are_ready(path, self.TEAM))
 
-    def test_canonical_handoff_pins_current_descriptor_bound_helper(self):
+    def test_retired_handoff_cannot_publish_old_export_options_helper_authority(self):
         handoff = HANDOFF.read_text(encoding="utf-8")
-        current_section = handoff.split(
-            "The current accepted external pre-signing helper is also non-authorizing software tooling:",
-            1,
-        )[1].split("## Why an exact detached source checkout is mandatory", 1)[0]
-
-        self.assertIn("74f4e88e4efb78bf69fe504f407ef42398e4b6ab", current_section)
-        self.assertIn("1b0155ab8d990420c33ad4c65461e7663612f9fb", current_section)
-        self.assertIn("31349183788", current_section)
-        self.assertIn("93336690257", current_section)
-        self.assertIn("descriptor-opened regular-file subject", current_section)
-        self.assertIn("Do not materialize or invoke that superseded helper", current_section)
-
-        self.assertIn(
-            "PREFLIGHT_COMMIT='74f4e88e4efb78bf69fe504f407ef42398e4b6ab'",
-            handoff,
+        stale_markers = (
+            "74f4e88e4efb78bf69fe504f407ef42398e4b6ab",
+            "1b0155ab8d990420c33ad4c65461e7663612f9fb",
+            "31349183788",
+            "93336690257",
+            "PREFLIGHT_COMMIT=",
+            "PREFLIGHT_BLOB=",
+            "ExportOptions path/coherence/custody checks fail",
+            "descriptor-opened regular-file subject",
         )
-        self.assertIn(
-            "PREFLIGHT_BLOB='1b0155ab8d990420c33ad4c65461e7663612f9fb'",
-            handoff,
-        )
-        self.assertIn("ExportOptions path/coherence/custody checks fail", handoff)
-        self.assertIn("PHYSICAL EXPERIMENT ONE REMAINS NO-GO", handoff)
+
+        self.assertIn("RETIRED / NON-AUTHORIZING", handoff)
+        self.assertIn("ES80-AUTHENTICATED-STATIONARY-v1", handoff)
+        self.assertIn("PHYSICAL STATUS: NO-GO", handoff)
+        self.assertIn("old provisioning receipt", handoff)
+        for marker in stale_markers:
+            with self.subTest(marker=marker):
+                self.assertNotIn(marker, handoff)
 
 
 if __name__ == "__main__":
