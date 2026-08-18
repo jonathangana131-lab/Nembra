@@ -421,7 +421,6 @@ def build(
     source: str,
     pr: int,
     generated_manifest_review_id: int,
-    get: Callable[[str], tuple[bytes, dict[str, Any]]] | None = None,
     base_module: Any | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
@@ -434,28 +433,40 @@ def build(
     an exact GitHub OWNER review before that semantic build, injected only into
     its closed installer environment, then revalidated after the private side
     effect and before candidate retirement.
+
+    The review transport is never caller-selected. The accepted base GitHub API
+    client is captured once and used by both this manifest extension and the
+    inherited semantic build. The initial manifest review is fetched only after
+    entering the composition lock so authority cannot go stale while queued
+    behind another composition.
     """
+    if "get" in kwargs:
+        raise PrivateReviewGoError(
+            "caller-supplied GitHub review transport is forbidden"
+        )
+
     base = base_module or generated._load_base_module()
     source = base.canon(source, "source")
     pr = base.pos(pr, "PR")
     generated_manifest_review_id = base.pos(
         generated_manifest_review_id, "generated-manifest review ID"
     )
-    get = get or base.api
+    trusted_get = base.api
+    if not callable(trusted_get):
+        raise PrivateReviewGoError("accepted GitHub review transport is unavailable")
     candidate_repo = candidate_repo.expanduser().resolve(strict=True)
-
-    pre_review = generated_manifest_review(
-        pr, generated_manifest_review_id, source, get, base=base
-    )
-    token = _ACTIVE_MANIFEST_REVIEW.set(pre_review)
 
     with _MANIFEST_EXTENSION_LOCK:
         original_environment_adapter = _SEMANTIC_MODULE._private_environment_adapter
         if original_environment_adapter is not _PREDECESSOR_PRIVATE_ENVIRONMENT_ADAPTER:
-            _ACTIVE_MANIFEST_REVIEW.reset(token)
             raise PrivateReviewGoError(
                 "Final-GO private environment adapter is not exact accepted authority"
             )
+
+        pre_review = generated_manifest_review(
+            pr, generated_manifest_review_id, source, trusted_get, base=base
+        )
+        token = _ACTIVE_MANIFEST_REVIEW.set(pre_review)
         _SEMANTIC_MODULE._private_environment_adapter = _manifest_environment_adapter
         try:
             with _CandidateRetirementBoundary(base) as retirement, _dispatch_predecessor_physical_reads():
@@ -466,12 +477,16 @@ def build(
                         candidate_repo=candidate_repo,
                         source=source,
                         pr=pr,
-                        get=get,
+                        get=trusted_get,
                         base_module=base,
                         **kwargs,
                     )
                     post_review = generated_manifest_review(
-                        pr, generated_manifest_review_id, source, get, base=base
+                        pr,
+                        generated_manifest_review_id,
+                        source,
+                        trusted_get,
+                        base=base,
                     )
                     if post_review != pre_review:
                         raise PrivateReviewGoError(
