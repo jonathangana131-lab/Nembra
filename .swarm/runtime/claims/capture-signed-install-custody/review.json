@@ -9,7 +9,7 @@
   "generation": 21,
   "status": "ACTIVE",
   "claimedAt": "2026-08-18T04:05:00Z",
-  "lastHeartbeatAt": "2026-08-18T04:05:00Z",
+  "lastHeartbeatAt": "2026-08-18T04:08:00Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3606,
@@ -18,6 +18,6 @@
   "takeoverFromWorkerId": "gpt56-sol-20260817-1930-go-review",
   "takeoverFromLeaseId": "capture-signed-install-review-gpt56-20260818-023830",
   "takeoverReason": "Generation-20 review lease expired after 2026-08-18T03:25:00Z. Recover non-writing truth review on active #3606 strict accepted-root materialization while its implementation branch remains owned elsewhere.",
-  "intent": "Adversarially review #3606 recovery/materializer at exact heads, canonical Final-GO manifest ABI, authoring-to-permanent scope conversion, workflow trigger/publish semantics, and final composition boundaries. Do not mutate #3606 production/authoring bytes. Report exact blockers durably. Preserve PHYSICAL NO-GO.",
-  "checkpoint": "Fresh exact #3606 head 881260165b86978372e75bd056a4edd1def6a744 remains recovery/trigger authoring, not permanent product bytes. Review confirmed recovery canonicalizes manifest environment authority to NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256 and #3607 was corrected to match. Blocker comment 5323487422: materializer creates scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py untracked, but recovery pre-publish exact-scope check uses plain git diff --name-only, which excludes that third required path and therefore fails even for a correct transform. Smallest fix is exact union of tracked diff + git ls-files --others --exclude-standard before the three-path comparison; leave staged diff hygiene afterward. Additional composition review in progress; no branch edits. PHYSICAL NO-GO."
+  "intent": "Adversarially review #3606 recovery/materializer at exact heads, canonical Final-GO manifest ABI, authoring-to-permanent scope conversion, workflow trigger/publish semantics, stale-parent composition, and final acceptance boundaries. Do not mutate #3606 production/authoring bytes. Report exact blockers durably. Preserve PHYSICAL NO-GO.",
+  "checkpoint": "Exact #3606 head 881260165b86978372e75bd056a4edd1def6a744 remains recovery/trigger authoring. Two durable blockers reported without branch edits. (1) comment 5323487422: new test is written untracked, while recovery pre-publish scope uses plain git diff --name-only and therefore cannot see the third required path; fix by exact union of tracked diff + git ls-files --others --exclude-standard before three-path comparison. (2) comment 5323462930: authoring base validation/v17-capture-field-strict-root-wiring-base-c871 diverges from live #3553 at merge-base c871c5ae713a178d799c5876809a14a296b7fc67 and is 3 commits ahead / 10 commits behind current #3553@8ca88cf90357816cecaa3ac0b160ce2cc7577ecc. Current-side net changes include product/compiler scripts capture_selected_xcode_build_orchestrator.py and private-read-lease regressions, so materialized #3606 bytes on the authoring parent are not current carrier truth. After materialization, re-anchor exact permanent delta onto freshly refreshed #3553 and retarget away from authoring base so materializer deletion is not an extra PR path; rerun exact composed gates. Canonical manifest key is NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256 and #3607@cf97695d is corrected/software-green but independently unaccepted. PHYSICAL NO-GO."
 }
