@@ -27,7 +27,7 @@ def load():
 
 class CapturePrivateReadLeaseRollbackTests(unittest.TestCase):
     def _subject(self, temporary: str) -> tuple[Path, Path]:
-        outer = Path(temporary)
+        outer = Path(temporary).resolve()
         outer.chmod(0o711)
         repo = outer / "repo"
         repo.mkdir(mode=0o755)
