@@ -1,4 +1,0 @@
-V17 strict-root rebind materialization trigger
-parent=ae71a2c8fa6db4cd86c462320e8e05349856960a
-final-go-abi=NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256
-physical=NO-GO
