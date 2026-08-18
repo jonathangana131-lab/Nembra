@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 18,
+    "classifiedPRTotal": 19,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1263,6 +1263,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.357,
         "title": "[Capture P0][V17][RED TEAM] Prove manifest review authority bypasses"
+      },
+      "3611": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3611,
+        "recommendedAction": "independent-review",
+        "similarity": 0.192,
+        "title": "[V17 Capture] Sync accepted-root compiler scope with carrier head"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1295,7 +1306,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T10:57:10Z",
+    "liveRefreshAt": "2026-08-18T10:58:03Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5080,10 +5091,10 @@
       "userValue": 7
     }
   },
-  "revision": 1042,
+  "revision": 1043,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T10:57:10Z",
+  "updatedAt": "2026-08-18T10:58:03Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5159,7 +5170,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T10:57:10Z",
+      "updatedAt": "2026-08-18T10:58:03Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
