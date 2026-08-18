@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 49,
+    "classifiedPRTotal": 50,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1604,6 +1604,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.234,
         "title": "[Capture P0][V17][RECOVERY] Retire ACL authoring carrier"
+      },
+      "3563": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-exact-guard-fixture-compat",
+        "pr": 3563,
+        "recommendedAction": "independent-review",
+        "similarity": 0.121,
+        "title": "[V17][Capture P0] Align exact-guard lease fixture contract"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1636,7 +1647,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T02:37:00Z",
+    "liveRefreshAt": "2026-08-18T02:37:17Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5421,10 +5432,10 @@
       "userValue": 7
     }
   },
-  "revision": 918,
+  "revision": 919,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T02:37:02Z",
+  "updatedAt": "2026-08-18T02:37:18Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5500,7 +5511,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T02:37:00Z",
+      "updatedAt": "2026-08-18T02:37:17Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
