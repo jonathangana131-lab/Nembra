@@ -1,0 +1,66 @@
+name: Capture macOS private-lease diagnostic
+
+on:
+  push:
+    branches:
+      - diagnostic/v17-capture-macos-private-lease-split-gpt56sol-20260817
+    paths:
+      - .github/workflows/capture-macos-private-lease-diagnostic.yml
+      - .github/workflows/capture-current-accepted-root-compiler-composition.yml
+
+permissions:
+  contents: read
+
+env:
+  EXACT_CARRIER_PARENT: 0ffe52717d9986fb7fd3c226c0737850317c6e61
+  PYTHONDONTWRITEBYTECODE: 1
+
+jobs:
+  isolate:
+    name: Isolate macOS-15 private-lease witness
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind diagnostic ancestry and scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$EXACT_CARRIER_PARENT")" = "$EXACT_CARRIER_PARENT"
+          actual="$(git diff --name-only "$EXACT_CARRIER_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-current-accepted-root-compiler-composition.yml \
+            .github/workflows/capture-macos-private-lease-diagnostic.yml | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git diff --check "$EXACT_CARRIER_PARENT"...HEAD
+
+      - name: Symlink authority transition
+        shell: bash
+        run: /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py
+
+      - name: Descriptor component walk
+        shell: bash
+        run: /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+
+      - name: Rollback exactness
+        shell: bash
+        run: /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
+
+      - name: Host ancestry
+        shell: bash
+        run: /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+
+      - name: Selected Xcode orchestrator
+        shell: bash
+        run: /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+
+      - name: Preserve diagnostic truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          echo "NEMBRA_MACOS_PRIVATE_LEASE_DIAGNOSTIC productBytesChanged=false installAuthority=false physicalAuthorityCreated=false"
