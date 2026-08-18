@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 21,
+    "classifiedPRTotal": 22,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1296,6 +1296,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.273,
         "title": "[Capture P0][V17][RECOVERY] Retire complete strict-root authoring set"
+      },
+      "3616": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "research-capture",
+        "pr": 3616,
+        "recommendedAction": "independent-review",
+        "similarity": 0.212,
+        "title": "[Capture P0][V17][ASSIST] Admit source-custody Swift witness in compiler scope"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1328,7 +1339,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T11:01:51Z",
+    "liveRefreshAt": "2026-08-18T11:02:10Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5113,10 +5124,10 @@
       "userValue": 7
     }
   },
-  "revision": 1050,
+  "revision": 1051,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T11:01:52Z",
+  "updatedAt": "2026-08-18T11:02:11Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5192,7 +5203,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T11:01:51Z",
+      "updatedAt": "2026-08-18T11:02:10Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
