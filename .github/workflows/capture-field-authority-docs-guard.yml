@@ -1,0 +1,43 @@
+name: Capture Field Authority Docs Guard
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md'
+      - 'docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md'
+      - 'docs/ES80_AUTHENTICATED_STATIONARY_GATE_V14.md'
+      - 'docs/ES80_TODAY_PRIVATE_FIELD_RUNBOOK.md'
+      - 'docs/ES80_TODAY_FINAL_GO_OPERATOR_ATTESTATION.md'
+      - 'docs/ES80_TODAY_SIGNED_FIELD_CANDIDATE_PRODUCTION.md'
+      - 'docs/ES80_TODAY_EXACT_RETAINED_IPA_INSTALL.md'
+      - 'docs/ES80_TODAY_RESEARCH_AUTHORIZATION_CONTRACT.md'
+      - 'docs/ES80_TODAY_EXPORT_READINESS_TRUTH.md'
+      - 'docs/ES80_TODAY_PRIVATE_DEVICE_INPUT_CUSTODY.md'
+      - 'scripts/ci/capture_field_authority_docs_guard.py'
+      - '.github/workflows/capture-field-authority-docs-guard.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  fail-closed-authority-docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Verify exact clean head
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          printf 'expected=%s\nactual=%s\n' "$EXPECTED" "$actual"
+          test "$actual" = "$EXPECTED"
+          test -z "$(git status --porcelain)"
+
+      - name: Reject retired physical-authority resurrection
+        run: python3 scripts/ci/capture_field_authority_docs_guard.py
