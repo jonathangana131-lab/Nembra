@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 48,
+    "classifiedPRTotal": 49,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1593,6 +1593,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.104,
         "title": "[V17][Capture P0][RECOVERY] Rebase native ACL exact-guard closure"
+      },
+      "3562": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3562,
+        "recommendedAction": "independent-review",
+        "similarity": 0.234,
+        "title": "[Capture P0][V17][RECOVERY] Retire ACL authoring carrier"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1625,7 +1636,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T02:36:41Z",
+    "liveRefreshAt": "2026-08-18T02:37:00Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5410,10 +5421,10 @@
       "userValue": 7
     }
   },
-  "revision": 917,
+  "revision": 918,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T02:36:43Z",
+  "updatedAt": "2026-08-18T02:37:02Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5489,7 +5500,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T02:36:41Z",
+      "updatedAt": "2026-08-18T02:37:00Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
