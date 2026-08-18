@@ -1228,7 +1228,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3608,
         "recommendedAction": "independent-review",
-        "similarity": 0.232,
+        "similarity": 0.181,
         "title": "[Capture P0][V17][RECOVERY] Fix strict-root materializer scope accounting"
       },
       "3610": {
@@ -1264,16 +1264,16 @@
         "similarity": 0.284,
         "title": "[Capture P0][V17][INTEGRATION] Promote accepted-root compiler carrier"
       },
-      "3628": {
-        "classification": "validation",
+      "3631": {
+        "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3628,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.232,
-        "title": "[Capture P0][V17][TRIGGER] Execute strict-root recovery successor"
+        "lane": "capture-final-go-authority",
+        "pr": 3631,
+        "recommendedAction": "independent-review",
+        "similarity": 0.211,
+        "title": "[Capture P0][V17][TRIGGER] Re-arm Final-GO base transport materializer"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1306,9 +1306,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T11:10:14Z",
+    "liveRefreshAt": "2026-08-18T11:10:33Z",
     "liveRefreshDuplicatesSuppressed": [
-      3628
+      3602
     ],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5091,10 +5091,10 @@
       "userValue": 7
     }
   },
-  "revision": 1076,
+  "revision": 1077,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T11:10:15Z",
+  "updatedAt": "2026-08-18T11:10:33Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5170,7 +5170,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T11:10:14Z",
+      "updatedAt": "2026-08-18T11:10:33Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
