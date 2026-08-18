@@ -1,0 +1,48 @@
+name: Capture native ACL baseline coherence bridge
+
+on:
+  pull_request:
+    paths:
+      - .github/capture-native-acl-baseline-coherence-trigger.txt
+
+permissions:
+  contents: write
+
+jobs:
+  rearm-target:
+    if: >-
+      github.base_ref == 'repair/v17-capture-native-acl-baseline-coherence-sol-20260817' &&
+      github.head_ref == 'repair/v17-capture-native-acl-baseline-coherence-trigger-sol-20260817'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+
+      - name: Re-arm existing materializer and retire bridge
+        shell: bash
+        env:
+          TARGET_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          target='repair/v17-capture-native-acl-baseline-coherence-sol-20260817'
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+          git fetch origin "$target"
+          test "$(git rev-parse FETCH_HEAD)" = "$TARGET_SHA"
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('.github/workflows/capture-native-acl-baseline-coherence-one-shot.yml')
+          text = p.read_text()
+          marker = '# V17 trusted-base bridge rearm.\n'
+          if text.startswith(marker):
+              raise SystemExit('materializer already rearmed')
+          p.write_text(marker + text)
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/capture-native-acl-baseline-coherence-one-shot.yml
+          git rm .github/workflows/capture-native-acl-baseline-coherence-bridge.yml
+          git diff --cached --check
+          git commit -m 'Capture: trusted rearm native ACL coherence materializer'
+          git push origin HEAD:"$target"
