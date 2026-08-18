@@ -287,7 +287,6 @@ struct DashboardView: View {
         .buttonStyle(.plain)
         .frame(minWidth: 44, minHeight: 44, alignment: .leading)
         .sensoryFeedback(.selection, trigger: batteryReadout)
-        .accessibilityElement(children: .ignore)
         .accessibilityLabel(batteryReadout == .charge ? "Battery" : "Learned range")
         .accessibilityValue(batteryAccessibilityValue)
         .accessibilityHint("Double tap to switch between battery charge and learned range. Battery fill always represents charge. Learned range remains unavailable until Nembra has verified battery evidence and a learned range model.")
