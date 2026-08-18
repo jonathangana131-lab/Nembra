@@ -122,6 +122,47 @@ class CapturePrivateReadLeaseRollbackTests(unittest.TestCase):
             ):
                 lease.grant("nembrabuildrollback")
 
+    def test_native_null_acl_without_enoent_fails_closed_before_empty_baseline(self) -> None:
+        helper = load()
+        library = mock.Mock()
+        library.acl_get_fd.return_value = None
+        library.acl_init.return_value = 0xC0FFEE
+        library.acl_free.return_value = 0
+
+        with (
+            mock.patch.object(helper, "_darwin_acl_library", return_value=library),
+            self.assertRaisesRegex(
+                helper.SelectedXcodeBuildOrchestratorError,
+                "could not classify descriptor-pinned private read-lease ACL baseline: errno 0",
+            ),
+        ):
+            helper._capture_fd_acl_baseline(73)
+
+        library.acl_get_fd.assert_called_once_with(73)
+        library.acl_init.assert_not_called()
+        library.acl_free.assert_not_called()
+
+    def test_native_enoent_acl_acquisition_mints_empty_baseline(self) -> None:
+        helper = load()
+        library = mock.Mock()
+
+        def absent_acl(descriptor: int):
+            self.assertEqual(descriptor, 74)
+            helper.ctypes.set_errno(helper.errno.ENOENT)
+            return None
+
+        library.acl_get_fd.side_effect = absent_acl
+        library.acl_init.return_value = 0xC0FFEE
+        library.acl_free.return_value = 0
+
+        with mock.patch.object(helper, "_darwin_acl_library", return_value=library):
+            baseline = helper._capture_fd_acl_baseline(74)
+
+        self.assertEqual(baseline, 0xC0FFEE)
+        library.acl_get_fd.assert_called_once_with(74)
+        library.acl_init.assert_called_once_with(0)
+        library.acl_free.assert_not_called()
+
     def test_native_strict_revoke_restores_held_object_after_path_replacement(self) -> None:
         helper = load()
         with tempfile.TemporaryDirectory(prefix="nembra-lease-native-revoke-") as temporary:
