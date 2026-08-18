@@ -1,0 +1,49 @@
+name: Capture Native ACL Seeded Baseline Equivalence Red Team
+
+on:
+  pull_request:
+    branches:
+      - repair/v17-capture-darwin-native-acl-production-gpt56sol-20260817
+    paths:
+      - scripts/ci/tests/test_capture_native_acl_seeded_baseline_equivalence_red_team.py
+      - .github/workflows/capture-native-acl-seeded-baseline-equivalence-red-team.yml
+
+permissions:
+  contents: read
+
+jobs:
+  exploit-positive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bind exact attacked production head and validation-only scope
+        shell: bash
+        env:
+          ATTACKED: 8456750395c0a5cb1472834300785a5d52c1cae4
+        run: |
+          set -euo pipefail
+          test "${{ github.event.pull_request.base.sha }}" = "$ATTACKED"
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          git merge-base --is-ancestor "$ATTACKED" HEAD
+          changed="$(git diff --name-only "$ATTACKED"..HEAD | sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-native-acl-seeded-baseline-equivalence-red-team.yml \
+            scripts/ci/tests/test_capture_native_acl_seeded_baseline_equivalence_red_team.py | sort)"
+          test "$changed" = "$expected"
+          test "$(git rev-parse "$ATTACKED:scripts/ci/capture_selected_xcode_build_orchestrator.py")" = \
+               "$(git rev-parse HEAD:scripts/ci/capture_selected_xcode_build_orchestrator.py)"
+          git diff --check "$ATTACKED"..HEAD
+
+      - name: Reproduce missing seeded baseline semantic equivalence
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/tests/test_capture_native_acl_seeded_baseline_equivalence_red_team.py
+          python3 scripts/ci/tests/test_capture_native_acl_seeded_baseline_equivalence_red_team.py
+
+      - name: Truth boundary
+        run: |
+          echo 'NEMBRA_NATIVE_ACL_SEEDED_BASELINE_RED_TEAM exploitPositive=true productionBytesChanged=false physicalAuthorityCreated=false'
+          echo 'SUCCESS means production still lacks pre-grant fd/path ACL semantic equivalence; it is not product acceptance.'
