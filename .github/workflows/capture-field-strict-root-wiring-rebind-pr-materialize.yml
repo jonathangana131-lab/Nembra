@@ -1,0 +1,89 @@
+name: Capture field strict-root wiring rebind PR materializer
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-field-strict-root-wiring-rebind-pr-materialize.yml
+      - .github/capture_field_strict_root_wiring_rebind_materialize.py
+      - .github/capture-field-strict-root-wiring-rebind.trigger
+
+permissions:
+  contents: write
+
+env:
+  EXACT_PARENT: ae71a2c8fa6db4cd86c462320e8e05349856960a
+
+jobs:
+  materialize:
+    if: github.head_ref == 'repair/v17-capture-field-strict-root-wiring-rebind-gpt56sol-20260818'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact fresh carrier and authoring scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          actual="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/capture-field-strict-root-wiring-rebind.trigger \
+            .github/capture_field_strict_root_wiring_rebind_materialize.py \
+            .github/workflows/capture-field-strict-root-wiring-rebind-materialize.yml \
+            .github/workflows/capture-field-strict-root-wiring-rebind-pr-materialize.yml | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+
+      - name: Execute reviewed canonical materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -I .github/capture_field_strict_root_wiring_rebind_materialize.py
+
+      - name: Run focused strict-root wiring regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          bash -n scripts/field/install_one_time_capture.command
+          python3 -B -I scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py
+          python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256' Scripts/bootstrap_capture_tuya_sdk.sh
+          grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256' scripts/field/install_one_time_capture.command
+          ! grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_GENERATED_MANIFEST_SHA256' Scripts/bootstrap_capture_tuya_sdk.sh
+          ! grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_GENERATED_MANIFEST_SHA256' scripts/field/install_one_time_capture.command
+          ! grep -nE 'publishDps\(|writeValue\(|removeDevice|factoryReset' scripts/field/install_one_time_capture.command
+          git diff --check
+          actual="$( { git diff --name-only; git ls-files --others --exclude-standard; } | LC_ALL=C sort -u )"
+          expected="$(printf '%s\n' \
+            Scripts/bootstrap_capture_tuya_sdk.sh \
+            scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py \
+            scripts/field/install_one_time_capture.command | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+
+      - name: Publish clean permanent three-file repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch='repair/v17-capture-field-strict-root-wiring-rebind-gpt56sol-20260818'
+          expected_head="${{ github.event.pull_request.head.sha }}"
+          git fetch origin "$branch"
+          test "$(git rev-parse FETCH_HEAD)" = "$expected_head"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Scripts/bootstrap_capture_tuya_sdk.sh scripts/field/install_one_time_capture.command scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py
+          git rm \
+            .github/capture-field-strict-root-wiring-rebind.trigger \
+            .github/capture_field_strict_root_wiring_rebind_materialize.py \
+            .github/workflows/capture-field-strict-root-wiring-rebind-materialize.yml \
+            .github/workflows/capture-field-strict-root-wiring-rebind-pr-materialize.yml
+          git diff --cached --check
+          git commit -m 'Capture: bind field build to accepted generated root'
+          git push origin HEAD:"$branch"
