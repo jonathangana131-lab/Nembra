@@ -1517,17 +1517,6 @@
         "similarity": 0.332,
         "title": "[Capture P0][V17][VALIDATION] Reify held-fd absent ACL lease helper"
       },
-      "3575": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-current-accepted-root-acl-transport",
-        "pr": 3575,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.375,
-        "title": "[Capture P0][V17][REPAIR] Require seeded ACL baseline coherence"
-      },
       "3581": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1571,6 +1560,17 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.423,
         "title": "[Capture P0][V17][REPAIR] Bind native rollback ACL to canonical baseline"
+      },
+      "3591": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3591,
+        "recommendedAction": "independent-review",
+        "similarity": 0.208,
+        "title": "[Capture P0][V17][CI] Admit private-UID fixture workflow into compiler scope"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1603,7 +1603,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T02:55:46Z",
+    "liveRefreshAt": "2026-08-18T02:56:05Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5388,10 +5388,10 @@
       "userValue": 7
     }
   },
-  "revision": 967,
+  "revision": 968,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T02:55:48Z",
+  "updatedAt": "2026-08-18T02:56:07Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5467,7 +5467,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T02:55:46Z",
+      "updatedAt": "2026-08-18T02:56:05Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
