@@ -1525,19 +1525,8 @@
         "lane": "capture-current-accepted-root-acl-transport",
         "pr": 3581,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.436,
+        "similarity": 0.272,
         "title": "[Capture P0][V17][RED TEAM] Native ACL baseline coherence exact-head classifier"
-      },
-      "3587": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-current-accepted-root-acl-transport",
-        "pr": 3587,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.444,
-        "title": "[Capture P0][V17][REPAIR] Bind native FD/path ACL baseline before grant"
       },
       "3589": {
         "classification": "requires-review",
@@ -1558,7 +1547,7 @@
         "lane": "",
         "pr": 3592,
         "recommendedAction": "independent-review",
-        "similarity": 0.438,
+        "similarity": 0.531,
         "title": "[Capture P0][V17][TRIGGER] Trusted native ACL coherence materializer bridge"
       },
       "3594": {
@@ -1580,7 +1569,7 @@
         "lane": "capture-current-accepted-root-acl-transport",
         "pr": 3595,
         "recommendedAction": "independent-review",
-        "similarity": 0.337,
+        "similarity": 0.27,
         "title": "[Capture P0][V17][RECOVERY] Apply retained-handle ACL coherence to current carrier"
       },
       "3596": {
@@ -1604,6 +1593,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.145,
         "title": "[Capture P0][V17][TEST] Exercise native transport in real UID witness"
+      },
+      "3598": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3598,
+        "recommendedAction": "independent-review",
+        "similarity": 0.528,
+        "title": "[Capture P0][V17][TRIGGER] Re-arm current native ACL coherence materializer"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1636,7 +1636,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T03:00:19Z",
+    "liveRefreshAt": "2026-08-18T03:01:15Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5421,10 +5421,10 @@
       "userValue": 7
     }
   },
-  "revision": 979,
+  "revision": 980,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T03:00:22Z",
+  "updatedAt": "2026-08-18T03:01:17Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5500,7 +5500,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T03:00:19Z",
+      "updatedAt": "2026-08-18T03:01:15Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
