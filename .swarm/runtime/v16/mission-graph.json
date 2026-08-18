@@ -1195,7 +1195,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3645,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.334,
+        "similarity": 0.335,
         "title": "[Capture P0][V17][VALIDATION] Full 48-path final exact-head matrix"
       },
       "3646": {
@@ -1217,7 +1217,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3647,
         "recommendedAction": "independent-review",
-        "similarity": 0.332,
+        "similarity": 0.333,
         "title": "[Capture P0][V17][ASSIST] Re-earn final ACL + real-lease matrix"
       }
     },
@@ -1251,7 +1251,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T11:46:05Z",
+    "liveRefreshAt": "2026-08-18T11:47:27Z",
     "liveRefreshDuplicatesSuppressed": [
       3645
     ],
@@ -5036,10 +5036,10 @@
       "userValue": 7
     }
   },
-  "revision": 1126,
+  "revision": 1127,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T11:46:06Z",
+  "updatedAt": "2026-08-18T11:47:28Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5115,7 +5115,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T11:46:05Z",
+      "updatedAt": "2026-08-18T11:47:27Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
