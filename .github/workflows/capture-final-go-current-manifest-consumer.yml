@@ -1,0 +1,89 @@
+name: Capture Final GO Current Manifest Consumer
+
+on:
+  push:
+    branches:
+      - recovery/v17-final-go-current-manifest-consumer-gpt56sol-20260817
+    paths:
+      - scripts/ci/es80_authenticated_stationary_current_manifest_final_go.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_current_manifest_final_go.py
+      - .github/workflows/capture-final-go-current-manifest-consumer.yml
+  pull_request:
+    paths:
+      - scripts/ci/es80_authenticated_stationary_current_manifest_final_go.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_current_manifest_final_go.py
+      - .github/workflows/capture-final-go-current-manifest-consumer.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-final-go-current-manifest-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  control:
+    name: Bind reviewed manifest to current field consumer
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact recovery scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          head_sha="$(git rev-parse HEAD)"
+          test "$head_sha" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          git fetch --no-tags origin control/v17-final-go-build-input-manifest-review-sol-20260814
+          parent="origin/control/v17-final-go-build-input-manifest-review-sol-20260814"
+          test "$(git merge-base HEAD "$parent")" = "$(git rev-parse "$parent")"
+          actual="$(git diff --name-only "$parent"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            '.github/workflows/capture-final-go-current-manifest-consumer.yml' \
+            'scripts/ci/es80_authenticated_stationary_current_manifest_final_go.py' \
+            'scripts/ci/tests/test_es80_authenticated_stationary_current_manifest_final_go.py' | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          test "$(git rev-parse HEAD:scripts/ci/es80_authenticated_stationary_build_input_manifest_final_go.py)" = "3379a31b2d8014365be257871b56c1ea75d048f3"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git diff --check "$parent"...HEAD
+
+      - name: Compile control recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-final-go-current-manifest-pycache"
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_current_manifest_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_current_manifest_final_go.py
+
+      - name: Run current-consumer adversarial regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -B -I scripts/ci/tests/test_es80_authenticated_stationary_current_manifest_final_go.py
+
+      - name: Preserve control-only truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          control=scripts/ci/es80_authenticated_stationary_current_manifest_final_go.py
+          grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_GENERATED_MANIFEST_SHA256' "$control"
+          grep -Fq -- '--accepted-generated-manifest-sha256' "$control"
+          grep -Fq '"installerConsumerIntegrated": True' "$control"
+          grep -Fq '"physicalAuthorityCreated": False' "$control"
+          test -z "$(git diff --name-only origin/control/v17-final-go-build-input-manifest-review-sol-20260814...HEAD -- scripts/field Scripts/bootstrap_capture_tuya_sdk.sh NembraApp)"
+          printf '%s\n' \
+            'v17AuthorityPreserved=true' \
+            'currentManifestEnvironmentKey=true' \
+            'candidateHelperCrossDerivation=true' \
+            'exactConsumerSourceProof=true' \
+            'installerConsumerIntegrated=true' \
+            'physicalAuthorityCreated=false'
