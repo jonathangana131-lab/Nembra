@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 20,
+    "classifiedPRTotal": 22,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1261,7 +1261,7 @@
         "lane": "capture-final-go-authority",
         "pr": 3619,
         "recommendedAction": "independent-review",
-        "similarity": 0.266,
+        "similarity": 0.277,
         "title": "[Capture P0][V17][RECOVERY] Seal Final-GO base review transport"
       },
       "3621": {
@@ -1285,6 +1285,28 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.284,
         "title": "[Capture P0][V17][INTEGRATION] Promote accepted-root compiler carrier"
+      },
+      "3628": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3628,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.235,
+        "title": "[Capture P0][V17][TRIGGER] Execute strict-root recovery successor"
+      },
+      "3629": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-final-go-authority",
+        "pr": 3629,
+        "recommendedAction": "independent-review",
+        "similarity": 0.284,
+        "title": "[Capture P0][V17][TRIGGER] Execute Final-GO base transport seal"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1317,9 +1339,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T11:08:51Z",
+    "liveRefreshAt": "2026-08-18T11:09:20Z",
     "liveRefreshDuplicatesSuppressed": [
-      3602
+      3628
     ],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5102,10 +5124,10 @@
       "userValue": 7
     }
   },
-  "revision": 1072,
+  "revision": 1073,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T11:08:52Z",
+  "updatedAt": "2026-08-18T11:09:21Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5181,7 +5203,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T11:08:51Z",
+      "updatedAt": "2026-08-18T11:09:20Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
