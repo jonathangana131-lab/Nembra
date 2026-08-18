@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 16,
+  "kind": "mission-work-claim",
+  "workItemId": "capture-postmerge-exact-head-matrix-4f538",
+  "objectiveId": "legacy-capture-signed-install-custody",
+  "workerId": "gpt56-sol-20260818-postmerge-matrix",
+  "leaseId": "82cfff6b88ee467c93e494737cb712cc",
+  "generation": 1,
+  "status": "ACTIVE",
+  "claimedAt": "2026-08-18T22:09:33Z",
+  "lastHeartbeatAt": "2026-08-18T22:09:33Z",
+  "leaseSeconds": 1800,
+  "branch": "recovery/v17-capture-postmerge-exact-head-matrix-gpt56sol-20260818"
+}
