@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 50,
+    "classifiedPRTotal": 49,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1426,7 +1426,7 @@
         "lane": "dashboard-cockpit-product-closure",
         "pr": 3497,
         "recommendedAction": "independent-review",
-        "similarity": 0.108,
+        "similarity": 0.098,
         "title": "[Dashboard V17][RECOVERY] Ship signature battery / learned-range instrument"
       },
       "3516": {
@@ -1561,17 +1561,6 @@
         "similarity": 0.221,
         "title": "[Capture P0][V17][TEST] Exercise native transport in real UID witness"
       },
-      "3598": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3598,
-        "recommendedAction": "independent-review",
-        "similarity": 0.462,
-        "title": "[Capture P0][V17][TRIGGER] Re-arm current native ACL coherence materializer"
-      },
       "3599": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1580,7 +1569,7 @@
         "lane": "",
         "pr": 3599,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.141,
+        "similarity": 0.133,
         "title": "[Capture P0][V17][REPAIR] Use native ACL lease on real Darwin"
       },
       "3602": {
@@ -1647,7 +1636,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T03:05:18Z",
+    "liveRefreshAt": "2026-08-18T03:05:44Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5432,10 +5421,10 @@
       "userValue": 7
     }
   },
-  "revision": 991,
+  "revision": 992,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T03:05:20Z",
+  "updatedAt": "2026-08-18T03:05:47Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5511,7 +5500,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T03:05:18Z",
+      "updatedAt": "2026-08-18T03:05:44Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
