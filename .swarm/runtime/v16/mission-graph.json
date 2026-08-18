@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 47,
+    "classifiedPRTotal": 48,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1580,8 +1580,19 @@
         "lane": "capture-current-accepted-root-acl-transport",
         "pr": 3557,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.266,
+        "similarity": 0.382,
         "title": "[Capture P0][V17][RED TEAM] Reject null-errno ACL baseline promotion"
+      },
+      "3564": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-current-accepted-root-acl-transport",
+        "pr": 3564,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.401,
+        "title": "[Capture P0][V17][REPAIR] Fail closed on null native ACL baseline"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1614,7 +1625,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T02:38:13Z",
+    "liveRefreshAt": "2026-08-18T02:38:33Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5399,10 +5410,10 @@
       "userValue": 7
     }
   },
-  "revision": 921,
+  "revision": 922,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T02:38:15Z",
+  "updatedAt": "2026-08-18T02:38:35Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5478,7 +5489,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T02:38:13Z",
+      "updatedAt": "2026-08-18T02:38:33Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
