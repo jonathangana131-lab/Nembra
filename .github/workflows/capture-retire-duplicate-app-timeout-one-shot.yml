@@ -98,7 +98,7 @@ struct TuyaApplicationTimeoutPresentationRaceSourceTests {
     private func section(in source: String, from start: String, to end: String) throws -> String {
         guard let a = source.range(of: start),
               let b = source.range(of: end, range: a.upperBound..<source.endIndex) else {
-            Issue.record("Expected source section missing: \\(start) ... \\(end)")
+            Issue.record("Expected source section missing: \(start) ... \(end)")
             throw SourceContractError.sectionMissing
         }
         return String(source[a.lowerBound..<b.lowerBound])
@@ -155,3 +155,4 @@ struct TuyaApplicationTimeoutPresentationRaceSourceTests {
 
 # Re-armed after verifying the duplicate app-owned timeout still exists on the exact branch head.
 # macOS /bin/bash is 3.2, so exact-delta admission deliberately avoids mapfile/readarray.
+# Re-triggered after confirming dc26c992 remained the branch head and the legacy app-owned timeout still existed.
