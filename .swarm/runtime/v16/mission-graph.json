@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 6,
+    "classifiedPRTotal": 5,
     "classifiedPRs": {
       "3321": {
         "classification": "validation",
@@ -1074,19 +1074,8 @@
         "lane": "capture-signed-install-custody",
         "pr": 3321,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.255,
+        "similarity": 0.211,
         "title": "[Capture P0][VALIDATION] Attest former-build mutation authority"
-      },
-      "3353": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "c2211115ccc1bbe8a5dedff1544f1de73277c65d",
-        "lane": "capture-signed-install-custody",
-        "pr": 3353,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.247,
-        "title": "[Capture P0][SECURITY] Seal APFS backing before writable attach"
       },
       "3398": {
         "classification": "canonical-candidate",
@@ -1096,7 +1085,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3398,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.212,
+        "similarity": 0.194,
         "title": "[Capture P0][SECURITY] Enforce full numeric-principal admission and retirement"
       },
       "3399": {
@@ -1164,7 +1153,7 @@
       "live-pr-3082",
       "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T17:59:31Z",
+    "liveRefreshAt": "2026-08-18T17:59:50Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [],
@@ -4945,10 +4934,10 @@
       "userValue": 7
     }
   },
-  "revision": 1141,
+  "revision": 1142,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T17:59:32Z",
+  "updatedAt": "2026-08-18T17:59:50Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
