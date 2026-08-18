@@ -124,7 +124,9 @@ struct TuyaApplicationTimeoutPresentationRaceSourceTests {
         run: |
           set -euo pipefail
           changed="$(git status --porcelain=v1 | awk '{print $2}' | sort | tr '\n' ' ' | sed 's/ $//')"
-          expected=".github/workflows/capture-retire-duplicate-app-timeout-one-shot.yml NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationTimeoutPresentationRaceSourceTests.swift"
+          # The one-shot workflow is already committed at checkout, so before the
+          # retirement step the working-tree delta must be exactly the two product/test paths.
+          expected="NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationTimeoutPresentationRaceSourceTests.swift"
           printf '%s\n' "$changed"
           test "$changed" = "$expected"
           ! grep -q 'publishDps(' NembraApp/App/NembraCaptureEntrypoint.swift
