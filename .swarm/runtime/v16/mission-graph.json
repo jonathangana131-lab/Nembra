@@ -1228,7 +1228,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3608,
         "recommendedAction": "independent-review",
-        "similarity": 0.307,
+        "similarity": 0.313,
         "title": "[Capture P0][V17][RECOVERY] Fix strict-root materializer scope accounting"
       },
       "3610": {
@@ -1261,7 +1261,7 @@
         "lane": "capture-final-go-authority",
         "pr": 3619,
         "recommendedAction": "independent-review",
-        "similarity": 0.277,
+        "similarity": 0.266,
         "title": "[Capture P0][V17][RECOVERY] Seal Final-GO base review transport"
       },
       "3621": {
@@ -1294,19 +1294,19 @@
         "lane": "capture-signed-install-custody",
         "pr": 3628,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.235,
+        "similarity": 0.29,
         "title": "[Capture P0][V17][TRIGGER] Execute strict-root recovery successor"
       },
-      "3629": {
+      "3630": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
-        "lane": "capture-final-go-authority",
-        "pr": 3629,
+        "lane": "capture-signed-install-custody",
+        "pr": 3630,
         "recommendedAction": "independent-review",
-        "similarity": 0.284,
-        "title": "[Capture P0][V17][TRIGGER] Execute Final-GO base transport seal"
+        "similarity": 0.301,
+        "title": "[Capture P0][V17][TRIGGER] Execute re-anchored strict-root materializer"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1339,7 +1339,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T11:09:20Z",
+    "liveRefreshAt": "2026-08-18T11:09:40Z",
     "liveRefreshDuplicatesSuppressed": [
       3628
     ],
@@ -5124,10 +5124,10 @@
       "userValue": 7
     }
   },
-  "revision": 1073,
+  "revision": 1074,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T11:09:21Z",
+  "updatedAt": "2026-08-18T11:09:41Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5203,7 +5203,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T11:09:20Z",
+      "updatedAt": "2026-08-18T11:09:40Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
