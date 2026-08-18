@@ -12,6 +12,7 @@ on:
       - scripts/ci/tests/test_capture_private_read_lease_rollback.py
       - scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py
       - scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerSourceCustodyOrderingSourceTests.swift
       - .github/workflows/capture-current-accepted-root-acl-transport-probe.yml
       - .github/workflows/capture-current-accepted-root-real-lease-classifier.yml
       - .github/workflows/capture-current-accepted-root-compiler-composition.yml
@@ -60,6 +61,7 @@ jobs:
             .github/workflows/capture-current-accepted-root-real-lease-classifier.yml \
             .github/workflows/capture-field-build-provenance.yml \
             .github/workflows/capture-private-build-uid-read-lease-current.yml \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerSourceCustodyOrderingSourceTests.swift \
             scripts/ci/capture_selected_xcode_build_orchestrator.py \
             scripts/ci/tests/test_capture_accepted_root_build_composition.py \
             scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py \
