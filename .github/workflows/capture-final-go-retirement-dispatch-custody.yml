@@ -10,7 +10,9 @@ on:
       - .github/workflows/capture-authenticated-stationary-final-go.yml
       - .github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml
       - .github/workflows/capture-authenticated-stationary-private-review-final-go.yml
+      - .github/workflows/capture-current-accepted-root-acl-transport-probe.yml
       - .github/workflows/capture-current-accepted-root-compiler-composition.yml
+      - .github/workflows/capture-current-accepted-root-real-lease-classifier.yml
       - .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml
       - .github/workflows/capture-final-go-retirement-dispatch-custody.yml
       - .github/workflows/capture-r3-base-loader-custody-current.yml
@@ -43,7 +45,9 @@ on:
       - .github/workflows/capture-authenticated-stationary-final-go.yml
       - .github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml
       - .github/workflows/capture-authenticated-stationary-private-review-final-go.yml
+      - .github/workflows/capture-current-accepted-root-acl-transport-probe.yml
       - .github/workflows/capture-current-accepted-root-compiler-composition.yml
+      - .github/workflows/capture-current-accepted-root-real-lease-classifier.yml
       - .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml
       - .github/workflows/capture-final-go-retirement-dispatch-custody.yml
       - .github/workflows/capture-r3-base-loader-custody-current.yml
@@ -92,7 +96,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
-      - name: Bind exact current carrier and 31-path final composition
+      - name: Bind exact current carrier and 33-path final composition
         shell: bash
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -105,7 +109,9 @@ jobs:
             .github/workflows/capture-authenticated-stationary-final-go.yml \
             .github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml \
             .github/workflows/capture-authenticated-stationary-private-review-final-go.yml \
+            .github/workflows/capture-current-accepted-root-acl-transport-probe.yml \
             .github/workflows/capture-current-accepted-root-compiler-composition.yml \
+            .github/workflows/capture-current-accepted-root-real-lease-classifier.yml \
             .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml \
             .github/workflows/capture-final-go-retirement-dispatch-custody.yml \
             .github/workflows/capture-r3-base-loader-custody-current.yml \

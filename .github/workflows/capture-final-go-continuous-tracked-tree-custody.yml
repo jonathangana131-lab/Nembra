@@ -11,7 +11,9 @@ on:
       - .github/workflows/capture-authenticated-stationary-final-go.yml
       - .github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml
       - .github/workflows/capture-authenticated-stationary-private-review-final-go.yml
+      - .github/workflows/capture-current-accepted-root-acl-transport-probe.yml
       - .github/workflows/capture-current-accepted-root-compiler-composition.yml
+      - .github/workflows/capture-current-accepted-root-real-lease-classifier.yml
       - .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml
       - .github/workflows/capture-final-go-retirement-dispatch-custody.yml
       - .github/workflows/capture-r3-base-loader-custody-current.yml
@@ -44,7 +46,9 @@ on:
       - .github/workflows/capture-authenticated-stationary-final-go.yml
       - .github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml
       - .github/workflows/capture-authenticated-stationary-private-review-final-go.yml
+      - .github/workflows/capture-current-accepted-root-acl-transport-probe.yml
       - .github/workflows/capture-current-accepted-root-compiler-composition.yml
+      - .github/workflows/capture-current-accepted-root-real-lease-classifier.yml
       - .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml
       - .github/workflows/capture-final-go-retirement-dispatch-custody.yml
       - .github/workflows/capture-r3-base-loader-custody-current.yml
@@ -93,7 +97,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
-      - name: Bind exact current carrier and 31-path final composition
+      - name: Bind exact current carrier and 33-path final composition
         shell: bash
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -107,7 +111,9 @@ jobs:
             .github/workflows/capture-authenticated-stationary-final-go.yml \
             .github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml \
             .github/workflows/capture-authenticated-stationary-private-review-final-go.yml \
+            .github/workflows/capture-current-accepted-root-acl-transport-probe.yml \
             .github/workflows/capture-current-accepted-root-compiler-composition.yml \
+            .github/workflows/capture-current-accepted-root-real-lease-classifier.yml \
             .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml \
             .github/workflows/capture-final-go-retirement-dispatch-custody.yml \
             .github/workflows/capture-r3-base-loader-custody-current.yml \
@@ -183,13 +189,28 @@ jobs:
           set -euo pipefail
           python3 scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
 
-      - name: Preserve object-chain, descriptor, and committed-parent authority
+      - name: Preserve Git object-chain custody
         shell: bash
         run: |
           set -euo pipefail
           python3 scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py
+
+      - name: Preserve descriptor-bound physical reads
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 scripts/ci/tests/test_es80_final_go_descriptor_read_custody.py
+
+      - name: Preserve committed-parent fixture execution custody
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
+
+      - name: Preserve inherited raw-filesystem parent authority
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py \
             CandidateRawFilesystemAuthorityTests.test_child_executes_exact_2873_parent_blob \
             CandidateRawFilesystemAuthorityTests.test_inherited_parent_candidate_runs_through_raw_authority \
