@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 8,
+    "classifiedPRTotal": 9,
     "classifiedPRs": {
       "3649": {
         "classification": "requires-review",
@@ -1074,7 +1074,7 @@
         "lane": "dashboard-cockpit-product-closure",
         "pr": 3649,
         "recommendedAction": "independent-review",
-        "similarity": 0.111,
+        "similarity": 0.222,
         "title": "[Dashboard V17][RECOVERY] Restore battery control accessibility role"
       },
       "3650": {
@@ -1153,6 +1153,17 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.157,
         "title": "[Capture P0][V17][INTEGRATION] Re-establish exact current-main Capture gate"
+      },
+      "3662": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "dashboard-cockpit-product-closure",
+        "pr": 3662,
+        "recommendedAction": "independent-review",
+        "similarity": 0.221,
+        "title": "[Dashboard V17][ACCESSIBILITY] Keep battery/range control at AX sizes"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1186,7 +1197,7 @@
       "live-pr-3082",
       "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T22:21:54Z",
+    "liveRefreshAt": "2026-08-18T22:22:07Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [],
@@ -4967,10 +4978,10 @@
       "userValue": 7
     }
   },
-  "revision": 1199,
+  "revision": 1200,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T22:21:54Z",
+  "updatedAt": "2026-08-18T22:22:07Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
