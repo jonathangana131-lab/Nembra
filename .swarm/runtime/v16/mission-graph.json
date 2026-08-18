@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 49,
+    "classifiedPRTotal": 48,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1525,19 +1525,8 @@
         "lane": "capture-current-accepted-root-acl-transport",
         "pr": 3581,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.319,
+        "similarity": 0.298,
         "title": "[Capture P0][V17][RED TEAM] Native ACL baseline coherence exact-head classifier"
-      },
-      "3588": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-current-accepted-root-acl-transport",
-        "pr": 3588,
-        "recommendedAction": "independent-review",
-        "similarity": 0.358,
-        "title": "[SUPERSEDED][Capture P0][V17][RECOVERY R2] Materialize seeded ACL baseline coherence"
       },
       "3595": {
         "classification": "requires-review",
@@ -1636,7 +1625,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T03:05:44Z",
+    "liveRefreshAt": "2026-08-18T03:06:07Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5421,10 +5410,10 @@
       "userValue": 7
     }
   },
-  "revision": 992,
+  "revision": 993,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T03:05:47Z",
+  "updatedAt": "2026-08-18T03:06:09Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5500,7 +5489,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T03:05:44Z",
+      "updatedAt": "2026-08-18T03:06:07Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
