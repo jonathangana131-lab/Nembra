@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 18,
+    "classifiedPRTotal": 19,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1228,7 +1228,7 @@
         "lane": "capture-final-go-authority",
         "pr": 3610,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.223,
+        "similarity": 0.251,
         "title": "[Capture P0][V17][RED TEAM] Prove manifest review authority bypasses"
       },
       "3625": {
@@ -1263,6 +1263,17 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.213,
         "title": "[Capture P0][V17][REPAIR] Admit field consumer into exact compiler scope"
+      },
+      "3641": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-final-go-authority",
+        "pr": 3641,
+        "recommendedAction": "independent-review",
+        "similarity": 0.254,
+        "title": "[Capture P0][V17][COMPOSE] Clean Final-GO + field carrier composition"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1295,7 +1306,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T11:19:35Z",
+    "liveRefreshAt": "2026-08-18T11:20:02Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5080,10 +5091,10 @@
       "userValue": 7
     }
   },
-  "revision": 1097,
+  "revision": 1098,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T11:19:35Z",
+  "updatedAt": "2026-08-18T11:20:03Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5159,7 +5170,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T11:19:35Z",
+      "updatedAt": "2026-08-18T11:20:02Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
