@@ -75,7 +75,13 @@ class CapturePrivateBuildUIDReadLeaseTests(unittest.TestCase):
             self.assertNotEqual(as_build(read_code, str(payload)).returncode, 0)
             self.assertNotEqual(as_build(read_code, str(alias)).returncode, 0)
 
-            lease = orchestrator._PrivateReadLease((build_root,), repo)
+            # The field compiler's accepted-root path uses the native Darwin ACL
+            # transport. The older shell /dev/fd ACL transport is intentionally
+            # covered only by portable regressions because real macOS evidence
+            # has proven it cannot be treated as an authority-bearing transport.
+            lease = orchestrator._PrivateReadLease(
+                (build_root,), repo, use_native_darwin_acl=True
+            )
             lease.grant(name)
             direct = as_build(read_code, str(payload))
             linked = as_build(read_code, str(alias))
