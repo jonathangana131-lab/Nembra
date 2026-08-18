@@ -1,0 +1,110 @@
+name: Capture Field Strict Root Wiring Artifact
+
+on:
+  pull_request:
+    paths:
+      - .github/capture-field-strict-root-artifact.trigger
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-field-strict-root-artifact-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_PRODUCT_PARENT: c871c5ae713a178d799c5876809a14a296b7fc67
+  PYTHONDONTWRITEBYTECODE: 1
+
+jobs:
+  materialize-artifact:
+    if: github.head_ref == 'repair/v17-capture-field-strict-root-wiring-gpt56sol-20260817'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact recovery lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          test "$(git merge-base HEAD "$EXACT_PRODUCT_PARENT")" = "$EXACT_PRODUCT_PARENT"
+          actual="$(git diff --name-only "$EXACT_PRODUCT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/capture-field-strict-root-artifact.trigger \
+            .github/capture-field-strict-root-wiring.trigger \
+            .github/workflows/capture-field-strict-root-wiring-materialize.yml \
+            .github/workflows/capture-field-strict-root-wiring-recovery.yml | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git diff --check "$EXACT_PRODUCT_PARENT"...HEAD
+
+      - name: Execute reviewed materializer payload
+        shell: python
+        run: |
+          from pathlib import Path
+          import textwrap
+
+          path = Path('.github/workflows/capture-field-strict-root-wiring-materialize.yml')
+          text = path.read_text()
+          start_marker = '''      - name: Materialize strict accepted-root field wiring
+        shell: python
+        run: |
+'''
+          end_marker = '''
+      - name: Run focused wiring regressions
+'''
+          if text.count(start_marker) != 1 or text.count(end_marker) != 1:
+              raise SystemExit('reviewed materializer block anchors drifted')
+          payload = text.split(start_marker, 1)[1].split(end_marker, 1)[0]
+          source = textwrap.dedent(payload)
+          compile(source, '<reviewed-field-strict-root-materializer>', 'exec')
+          exec(compile(source, '<reviewed-field-strict-root-materializer>', 'exec'), {'__name__': '__main__'})
+
+      - name: Run focused wiring regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -I scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py
+          python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          git diff --check
+          actual="$(git diff --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            Scripts/bootstrap_capture_tuya_sdk.sh \
+            scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py \
+            scripts/field/install_one_time_capture.command | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          ! grep -nE 'publishDps\(|writeValue\(|removeDevice|factoryReset' scripts/field/install_one_time_capture.command
+
+      - name: Package exact materialized bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p materialized/Scripts materialized/scripts/field materialized/scripts/ci/tests
+          cp Scripts/bootstrap_capture_tuya_sdk.sh materialized/Scripts/
+          cp scripts/field/install_one_time_capture.command materialized/scripts/field/
+          cp scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py materialized/scripts/ci/tests/
+          git diff --binary -- \
+            Scripts/bootstrap_capture_tuya_sdk.sh \
+            scripts/field/install_one_time_capture.command \
+            scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py \
+            > materialized/materialized.patch
+          printf '%s\n' "${{ github.event.pull_request.head.sha }}" > materialized/authoring-head.txt
+          printf '%s\n' "$EXACT_PRODUCT_PARENT" > materialized/product-parent.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: capture-field-strict-root-materialized
+          path: materialized
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Preserve truth boundary
+        shell: bash
+        run: |
+          echo "NEMBRA_FIELD_STRICT_ROOT_ARTIFACT productPublished=false installExecuted=false deviceTouched=false bluetoothTouched=false physicalAuthorityCreated=false"
