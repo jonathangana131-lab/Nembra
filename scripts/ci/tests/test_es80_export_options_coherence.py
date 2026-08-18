@@ -99,30 +99,18 @@ class ExportOptionsCoherenceTests(unittest.TestCase):
             path.touch()
             self.assertFalse(preflight._export_options_are_ready(path, self.TEAM))
 
-    def test_canonical_handoff_pins_current_descriptor_bound_helper(self):
+    def test_retired_handoff_does_not_publish_descriptor_helper_as_current_authority(self):
         handoff = HANDOFF.read_text(encoding="utf-8")
-        current_section = handoff.split(
-            "The current accepted external pre-signing helper is also non-authorizing software tooling:",
-            1,
-        )[1].split("## Why an exact detached source checkout is mandatory", 1)[0]
 
-        self.assertIn("74f4e88e4efb78bf69fe504f407ef42398e4b6ab", current_section)
-        self.assertIn("1b0155ab8d990420c33ad4c65461e7663612f9fb", current_section)
-        self.assertIn("31349183788", current_section)
-        self.assertIn("93336690257", current_section)
-        self.assertIn("descriptor-opened regular-file subject", current_section)
-        self.assertIn("Do not materialize or invoke that superseded helper", current_section)
-
-        self.assertIn(
-            "PREFLIGHT_COMMIT='74f4e88e4efb78bf69fe504f407ef42398e4b6ab'",
-            handoff,
-        )
-        self.assertIn(
-            "PREFLIGHT_BLOB='1b0155ab8d990420c33ad4c65461e7663612f9fb'",
-            handoff,
-        )
-        self.assertIn("ExportOptions path/coherence/custody checks fail", handoff)
-        self.assertIn("PHYSICAL EXPERIMENT ONE REMAINS NO-GO", handoff)
+        self.assertIn("RETIRED / NON-AUTHORIZING", handoff)
+        self.assertIn("PHYSICAL STATUS: NO-GO", handoff)
+        self.assertIn("ES80-AUTHENTICATED-STATIONARY-v1", handoff)
+        self.assertIn("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md", handoff)
+        self.assertNotIn("74f4e88e4efb78bf69fe504f407ef42398e4b6ab", handoff)
+        self.assertNotIn("1b0155ab8d990420c33ad4c65461e7663612f9fb", handoff)
+        self.assertNotIn("PREFLIGHT_COMMIT=", handoff)
+        self.assertNotIn("PREFLIGHT_BLOB=", handoff)
+        self.assertNotIn("```bash", handoff)
 
 
 if __name__ == "__main__":
