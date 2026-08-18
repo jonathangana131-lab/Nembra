@@ -161,3 +161,4 @@ struct TuyaApplicationTimeoutPresentationRaceSourceTests {
 # Re-armed after verifying the duplicate app-owned timeout still exists on the exact branch head.
 # macOS /bin/bash is 3.2, so exact-delta admission deliberately avoids mapfile/readarray.
 # Same-repo pull_request fallback keeps execution anchored to this base branch if push registration is inert.
+# Trigger nonce: gpt56sol-20260818-1520.
