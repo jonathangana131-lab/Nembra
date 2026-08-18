@@ -122,7 +122,6 @@ class CapturePrivateReadLeaseRollbackTests(unittest.TestCase):
             ):
                 lease.grant("nembrabuildrollback")
 
-
     def test_native_strict_revoke_restores_held_object_after_path_replacement(self) -> None:
         helper = load()
         with tempfile.TemporaryDirectory(prefix="nembra-lease-native-revoke-") as temporary:
@@ -168,7 +167,13 @@ class CapturePrivateReadLeaseRollbackTests(unittest.TestCase):
                 moved = repo / "private.fixture.moved"
                 subject.rename(moved)
                 subject.write_bytes(b"attacker replacement\n")
-                lease.revoke()
+                with self.assertRaisesRegex(
+                    helper.SelectedXcodeBuildOrchestratorError,
+                    "pathname no longer identifies opened object",
+                ):
+                    lease.revoke()
+                self.assertEqual(subject.read_bytes(), b"attacker replacement\n")
+                self.assertEqual(moved.read_bytes(), b"fixture\n")
 
             capture.assert_called_once_with(descriptor)
             grant.assert_called_once()
