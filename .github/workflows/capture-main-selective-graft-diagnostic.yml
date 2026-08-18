@@ -1,0 +1,111 @@
+name: Capture Main Selective Graft Diagnostic
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/capture-main-selective-graft-diagnostic.yml'
+      - 'Packages/NembraBluetoothCapture/**'
+      - 'Packages/NembraCore/**'
+      - 'NembraCapture.xcodeproj/**'
+      - 'NembraCapture-Info.plist'
+      - 'NembraCapture.entitlements'
+      - 'NembraApp/App/NembraCaptureBuildIdentity.swift'
+      - 'NembraApp/App/NembraCaptureEntrypoint.swift'
+      - 'NembraApp/Features/Research/ES80CaptureShellView.swift'
+      - 'NembraApp/Features/Research/TuyaAccountBridge.swift'
+      - 'Scripts/**'
+      - 'scripts/**'
+      - 'docs/CAPTURE_*.md'
+
+permissions:
+  contents: read
+
+jobs:
+  integration-audit:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Verify exact clean head
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha }}
+        run: |
+          actual="$(git rev-parse HEAD)"
+          printf 'expected=%s\nactual=%s\n' "$EXPECTED" "$actual"
+          test "$actual" = "$EXPECTED"
+          test -z "$(git status --porcelain)"
+
+      - name: Run full Capture package and retain issue matrix
+        id: package
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/capture-main-graft-package.log"
+          set +e
+          (cd Packages/NembraBluetoothCapture && swift test) 2>&1 | tee "$log"
+          status="${PIPESTATUS[0]}"
+          set -e
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          /usr/bin/python3 -I - "$log" <<'PY'
+          import re, sys
+          from collections import Counter
+          from pathlib import Path
+          lines = Path(sys.argv[1]).read_text(errors='replace').splitlines()
+          files = Counter()
+          total = 0
+          for line in lines:
+              m = re.search(r'at ([A-Za-z0-9_]+\.swift):\d+:\d+:', line)
+              if m and ('recorded an issue' in line or 'Caught error' in line):
+                  files[m.group(1)] += 1
+                  total += 1
+          print(f'CAPTURE_MAIN_GRAFT_ISSUES {total}')
+          for name, count in files.most_common():
+              print(f'PACKAGE_ISSUES {count:3d} {name}')
+          PY
+          exit 0
+
+      - name: Build standalone Capture target on current main
+        id: standalone
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/capture-main-graft-xcodebuild.log"
+          set +e
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee "$log"
+          status="${PIPESTATUS[0]}"
+          set -e
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Enforce integration truth
+        env:
+          PACKAGE_STATUS: ${{ steps.package.outputs.status }}
+          STANDALONE_STATUS: ${{ steps.standalone.outputs.status }}
+        run: |
+          printf 'package_status=%s\nstandalone_status=%s\n' "$PACKAGE_STATUS" "$STANDALONE_STATUS"
+          if [[ "$PACKAGE_STATUS" != "0" || "$STANDALONE_STATUS" != "0" ]]; then
+            echo '::error::Selective live-main Capture graft is not yet accepted; inspect retained package/build logs.'
+            exit 1
+          fi
+
+      - name: Upload exact integration logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: capture-main-selective-graft-${{ github.event.pull_request.head.sha }}
+          path: |
+            ${{ runner.temp }}/capture-main-graft-package.log
+            ${{ runner.temp }}/capture-main-graft-xcodebuild.log
+          retention-days: 7
+          if-no-files-found: error
