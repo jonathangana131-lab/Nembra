@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 15,
+    "classifiedPRTotal": 14,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1165,17 +1165,6 @@
         "similarity": 0.098,
         "title": "[Dashboard V17][RECOVERY] Ship signature battery / learned-range instrument"
       },
-      "3602": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3602,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.264,
-        "title": "[Capture P0][V17][RED TEAM] Prove field installer bypasses strict accepted root"
-      },
       "3603": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1217,7 +1206,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3625,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.284,
+        "similarity": 0.214,
         "title": "[Capture P0][V17][INTEGRATION] Promote accepted-root compiler carrier"
       },
       "3639": {
@@ -1262,9 +1251,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T11:21:24Z",
+    "liveRefreshAt": "2026-08-18T11:21:56Z",
     "liveRefreshDuplicatesSuppressed": [
-      3602
+      3321
     ],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5047,10 +5036,10 @@
       "userValue": 7
     }
   },
-  "revision": 1102,
+  "revision": 1103,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T11:21:24Z",
+  "updatedAt": "2026-08-18T11:21:57Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5126,7 +5115,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T11:21:24Z",
+      "updatedAt": "2026-08-18T11:21:56Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
