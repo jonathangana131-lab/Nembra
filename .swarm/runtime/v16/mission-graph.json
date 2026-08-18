@@ -1264,16 +1264,16 @@
         "similarity": 0.357,
         "title": "[Capture P0][V17][RED TEAM] Prove manifest review authority bypasses"
       },
-      "3611": {
+      "3612": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3611,
+        "headSHA": "d6e030dd290aa2126da27ca56eb1f6db2bd4225e",
+        "lane": "capture-signed-install-custody",
+        "pr": 3612,
         "recommendedAction": "independent-review",
-        "similarity": 0.192,
-        "title": "[V17 Capture] Sync accepted-root compiler scope with carrier head"
+        "similarity": 0.263,
+        "title": "[Capture P0][V17] Admit frozen-Xcode oracle to compiler scope"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1306,7 +1306,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T10:58:26Z",
+    "liveRefreshAt": "2026-08-18T10:59:30Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5091,10 +5091,10 @@
       "userValue": 7
     }
   },
-  "revision": 1044,
+  "revision": 1045,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T10:58:27Z",
+  "updatedAt": "2026-08-18T10:59:31Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5170,7 +5170,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T10:58:26Z",
+      "updatedAt": "2026-08-18T10:59:30Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
