@@ -3,6 +3,7 @@ name: Capture Current Accepted Root Compiler Composition
 on:
   pull_request:
     paths:
+      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerSourceCustodyOrderingSourceTests.swift
       - scripts/ci/capture_selected_xcode_build_orchestrator.py
       - scripts/ci/tests/test_capture_accepted_root_build_composition.py
       - scripts/ci/tests/test_capture_accepted_root_whole_read_lease.py
@@ -60,6 +61,7 @@ jobs:
             .github/workflows/capture-current-accepted-root-real-lease-classifier.yml \
             .github/workflows/capture-field-build-provenance.yml \
             .github/workflows/capture-private-build-uid-read-lease-current.yml \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerSourceCustodyOrderingSourceTests.swift \
             scripts/ci/capture_selected_xcode_build_orchestrator.py \
             scripts/ci/tests/test_capture_accepted_root_build_composition.py \
             scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py \
