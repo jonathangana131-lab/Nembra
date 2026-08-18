@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 12,
+    "classifiedPRTotal": 11,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1173,7 +1173,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3625,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.224,
+        "similarity": 0.178,
         "title": "[Capture P0][V17][INTEGRATION] Promote accepted-root compiler carrier"
       },
       "3643": {
@@ -1184,19 +1184,8 @@
         "lane": "capture-signed-install-custody",
         "pr": 3643,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.42,
+        "similarity": 0.207,
         "title": "[Capture P0][V17][FINAL] Exact-head composed Capture authority carrier"
-      },
-      "3645": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3645,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.361,
-        "title": "[Capture P0][V17][VALIDATION] Full 48-path final exact-head matrix"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1229,9 +1218,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T11:55:32Z",
+    "liveRefreshAt": "2026-08-18T13:01:17Z",
     "liveRefreshDuplicatesSuppressed": [
-      3645
+      3643
     ],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5014,10 +5003,10 @@
       "userValue": 7
     }
   },
-  "revision": 1132,
+  "revision": 1133,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T11:55:33Z",
+  "updatedAt": "2026-08-18T13:01:17Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5093,7 +5082,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T11:55:32Z",
+      "updatedAt": "2026-08-18T13:01:17Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
