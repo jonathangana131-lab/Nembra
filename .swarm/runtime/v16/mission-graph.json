@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 22,
+    "classifiedPRTotal": 21,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1085,7 +1085,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.106,
+        "similarity": 0.107,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3321": {
@@ -1162,7 +1162,7 @@
         "lane": "dashboard-cockpit-product-closure",
         "pr": 3497,
         "recommendedAction": "independent-review",
-        "similarity": 0.1,
+        "similarity": 0.101,
         "title": "[Dashboard V17][RECOVERY] Ship signature battery / learned-range instrument"
       },
       "3602": {
@@ -1217,7 +1217,7 @@
         "lane": "capture-final-go-authority",
         "pr": 3607,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.279,
+        "similarity": 0.281,
         "title": "[Capture P0][V17][FINAL GO] Bind reviewed generated build-input manifest"
       },
       "3608": {
@@ -1228,7 +1228,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3608,
         "recommendedAction": "independent-review",
-        "similarity": 0.313,
+        "similarity": 0.307,
         "title": "[Capture P0][V17][RECOVERY] Fix strict-root materializer scope accounting"
       },
       "3610": {
@@ -1250,7 +1250,7 @@
         "lane": "",
         "pr": 3614,
         "recommendedAction": "independent-review",
-        "similarity": 0.354,
+        "similarity": 0.355,
         "title": "[V17 Capture][RECOVERY] Rebind field build to accepted generated root"
       },
       "3619": {
@@ -1294,19 +1294,8 @@
         "lane": "capture-signed-install-custody",
         "pr": 3628,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.29,
+        "similarity": 0.235,
         "title": "[Capture P0][V17][TRIGGER] Execute strict-root recovery successor"
-      },
-      "3630": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3630,
-        "recommendedAction": "independent-review",
-        "similarity": 0.301,
-        "title": "[Capture P0][V17][TRIGGER] Execute re-anchored strict-root materializer"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1339,7 +1328,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T11:09:40Z",
+    "liveRefreshAt": "2026-08-18T11:09:57Z",
     "liveRefreshDuplicatesSuppressed": [
       3628
     ],
@@ -5124,10 +5113,10 @@
       "userValue": 7
     }
   },
-  "revision": 1074,
+  "revision": 1075,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T11:09:41Z",
+  "updatedAt": "2026-08-18T11:09:58Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5203,7 +5192,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T11:09:40Z",
+      "updatedAt": "2026-08-18T11:09:57Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
