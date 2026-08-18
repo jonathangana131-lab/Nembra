@@ -1,10 +1,10 @@
-# V17 direct recovery re-arm: external branch push after workflow installation.
+# V17 direct recovery re-arm: preserve reviewed payload, fix untracked scope accounting.
 name: Capture field strict-root wiring recovery
 
 on:
   push:
     branches:
-      - repair/v17-capture-field-strict-root-wiring-gpt56sol-20260817
+      - recovery/v17-capture-field-strict-root-wiring-materializer-gpt56sol-20260818
     paths:
       - .github/workflows/capture-field-strict-root-wiring-recovery.yml
       - .github/capture-field-strict-root-wiring.trigger
@@ -79,7 +79,7 @@ jobs:
           ! grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_GENERATED_MANIFEST_SHA256' Scripts/bootstrap_capture_tuya_sdk.sh
           ! grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_GENERATED_MANIFEST_SHA256' scripts/field/install_one_time_capture.command
           git diff --check
-          actual="$(git diff --name-only | LC_ALL=C sort)"
+          actual="$( { git diff --name-only; git ls-files --others --exclude-standard; } | LC_ALL=C sort -u )"
           expected="$(printf '%s\n' \
             Scripts/bootstrap_capture_tuya_sdk.sh \
             scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py \
@@ -91,7 +91,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          branch='repair/v17-capture-field-strict-root-wiring-gpt56sol-20260817'
+          branch='recovery/v17-capture-field-strict-root-wiring-materializer-gpt56sol-20260818'
           expected_head="${{ github.sha }}"
           git fetch origin "$branch"
           test "$(git rev-parse FETCH_HEAD)" = "$expected_head"
