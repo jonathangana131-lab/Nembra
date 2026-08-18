@@ -9,12 +9,18 @@ PRODUCTION_HANDOFF = REPOSITORY_ROOT / "docs" / "ES80_TODAY_SIGNED_FIELD_CANDIDA
 CUSTODY_HANDOFF = REPOSITORY_ROOT / "docs" / "ES80_TODAY_PRIVATE_DEVICE_INPUT_CUSTODY.md"
 
 
-class PrivateHelperHandoffPinTests(unittest.TestCase):
-    MERGED_COMMIT = "b479d851a54437ef394a4901c69db2d829d280e4"
-    ACCEPTED_HEAD = "90d3578a1d39a1d019000583a712306b67786acf"
-    HELPER_BLOB = "62b719e8d9afb34da6d35d696e80edf926442696"
-    QA_RUN = "31350094260"
-    QA_JOB = "93339137927"
+class PrivateHelperHandoffRetirementTests(unittest.TestCase):
+    LEGACY_OPERATIONAL_MARKERS = (
+        "b479d851a54437ef394a4901c69db2d829d280e4",
+        "90d3578a1d39a1d019000583a712306b67786acf",
+        "62b719e8d9afb34da6d35d696e80edf926442696",
+        "31350094260",
+        "93339137927",
+        "PRIVATE_INPUT_HELPER_COMMIT=",
+        "PRIVATE_INPUT_HELPER_BLOB=",
+        "UDID_FILENAME=",
+        "READY_TO_INVOKE_SIGNED_FIELD_PRODUCER",
+    )
 
     def documents(self) -> tuple[str, str]:
         return (
@@ -22,53 +28,39 @@ class PrivateHelperHandoffPinTests(unittest.TestCase):
             CUSTODY_HANDOFF.read_text(encoding="utf-8"),
         )
 
-    def test_both_operator_handoffs_cross_bind_current_accepted_helper(self):
+    def test_both_handoffs_are_explicitly_retired_non_authorizing_and_no_go(self):
         production, custody = self.documents()
         for document in (production, custody):
             with self.subTest(document=document[:48]):
-                self.assertIn(self.MERGED_COMMIT, document)
-                self.assertIn(self.ACCEPTED_HEAD, document)
-                self.assertIn(self.HELPER_BLOB, document)
-                self.assertIn(self.QA_RUN, document)
-                self.assertIn(self.QA_JOB, document)
+                self.assertIn("RETIRED", document)
+                self.assertIn("NON-AUTHORIZING", document)
+                self.assertIn("PHYSICAL STATUS: NO-GO", document)
+                self.assertIn("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md", document)
+                self.assertIn("ES80-AUTHENTICATED-STATIONARY-v1", document)
+                self.assertIn("DO NOT SCAN / DO NOT RUN", document)
 
-    def test_active_materialization_assignments_cannot_be_satisfied_by_audit_history(self):
-        production, custody = self.documents()
-        active_commit = f"PRIVATE_INPUT_HELPER_COMMIT='{self.MERGED_COMMIT}'"
-        active_blob = f"PRIVATE_INPUT_HELPER_BLOB='{self.HELPER_BLOB}'"
-        stale_commit = "PRIVATE_INPUT_HELPER_COMMIT='af75ffa6dc4409a21822295428e4eeb922ac3d16'"
-        stale_blob = "PRIVATE_INPUT_HELPER_BLOB='50b12675a57fd2f570d833cfcdbfd7be59f52ca4'"
-
-        for document in (production, custody):
-            with self.subTest(document=document[:48]):
-                self.assertEqual(document.count(active_commit), 1)
-                self.assertEqual(document.count(active_blob), 1)
-                self.assertNotIn(stale_commit, document)
-                self.assertNotIn(stale_blob, document)
-
-    def test_handoffs_keep_nondestructive_failure_cleanup_and_no_go_boundary(self):
+    def test_retired_handoffs_publish_no_legacy_helper_pin_or_materialization_recipe(self):
         production, custody = self.documents()
         for document in (production, custody):
             with self.subTest(document=document[:48]):
-                self.assertIn("zero-length", document)
-                self.assertIn("NO-GO", document)
-        self.assertIn("never unlinks a pathname", production)
-        self.assertIn("never performs pathname deletion", custody)
+                for marker in self.LEGACY_OPERATIONAL_MARKERS:
+                    self.assertNotIn(marker, document)
 
-    def test_both_handoffs_make_fresh_leaf_retry_mechanically_executable(self):
+    def test_retired_handoffs_require_current_live_authority_instead_of_history(self):
         production, custody = self.documents()
-        filename_assignment = "UDID_FILENAME='es80-intended-device.udid'"
-        derived_path = 'UDID_FILE="$PRIVATE_DIR/$UDID_FILENAME"'
-        helper_filename_argument = '--filename "$UDID_FILENAME"'
 
-        for document in (production, custody):
-            with self.subTest(document=document[:48]):
-                self.assertEqual(document.count(filename_assignment), 1)
-                self.assertEqual(document.count(derived_path), 1)
-                self.assertIn(helper_filename_argument, document)
-                self.assertIn("set `UDID_FILENAME` to a fresh leaf name", document)
-                self.assertLess(document.index(filename_assignment), document.index(helper_filename_argument))
-                self.assertLess(document.index(derived_path), document.index(helper_filename_argument))
+        self.assertIn("live authenticated-stationary lineage and fresh GitHub state", production)
+        self.assertIn("Do not recover an older commit", production)
+        self.assertIn("current reviewed private-input/provisioning authority named by the live lineage", custody)
+        self.assertIn("Do not copy an old helper SHA or frozen source pin", custody)
+
+    def test_private_input_security_boundary_survives_retirement_without_becoming_authority(self):
+        custody = CUSTODY_HANDOFF.read_text(encoding="utf-8")
+
+        self.assertIn("private device identifiers", custody)
+        self.assertIn("AppKey/AppSecret", custody)
+        self.assertIn("must stay out of Git, logs, screenshots, public artifacts, and process arguments", custody)
+        self.assertIn("That boundary is not physical authorization", custody)
 
 
 if __name__ == "__main__":
