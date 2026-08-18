@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 49,
+    "classifiedPRTotal": 47,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1525,7 +1525,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3566,
         "recommendedAction": "independent-review",
-        "similarity": 0.392,
+        "similarity": 0.292,
         "title": "[Capture P0][V17][TEST] Canonicalize rollback temp fixtures on macOS"
       },
       "3568": {
@@ -1558,7 +1558,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3577,
         "recommendedAction": "independent-review",
-        "similarity": 0.306,
+        "similarity": 0.291,
         "title": "[Capture P0][V17][RECOVERY] Materialize clean native ACL lease repair"
       },
       "3581": {
@@ -1571,28 +1571,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.391,
         "title": "[Capture P0][V17][RED TEAM] Native ACL baseline coherence exact-head classifier"
-      },
-      "3582": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3582,
-        "recommendedAction": "independent-review",
-        "similarity": 0.36,
-        "title": "[Capture P0][V17][CLOSURE] Finish native ACL composition gates"
-      },
-      "3583": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3583,
-        "recommendedAction": "independent-review",
-        "similarity": 0.394,
-        "title": "[Capture P0][V17][TEST] Canonicalize macOS rollback fixture root"
       },
       "3584": {
         "classification": "canonical-candidate",
@@ -1636,7 +1614,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T02:50:09Z",
+    "liveRefreshAt": "2026-08-18T02:50:27Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5421,10 +5399,10 @@
       "userValue": 7
     }
   },
-  "revision": 951,
+  "revision": 952,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T02:50:11Z",
+  "updatedAt": "2026-08-18T02:50:29Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5500,7 +5478,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T02:50:09Z",
+      "updatedAt": "2026-08-18T02:50:27Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
