@@ -1528,17 +1528,6 @@
         "similarity": 0.392,
         "title": "[Capture P0][V17][TEST] Canonicalize rollback temp fixtures on macOS"
       },
-      "3567": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-current-accepted-root-acl-transport",
-        "pr": 3567,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.456,
-        "title": "[Capture P0][V17][RED TEAM] Bind native FD baseline to canonical ACL"
-      },
       "3568": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1558,7 +1547,7 @@
         "lane": "capture-current-accepted-root-acl-transport",
         "pr": 3574,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.45,
+        "similarity": 0.405,
         "title": "[Capture P0][V17][RED TEAM] Require native seeded ACL baseline coherence"
       },
       "3577": {
@@ -1604,6 +1593,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.394,
         "title": "[Capture P0][V17][TEST] Canonicalize macOS rollback fixture root"
+      },
+      "3584": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-current-accepted-root-acl-transport",
+        "pr": 3584,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.38,
+        "title": "[Capture P0][V17][REPAIR] Re-anchor seeded ACL coherence on current carrier"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1636,7 +1636,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T02:49:52Z",
+    "liveRefreshAt": "2026-08-18T02:50:09Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5421,10 +5421,10 @@
       "userValue": 7
     }
   },
-  "revision": 950,
+  "revision": 951,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T02:49:54Z",
+  "updatedAt": "2026-08-18T02:50:11Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5500,7 +5500,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T02:49:52Z",
+      "updatedAt": "2026-08-18T02:50:09Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
