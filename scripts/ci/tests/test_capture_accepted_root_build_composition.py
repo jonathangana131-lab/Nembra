@@ -155,9 +155,10 @@ def run(field_pid, source_sha, freeze_helper_base64, freeze_helper_blob):
         class FakeLease:
             instances: list["FakeLease"] = []
 
-            def __init__(self, subjects, repo):
+            def __init__(self, subjects, repo, *, use_native_darwin_acl=False):
                 self.subjects = tuple(subjects)
                 self.repo = repo
+                self.use_native_darwin_acl = bool(use_native_darwin_acl)
                 self._opened: list[object] = []
                 self._principal = ""
                 self.events: list[str] = []
@@ -299,9 +300,10 @@ def run_custodied_build(command, *, app_relative, fingerprint_helper_base64):
             lease = FakeLease.instances[0]
             self.assertEqual(
                 lease.subjects,
-(accepted_root,),
+                (accepted_root,),
             )
             self.assertEqual(lease.repo, accepted_root)
+            self.assertTrue(lease.use_native_darwin_acl)
             self.assertEqual(
                 lease.events,
                 ["grant:nembrabuildfixture", "revoke"],
