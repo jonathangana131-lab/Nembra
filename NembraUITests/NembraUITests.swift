@@ -325,12 +325,7 @@ final class NembraUITests: XCTestCase {
         defer { XCUIDevice.shared.orientation = .portrait }
         let app = launch(scenario: "connected-stopped", orientation: .landscapeRight)
 
-        // SwiftUI exposes the intentionally combined battery control as the
-        // semantic accessibility element rather than guaranteeing an XCUI Button
-        // element type. Query by stable identifier so the test follows the same
-        // semantic surface that VoiceOver receives instead of its implementation
-        // detail in the accessibility tree.
-        let battery = app.descendants(matching: .any)["dashboard.battery-range"]
+        let battery = app.buttons["dashboard.battery-range"]
         assertMinimumTouchTarget(battery, named: "Dashboard battery and range")
         XCTAssertEqual(battery.label, "Battery")
         XCTAssertFalse(
@@ -341,7 +336,7 @@ final class NembraUITests: XCTestCase {
 
         battery.tap()
 
-        let learnedRange = app.descendants(matching: .any)["dashboard.battery-range"]
+        let learnedRange = app.buttons["dashboard.battery-range"]
         XCTAssertTrue(learnedRange.waitForExistence(timeout: 2))
         XCTAssertTrue(
             waitForValue(
