@@ -99,14 +99,34 @@ jobs:
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_root_build_composition.py
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_root_whole_read_lease.py
 
-      - name: Preserve strongest private-lease adversaries
+      - name: Adversary — symlink authority transition
         shell: bash
         run: |
           set -euo pipefail
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py
+
+      - name: Adversary — descriptor component walk
+        shell: bash
+        run: |
+          set -euo pipefail
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_component_walk.py
+
+      - name: Adversary — rollback exactness
+        shell: bash
+        run: |
+          set -euo pipefail
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
+
+      - name: Adversary — host ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+
+      - name: Adversary — selected Xcode orchestrator
+        shell: bash
+        run: |
+          set -euo pipefail
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
 
       - name: Preserve accepted-input/root source regressions
