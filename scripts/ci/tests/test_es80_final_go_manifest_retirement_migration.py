@@ -62,6 +62,10 @@ class FakeBase:
         self.original_git_bytes = git_bytes
 
     @staticmethod
+    def api(_path):
+        return b"{}", {}
+
+    @staticmethod
     def canon(value: str, _label: str) -> str:
         return value.lower()
 
@@ -103,7 +107,6 @@ class ManifestAwareRetirementMigrationTests(unittest.TestCase):
             source=SOURCE,
             pr=PR,
             generated_manifest_review_id=REVIEW_ID,
-            get=lambda _path: (b"{}", {}),
             base_module=base,
         )
 
