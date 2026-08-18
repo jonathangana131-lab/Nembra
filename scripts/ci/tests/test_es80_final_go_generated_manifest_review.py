@@ -236,14 +236,17 @@ class BuildCompositionTests(unittest.TestCase):
         self.original_candidate_custody = module._PREDECESSOR_CANDIDATE_GIT_CUSTODY
         self.original_vnode = module._CURRENT_VNODE_AUTHORITY
         self.original_semantic_adapter = module._SEMANTIC_MODULE._private_environment_adapter
+        self.original_base_loader = module.generated._load_base_module
         module._PREDECESSOR_CANDIDATE_GIT_CUSTODY = noop_custody
         module._CURRENT_VNODE_AUTHORITY = noop_custody
+        module.generated._load_base_module = lambda: self.base
 
     def tearDown(self):
         module._SEMANTIC_BUILD = self.original_semantic_build
         module._PREDECESSOR_CANDIDATE_GIT_CUSTODY = self.original_candidate_custody
         module._CURRENT_VNODE_AUTHORITY = self.original_vnode
         module._SEMANTIC_MODULE._private_environment_adapter = self.original_semantic_adapter
+        module.generated._load_base_module = self.original_base_loader
         self.assertIsNone(module._ACTIVE_MANIFEST_REVIEW.get())
 
     @staticmethod
@@ -265,7 +268,6 @@ class BuildCompositionTests(unittest.TestCase):
                     source=SOURCE,
                     pr=PR,
                     generated_manifest_review_id=REVIEW_ID,
-                    base_module=self.base,
                 )
         finally:
             self.base.api = original_api
@@ -343,9 +345,6 @@ class BuildCompositionTests(unittest.TestCase):
         self.assertFalse(module._CANDIDATE_RETIRED.get())
 
     def test_caller_cannot_replace_production_review_transport(self):
-        accepted = review_response(DIGEST_A)
-        forged = review_response(DIGEST_B)
-        self.base.api = lambda _path: (b"{}", copy.deepcopy(accepted))
         side_effect = []
 
         def semantic_build(**_kwargs):
@@ -356,15 +355,38 @@ class BuildCompositionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="nembra-manifest-final-go-") as temporary:
             with self.assertRaisesRegex(
                 module.PrivateReviewGoError,
-                "caller-supplied GitHub review transport is forbidden",
+                "caller-supplied Final-GO review authority is forbidden",
             ):
                 module.build(
                     candidate_repo=Path(temporary),
                     source=SOURCE,
                     pr=PR,
                     generated_manifest_review_id=REVIEW_ID,
-                    base_module=self.base,
-                    get=lambda _path: (b"{}", copy.deepcopy(forged)),
+                    get=lambda _path: (b"{}", copy.deepcopy(review_response(DIGEST_B))),
+                )
+        self.assertEqual(side_effect, [])
+
+    def test_caller_cannot_replace_production_base_authority(self):
+        forged_base = FakeBase()
+        forged_base.api = lambda _path: (b"{}", copy.deepcopy(review_response(DIGEST_B)))
+        side_effect = []
+
+        def semantic_build(**_kwargs):
+            side_effect.append("ran")
+            return self.sealed_record()
+
+        module._SEMANTIC_BUILD = semantic_build
+        with tempfile.TemporaryDirectory(prefix="nembra-manifest-final-go-") as temporary:
+            with self.assertRaisesRegex(
+                module.PrivateReviewGoError,
+                "caller-supplied Final-GO review authority is forbidden",
+            ):
+                module.build(
+                    candidate_repo=Path(temporary),
+                    source=SOURCE,
+                    pr=PR,
+                    generated_manifest_review_id=REVIEW_ID,
+                    base_module=forged_base,
                 )
         self.assertEqual(side_effect, [])
 
@@ -411,7 +433,6 @@ class BuildCompositionTests(unittest.TestCase):
                             source=SOURCE,
                             pr=PR,
                             generated_manifest_review_id=REVIEW_ID,
-                            base_module=self.base,
                         )
                     except Exception as error:
                         failures.append(error)
