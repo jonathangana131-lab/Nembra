@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 7,
+    "classifiedPRTotal": 8,
     "classifiedPRs": {
       "3650": {
         "classification": "requires-review",
@@ -1118,7 +1118,7 @@
         "lane": "",
         "pr": 3664,
         "recommendedAction": "independent-review",
-        "similarity": 0.139,
+        "similarity": 0.143,
         "title": "[Capture P0][V17][RECOVERY] Restore field provenance + visual dependencies"
       },
       "3665": {
@@ -1140,8 +1140,19 @@
         "lane": "capture-product-visual-closure",
         "pr": 3666,
         "recommendedAction": "independent-review",
-        "similarity": 0.131,
+        "similarity": 0.134,
         "title": "[Capture P0][V17][PRODUCT/VISUAL] Tighten Standard copy; pin structural visual red"
+      },
+      "3668": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3668,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.134,
+        "title": "[Capture P0][V17][RED-TEAM] Pin package-horizon transport truth"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1175,7 +1186,7 @@
       "live-pr-3082",
       "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T22:29:25Z",
+    "liveRefreshAt": "2026-08-18T22:31:09Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [],
@@ -4956,10 +4967,10 @@
       "userValue": 7
     }
   },
-  "revision": 1221,
+  "revision": 1222,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T22:29:25Z",
+  "updatedAt": "2026-08-18T22:31:09Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
