@@ -6,6 +6,11 @@ on:
       - repair/v17-capture-darwin-native-private-lease-gpt56sol-20260817
     paths:
       - .github/workflows/capture-darwin-native-private-lease-one-shot.yml
+  pull_request:
+    branches:
+      - repair/v17-capture-seeded-acl-baseline-coherence-gpt56sol-20260817
+    paths:
+      - .github/workflows/capture-darwin-native-private-lease-one-shot.yml
 
 permissions:
   contents: write
@@ -17,15 +22,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
       - name: Bind exact coherence parent
         shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_BRANCH: ${{ github.head_ref || github.ref_name }}
         run: |
           set -euo pipefail
           parent='e3cefd4c14db6f3de07ec3acfb241307ca1f8425'
-          test "$GITHUB_REF_NAME" = 'repair/v17-capture-darwin-native-private-lease-gpt56sol-20260817'
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          branch='repair/v17-capture-darwin-native-private-lease-gpt56sol-20260817'
+          test "$EXPECTED_BRANCH" = "$branch"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
           /usr/bin/git merge-base --is-ancestor "$parent" HEAD
           changed="$(/usr/bin/git diff --name-only "$parent"...HEAD)"
           test "$changed" = '.github/workflows/capture-darwin-native-private-lease-one-shot.yml'
@@ -112,6 +122,9 @@ jobs:
 
       - name: Publish clean product ingredient
         shell: bash
+        env:
+          AUTHORING_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          AUTHORING_BRANCH: ${{ github.head_ref || github.ref_name }}
         run: |
           set -euo pipefail
           rm .github/workflows/capture-darwin-native-private-lease-one-shot.yml
@@ -122,7 +135,7 @@ jobs:
           git commit -m 'Capture: use native ACL lease on Darwin'
           materialized="$(git rev-parse HEAD)"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
-          git fetch origin "$GITHUB_REF_NAME"
-          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
-          git push origin HEAD:"$GITHUB_REF_NAME"
+          git fetch origin "$AUTHORING_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$AUTHORING_HEAD_SHA"
+          git push origin HEAD:"$AUTHORING_BRANCH"
           echo "NEMBRA_DARWIN_NATIVE_PRIVATE_LEASE exactHead=$materialized realMacOS=true shellDevFdAuthority=false physicalAuthorityCreated=false"
