@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 43,
+    "classifiedPRTotal": 40,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1187,17 +1187,6 @@
         "similarity": 0.38,
         "title": "[Capture P0][SECURITY] Seal APFS backing before writable attach"
       },
-      "3354": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-read-lease",
-        "pr": 3354,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.264,
-        "title": "[Capture P0][RED TEAM] Reject intermediate-symlink private read-lease admission"
-      },
       "3355": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1308,28 +1297,6 @@
         "similarity": 0.336,
         "title": "[Capture P0][SECURITY][SERIAL] Hold private lease descriptors through planning"
       },
-      "3408": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-read-lease",
-        "pr": 3408,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.337,
-        "title": "[Capture P0][VALIDATION] Replay canonical generation split on held-descriptor product"
-      },
-      "3411": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-read-lease",
-        "pr": 3411,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.375,
-        "title": "[Capture P0][RED TEAM] Bind internal symlink policy to held lease generation"
-      },
       "3413": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1360,7 +1327,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3428,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.38,
+        "similarity": 0.241,
         "title": "[Capture P0][REPAIR] Bind private symlink policy to held descriptor generation"
       },
       "3435": {
@@ -1570,7 +1537,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T03:23:04Z",
+    "liveRefreshAt": "2026-08-18T03:23:25Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5355,10 +5322,10 @@
       "userValue": 7
     }
   },
-  "revision": 1009,
+  "revision": 1010,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T03:23:05Z",
+  "updatedAt": "2026-08-18T03:23:27Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5434,7 +5401,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T03:23:04Z",
+      "updatedAt": "2026-08-18T03:23:25Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
