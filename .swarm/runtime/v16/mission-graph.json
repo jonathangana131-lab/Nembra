@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 8,
+    "classifiedPRTotal": 9,
     "classifiedPRs": {
       "3649": {
         "classification": "requires-review",
@@ -1153,6 +1153,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.116,
         "title": "[Capture P0][V17][VISUAL RED] Pin rejected Standard account-link hierarchy"
+      },
+      "3667": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-tuya-readonly-preflight",
+        "pr": 3667,
+        "recommendedAction": "independent-review",
+        "similarity": 0.113,
+        "title": "[Capture P0][V17][RECOVERY] Let package own incomplete observation horizon"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1186,7 +1197,7 @@
       "live-pr-3082",
       "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T22:26:20Z",
+    "liveRefreshAt": "2026-08-18T22:26:36Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [],
@@ -4967,10 +4978,10 @@
       "userValue": 7
     }
   },
-  "revision": 1211,
+  "revision": 1212,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T22:26:21Z",
+  "updatedAt": "2026-08-18T22:26:36Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
