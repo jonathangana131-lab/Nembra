@@ -189,12 +189,22 @@ jobs:
           set -euo pipefail
           python3 scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
 
-      - name: Preserve object-chain, descriptor, and committed-parent authority
+      - name: Preserve Git object-chain custody
         shell: bash
         run: |
           set -euo pipefail
           python3 scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py
+
+      - name: Preserve descriptor-bound physical reads
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 scripts/ci/tests/test_es80_final_go_descriptor_read_custody.py
+
+      - name: Preserve committed-parent execution custody
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
           python3 scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
             CandidateRawFilesystemAuthorityTests.test_child_executes_exact_2873_parent_blob \
