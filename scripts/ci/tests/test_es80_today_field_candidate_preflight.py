@@ -261,63 +261,41 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         self.assertNotIn(self.PRIVATE_UDID, json.dumps(report))
         self.assertNotIn(str(symlink_parent), json.dumps(report))
 
-    def test_production_handoff_consumes_accepted_descriptor_bound_private_input_before_signing(self):
+    def test_retired_production_handoff_does_not_reconstruct_private_input_or_signing(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
-        helper_commit = "b479d851a54437ef394a4901c69db2d829d280e4"
-        helper_path = "scripts/ci/es80_today_private_device_input.py"
-        helper_blob = "62b719e8d9afb34da6d35d696e80edf926442696"
-        tested_head = "90d3578a1d39a1d019000583a712306b67786acf"
-        helper_qa_run = "31350094260"
-        helper_qa_job = "93339137927"
-        helper_invoke = '/usr/bin/python3 -I "$PRIVATE_INPUT_HELPER"'
-        private_filename = "UDID_FILENAME='es80-intended-device.udid'"
-        private_file = 'UDID_FILE="$PRIVATE_DIR/$UDID_FILENAME"'
-        private_directory_arg = '--private-directory "$PRIVATE_DIR"'
-        source_repo_arg = '--source-repo "$FIELD_SOURCE"'
-        filename_arg = '--filename "$UDID_FILENAME"'
-        producer_invoke = "./scripts/ci/xcode27_today_research_field_candidate.sh"
+        retired_operational_markers = (
+            "b479d851a54437ef394a4901c69db2d829d280e4",
+            "scripts/ci/es80_today_private_device_input.py",
+            "62b719e8d9afb34da6d35d696e80edf926442696",
+            "90d3578a1d39a1d019000583a712306b67786acf",
+            "31350094260",
+            "93339137927",
+            '/usr/bin/python3 -I "$PRIVATE_INPUT_HELPER"',
+            "UDID_FILENAME='es80-intended-device.udid'",
+            'UDID_FILE="$PRIVATE_DIR/$UDID_FILENAME"',
+            '--private-directory "$PRIVATE_DIR"',
+            '--source-repo "$FIELD_SOURCE"',
+            '--filename "$UDID_FILENAME"',
+            "./scripts/ci/xcode27_today_research_field_candidate.sh",
+        )
 
-        self.assertIn(helper_commit, handoff)
-        self.assertIn(helper_path, handoff)
-        self.assertIn(helper_blob, handoff)
-        self.assertIn(tested_head, handoff)
-        self.assertIn(helper_qa_run, handoff)
-        self.assertIn(helper_qa_job, handoff)
-        self.assertNotIn("af75ffa6dc4409a21822295428e4eeb922ac3d16", handoff)
-        self.assertNotIn("50b12675a57fd2f570d833cfcdbfd7be59f52ca4", handoff)
-        self.assertNotIn("91dda8ac05e937e5615312a487f7d78926b74949", handoff)
-        self.assertNotIn("31349898562", handoff)
-        self.assertNotIn("93338620824", handoff)
-        self.assertIn("scrubs only the exact still-open created inode", handoff)
-        self.assertIn("never unlinks a pathname", handoff)
-        self.assertIn("zero-length spent subject", handoff)
-        self.assertNotIn("05ce6d9a20487ab34aa31c5b6456910ed2ed438f", handoff)
-        self.assertNotIn("9a9f7f724ceaf895e52d6d443d326043f97645c8", handoff)
-        self.assertIn(private_filename, handoff)
-        self.assertIn(private_file, handoff)
-        self.assertIn(helper_invoke, handoff)
-        self.assertIn(private_directory_arg, handoff)
-        self.assertIn(source_repo_arg, handoff)
-        self.assertIn(filename_arg, handoff)
-        self.assertLess(handoff.index(private_filename), handoff.index(helper_invoke))
-        self.assertLess(handoff.index(private_file), handoff.index(helper_invoke))
-        self.assertLess(handoff.index(helper_invoke), handoff.index(producer_invoke))
-        self.assertNotIn("IFS= read -r -s INTENDED_UDID", handoff)
-        self.assertNotIn("set -o noclobber", handoff)
-        self.assertNotIn('printf \'%s\' "$INTENDED_UDID" > "$UDID_FILE"', handoff)
-        self.assertNotIn('printf \'%s\\n\' "$INTENDED_UDID" > "$UDID_FILE"', handoff)
+        self.assertIn("RETIRED / NON-AUTHORIZING", handoff)
+        self.assertIn("ES80-AUTHENTICATED-STATIONARY-v1", handoff)
+        self.assertIn("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md", handoff)
+        self.assertIn("must not be reconstructed into current physical authority", handoff)
+        self.assertIn("PHYSICAL STATUS: NO-GO / DO NOT SCAN / DO NOT RUN", handoff)
+        for marker in retired_operational_markers:
+            with self.subTest(marker=marker):
+                self.assertNotIn(marker, handoff)
 
-    def test_production_handoff_resolves_physical_home_before_private_path_and_helper(self):
+    def test_retired_production_handoff_has_no_private_home_or_helper_sequence(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
-        home_resolution = 'HOME_PHYSICAL="$(cd -P -- "$HOME" && /bin/pwd -P)"'
-        private_dir = 'PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"'
-        helper_invoke = '/usr/bin/python3 -I "$PRIVATE_INPUT_HELPER"'
-
-        self.assertIn(home_resolution, handoff)
-        self.assertIn(private_dir, handoff)
+        self.assertIn("Current build/sign/install authority must be resolved", handoff)
+        self.assertIn("fresh GitHub state", handoff)
+        self.assertNotIn('HOME_PHYSICAL="$(cd -P -- "$HOME" && /bin/pwd -P)"', handoff)
+        self.assertNotIn('PRIVATE_DIR="$HOME_PHYSICAL/.nembra-private"', handoff)
         self.assertNotIn('PRIVATE_DIR="$HOME/.nembra-private"', handoff)
-        self.assertLess(handoff.index(home_resolution), handoff.index(private_dir))
-        self.assertLess(handoff.index(private_dir), handoff.index(helper_invoke))
+        self.assertNotIn('/usr/bin/python3 -I "$PRIVATE_INPUT_HELPER"', handoff)
 
     def test_non_xcode_27_selection_fails_closed(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -350,32 +328,29 @@ class FieldCandidatePreflightTests(unittest.TestCase):
         self.assertFalse(any(call[0][0] == "/usr/bin/xcodebuild" for call in runner.calls))
         self.assertEqual(report["physicalExperimentAuthorization"], "not-granted")
 
-    def test_signed_field_handoff_pins_accepted_preflight_and_non_authorization(self):
+    def test_retired_signed_field_handoff_rejects_old_preflight_authority(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
-        self.assertIn("9b5bde849e6b8f6b76e2a15abb52d643e3616a7a", handoff)
-        self.assertIn("fcc2243c005c5f6df2d2f5bd8b8c948e785f07d8", handoff)
-        self.assertIn("scripts/ci/es80_today_field_candidate_preflight.py", handoff)
-        self.assertIn("READY_TO_INVOKE_SIGNED_FIELD_PRODUCER", handoff)
-        self.assertIn("operator-pre-signing-readiness-not-field-authorization", handoff)
-        self.assertIn('report["physicalExperimentAuthorization"] == "not-granted"', handoff)
-        self.assertIn("a0f4a33451f61411d6e0541f2e70edea5438342d", handoff)
-        self.assertIn("stop before invoking the signed-field producer", handoff)
+        stale_authority_markers = (
+            "9b5bde849e6b8f6b76e2a15abb52d643e3616a7a",
+            "fcc2243c005c5f6df2d2f5bd8b8c948e785f07d8",
+            "scripts/ci/es80_today_field_candidate_preflight.py",
+            "READY_TO_INVOKE_SIGNED_FIELD_PRODUCER",
+            "operator-pre-signing-readiness-not-field-authorization",
+            'report["physicalExperimentAuthorization"] == "not-granted"',
+            "a0f4a33451f61411d6e0541f2e70edea5438342d",
+            "stop before invoking the signed-field producer",
+        )
+        self.assertIn("RETIRED", handoff)
+        self.assertIn("PHYSICAL STATUS: NO-GO", handoff)
+        self.assertIn("old exact-head green run", handoff)
+        for marker in stale_authority_markers:
+            with self.subTest(marker=marker):
+                self.assertNotIn(marker, handoff)
 
-    def test_signed_field_handoff_bash_blocks_are_syntactically_valid(self):
+    def test_retired_signed_field_handoff_contains_no_executable_bash_blocks(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
         blocks = re.findall(r"```bash\n(.*?)```", handoff, flags=re.DOTALL)
-        self.assertGreaterEqual(len(blocks), 5)
-        for index, block in enumerate(blocks):
-            with self.subTest(block=index):
-                completed = subprocess.run(
-                    ("/bin/bash", "-n"),
-                    input=block,
-                    text=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    check=False,
-                )
-                self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(blocks, [])
 
 
 if __name__ == "__main__":
