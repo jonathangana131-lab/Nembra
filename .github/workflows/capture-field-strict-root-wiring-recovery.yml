@@ -1,13 +1,19 @@
-# V17 direct recovery re-arm: preserve reviewed payload, fix untracked scope accounting.
+# V17 recovery successor: preserve reviewed payload, bind and retire the complete authoring set.
 name: Capture field strict-root wiring recovery
 
 on:
   push:
     branches:
-      - recovery/v17-capture-field-strict-root-wiring-materializer-gpt56sol-20260818
+      - recovery/v17-capture-field-strict-root-authoring-cleanup-gpt56sol-20260818
     paths:
       - .github/workflows/capture-field-strict-root-wiring-recovery.yml
       - .github/capture-field-strict-root-wiring.trigger
+      - .github/capture-field-strict-root-artifact.trigger
+  pull_request:
+    paths:
+      - .github/workflows/capture-field-strict-root-wiring-recovery.yml
+      - .github/capture-field-strict-root-wiring.trigger
+      - .github/capture-field-strict-root-artifact.trigger
 
 permissions:
   contents: write
@@ -19,6 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
       - name: Bind exact abandoned authoring lineage
@@ -30,6 +37,7 @@ jobs:
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           actual="$(git diff --name-only "$parent"...HEAD | LC_ALL=C sort)"
           expected="$(printf '%s\n' \
+            .github/capture-field-strict-root-artifact.trigger \
             .github/capture-field-strict-root-wiring.trigger \
             .github/workflows/capture-field-strict-root-wiring-materialize.yml \
             .github/workflows/capture-field-strict-root-wiring-recovery.yml | LC_ALL=C sort)"
@@ -87,18 +95,30 @@ jobs:
           test "$actual" = "$expected"
           ! grep -nE 'publishDps\(|writeValue\(|removeDevice|factoryReset' scripts/field/install_one_time_capture.command
 
-      - name: Publish clean product repair and self-delete authoring files
+      - name: Publish clean product repair and self-delete all authoring files
         shell: bash
         run: |
           set -euo pipefail
-          branch='recovery/v17-capture-field-strict-root-wiring-materializer-gpt56sol-20260818'
-          expected_head="${{ github.sha }}"
+          parent='c871c5ae713a178d799c5876809a14a296b7fc67'
+          branch='recovery/v17-capture-field-strict-root-authoring-cleanup-gpt56sol-20260818'
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
           git fetch origin "$branch"
           test "$(git rev-parse FETCH_HEAD)" = "$expected_head"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add Scripts/bootstrap_capture_tuya_sdk.sh scripts/field/install_one_time_capture.command scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py
-          git rm .github/workflows/capture-field-strict-root-wiring-materialize.yml .github/capture-field-strict-root-wiring.trigger .github/workflows/capture-field-strict-root-wiring-recovery.yml
+          git rm \
+            .github/capture-field-strict-root-artifact.trigger \
+            .github/capture-field-strict-root-wiring.trigger \
+            .github/workflows/capture-field-strict-root-wiring-materialize.yml \
+            .github/workflows/capture-field-strict-root-wiring-recovery.yml
           git diff --cached --check
           git commit -m 'Capture: make field build consume accepted root'
+          actual_final="$(git diff --name-only "$parent"...HEAD | LC_ALL=C sort)"
+          expected_final="$(printf '%s\n' \
+            Scripts/bootstrap_capture_tuya_sdk.sh \
+            scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py \
+            scripts/field/install_one_time_capture.command | LC_ALL=C sort)"
+          test "$actual_final" = "$expected_final"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
           git push origin HEAD:"$branch"
