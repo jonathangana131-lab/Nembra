@@ -1,0 +1,58 @@
+name: Capture Materializer PR Head Binding Red Team
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-materializer-pr-head-binding-red-team.yml
+
+permissions:
+  contents: read
+
+jobs:
+  classify:
+    name: Exploit-positive PR head classifier
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ATTACKED_HEAD: 92c373662d628e421f98e5fe0d3d99cb3583e993
+      ATTACKED_WORKFLOW: .github/workflows/capture-current-accepted-root-compiler-composition.yml
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact attacked product head and validation-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$ATTACKED_HEAD")" = "$ATTACKED_HEAD"
+          actual="$(git diff --name-only "$ATTACKED_HEAD"..HEAD | LC_ALL=C sort)"
+          expected='.github/workflows/capture-materializer-pr-head-binding-red-team.yml'
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Prove pull-request GITHUB_SHA is not the checked-out head
+        shell: bash
+        run: |
+          set -euo pipefail
+          event_head='${{ github.event.pull_request.head.sha }}'
+          checked_out="$(git rev-parse HEAD)"
+          printf 'event_head=%s\nchecked_out=%s\nGITHUB_SHA=%s\n' "$event_head" "$checked_out" "$GITHUB_SHA"
+          test "$checked_out" = "$event_head"
+          test "$GITHUB_SHA" != "$event_head"
+
+      - name: Bind the production materializer to the mismatched comparison
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq "ref: \${{ github.event.pull_request.head.sha }}" "$ATTACKED_WORKFLOW"
+          grep -Fq 'test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"' "$ATTACKED_WORKFLOW"
+          grep -Fq 'test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"' "$ATTACKED_WORKFLOW"
+          printf '%s\n' 'NEMBRA_MATERIALIZER_HEAD_BINDING exploitPositive=true checkedOutHead=event.pull_request.head.sha publishExpected=GITHUB_SHA publicationMustFailClosedBeforePush=true physicalAuthorityCreated=false'
+
+      - name: Preserve physical truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'VALIDATION ONLY: no product bytes changed; no install, signing, device, Bluetooth, Tuya, telemetry, command, or physical authority is created.'
