@@ -31,9 +31,21 @@ def git(root: Path, *args: str) -> str:
     ).stdout.strip()
 
 
-def write_candidate(root: Path, *, helper_seed: str = "a" * 64, valid_consumer: bool = True) -> str:
+def write_candidate(
+    root: Path,
+    *,
+    helper_seed: str = "a" * 64,
+    helper_digest_override: str | None = None,
+    valid_consumer: bool = True,
+) -> str:
     helper = root / control.SNAPSHOT_HELPER_PATH
     helper.parent.mkdir(parents=True, exist_ok=True)
+    digest_function = (
+        f"def generated_manifest_sha256(root, source): return '{helper_digest_override}'\n"
+        if helper_digest_override is not None
+        else "def generated_manifest_sha256(root, source): "
+        "return hashlib.sha256(canonical_generated_manifest(root, source)).hexdigest()\n"
+    )
     helper.write_text(
         "from pathlib import Path\n"
         "import hashlib\n"
@@ -43,8 +55,7 @@ def write_candidate(root: Path, *, helper_seed: str = "a" * 64, valid_consumer: 
         "    Path('LocalSecrets/TuyaSDK'), Path('LocalSecrets/TuyaRuntime'),\n"
         ")\n"
         f"def canonical_generated_manifest(root, source): return b'{helper_seed}\\n'\n"
-        "def generated_manifest_sha256(root, source): "
-        "return hashlib.sha256(canonical_generated_manifest(root, source)).hexdigest()\n",
+        + digest_function,
         encoding="utf-8",
     )
 
@@ -158,6 +169,16 @@ class CurrentManifestConsumerControlTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source = write_candidate(root, helper_seed="b" * 64)
+            parent = FakeParent(legacy_digest=DIGEST)
+            with self.assertRaises(control.CurrentManifestConsumerFinalGoError):
+                control.build(candidate_repo=root, source=source, parent_module=parent)
+            self.assertEqual(parent.install_calls, 0)
+            self.assertEqual(parent.ENV_KEY, control.LEGACY_ENV_KEY)
+
+    def test_candidate_helper_digest_api_must_match_canonical_bytes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = write_candidate(root, helper_digest_override=OTHER_DIGEST)
             parent = FakeParent(legacy_digest=DIGEST)
             with self.assertRaises(control.CurrentManifestConsumerFinalGoError):
                 control.build(candidate_repo=root, source=source, parent_module=parent)
