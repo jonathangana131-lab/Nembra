@@ -435,29 +435,33 @@ def build(
     its closed installer environment, then revalidated after the private side
     effect and before candidate retirement.
     """
+    if get is not None:
+        raise PrivateReviewGoError(
+            "Final-GO generated-manifest review transport is not caller-selectable"
+        )
     base = base_module or generated._load_base_module()
     source = base.canon(source, "source")
     pr = base.pos(pr, "PR")
     generated_manifest_review_id = base.pos(
         generated_manifest_review_id, "generated-manifest review ID"
     )
-    get = get or base.api
     candidate_repo = candidate_repo.expanduser().resolve(strict=True)
 
-    pre_review = generated_manifest_review(
-        pr, generated_manifest_review_id, source, get, base=base
-    )
-    token = _ACTIVE_MANIFEST_REVIEW.set(pre_review)
-
     with _MANIFEST_EXTENSION_LOCK:
+        trusted_get = getattr(base, "api", None)
+        if not callable(trusted_get):
+            raise PrivateReviewGoError("trusted GitHub review transport is unavailable")
+        pre_review = generated_manifest_review(
+            pr, generated_manifest_review_id, source, trusted_get, base=base
+        )
+        token = _ACTIVE_MANIFEST_REVIEW.set(pre_review)
         original_environment_adapter = _SEMANTIC_MODULE._private_environment_adapter
-        if original_environment_adapter is not _PREDECESSOR_PRIVATE_ENVIRONMENT_ADAPTER:
-            _ACTIVE_MANIFEST_REVIEW.reset(token)
-            raise PrivateReviewGoError(
-                "Final-GO private environment adapter is not exact accepted authority"
-            )
-        _SEMANTIC_MODULE._private_environment_adapter = _manifest_environment_adapter
         try:
+            if original_environment_adapter is not _PREDECESSOR_PRIVATE_ENVIRONMENT_ADAPTER:
+                raise PrivateReviewGoError(
+                    "Final-GO private environment adapter is not exact accepted authority"
+                )
+            _SEMANTIC_MODULE._private_environment_adapter = _manifest_environment_adapter
             with _CandidateRetirementBoundary(base) as retirement, _dispatch_predecessor_physical_reads():
                 with _PREDECESSOR_CANDIDATE_GIT_CUSTODY(
                     base, candidate_repo, source
@@ -466,12 +470,12 @@ def build(
                         candidate_repo=candidate_repo,
                         source=source,
                         pr=pr,
-                        get=get,
+                        get=trusted_get,
                         base_module=base,
                         **kwargs,
                     )
                     post_review = generated_manifest_review(
-                        pr, generated_manifest_review_id, source, get, base=base
+                        pr, generated_manifest_review_id, source, trusted_get, base=base
                     )
                     if post_review != pre_review:
                         raise PrivateReviewGoError(
