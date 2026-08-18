@@ -7,6 +7,7 @@ on:
       - scripts/ci/tests/test_es80_final_go_generated_manifest_review.py
       - scripts/ci/tests/test_es80_final_go_manifest_retirement_migration.py
       - scripts/ci/tests/test_es80_final_go_real_base_loader_closure.py
+      - .github/workflows/capture-current-accepted-root-compiler-composition.yml
       - .github/workflows/capture-final-go-real-base-loader-closure.yml
   workflow_dispatch:
 
@@ -37,6 +38,7 @@ jobs:
           test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
           git diff --name-only "$EXACT_PARENT" HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
           printf '%s\n' \
+            .github/workflows/capture-current-accepted-root-compiler-composition.yml \
             .github/workflows/capture-final-go-real-base-loader-closure.yml \
             scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
             scripts/ci/tests/test_es80_final_go_generated_manifest_review.py \
