@@ -1294,7 +1294,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3615,
         "recommendedAction": "independent-review",
-        "similarity": 0.334,
+        "similarity": 0.326,
         "title": "[Capture P0][V17][RECOVERY] Retire complete strict-root authoring set"
       },
       "3617": {
@@ -1308,16 +1308,16 @@
         "similarity": 0.318,
         "title": "[Capture P0][V17][TRIGGER] Execute complete strict-root recovery"
       },
-      "3618": {
+      "3619": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3618,
+        "lane": "capture-final-go-authority",
+        "pr": 3619,
         "recommendedAction": "independent-review",
-        "similarity": 0.331,
-        "title": "[Capture P0][V17][TRIGGER] Re-arm strict-root recovery materializer"
+        "similarity": 0.345,
+        "title": "[Capture P0][V17][RECOVERY] Seal Final-GO base review transport"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1350,7 +1350,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T11:03:41Z",
+    "liveRefreshAt": "2026-08-18T11:03:58Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5135,10 +5135,10 @@
       "userValue": 7
     }
   },
-  "revision": 1056,
+  "revision": 1057,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T11:03:41Z",
+  "updatedAt": "2026-08-18T11:03:59Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5214,7 +5214,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T11:03:41Z",
+      "updatedAt": "2026-08-18T11:03:58Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
