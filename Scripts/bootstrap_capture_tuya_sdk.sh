@@ -7,6 +7,7 @@ TUYA_PRIVATE_SDK="$REPO_ROOT/LocalSecrets/TuyaSDK"
 TUYA_PRIVATE_IDENTITY="$REPO_ROOT/LocalSecrets/TuyaRuntime"
 DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.txt"
 PROVENANCE_HELPER="$SCRIPT_DIR/capture_tuya_private_input_provenance.py"
+ACCEPTED_BUILD_INPUT_HELPER="$REPO_ROOT/scripts/ci/capture_accepted_build_input_snapshot.py"
 REVIEW_ONLY=0
 if [[ "${1:-}" == "--resolve-lock-for-review" ]]; then
   REVIEW_ONLY=1
@@ -25,9 +26,16 @@ if [[ "$REVIEW_ONLY" == "0" ]]; then
     exit 1
   }
   ACCEPTED_LOCK_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256" | tr '[:upper:]' '[:lower:]')"
+  : "${NEMBRA_CAPTURE_ACCEPTED_GENERATED_MANIFEST_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_GENERATED_MANIFEST_SHA256 to the Final-GO-preaccepted generated/private compiler-input manifest SHA-256 before field bootstrap.}"
+  [[ "$NEMBRA_CAPTURE_ACCEPTED_GENERATED_MANIFEST_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]] || {
+    echo "ERROR: NEMBRA_CAPTURE_ACCEPTED_GENERATED_MANIFEST_SHA256 must be exactly 64 hex characters." >&2
+    exit 1
+  }
+  ACCEPTED_GENERATED_MANIFEST_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_GENERATED_MANIFEST_SHA256" | tr '[:upper:]' '[:lower:]')"
 else
-  unset NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 || true
+  unset NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 NEMBRA_CAPTURE_ACCEPTED_GENERATED_MANIFEST_SHA256 || true
   ACCEPTED_LOCK_SHA256=""
+  ACCEPTED_GENERATED_MANIFEST_SHA256=""
 fi
 
 if ! command -v pod >/dev/null 2>&1; then
@@ -58,6 +66,10 @@ fi
 
 if [[ ! -f "$PROVENANCE_HELPER" ]]; then
   echo "ERROR: private Tuya input provenance helper is missing from the accepted source." >&2
+  exit 6
+fi
+if [[ ! -f "$ACCEPTED_BUILD_INPUT_HELPER" ]]; then
+  echo "ERROR: accepted generated-input manifest helper is missing from the accepted source." >&2
   exit 6
 fi
 
@@ -149,6 +161,24 @@ LOCK_SHA256="$(shasum -a 256 Podfile.lock | awk '{print $1}' | tr '[:upper:]' '[
   echo "ERROR: private Tuya dependency provenance record was not created." >&2
   exit 14
 }
+SOURCE_SHA="$(GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
+[[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+  echo "ERROR: accepted source SHA is unavailable while generating the compiler-input manifest." >&2
+  exit 14
+}
+GENERATED_MANIFEST_SHA256="$(
+  /usr/bin/python3 -I "$ACCEPTED_BUILD_INPUT_HELPER" manifest \
+    --root "$REPO_ROOT" \
+    --source-sha "$SOURCE_SHA" | \
+    /usr/bin/shasum -a 256 | /usr/bin/awk '{print $1}' | /usr/bin/tr '[:upper:]' '[:lower:]'
+)" || {
+  echo "ERROR: accepted generated/private compiler-input manifest could not be fingerprinted." >&2
+  exit 14
+}
+[[ "$GENERATED_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]] || {
+  echo "ERROR: generated/private compiler-input manifest SHA-256 is malformed." >&2
+  exit 14
+}
 [[ "$(stat -f '%Lp' "$DEPENDENCY_PROVENANCE" 2>/dev/null || true)" == "600" ]] || {
   echo "ERROR: private Tuya dependency provenance record is not mode 0600." >&2
   exit 15
@@ -159,13 +189,15 @@ if [[ "$REVIEW_ONLY" == "1" ]]; then
 
 DEPENDENCY LOCK CANDIDATE ONLY — NOT FIELD BUILD AUTHORITY
   Podfile.lock SHA-256: $LOCK_SHA256
+  Generated/private compiler-input manifest SHA-256: $GENERATED_MANIFEST_SHA256
   Local private-input fingerprint record: $DEPENDENCY_PROVENANCE
 
-Review and bind this exact dependency-lock digest to the exact accepted Capture
-source through the current Final-GO control plane before any field build/install.
-Then rerun the normal bootstrap/installer with that accepted digest supplied as
-NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256. This review-only mode never invokes
-xcodebuild, installs Nembra, scans Bluetooth, or authorizes a physical attempt.
+Review and bind both exact digests to the exact accepted Capture source through
+the current Final-GO control plane before any field build/install. Then rerun
+the normal bootstrap/installer with the accepted digests supplied as
+NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 and
+NEMBRA_CAPTURE_ACCEPTED_GENERATED_MANIFEST_SHA256. This review-only mode never
+invokes xcodebuild, installs Nembra, scans Bluetooth, or authorizes a physical attempt.
 EOF
   exit 0
 fi
@@ -175,7 +207,12 @@ fi
   exit 16
 }
 printf 'Preaccepted Tuya dependency lock matched: %s\n' "$LOCK_SHA256"
-unset ACCEPTED_LOCK_SHA256 NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 || true
+[[ "$GENERATED_MANIFEST_SHA256" == "$ACCEPTED_GENERATED_MANIFEST_SHA256" ]] || {
+  echo "ERROR: generated/private compiler inputs do not match the Final-GO-preaccepted manifest SHA-256. Stop before xcodebuild/install and review the new generated-input subject." >&2
+  exit 17
+}
+printf 'Preaccepted generated/private compiler-input manifest matched: %s\n' "$GENERATED_MANIFEST_SHA256"
+unset ACCEPTED_LOCK_SHA256 ACCEPTED_GENERATED_MANIFEST_SHA256 NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 || true
 
 cat <<EOF
 
