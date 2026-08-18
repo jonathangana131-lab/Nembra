@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 47,
+    "classifiedPRTotal": 46,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1085,7 +1085,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.097,
+        "similarity": 0.096,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3321": {
@@ -1426,7 +1426,7 @@
         "lane": "dashboard-cockpit-product-closure",
         "pr": 3497,
         "recommendedAction": "independent-review",
-        "similarity": 0.123,
+        "similarity": 0.108,
         "title": "[Dashboard V17][RECOVERY] Ship signature battery / learned-range instrument"
       },
       "3516": {
@@ -1528,17 +1528,6 @@
         "similarity": 0.272,
         "title": "[Capture P0][V17][RED TEAM] Native ACL baseline coherence exact-head classifier"
       },
-      "3594": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3594,
-        "recommendedAction": "independent-review",
-        "similarity": 0.365,
-        "title": "[Capture P0][V17][TRIGGER2] Exact-base native ACL coherence materializer"
-      },
       "3595": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1569,7 +1558,7 @@
         "lane": "capture-private-uid-read-lease-current",
         "pr": 3597,
         "recommendedAction": "independent-review",
-        "similarity": 0.145,
+        "similarity": 0.122,
         "title": "[Capture P0][V17][TEST] Exercise native transport in real UID witness"
       },
       "3598": {
@@ -1580,7 +1569,7 @@
         "lane": "",
         "pr": 3598,
         "recommendedAction": "independent-review",
-        "similarity": 0.37,
+        "similarity": 0.268,
         "title": "[Capture P0][V17][TRIGGER] Re-arm current native ACL coherence materializer"
       }
     },
@@ -1614,7 +1603,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T03:01:57Z",
+    "liveRefreshAt": "2026-08-18T03:02:21Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5399,10 +5388,10 @@
       "userValue": 7
     }
   },
-  "revision": 982,
+  "revision": 983,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T03:01:59Z",
+  "updatedAt": "2026-08-18T03:02:22Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5478,7 +5467,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T03:01:57Z",
+      "updatedAt": "2026-08-18T03:02:21Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
