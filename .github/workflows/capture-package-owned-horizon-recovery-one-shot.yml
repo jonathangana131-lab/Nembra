@@ -1,0 +1,164 @@
+name: Capture package-owned horizon recovery one-shot
+
+on:
+  push:
+    branches:
+      - recovery/v17-capture-package-owned-horizon-gpt56sol-20260818
+    paths:
+      - .github/workflows/capture-package-owned-horizon-recovery-one-shot.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: true
+
+      - name: Bind exact reviewed parent and authoring head
+        shell: bash
+        env:
+          EXPECTED_PARENT_SHA: 23fe89ca1432c3f3cbfab19a49803ad77c00233f
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          delta="$(git diff --name-only "$EXPECTED_PARENT_SHA" HEAD)"
+          test "$delta" = ".github/workflows/capture-package-owned-horizon-recovery-one-shot.yml"
+
+      - name: Remove competing app-owned timeout terminal
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = app.read_text()
+          start = '''                if self.applicationUpdateAdmissionsInFlight == 0,
+                     (self.canonicalObservedAgeSeconds ?? 0) > 60,
+                     self.applicationUpdateCount == 0 {
+'''
+          end = '''                try? await Task.sleep(for: .seconds(1))
+'''
+          if source.count(start) != 1:
+              raise SystemExit(f"expected exactly one legacy app timeout block, found {source.count(start)}")
+          a = source.index(start)
+          b = source.index(end, a)
+          removed = source[a:b]
+          required = [
+              "markApplicationObservationTimedOut(for: token)",
+              'self.sdkLocalBLEOnline = false',
+              'self.log("authenticated_application_timeout"',
+          ]
+          for needle in required:
+              if needle not in removed:
+                  raise SystemExit(f"legacy timeout block missing expected safety anchor: {needle}")
+          source = source[:a] + source[b:]
+          app.write_text(source)
+
+          test = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationTimeoutPresentationRaceSourceTests.swift")
+          test.write_text('''import Foundation
+import Testing
+@testable import NembraBluetoothCapture
+
+@Suite("Tuya package-owned incomplete horizon source contract")
+struct TuyaApplicationTimeoutPresentationRaceSourceTests {
+    @Test("app watchdog does not own a second zero-payload timeout terminal")
+    func appWatchdogDefersIncompleteHorizonToPackageLedger() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+
+        #expect(!source.contains("markApplicationObservationTimedOut(for: token)"))
+        #expect(!source.contains("authenticated_application_timeout"))
+        #expect(!source.contains("Authenticated session produced no application update before the observation deadline."))
+
+        // The watchdog still advances package-owned liveness. The ledger's canonical
+        // incomplete-session horizon owns retirement for zero, one-bootstrap, and
+        // early-only callback cases, so app presentation cannot create a competing terminal.
+        #expect(source.contains("try await self.sessionLedger.observeCurrentConnection(for: token)"))
+        #expect(source.contains("TuyaAuthenticatedReadOnlyPreflight.verdict(for: self.ledgerSnapshot)"))
+        #expect(source.contains("mirrorAlreadyTerminalObservationContinuity"))
+    }
+
+    @Test("continuity retirement does not fabricate BLE offline")
+    func packageTerminalPreservesTransportTruth() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let helper = try section(
+            in: source,
+            from: "private func mirrorAlreadyTerminalObservationContinuity(",
+            to: "private func invalidateObservationContinuity("
+        )
+        #expect(!helper.contains("sdkLocalBLEOnline = false"))
+        #expect(helper.contains("driver = nil"))
+        #expect(helper.contains("no disconnect") || helper.contains("does not claim BLE"))
+    }
+
+    private func section(in source: String, from start: String, to end: String) throws -> String {
+        guard let a = source.range(of: start),
+              let b = source.range(of: end, range: a.upperBound..<source.endIndex) else {
+            Issue.record("Expected source section missing: \(start) ... \(end)")
+            throw SourceContractError.sectionMissing
+        }
+        return String(source[a.lowerBound..<b.lowerBound])
+    }
+
+    private func readRepositoryFile(_ relativePath: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(contentsOf: root.appendingPathComponent(relativePath), encoding: .utf8)
+    }
+
+    private enum SourceContractError: Error { case sectionMissing }
+}
+''')
+          PY
+
+      - name: Verify bounded read-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git status --porcelain=v1 | awk '{print $2}' | sort | tr '\n' ' ' | sed 's/ $//')"
+          expected="NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationTimeoutPresentationRaceSourceTests.swift"
+          printf '%s\n' "$changed"
+          test "$changed" = "$expected"
+          ! grep -q 'publishDps(' NembraApp/App/NembraCaptureEntrypoint.swift
+          ! grep -q 'writeValue(' NembraApp/App/NembraCaptureEntrypoint.swift
+
+      - name: Run focused package-owned horizon contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVELOPER_DIR=/Applications/Xcode_26.3.app/Contents/Developer
+          xcodebuild -version
+          cd Packages/NembraBluetoothCapture
+          swift test --filter TuyaApplicationTimeoutPresentationRaceSourceTests
+
+      - name: Publish recovery successor and retire authoring routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-package-owned-horizon-recovery-one-shot.yml
+          rm .github/workflows/capture-retire-duplicate-app-timeout-one-shot.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationTimeoutPresentationRaceSourceTests.swift \
+            .github/workflows/capture-package-owned-horizon-recovery-one-shot.yml \
+            .github/workflows/capture-retire-duplicate-app-timeout-one-shot.yml
+          names="$(git diff --cached --name-only | sort | tr '\n' ' ' | sed 's/ $//')"
+          expected=".github/workflows/capture-package-owned-horizon-recovery-one-shot.yml .github/workflows/capture-retire-duplicate-app-timeout-one-shot.yml NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationTimeoutPresentationRaceSourceTests.swift"
+          test "$names" = "$expected"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Capture: let package own incomplete observation terminal"
+          git push origin HEAD:recovery/v17-capture-package-owned-horizon-gpt56sol-20260818
