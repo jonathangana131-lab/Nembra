@@ -1,0 +1,115 @@
+name: Capture native ACL coherence e612 bridge
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-native-acl-coherence-e612-sol-20260817
+    paths:
+      - .github/capture-native-acl-coherence-e612-trigger.txt
+
+permissions:
+  contents: write
+
+env:
+  PRODUCT_PARENT: e6128413df1715aabd0bd3b5a488362f975f6ad2
+  TARGET_BRANCH: repair/v17-capture-native-acl-coherence-e612-sol-20260817
+  MATERIALIZER_BLOB: 81cc119ab3c9b1c2e55ac22c594e4fbfe75c30f6
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind current authoring lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "$TARGET_BRANCH"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor "$PRODUCT_PARENT" HEAD
+          test "$(git rev-parse '.github/workflows/capture-native-acl-coherence-e612-materialize.yml')" = "$MATERIALIZER_BLOB"
+          changed="$(git diff --name-only "$PRODUCT_PARENT"..HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/capture-native-acl-coherence-e612-trigger.txt \
+            .github/workflows/capture-native-acl-coherence-e612-bridge.yml \
+            .github/workflows/capture-native-acl-coherence-e612-materialize.yml | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          test "$(cat .github/capture-native-acl-coherence-e612-trigger.txt)" = 'NEMBRA_CAPTURE_NATIVE_ACL_COHERENCE_E612_V17'
+          test -z "$(git status --porcelain)"
+
+      - name: Execute exact reviewed materializer payload
+        shell: python
+        run: |
+          from pathlib import Path
+          import textwrap
+
+          source = Path('.github/workflows/capture-native-acl-coherence-e612-materialize.yml').read_text()
+          start = "      - name: Materialize retained fresh-fd path coherence\n        shell: python\n        run: |\n"
+          end = "\n      - name: Run focused portable regressions\n"
+          if source.count(start) != 1 or source.count(end) != 1:
+              raise SystemExit('materializer boundaries changed')
+          payload = source.split(start, 1)[1].split(end, 1)[0]
+          script = textwrap.dedent(payload)
+          code = compile(script, 'capture-native-acl-coherence-e612-materializer', 'exec')
+          exec(code, {'__name__': '__main__'})
+
+      - name: Run focused portable regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          python3 -B scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          python3 -B scripts/ci/tests/test_capture_accepted_root_build_composition.py
+          git diff --check
+
+      - name: Enforce exact product delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          product_changed="$(git diff --name-only | LC_ALL=C sort)"
+          product_expected="$(printf '%s\n' \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py | LC_ALL=C sort)"
+          test "$product_changed" = "$product_expected"
+          grep -q '_native_descriptor_acl_state' scripts/ci/capture_selected_xcode_build_orchestrator.py
+          grep -q '_native_empty_acl_text' scripts/ci/capture_selected_xcode_build_orchestrator.py
+          grep -q 'retained_text != descriptor_text' scripts/ci/capture_selected_xcode_build_orchestrator.py
+          grep -q 'grant.assert_not_called()' scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          ! grep -nE 'publishDps\(|writeValue\(|removeDevice|factoryReset' scripts/ci/capture_selected_xcode_build_orchestrator.py
+
+      - name: Publish clean current-head repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/ci/capture_selected_xcode_build_orchestrator.py \
+                  scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          git rm .github/capture-native-acl-coherence-e612-trigger.txt \
+                 .github/workflows/capture-native-acl-coherence-e612-bridge.yml \
+                 .github/workflows/capture-native-acl-coherence-e612-materialize.yml
+          git diff --cached --check
+          git commit -m 'Capture: require retained fresh-fd path ACL coherence'
+
+          final_changed="$(git diff --name-only "$PRODUCT_PARENT"..HEAD | LC_ALL=C sort)"
+          final_expected="$(printf '%s\n' \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py | LC_ALL=C sort)"
+          test "$final_changed" = "$final_expected"
+          python3 -B scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          python3 -B scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          python3 -B scripts/ci/tests/test_capture_accepted_root_build_composition.py
+          test -z "$(git status --porcelain)"
+
+          git fetch origin "$TARGET_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          git push origin HEAD:"$TARGET_BRANCH"
+
+      - name: Truth boundary
+        run: |
+          echo 'NEMBRA_CAPTURE_TRUTH retainedFreshFdPathCoherence=true productBytesChanged=true physicalAuthorityCreated=false installAuthorityCreated=false bluetoothTouched=false scooterTouched=false'
