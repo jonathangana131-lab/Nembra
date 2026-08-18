@@ -35,21 +35,23 @@ jobs:
 
           script_path = Path('scripts/ci/es80_authenticated_stationary_private_review_final_go.py')
           script = script_path.read_text(encoding='utf-8')
-          old = '''    pre_review = generated_manifest_review(
-              pr, generated_manifest_review_id, source, get, base=base
+          old = (
+              "    pre_review = generated_manifest_review(\n"
+              "        pr, generated_manifest_review_id, source, get, base=base\n"
+              "    )\n"
+              "    token = _ACTIVE_MANIFEST_REVIEW.set(pre_review)\n"
+              "\n"
+              "    with _MANIFEST_EXTENSION_LOCK:\n"
+              "        original_environment_adapter = _SEMANTIC_MODULE._private_environment_adapter\n"
           )
-          token = _ACTIVE_MANIFEST_REVIEW.set(pre_review)
-
-          with _MANIFEST_EXTENSION_LOCK:
-              original_environment_adapter = _SEMANTIC_MODULE._private_environment_adapter
-          '''.replace('          ', '')
-          new = '''    with _MANIFEST_EXTENSION_LOCK:
-              pre_review = generated_manifest_review(
-                  pr, generated_manifest_review_id, source, get, base=base
-              )
-              token = _ACTIVE_MANIFEST_REVIEW.set(pre_review)
-              original_environment_adapter = _SEMANTIC_MODULE._private_environment_adapter
-          '''.replace('          ', '')
+          new = (
+              "    with _MANIFEST_EXTENSION_LOCK:\n"
+              "        pre_review = generated_manifest_review(\n"
+              "            pr, generated_manifest_review_id, source, get, base=base\n"
+              "        )\n"
+              "        token = _ACTIVE_MANIFEST_REVIEW.set(pre_review)\n"
+              "        original_environment_adapter = _SEMANTIC_MODULE._private_environment_adapter\n"
+          )
           if script.count(old) != 1:
               raise SystemExit('Final-GO lock/review seam drifted')
           script = script.replace(old, new, 1)
@@ -57,43 +59,45 @@ jobs:
 
           test_path = Path('scripts/ci/tests/test_es80_final_go_generated_manifest_review.py')
           test = test_path.read_text(encoding='utf-8')
-          anchor = '''    def test_semantic_failure_restores_adapter_context_and_candidate_dispatch(self):
-          '''.replace('          ', '')
-          regression = '''    def test_review_drift_while_waiting_for_manifest_lock_fails_before_semantic_side_effect(self):
-              state = {"lock_acquired": False}
-              semantic_calls = []
-              accepted = review_response()
-              dismissed = review_response(state="DISMISSED")
-
-              class DriftOnAcquire:
-                  def __enter__(self):
-                      state["lock_acquired"] = True
-                      return self
-
-                  def __exit__(self, _exc_type, _exc, _tb):
-                      return False
-
-              def get(path):
-                  self.assertEqual(path, f"/pulls/{PR}/reviews/{REVIEW_ID}")
-                  response = dismissed if state["lock_acquired"] else accepted
-                  return b"{}", copy.deepcopy(response)
-
-              def semantic_build(**_kwargs):
-                  semantic_calls.append("called")
-                  return self.sealed_record()
-
-              original_lock = module._MANIFEST_EXTENSION_LOCK
-              module._MANIFEST_EXTENSION_LOCK = DriftOnAcquire()
-              try:
-                  with self.assertRaises(module.PrivateReviewGoError):
-                      self.run_build(get, semantic_build)
-              finally:
-                  module._MANIFEST_EXTENSION_LOCK = original_lock
-
-              self.assertTrue(state["lock_acquired"])
-              self.assertEqual(semantic_calls, [])
-
-          '''.replace('          ', '')
+          anchor = "    def test_semantic_failure_restores_adapter_context_and_candidate_dispatch(self):\n"
+          lines = [
+              "    def test_review_drift_while_waiting_for_manifest_lock_fails_before_semantic_side_effect(self):",
+              "        state = {\"lock_acquired\": False}",
+              "        semantic_calls = []",
+              "        accepted = review_response()",
+              "        dismissed = review_response(state=\"DISMISSED\")",
+              "",
+              "        class DriftOnAcquire:",
+              "            def __enter__(self):",
+              "                state[\"lock_acquired\"] = True",
+              "                return self",
+              "",
+              "            def __exit__(self, _exc_type, _exc, _tb):",
+              "                return False",
+              "",
+              "        def get(path):",
+              "            self.assertEqual(path, f\"/pulls/{PR}/reviews/{REVIEW_ID}\")",
+              "            response = dismissed if state[\"lock_acquired\"] else accepted",
+              "            return b\"{}\", copy.deepcopy(response)",
+              "",
+              "        def semantic_build(**_kwargs):",
+              "            semantic_calls.append(\"called\")",
+              "            return self.sealed_record()",
+              "",
+              "        original_lock = module._MANIFEST_EXTENSION_LOCK",
+              "        module._MANIFEST_EXTENSION_LOCK = DriftOnAcquire()",
+              "        try:",
+              "            with self.assertRaises(module.PrivateReviewGoError):",
+              "                self.run_build(get, semantic_build)",
+              "        finally:",
+              "            module._MANIFEST_EXTENSION_LOCK = original_lock",
+              "",
+              "        self.assertTrue(state[\"lock_acquired\"])",
+              "        self.assertEqual(semantic_calls, [])",
+              "",
+              "",
+          ]
+          regression = "\n".join(lines)
           if test.count(anchor) != 1:
               raise SystemExit('manifest-review regression insertion seam drifted')
           test = test.replace(anchor, regression + anchor, 1)
