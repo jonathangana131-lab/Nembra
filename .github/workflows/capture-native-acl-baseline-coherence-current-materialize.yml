@@ -1,0 +1,110 @@
+name: Capture native ACL baseline coherence current materializer
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-native-acl-baseline-coherence-current-sol-20260817
+    paths:
+      - .github/workflows/capture-native-acl-baseline-coherence-current-materialize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bind exact current carrier and reviewed donor
+        shell: bash
+        env:
+          PRODUCT_PARENT: 8c1bdf22b26dd2a67d46f136b913fe3840f3c92d
+          DONOR_HEAD: 8c22d58956fc67dc4d3b82ab612757670d0275c3
+          DONOR_BLOB: d8e17ebdda5a9fee5731e1dbb13b88738f763728
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'repair/v17-capture-native-acl-baseline-coherence-current-sol-20260817'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = "$PRODUCT_PARENT"
+          test -z "$(git status --porcelain)"
+
+          git fetch origin repair/v17-capture-native-acl-baseline-coherence-sol-20260817
+          test "$(git rev-parse FETCH_HEAD)" = "$DONOR_HEAD"
+          test "$(git rev-parse "$DONOR_HEAD:.github/workflows/capture-native-acl-baseline-coherence-one-shot.yml")" = "$DONOR_BLOB"
+          git show "$DONOR_HEAD:.github/workflows/capture-native-acl-baseline-coherence-one-shot.yml" > "$RUNNER_TEMP/reviewed-coherence-donor.yml"
+
+      - name: Execute reviewed materializer block verbatim on current carrier
+        shell: python
+        run: |
+          from pathlib import Path
+          import os
+          import textwrap
+
+          donor = Path(os.environ["RUNNER_TEMP"]) / "reviewed-coherence-donor.yml"
+          text = donor.read_text()
+          start = "      - name: Materialize native fd/path baseline coherence\n        shell: python\n        run: |\n"
+          end = "\n      - name: Run focused portable regressions\n"
+          if text.count(start) != 1 or text.count(end) != 1:
+              raise SystemExit("reviewed donor materializer boundaries changed")
+          payload = text.split(start, 1)[1].split(end, 1)[0]
+          script = textwrap.dedent(payload)
+          compile(script, "reviewed-native-acl-coherence-materializer", "exec")
+          exec(compile(script, "reviewed-native-acl-coherence-materializer", "exec"), {"__name__": "__main__"})
+
+      - name: Run focused portable regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          python3 -B scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          python3 -B scripts/ci/tests/test_capture_accepted_root_build_composition.py
+
+      - name: Enforce exact permanent product delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          grep -q 'acl_get_file' scripts/ci/capture_selected_xcode_build_orchestrator.py
+          grep -q 'acl_to_text' scripts/ci/capture_selected_xcode_build_orchestrator.py
+          grep -q '_require_native_acl_baseline_coherence' scripts/ci/capture_selected_xcode_build_orchestrator.py
+          ! grep -nE 'publishDps\(|writeValue\(|removeDevice|factoryReset' scripts/ci/capture_selected_xcode_build_orchestrator.py
+          git diff --check
+
+      - name: Commit exact tested ingredient and retire materializer
+        shell: bash
+        env:
+          PRODUCT_PARENT: 8c1bdf22b26dd2a67d46f136b913fe3840f3c92d
+        run: |
+          set -euo pipefail
+          branch='repair/v17-capture-native-acl-baseline-coherence-current-sol-20260817'
+          git fetch origin "$branch"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/ci/capture_selected_xcode_build_orchestrator.py \
+                  scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          git rm .github/workflows/capture-native-acl-baseline-coherence-current-materialize.yml
+          git diff --cached --check
+          git commit -m 'Capture: bind native ACL rollback baseline before grant'
+
+          final_changed="$(git diff --name-only "$PRODUCT_PARENT"..HEAD | LC_ALL=C sort)"
+          final_expected="$(printf '%s\n' \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py | LC_ALL=C sort)"
+          test "$final_changed" = "$final_expected"
+          test -z "$(git status --porcelain)"
+
+          # Re-run focused regressions on the exact local commit that will be published.
+          python3 -B scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          python3 -B scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          python3 -B scripts/ci/tests/test_capture_accepted_root_build_composition.py
+          test -z "$(git status --porcelain)"
+          git push origin HEAD:"$branch"
