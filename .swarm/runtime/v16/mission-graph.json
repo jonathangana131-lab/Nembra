@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 7,
+    "classifiedPRTotal": 8,
     "classifiedPRs": {
       "3649": {
         "classification": "requires-review",
@@ -1074,7 +1074,7 @@
         "lane": "dashboard-cockpit-product-closure",
         "pr": 3649,
         "recommendedAction": "independent-review",
-        "similarity": 0.071,
+        "similarity": 0.111,
         "title": "[Dashboard V17][RECOVERY] Restore battery control accessibility role"
       },
       "3650": {
@@ -1085,7 +1085,7 @@
         "lane": "capture-field-authority-retirement",
         "pr": 3650,
         "recommendedAction": "independent-review",
-        "similarity": 0.109,
+        "similarity": 0.137,
         "title": "[Capture P0][V17][HARDENING] Retire stale TODAY field authority fail closed"
       },
       "3652": {
@@ -1096,7 +1096,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3652,
         "recommendedAction": "independent-review",
-        "similarity": 0.136,
+        "similarity": 0.158,
         "title": "[Capture P0][V17][RECOVERY] Re-earn post-merge exact-head matrix"
       },
       "3655": {
@@ -1107,18 +1107,18 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3655,
         "recommendedAction": "independent-review",
-        "similarity": 0.089,
+        "similarity": 0.14,
         "title": "[Capture P0][V17][TRIGGER] Materialize package-owned incomplete horizon cleanup"
       },
       "3656": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "e98b556deed3dbb54dcdee5460794633fee36424",
+        "headSHA": "6ac5fa4c121fc2120d30754c9ed20f43513fe837",
         "lane": "capture-field-authority-retirement-consistency",
         "pr": 3656,
         "recommendedAction": "independent-review",
-        "similarity": 0.455,
+        "similarity": 0.41,
         "title": "[Capture P0][V17][RECOVERY] Rebase retired-TODAY gate fix onto live guard"
       },
       "3658": {
@@ -1129,7 +1129,7 @@
         "lane": "",
         "pr": 3658,
         "recommendedAction": "independent-review",
-        "similarity": 0.133,
+        "similarity": 0.156,
         "title": "[Capture V17][P0] Re-anchor accepted field authority on current main"
       },
       "3659": {
@@ -1140,8 +1140,19 @@
         "lane": "capture-field-authority-retirement-consistency",
         "pr": 3659,
         "recommendedAction": "independent-review",
-        "similarity": 0.438,
+        "similarity": 0.407,
         "title": "[Capture P0][V17][HARDENING] Close current-gate TODAY retirement contradiction"
+      },
+      "3661": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "422e0fbb67e034c51ba43e67d552dd3ef28ded9d",
+        "lane": "",
+        "pr": 3661,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.157,
+        "title": "[Capture P0][V17][INTEGRATION] Re-establish exact current-main Capture gate"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1175,7 +1186,7 @@
       "live-pr-3082",
       "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T22:21:32Z",
+    "liveRefreshAt": "2026-08-18T22:21:54Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [],
@@ -4956,10 +4967,10 @@
       "userValue": 7
     }
   },
-  "revision": 1198,
+  "revision": 1199,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T22:21:33Z",
+  "updatedAt": "2026-08-18T22:21:54Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
