@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 4,
+    "classifiedPRTotal": 5,
     "classifiedPRs": {
       "3649": {
         "classification": "requires-review",
@@ -1074,7 +1074,7 @@
         "lane": "dashboard-cockpit-product-closure",
         "pr": 3649,
         "recommendedAction": "independent-review",
-        "similarity": 0.114,
+        "similarity": 0.341,
         "title": "[Dashboard V17][RECOVERY] Restore battery control accessibility role"
       },
       "3650": {
@@ -1109,6 +1109,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.276,
         "title": "[Capture P0][V17][RECOVERY] Re-earn post-merge exact-head matrix"
+      },
+      "3653": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "dashboard-cockpit-product-closure",
+        "pr": 3653,
+        "recommendedAction": "independent-review",
+        "similarity": 0.354,
+        "title": "[Dashboard V17][RECOVERY] Restore native battery button acceptance"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1142,7 +1153,7 @@
       "live-pr-3082",
       "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T22:12:39Z",
+    "liveRefreshAt": "2026-08-18T22:12:59Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [],
@@ -4923,10 +4934,10 @@
       "userValue": 7
     }
   },
-  "revision": 1171,
+  "revision": 1172,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T22:12:40Z",
+  "updatedAt": "2026-08-18T22:12:59Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
