@@ -156,3 +156,5 @@ struct TuyaApplicationTimeoutPresentationRaceSourceTests {
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Capture: let package own incomplete observation terminal"
           git push origin HEAD:capture/one-time-ble-dump-gpt56
+
+# Re-armed after verifying the duplicate app-owned timeout still exists on the exact branch head.
