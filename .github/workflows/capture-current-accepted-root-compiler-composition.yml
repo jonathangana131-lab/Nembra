@@ -15,6 +15,7 @@ on:
       - .github/workflows/capture-current-accepted-root-real-lease-classifier.yml
       - .github/workflows/capture-current-accepted-root-compiler-composition.yml
       - .github/workflows/capture-field-build-provenance.yml
+      - .github/workflows/capture-private-build-uid-read-lease-current.yml
   workflow_dispatch:
 
 permissions:
@@ -57,6 +58,7 @@ jobs:
             .github/workflows/capture-current-accepted-root-compiler-composition.yml \
             .github/workflows/capture-current-accepted-root-real-lease-classifier.yml \
             .github/workflows/capture-field-build-provenance.yml \
+            .github/workflows/capture-private-build-uid-read-lease-current.yml \
             scripts/ci/capture_selected_xcode_build_orchestrator.py \
             scripts/ci/tests/test_capture_accepted_root_build_composition.py \
             scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py \
