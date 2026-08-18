@@ -79,7 +79,12 @@ jobs:
           ! grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_GENERATED_MANIFEST_SHA256' Scripts/bootstrap_capture_tuya_sdk.sh
           ! grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_GENERATED_MANIFEST_SHA256' scripts/field/install_one_time_capture.command
           git diff --check
-          actual="$(git diff --name-only | LC_ALL=C sort)"
+          actual="$(
+            {
+              git diff --name-only
+              git ls-files --others --exclude-standard
+            } | LC_ALL=C sort -u
+          )"
           expected="$(printf '%s\n' \
             Scripts/bootstrap_capture_tuya_sdk.sh \
             scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py \
