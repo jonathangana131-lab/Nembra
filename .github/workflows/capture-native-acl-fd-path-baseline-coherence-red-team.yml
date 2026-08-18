@@ -42,19 +42,34 @@ jobs:
       - name: Require attacked baseline-capture chronology
         shell: python
         run: |
+          import re
           from pathlib import Path
+
           source = Path("scripts/ci/capture_selected_xcode_build_orchestrator.py").read_text()
-          capture = 'record["native_baseline_acl"] = _capture_fd_acl_baseline(descriptor)'
-          canonical = '''before = _path_acl_listing(
-                        path, descriptor, accepted_signature, is_directory
-                    )'''
-          restore = '''_restore_fd_acl_baseline(
-                            descriptor, int(record.get("native_baseline_acl", 0))
-                        )'''
-          if source.count(capture) != 1 or source.count(canonical) != 1 or source.count(restore) != 1:
-              raise SystemExit("attacked native ACL baseline chronology changed; re-review required")
-          if source.index(capture) > source.index(canonical):
+          class_start = source.index("class _PrivateReadLease:")
+          class_source = source[class_start:]
+
+          captures = list(re.finditer(
+              r'record\["native_baseline_acl"\]\s*=\s*_capture_fd_acl_baseline\(descriptor\)',
+              class_source,
+          ))
+          canonicals = list(re.finditer(
+              r'before\s*=\s*_path_acl_listing\(\s*path,\s*descriptor,\s*accepted_signature,\s*is_directory\s*\)',
+              class_source,
+          ))
+          restores = list(re.finditer(
+              r'_restore_fd_acl_baseline\(\s*descriptor,\s*int\(record\.get\("native_baseline_acl",\s*0\)\)\s*\)',
+              class_source,
+          ))
+          if len(captures) != 1 or len(canonicals) != 1 or len(restores) != 1:
+              raise SystemExit(
+                  "attacked native ACL baseline chronology changed; re-review required: "
+                  f"captures={len(captures)} canonicals={len(canonicals)} restores={len(restores)}"
+              )
+          if captures[0].start() > canonicals[0].start():
               raise SystemExit("descriptor baseline no longer precedes canonical baseline capture")
+          if restores[0].start() < canonicals[0].start():
+              raise SystemExit("native restore unexpectedly precedes canonical baseline capture")
 
       - name: Reproduce destructive baseline-coherence gap
         shell: bash
