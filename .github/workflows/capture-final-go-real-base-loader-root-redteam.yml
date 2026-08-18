@@ -36,7 +36,7 @@ jobs:
           git diff --name-only "$ATTACKED_HEAD" HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
           printf '%s\n' \
             .github/workflows/capture-final-go-real-base-loader-root-redteam.yml \
-            scripts/ci/tests/test_es80_final_go_real_base-loader-root-redteam.py \
+            scripts/ci/tests/test_es80_final_go_real_base_loader_root_redteam.py \
             | LC_ALL=C sort > "$RUNNER_TEMP/expected"
           diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
