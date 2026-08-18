@@ -8,6 +8,10 @@ on:
     paths:
       - .github/workflows/capture-field-strict-root-wiring-recovery.yml
       - .github/capture-field-strict-root-wiring.trigger
+  pull_request:
+    paths:
+      - .github/workflows/capture-field-strict-root-wiring-recovery.yml
+      - .github/capture-field-strict-root-wiring.trigger
 
 permissions:
   contents: write
@@ -19,6 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
       - name: Bind exact abandoned authoring lineage
@@ -92,7 +97,7 @@ jobs:
         run: |
           set -euo pipefail
           branch='recovery/v17-capture-field-strict-root-wiring-liveness-gpt56sol-20260818-0350'
-          expected_head="${{ github.sha }}"
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
           git fetch origin "$branch"
           test "$(git rev-parse FETCH_HEAD)" = "$expected_head"
           git config user.name 'github-actions[bot]'
