@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 23,
+    "classifiedPRTotal": 20,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1107,7 +1107,7 @@
         "lane": "capture-build-authority",
         "pr": 3333,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.272,
+        "similarity": 0.156,
         "title": "[Capture P0][SECURITY] Converge private-input authority and frozen device custody"
       },
       "3353": {
@@ -1120,17 +1120,6 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.247,
         "title": "[Capture P0][SECURITY] Seal APFS backing before writable attach"
-      },
-      "3359": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "926954c8970e83151765d11f2497e84ff32f4e37",
-        "lane": "capture-signed-install-custody",
-        "pr": 3359,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.203,
-        "title": "[Capture P0][VALIDATION] Bind generated CocoaPods/private inputs before source snapshot"
       },
       "3398": {
         "classification": "canonical-candidate",
@@ -1151,7 +1140,7 @@
         "lane": "capture-build-authority",
         "pr": 3399,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.266,
+        "similarity": 0.162,
         "title": "[Capture P0][SECURITY][RECOVERY] Pre-scrub frozen tool exec on current carrier"
       },
       "3435": {
@@ -1164,28 +1153,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.152,
         "title": "[Capture P0][RECOVERY] Execute full numeric-principal materializer without stale rewrite"
-      },
-      "3476": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 3476,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.28,
-        "title": "[Capture P0][RED TEAM] Re-anchor whole-source compiler window to live #3333"
-      },
-      "3492": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "a15254b33cf433a5a7145c95f1a27fd3e1238b2c",
-        "lane": "capture-private-read-lease",
-        "pr": 3492,
-        "recommendedAction": "independent-review",
-        "similarity": 0.178,
-        "title": "[Capture P0][CI] Anchor private UID lease fixtures under real Darwin temp"
       },
       "3497": {
         "classification": "requires-review",
@@ -1206,7 +1173,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3535,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.207,
+        "similarity": 0.204,
         "title": "[Capture P0][INTEGRATION] Execute compiler from complete accepted root"
       },
       "3545": {
@@ -1350,7 +1317,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T03:25:35Z",
+    "liveRefreshAt": "2026-08-18T03:25:52Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5135,10 +5102,10 @@
       "userValue": 7
     }
   },
-  "revision": 1016,
+  "revision": 1017,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T03:25:35Z",
+  "updatedAt": "2026-08-18T03:25:53Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5214,7 +5181,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T03:25:35Z",
+      "updatedAt": "2026-08-18T03:25:52Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
