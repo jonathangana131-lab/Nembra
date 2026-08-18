@@ -421,31 +421,22 @@ def build(
     source: str,
     pr: int,
     generated_manifest_review_id: int,
-    base_module: Any | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Complete candidate consumers under one independently reviewed manifest authority.
 
-    #3057 exact validation proved that the accepted semantic stack performs the
-    private installer, retained signed-artifact inspection/reinspection, and all
-    candidate postchecks before `_SEMANTIC_BUILD` returns. V17 additionally
-    requires the generated/private compiler-input manifest digest to be bound by
-    an exact GitHub OWNER review before that semantic build, injected only into
-    its closed installer environment, then revalidated after the private side
-    effect and before candidate retirement.
-
-    The review transport is never caller-selected. The accepted base GitHub API
-    client is captured once and used by both this manifest extension and the
-    inherited semantic build. The initial manifest review is fetched only after
-    entering the composition lock so authority cannot go stale while queued
-    behind another composition.
+    The production entrypoint never accepts caller-selected GitHub review transport
+    or base authority. It loads the accepted base internally, fetches the manifest
+    review after entering the composition lock, and re-fetches it after the private
+    semantic-build side effect before candidate retirement.
     """
-    if "get" in kwargs:
+    forbidden = {"get", "base_module"}.intersection(kwargs)
+    if forbidden:
         raise PrivateReviewGoError(
-            "caller-supplied GitHub review transport is forbidden"
+            "caller-supplied Final-GO review authority is forbidden"
         )
 
-    base = base_module or generated._load_base_module()
+    base = generated._load_base_module()
     source = base.canon(source, "source")
     pr = base.pos(pr, "PR")
     generated_manifest_review_id = base.pos(
