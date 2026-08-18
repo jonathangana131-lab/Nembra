@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 20,
+    "classifiedPRTotal": 19,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1253,17 +1253,6 @@
         "similarity": 0.38,
         "title": "[Capture P0][V17][RED TEAM] Probe real sealed base loader on f0cea"
       },
-      "3636": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3636,
-        "recommendedAction": "independent-review",
-        "similarity": 0.236,
-        "title": "[Capture P0][V17][COMPOSE] Add accepted Final-GO authority to field carrier"
-      },
       "3638": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1283,7 +1272,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3639,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.249,
+        "similarity": 0.213,
         "title": "[Capture P0][V17][REPAIR] Admit field consumer into exact compiler scope"
       }
     },
@@ -1317,7 +1306,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T11:16:52Z",
+    "liveRefreshAt": "2026-08-18T11:17:26Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5102,10 +5091,10 @@
       "userValue": 7
     }
   },
-  "revision": 1092,
+  "revision": 1093,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T11:16:52Z",
+  "updatedAt": "2026-08-18T11:17:26Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5181,7 +5170,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T11:16:52Z",
+      "updatedAt": "2026-08-18T11:17:26Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
