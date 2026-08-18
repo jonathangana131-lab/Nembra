@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   materialize:
-    if: github.head_ref == 'recovery/v17-capture-seeded-acl-baseline-coherence-sol-20260817'
+    if: github.head_ref == 'recovery/v17-capture-seeded-acl-baseline-coherence-sol-r2-20260817'
     runs-on: xcode-27
     timeout-minutes: 10
     steps:
@@ -24,7 +24,7 @@ jobs:
         run: |
           set -euo pipefail
           parent='ec91775a613f3504723cca390cfa108e3e076143'
-          test "${{ github.head_ref }}" = 'recovery/v17-capture-seeded-acl-baseline-coherence-sol-20260817'
+          test "${{ github.head_ref }}" = 'recovery/v17-capture-seeded-acl-baseline-coherence-sol-r2-20260817'
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
           /usr/bin/git merge-base --is-ancestor "$parent" HEAD
           changed="$(/usr/bin/git diff --name-only "$parent"...HEAD)"
@@ -322,7 +322,7 @@ def add_acl(path: Path, ace: str) -> None:
         shell: bash
         run: |
           set -euo pipefail
-          branch='recovery/v17-capture-seeded-acl-baseline-coherence-sol-20260817'
+          branch='recovery/v17-capture-seeded-acl-baseline-coherence-sol-r2-20260817'
           git fetch origin "$branch"
           test "$(git rev-parse FETCH_HEAD)" = "${{ github.event.pull_request.head.sha }}"
           git push origin HEAD:"$branch"
