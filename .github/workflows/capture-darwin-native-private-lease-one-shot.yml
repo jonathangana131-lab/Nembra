@@ -8,7 +8,7 @@ on:
       - .github/workflows/capture-darwin-native-private-lease-one-shot.yml
   pull_request:
     branches:
-      - repair/v17-capture-seeded-acl-baseline-coherence-gpt56sol-20260817
+      - repair/v17-capture-native-acl-baseline-coherence-gpt56sol-20260817
     paths:
       - .github/workflows/capture-darwin-native-private-lease-one-shot.yml
 
