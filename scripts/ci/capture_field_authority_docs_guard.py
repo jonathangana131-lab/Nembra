@@ -10,7 +10,9 @@ RETIRED_DOCS = (
     ROOT / "docs/ES80_TODAY_PRIVATE_FIELD_RUNBOOK.md",
     ROOT / "docs/ES80_TODAY_FINAL_GO_OPERATOR_ATTESTATION.md",
 )
+ROOT_DIRECTIVE = ROOT / "CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md"
 CURRENT_GATE = ROOT / "docs/ES80_AUTHENTICATED_STATIONARY_GATE_V14.md"
+CURRENT_PROCEDURE = ROOT / "docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md"
 
 REQUIRED_RETIRED_MARKERS = (
     "RETIRED / NON-AUTHORIZING",
@@ -24,11 +26,27 @@ LEGACY_OPERATIONAL_PINS = (
     "scripts/ci/es80_today_final_go_hardened.py --",
 )
 
+ROOT_DIRECTIVE_MARKERS = (
+    "RETIRED / NON-AUTHORITATIVE / PHYSICAL NO-GO",
+    "ES80-AUTHENTICATED-STATIONARY-v1",
+    "docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md",
+    "current shipping source plus `docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md` wins",
+)
+
 CURRENT_GATE_MARKERS = (
     "Status: **NO-GO",
     "ES80_TODAY_PRIVATE_FIELD_RUNBOOK.md",
     "historical evidence",
     "at least **45 seconds**",
+)
+
+CURRENT_PROCEDURE_MARKERS = (
+    "PROCEDURE_ID: `ES80-AUTHENTICATED-STATIONARY-v1`",
+    "physical secure-link experiment is **NO-GO**",
+    "at least 45 seconds of canonical authenticated observation",
+    "rawFD50BytesCaptured=false",
+    "dpQueriesSent=false",
+    "dpCommandsSent=false",
 )
 
 
@@ -44,6 +62,13 @@ def read(path: Path) -> str:
         fail(f"cannot read {path.relative_to(ROOT)}: {exc}")
 
 
+def require_markers(path: Path, markers: tuple[str, ...]) -> None:
+    text = read(path)
+    for marker in markers:
+        if marker not in text:
+            fail(f"{path.relative_to(ROOT)} lost required authority marker: {marker!r}")
+
+
 def main() -> int:
     for path in RETIRED_DOCS:
         text = read(path)
@@ -55,14 +80,18 @@ def main() -> int:
             if stale in text:
                 fail(f"{rel} resurrects retired operational authority: {stale!r}")
 
-    gate = read(CURRENT_GATE)
-    for marker in CURRENT_GATE_MARKERS:
-        if marker not in gate:
-            fail(f"{CURRENT_GATE.relative_to(ROOT)} lost current physical-gate marker: {marker!r}")
+    require_markers(ROOT_DIRECTIVE, ROOT_DIRECTIVE_MARKERS)
+    require_markers(CURRENT_GATE, CURRENT_GATE_MARKERS)
+    require_markers(CURRENT_PROCEDURE, CURRENT_PROCEDURE_MARKERS)
+
+    runbook = read(RETIRED_DOCS[0])
+    if "docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md" not in runbook:
+        fail("retired runbook no longer points operators at the current secure-link procedure")
 
     print("CAPTURE_FIELD_AUTHORITY_DOCS_GUARD PASS")
     print("physical_status=NO-GO")
     print("current_procedure=ES80-AUTHENTICATED-STATIONARY-v1")
+    print("current_runbook=docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
     return 0
 
 
