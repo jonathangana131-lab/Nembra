@@ -24,7 +24,7 @@ jobs:
       - name: Bind exact reviewed parent and authoring head
         shell: bash
         env:
-          EXPECTED_PARENT_SHA: 57556ab9d7794b8b56f809493c8bfe548532a70f
+          EXPECTED_PARENT_SHA: fe80b4734a2ea7bd50a9122f49d797c9cfcaa06e
           EXPECTED_HEAD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
@@ -54,19 +54,33 @@ jobs:
               raise SystemExit("ledger failure-reason anchor changed")
           source = source.replace(constants_anchor, constants_replacement, 1)
 
-          record_old = '''        if TuyaAuthenticatedReadOnlyPreflight.shouldRetireIncompleteObservation(preMutationHorizonSnapshot) {
+          callback_old = '''        if TuyaAuthenticatedReadOnlyPreflight.shouldRetireIncompleteObservation(preMutationHorizonSnapshot) {
             throw MutationError.incompleteObservationHorizonReached
         }
 '''
-          record_new = '''        if TuyaAuthenticatedReadOnlyPreflight.shouldRetireIncompleteObservation(preMutationHorizonSnapshot) {
+          callback_new = '''        if TuyaAuthenticatedReadOnlyPreflight.shouldRetireIncompleteObservation(preMutationHorizonSnapshot) {
             authenticationState = .failed(reason: Self.incompleteObservationHorizonFailureReason)
             currentToken = nil
             throw MutationError.incompleteObservationHorizonReached
         }
 '''
-          if source.count(record_old) != 2:
-              raise SystemExit(f"expected two package incomplete-horizon throw sites, found {source.count(record_old)}")
-          source = source.replace(record_old, record_new)
+          if source.count(callback_old) != 1:
+              raise SystemExit("ledger callback horizon anchor changed")
+          source = source.replace(callback_old, callback_new, 1)
+
+          poll_old = '''        if TuyaAuthenticatedReadOnlyPreflight.shouldRetireIncompleteObservation(makeSnapshot()) {
+            throw MutationError.incompleteObservationHorizonReached
+        }
+'''
+          poll_new = '''        if TuyaAuthenticatedReadOnlyPreflight.shouldRetireIncompleteObservation(makeSnapshot()) {
+            authenticationState = .failed(reason: Self.incompleteObservationHorizonFailureReason)
+            currentToken = nil
+            throw MutationError.incompleteObservationHorizonReached
+        }
+'''
+          if source.count(poll_old) != 1:
+              raise SystemExit("ledger poll horizon anchor changed")
+          source = source.replace(poll_old, poll_new, 1)
 
           comment_old = '''    /// horizon, the same canonical preflight decides whether this generation must terminate. The
     /// ledger leaves the exact token current when throwing so the app's existing fail-closed
@@ -176,10 +190,8 @@ jobs:
 '''
           if source.count(transport_anchor) != 1:
               raise SystemExit("transport-loss helper anchor changed")
-          if "mirrorAlreadyTerminalIncompleteObservationHorizon(" in source:
-              # Two catch calls have already been inserted; ensure the helper itself does not preexist.
-              if source.count("private func mirrorAlreadyTerminalIncompleteObservationHorizon(") != 0:
-                  raise SystemExit("incomplete-horizon mirror helper unexpectedly preexists")
+          if source.count("private func mirrorAlreadyTerminalIncompleteObservationHorizon(") != 0:
+              raise SystemExit("incomplete-horizon mirror helper unexpectedly preexists")
           source = source.replace(transport_anchor, horizon_helper + transport_anchor, 1)
           app.write_text(source)
 
