@@ -1,0 +1,64 @@
+name: Capture field strict-root wiring exact validation
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-field-strict-root-wiring-exact-validation.yml
+
+permissions:
+  contents: read
+
+env:
+  TARGET_SHA: 8e2ff1401194af8ed8562b422d147122613d12c6
+  EXACT_PARENT: ae71a2c8fa6db4cd86c462320e8e05349856960a
+
+jobs:
+  exact-target:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind immutable product target and exact three-file scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+          test "$(git merge-base HEAD "$EXACT_PARENT")" = "$EXACT_PARENT"
+          actual="$(git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            Scripts/bootstrap_capture_tuya_sdk.sh \
+            scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py \
+            scripts/field/install_one_time_capture.command | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Run strict-root wiring and inherited authority regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          bash -n scripts/field/install_one_time_capture.command
+          python3 -B -I scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py
+          python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Adversarial authority boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          canonical='NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256'
+          stale='NEMBRA_CAPTURE_ACCEPTED_GENERATED_MANIFEST_SHA256'
+          grep -Fq "$canonical" Scripts/bootstrap_capture_tuya_sdk.sh
+          grep -Fq "$canonical" scripts/field/install_one_time_capture.command
+          ! grep -Fq "$stale" Scripts/bootstrap_capture_tuya_sdk.sh
+          ! grep -Fq "$stale" scripts/field/install_one_time_capture.command
+          grep -Fq -- '--accepted-generated-manifest-sha256 "$NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256"' scripts/field/install_one_time_capture.command
+          ! grep -nE 'publishDps\(|writeValue\(|removeDevice|factoryReset' scripts/field/install_one_time_capture.command
+          echo 'NEMBRA_STRICT_ROOT_EXACT targetBound=true externalFinalGoManifest=true bluetoothTouched=false tuyaCommandAuthority=false installAuthority=false physicalAuthorityCreated=false'
