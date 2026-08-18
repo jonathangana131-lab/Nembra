@@ -22,6 +22,10 @@ concurrency:
   group: capture-final-go-current-manifest-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  EXACT_CONTROL_PARENT: df7c68e23047bdbfde12f23372c05be6a4bbf85e
+  EXACT_PARENT_MODULE_BLOB: 3379a31b2d8014365be257871b56c1ea75d048f3
+
 jobs:
   control:
     name: Bind reviewed manifest to current field consumer
@@ -40,18 +44,17 @@ jobs:
           set -euo pipefail
           head_sha="$(git rev-parse HEAD)"
           test "$head_sha" = "${{ github.event.pull_request.head.sha || github.sha }}"
-          git fetch --no-tags origin control/v17-final-go-build-input-manifest-review-sol-20260814
-          parent="origin/control/v17-final-go-build-input-manifest-review-sol-20260814"
-          test "$(git merge-base HEAD "$parent")" = "$(git rev-parse "$parent")"
-          actual="$(git diff --name-only "$parent"...HEAD | LC_ALL=C sort)"
+          git cat-file -e "$EXACT_CONTROL_PARENT^{commit}"
+          test "$(git merge-base HEAD "$EXACT_CONTROL_PARENT")" = "$EXACT_CONTROL_PARENT"
+          actual="$(git diff --name-only "$EXACT_CONTROL_PARENT"...HEAD | LC_ALL=C sort)"
           expected="$(printf '%s\n' \
             '.github/workflows/capture-final-go-current-manifest-consumer.yml' \
             'scripts/ci/es80_authenticated_stationary_current_manifest_final_go.py' \
             'scripts/ci/tests/test_es80_authenticated_stationary_current_manifest_final_go.py' | LC_ALL=C sort)"
           test "$actual" = "$expected"
-          test "$(git rev-parse HEAD:scripts/ci/es80_authenticated_stationary_build_input_manifest_final_go.py)" = "3379a31b2d8014365be257871b56c1ea75d048f3"
+          test "$(git rev-parse HEAD:scripts/ci/es80_authenticated_stationary_build_input_manifest_final_go.py)" = "$EXACT_PARENT_MODULE_BLOB"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
-          git diff --check "$parent"...HEAD
+          git diff --check "$EXACT_CONTROL_PARENT"...HEAD
 
       - name: Compile control recovery
         shell: bash
@@ -79,9 +82,10 @@ jobs:
           grep -Fq -- '--accepted-generated-manifest-sha256' "$control"
           grep -Fq '"installerConsumerIntegrated": True' "$control"
           grep -Fq '"physicalAuthorityCreated": False' "$control"
-          test -z "$(git diff --name-only origin/control/v17-final-go-build-input-manifest-review-sol-20260814...HEAD -- scripts/field Scripts/bootstrap_capture_tuya_sdk.sh NembraApp)"
+          test -z "$(git diff --name-only "$EXACT_CONTROL_PARENT"...HEAD -- scripts/field Scripts/bootstrap_capture_tuya_sdk.sh NembraApp)"
           printf '%s\n' \
             'v17AuthorityPreserved=true' \
+            'exactControlParent=true' \
             'currentManifestEnvironmentKey=true' \
             'candidateHelperCrossDerivation=true' \
             'exactConsumerSourceProof=true' \
