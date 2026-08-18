@@ -35,7 +35,7 @@ jobs:
             .github/workflows/capture-field-strict-root-wiring-recovery.yml | LC_ALL=C sort)"
           test "$actual" = "$expected"
 
-      - name: Execute reviewed materializer payload directly
+      - name: Execute reviewed materializer payload with canonical Final-GO key
         shell: python
         run: |
           from pathlib import Path
@@ -43,6 +43,16 @@ jobs:
 
           path = Path('.github/workflows/capture-field-strict-root-wiring-materialize.yml')
           text = path.read_text()
+          stale_key = 'NEMBRA_CAPTURE_ACCEPTED_GENERATED_MANIFEST_SHA256'
+          canonical_key = 'NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256'
+          if canonical_key in text:
+              raise SystemExit('reviewed materializer unexpectedly already contains canonical Final-GO key')
+          if text.count(stale_key) < 2:
+              raise SystemExit('reviewed materializer generated-manifest key seam drifted')
+          text = text.replace(stale_key, canonical_key)
+          if stale_key in text or canonical_key not in text:
+              raise SystemExit('Final-GO key convergence failed')
+
           start_marker = '''      - name: Materialize strict accepted-root field wiring
         shell: python
         run: |
@@ -64,6 +74,10 @@ jobs:
           python3 -B -I scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py
           python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
           python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256' Scripts/bootstrap_capture_tuya_sdk.sh
+          grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256' scripts/field/install_one_time_capture.command
+          ! grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_GENERATED_MANIFEST_SHA256' Scripts/bootstrap_capture_tuya_sdk.sh
+          ! grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_GENERATED_MANIFEST_SHA256' scripts/field/install_one_time_capture.command
           git diff --check
           actual="$(git diff --name-only | LC_ALL=C sort)"
           expected="$(printf '%s\n' \
