@@ -1,3 +1,4 @@
+# V17 recovery re-arm: materialize the already-reviewed fail-closed repair.
 name: Capture native ACL fail-closed one-shot
 
 on:
