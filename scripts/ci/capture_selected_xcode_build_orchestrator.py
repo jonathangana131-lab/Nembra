@@ -951,6 +951,10 @@ def _darwin_acl_library():
     library = ctypes.CDLL(None, use_errno=True)
     library.acl_get_fd.argtypes = [ctypes.c_int]
     library.acl_get_fd.restype = ctypes.c_void_p
+    library.acl_get_file.argtypes = [ctypes.c_char_p, ctypes.c_int]
+    library.acl_get_file.restype = ctypes.c_void_p
+    library.acl_to_text.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ssize_t)]
+    library.acl_to_text.restype = ctypes.c_void_p
     library.acl_dup.argtypes = [ctypes.c_void_p]
     library.acl_dup.restype = ctypes.c_void_p
     library.acl_init.argtypes = [ctypes.c_int]
@@ -962,8 +966,43 @@ def _darwin_acl_library():
     return library
 
 
-def _capture_fd_acl_baseline(descriptor: int) -> int:
-    """Retain an acl_t that can restore this exact held object in finally."""
+_DARWIN_ACL_TYPE_EXTENDED = 0x00000100
+
+
+class _NativeACLBaseline(int):
+    """Retained rollback acl_t plus the exact native pre-grant classification."""
+
+    def __new__(cls, value: int, semantics: bytes | None):
+        instance = int.__new__(cls, value)
+        instance.semantics = semantics
+        return instance
+
+
+def _native_acl_text(library, acl: int, label: str) -> bytes:
+    length = ctypes.c_ssize_t(0)
+    ctypes.set_errno(0)
+    raw = library.acl_to_text(ctypes.c_void_p(int(acl)), ctypes.byref(length))
+    saved_errno = ctypes.get_errno()
+    if not raw:
+        raise SelectedXcodeBuildOrchestratorError(
+            f"could not canonicalize {label} private read-lease ACL"
+            + (f": errno {saved_errno}" if saved_errno else "")
+        )
+    try:
+        if length.value < 0:
+            raise SelectedXcodeBuildOrchestratorError(
+                f"could not canonicalize {label} private read-lease ACL: negative text length"
+            )
+        return ctypes.string_at(raw, length.value)
+    finally:
+        if library.acl_free(ctypes.c_void_p(int(raw))) != 0:
+            raise SelectedXcodeBuildOrchestratorError(
+                f"could not free {label} private read-lease ACL text"
+            )
+
+
+def _capture_fd_acl_baseline(descriptor: int) -> _NativeACLBaseline:
+    """Retain rollback acl_t and native semantics for this exact held object."""
     library = _darwin_acl_library()
     ctypes.set_errno(0)
     current = library.acl_get_fd(descriptor)
@@ -971,13 +1010,23 @@ def _capture_fd_acl_baseline(descriptor: int) -> int:
         ctypes.set_errno(0)
         baseline = library.acl_dup(current)
         duplicate_errno = ctypes.get_errno()
-        library.acl_free(current)
+        if library.acl_free(current) != 0:
+            if baseline:
+                library.acl_free(baseline)
+            raise SelectedXcodeBuildOrchestratorError(
+                "could not free descriptor-pinned private read-lease ACL acquisition"
+            )
         if not baseline:
             raise SelectedXcodeBuildOrchestratorError(
                 "could not duplicate descriptor-pinned private read-lease ACL baseline"
                 + (f": errno {duplicate_errno}" if duplicate_errno else "")
             )
-        return int(baseline)
+        try:
+            semantics = _native_acl_text(library, int(baseline), "descriptor baseline")
+        except Exception:
+            library.acl_free(baseline)
+            raise
+        return _NativeACLBaseline(int(baseline), semantics)
 
     baseline_errno = ctypes.get_errno()
     # Only the Darwin ENOENT result has been physically classified as an absent
@@ -996,7 +1045,56 @@ def _capture_fd_acl_baseline(descriptor: int) -> int:
             "could not create empty private read-lease ACL baseline"
             + (f": errno {empty_errno}" if empty_errno else "")
         )
-    return int(empty)
+    return _NativeACLBaseline(int(empty), None)
+
+
+def _require_native_acl_baseline_coherence(
+    path: Path,
+    descriptor: int,
+    accepted_signature: tuple[int, int, int],
+    is_directory: bool,
+    baseline_acl: _NativeACLBaseline,
+) -> None:
+    """Require held-FD and canonical-path native ACL views to describe one baseline."""
+    semantics = getattr(baseline_acl, "semantics", object())
+    if semantics is not None and not isinstance(semantics, bytes):
+        raise SelectedXcodeBuildOrchestratorError(
+            "descriptor-pinned private read-lease ACL baseline classification is unavailable"
+        )
+
+    _require_canonical_acl_identity(path, descriptor, accepted_signature, is_directory)
+    library = _darwin_acl_library()
+    ctypes.set_errno(0)
+    current = library.acl_get_file(os.fsencode(path), _DARWIN_ACL_TYPE_EXTENDED)
+    path_errno = ctypes.get_errno()
+    path_semantics: bytes | None
+    if current:
+        try:
+            path_semantics = _native_acl_text(library, int(current), "canonical path baseline")
+        finally:
+            if library.acl_free(current) != 0:
+                raise SelectedXcodeBuildOrchestratorError(
+                    "could not free canonical-path private read-lease ACL baseline"
+                )
+    else:
+        if path_errno != errno.ENOENT:
+            raise SelectedXcodeBuildOrchestratorError(
+                "could not classify canonical-path private read-lease ACL baseline"
+                f": errno {path_errno}"
+            )
+        path_semantics = None
+
+    # The native comparison is authority only while the pathname still names the
+    # continuously held accepted object. Re-attest after native path acquisition.
+    _require_canonical_acl_identity(path, descriptor, accepted_signature, is_directory)
+    if (semantics is None) != (path_semantics is None):
+        raise SelectedXcodeBuildOrchestratorError(
+            "descriptor/canonical-path private read-lease ACL baseline classes diverge"
+        )
+    if semantics is not None and semantics != path_semantics:
+        raise SelectedXcodeBuildOrchestratorError(
+            "descriptor/canonical-path private read-lease ACL baseline semantics diverge"
+        )
 
 
 def _restore_fd_acl_baseline(descriptor: int, baseline_acl: int) -> None:
@@ -1088,6 +1186,13 @@ class _PrivateReadLease:
                 is_directory = bool(record["is_directory"])
                 if self._use_native_darwin_acl:
                     record["native_baseline_acl"] = _capture_fd_acl_baseline(descriptor)
+                    _require_native_acl_baseline_coherence(
+                        path,
+                        descriptor,
+                        accepted_signature,
+                        is_directory,
+                        record["native_baseline_acl"],
+                    )
                     before = _path_acl_listing(
                         path, descriptor, accepted_signature, is_directory
                     )

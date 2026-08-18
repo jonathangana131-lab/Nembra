@@ -159,9 +159,136 @@ class CapturePrivateReadLeaseRollbackTests(unittest.TestCase):
             baseline = helper._capture_fd_acl_baseline(74)
 
         self.assertEqual(baseline, 0xC0FFEE)
+        self.assertIsNone(baseline.semantics)
         library.acl_get_fd.assert_called_once_with(74)
         library.acl_init.assert_called_once_with(0)
         library.acl_free.assert_not_called()
+
+    def test_native_seeded_fd_baseline_retains_canonical_semantics(self) -> None:
+        helper = load()
+        library = mock.Mock()
+        library.acl_get_fd.return_value = 0xA001
+        library.acl_dup.return_value = 0xA002
+        library.acl_free.return_value = 0
+
+        with (
+            mock.patch.object(helper, "_darwin_acl_library", return_value=library),
+            mock.patch.object(
+                helper, "_native_acl_text", return_value=b"user:root allow readattr\n"
+            ) as canonicalize,
+        ):
+            baseline = helper._capture_fd_acl_baseline(75)
+
+        self.assertEqual(baseline, 0xA002)
+        self.assertEqual(baseline.semantics, b"user:root allow readattr\n")
+        library.acl_get_fd.assert_called_once_with(75)
+        library.acl_dup.assert_called_once_with(0xA001)
+        canonicalize.assert_called_once_with(library, 0xA002, "descriptor baseline")
+        library.acl_free.assert_called_once_with(0xA001)
+
+    def test_native_baseline_coherence_accepts_equal_seeded_views(self) -> None:
+        helper = load()
+        library = mock.Mock()
+        library.acl_get_file.return_value = 0xB001
+        library.acl_free.return_value = 0
+        baseline = helper._NativeACLBaseline(0xB002, b"seeded-acl")
+
+        with (
+            mock.patch.object(helper, "_darwin_acl_library", return_value=library),
+            mock.patch.object(
+                helper, "_native_acl_text", return_value=b"seeded-acl"
+            ),
+            mock.patch.object(helper, "_require_canonical_acl_identity") as identity,
+        ):
+            helper._require_native_acl_baseline_coherence(
+                Path("/private/tmp/accepted"), 81, (1, 2, 3), True, baseline
+            )
+
+        self.assertEqual(identity.call_count, 2)
+        library.acl_get_file.assert_called_once_with(
+            os.fsencode(Path("/private/tmp/accepted")), helper._DARWIN_ACL_TYPE_EXTENDED
+        )
+        library.acl_free.assert_called_once_with(0xB001)
+
+    def test_native_baseline_coherence_rejects_semantic_mismatch_before_grant(self) -> None:
+        helper = load()
+        library = mock.Mock()
+        library.acl_get_file.return_value = 0xC001
+        library.acl_free.return_value = 0
+        baseline = helper._NativeACLBaseline(0xC002, b"fd-acl")
+
+        with (
+            mock.patch.object(helper, "_darwin_acl_library", return_value=library),
+            mock.patch.object(helper, "_native_acl_text", return_value=b"path-acl"),
+            mock.patch.object(helper, "_require_canonical_acl_identity"),
+            self.assertRaisesRegex(
+                helper.SelectedXcodeBuildOrchestratorError,
+                "baseline semantics diverge",
+            ),
+        ):
+            helper._require_native_acl_baseline_coherence(
+                Path("/private/tmp/accepted"), 82, (1, 2, 3), True, baseline
+            )
+
+        library.acl_free.assert_called_once_with(0xC001)
+
+    def test_native_baseline_coherence_accepts_enoent_only_when_both_absent(self) -> None:
+        helper = load()
+        library = mock.Mock()
+
+        def absent_path(_path, _acl_type):
+            helper.ctypes.set_errno(helper.errno.ENOENT)
+            return None
+
+        library.acl_get_file.side_effect = absent_path
+        baseline = helper._NativeACLBaseline(0xD001, None)
+        with (
+            mock.patch.object(helper, "_darwin_acl_library", return_value=library),
+            mock.patch.object(helper, "_require_canonical_acl_identity") as identity,
+        ):
+            helper._require_native_acl_baseline_coherence(
+                Path("/private/tmp/accepted"), 83, (1, 2, 3), True, baseline
+            )
+        self.assertEqual(identity.call_count, 2)
+
+    def test_native_baseline_coherence_rejects_mixed_absent_present_classes(self) -> None:
+        helper = load()
+        library = mock.Mock()
+
+        def absent_path(_path, _acl_type):
+            helper.ctypes.set_errno(helper.errno.ENOENT)
+            return None
+
+        library.acl_get_file.side_effect = absent_path
+        baseline = helper._NativeACLBaseline(0xD002, b"fd-present")
+        with (
+            mock.patch.object(helper, "_darwin_acl_library", return_value=library),
+            mock.patch.object(helper, "_require_canonical_acl_identity"),
+            self.assertRaisesRegex(
+                helper.SelectedXcodeBuildOrchestratorError,
+                "baseline classes diverge",
+            ),
+        ):
+            helper._require_native_acl_baseline_coherence(
+                Path("/private/tmp/accepted"), 84, (1, 2, 3), True, baseline
+            )
+
+    def test_native_baseline_coherence_rejects_null_path_acl_without_enoent(self) -> None:
+        helper = load()
+        library = mock.Mock()
+        library.acl_get_file.return_value = None
+        baseline = helper._NativeACLBaseline(0xD003, None)
+        with (
+            mock.patch.object(helper, "_darwin_acl_library", return_value=library),
+            mock.patch.object(helper, "_require_canonical_acl_identity"),
+            self.assertRaisesRegex(
+                helper.SelectedXcodeBuildOrchestratorError,
+                "could not classify canonical-path private read-lease ACL baseline: errno 0",
+            ),
+        ):
+            helper._require_native_acl_baseline_coherence(
+                Path("/private/tmp/accepted"), 85, (1, 2, 3), True, baseline
+            )
 
     def test_native_strict_revoke_restores_held_object_after_path_replacement(self) -> None:
         helper = load()
@@ -188,6 +315,9 @@ class CapturePrivateReadLeaseRollbackTests(unittest.TestCase):
                 mock.patch.object(
                     helper, "_capture_fd_acl_baseline", return_value=4242
                 ) as capture,
+                mock.patch.object(
+                    helper, "_require_native_acl_baseline_coherence"
+                ) as coherence,
                 mock.patch.object(
                     helper, "_path_acl_listing", side_effect=lambda *_args: next(listings)
                 ),
@@ -217,6 +347,7 @@ class CapturePrivateReadLeaseRollbackTests(unittest.TestCase):
                 self.assertEqual(moved.read_bytes(), b"fixture\n")
 
             capture.assert_called_once_with(descriptor)
+            coherence.assert_called_once_with(subject, descriptor, signature, False, 4242)
             grant.assert_called_once()
             restore.assert_called_once_with(descriptor, 4242)
             free.assert_called_once_with(4242)
