@@ -1074,7 +1074,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.19,
+        "similarity": 0.18,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "3316": {
@@ -1594,16 +1594,16 @@
         "similarity": 0.104,
         "title": "[V17][Capture P0][RECOVERY] Rebase native ACL exact-guard closure"
       },
-      "3560": {
+      "3561": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "",
+        "headSHA": "b29b9dd240443c6b73ddfe93b62c2069e497f209",
         "lane": "capture-signed-install-custody",
-        "pr": 3560,
+        "pr": 3561,
         "recommendedAction": "independent-review",
-        "similarity": 0.219,
-        "title": "[Capture P0][V17][RECOVERY] Clear native ACL authoring scope"
+        "similarity": 0.214,
+        "title": "[Capture P0][V17][CI] Repair native lease test constructor ABI"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1636,7 +1636,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T02:36:09Z",
+    "liveRefreshAt": "2026-08-18T02:36:25Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5421,10 +5421,10 @@
       "userValue": 7
     }
   },
-  "revision": 915,
+  "revision": 916,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T02:36:11Z",
+  "updatedAt": "2026-08-18T02:36:27Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5500,7 +5500,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T02:36:09Z",
+      "updatedAt": "2026-08-18T02:36:25Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
