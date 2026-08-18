@@ -1,0 +1,120 @@
+name: Capture field strict-root authoring cleanup recovery
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-field-strict-root-authoring-cleanup-recovery.yml
+      - .github/workflows/capture-field-strict-root-wiring-recovery.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact five-file authoring lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='c871c5ae713a178d799c5876809a14a296b7fc67'
+          test "$(git merge-base HEAD "$parent")" = "$parent"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          actual="$(git diff --name-only "$parent"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/capture-field-strict-root-artifact.trigger \
+            .github/capture-field-strict-root-wiring.trigger \
+            .github/workflows/capture-field-strict-root-authoring-cleanup-recovery.yml \
+            .github/workflows/capture-field-strict-root-wiring-materialize.yml \
+            .github/workflows/capture-field-strict-root-wiring-recovery.yml | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+
+      - name: Execute reviewed strict-root materializer with canonical Final-GO key
+        shell: python
+        run: |
+          from pathlib import Path
+          import textwrap
+
+          path = Path('.github/workflows/capture-field-strict-root-wiring-materialize.yml')
+          text = path.read_text()
+          stale_key = 'NEMBRA_CAPTURE_ACCEPTED_GENERATED_MANIFEST_SHA256'
+          canonical_key = 'NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256'
+          if canonical_key in text:
+              raise SystemExit('reviewed materializer unexpectedly already contains canonical Final-GO key')
+          if text.count(stale_key) < 2:
+              raise SystemExit('reviewed materializer generated-manifest key seam drifted')
+          text = text.replace(stale_key, canonical_key)
+          if stale_key in text or canonical_key not in text:
+              raise SystemExit('Final-GO key convergence failed')
+
+          start_marker = '''      - name: Materialize strict accepted-root field wiring
+        shell: python
+        run: |
+'''
+          end_marker = '''
+      - name: Run focused wiring regressions
+'''
+          if text.count(start_marker) != 1 or text.count(end_marker) != 1:
+              raise SystemExit('reviewed materializer block anchors drifted')
+          source = textwrap.dedent(text.split(start_marker, 1)[1].split(end_marker, 1)[0])
+          compile(source, '<reviewed-field-strict-root-materializer>', 'exec')
+          exec(compile(source, '<reviewed-field-strict-root-materializer>', 'exec'), {'__name__': '__main__'})
+
+      - name: Run focused product regressions and exact working delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -I scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py
+          python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256' Scripts/bootstrap_capture_tuya_sdk.sh
+          grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256' scripts/field/install_one_time_capture.command
+          ! grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_GENERATED_MANIFEST_SHA256' Scripts/bootstrap_capture_tuya_sdk.sh
+          ! grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_GENERATED_MANIFEST_SHA256' scripts/field/install_one_time_capture.command
+          git diff --check
+          actual="$( { git diff --name-only; git ls-files --others --exclude-standard; } | LC_ALL=C sort -u )"
+          expected="$(printf '%s\n' \
+            Scripts/bootstrap_capture_tuya_sdk.sh \
+            scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py \
+            scripts/field/install_one_time_capture.command | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          ! grep -nE 'publishDps\(|writeValue\(|removeDevice|factoryReset' scripts/field/install_one_time_capture.command
+
+      - name: Publish exact three-path product tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='c871c5ae713a178d799c5876809a14a296b7fc67'
+          branch='recovery/v17-capture-field-strict-root-authoring-cleanup-gpt56sol-20260818'
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          git fetch origin "$branch"
+          test "$(git rev-parse FETCH_HEAD)" = "$expected_head"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            Scripts/bootstrap_capture_tuya_sdk.sh \
+            scripts/field/install_one_time_capture.command \
+            scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py
+          git rm \
+            .github/capture-field-strict-root-artifact.trigger \
+            .github/capture-field-strict-root-wiring.trigger \
+            .github/workflows/capture-field-strict-root-authoring-cleanup-recovery.yml \
+            .github/workflows/capture-field-strict-root-wiring-materialize.yml \
+            .github/workflows/capture-field-strict-root-wiring-recovery.yml
+          git diff --cached --check
+          git commit -m 'Capture: make field build consume accepted root'
+          actual_final="$(git diff --name-only "$parent"...HEAD | LC_ALL=C sort)"
+          expected_final="$(printf '%s\n' \
+            Scripts/bootstrap_capture_tuya_sdk.sh \
+            scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py \
+            scripts/field/install_one_time_capture.command | LC_ALL=C sort)"
+          test "$actual_final" = "$expected_final"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git push origin HEAD:"$branch"
