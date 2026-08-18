@@ -1,0 +1,82 @@
+name: Dashboard Battery AX Dynamic Type Materializer
+
+on:
+  push:
+    branches:
+      - recovery/v17-dashboard-battery-ax-dynamic-type-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bind exact reviewed parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "7dc7d3ed7da623811b801b74e79a13e8732c58e7"
+
+      - name: Materialize accessibility-size battery control and witness
+        shell: python
+        run: |
+          from pathlib import Path
+
+          view_path = Path("NembraApp/Features/Dashboard/DashboardView.swift")
+          source = view_path.read_text()
+
+          old_metric = '''                compactAccessibilityMetric(\n                    title: "Battery",\n                    value: batteryText,\n                    warning: batteryInstrumentWarning,\n                    retained: isRetainedBatteryData\n                )'''
+          new_metric = '''                accessibilityBatteryRangeControl'''
+          if source.count(old_metric) != 1:
+              raise SystemExit("expected exactly one static accessibility battery metric")
+          source = source.replace(old_metric, new_metric)
+
+          insertion_needle = '''    private func compactAccessibilityMetric(\n        title: String,\n        value: String,\n        warning: Bool = false,\n        retained: Bool = false\n    ) -> some View {'''
+          accessibility_control = '''    /// Accessibility-size counterpart to the signature battery silhouette.\n    /// It preserves the same product interaction and truth contract without forcing\n    /// the standard fixed-width instrument into a large-text composition.\n    private var accessibilityBatteryRangeControl: some View {\n        Button {\n            batteryReadout = batteryReadout == .charge ? .range : .charge\n        } label: {\n            VStack(alignment: .leading, spacing: 3) {\n                HStack(spacing: 5) {\n                    Text(batteryReadout == .charge ? "BATTERY" : "LEARNED RANGE")\n                        .font(.caption2.weight(.bold))\n                    Image(systemName: "arrow.left.arrow.right")\n                        .font(.caption2.weight(.bold))\n                        .accessibilityHidden(true)\n                }\n                .foregroundStyle(batteryInstrumentWarning ? Color.red : Color.secondary)\n\n                Text(batteryPrimaryText)\n                    .font(.caption.weight(.semibold).monospacedDigit())\n                    .foregroundStyle(batteryPrimaryColor)\n                    .contentTransition(reduceMotion ? .identity : .numericText())\n                    .lineLimit(1)\n\n                Text(batterySecondaryStatus)\n                    .font(.caption2.weight(.bold))\n                    .foregroundStyle(batterySecondaryColor)\n                    .lineLimit(1)\n            }\n            .frame(minWidth: 44, minHeight: 44, alignment: .leading)\n            .contentShape(Rectangle())\n        }\n        .accessibilityLabel(batteryReadout == .charge ? "Battery" : "Learned range")\n        .accessibilityValue(batteryAccessibilityValue)\n        .accessibilityHint("Double tap to switch between battery charge and learned range. Learned range remains unavailable until Nembra has verified battery evidence and a learned range model.")\n        .accessibilityIdentifier("dashboard.battery-range")\n        .buttonStyle(.plain)\n        .frame(minWidth: 44, minHeight: 44, alignment: .leading)\n        .sensoryFeedback(.selection, trigger: batteryReadout)\n    }\n\n'''
+          if source.count(insertion_needle) != 1:
+              raise SystemExit("expected compactAccessibilityMetric insertion seam")
+          source = source.replace(insertion_needle, accessibility_control + insertion_needle)
+          view_path.write_text(source)
+
+          test_path = Path("NembraUITests/NembraUITests.swift")
+          tests = test_path.read_text()
+          test_needle = '''    @MainActor\n    func testLandscapePhysicalProfileKeepsPowerUnavailableRailVisible() {'''
+          new_test = '''    @MainActor\n    func testAccessibilityXXXLRetainsTruthfulBatteryRangeButton() throws {\n        defer { XCUIDevice.shared.orientation = .portrait }\n        XCUIDevice.shared.orientation = .landscapeRight\n\n        let app = XCUIApplication()\n        app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = "connected-stopped"\n        app.launchArguments += [\n            "-UIPreferredContentSizeCategoryName",\n            "UICTContentSizeCategoryAccessibilityXXXL"\n        ]\n        app.launch()\n\n        let accessibilityCockpit = app.descendants(matching: .any)["dashboard.cockpit.accessibility"]\n        XCTAssertTrue(\n            accessibilityCockpit.waitForExistence(timeout: 4),\n            "Accessibility XXXL must select the intentionally recomposed Dashboard cockpit."\n        )\n\n        let battery = app.buttons["dashboard.battery-range"]\n        assertMinimumTouchTarget(battery, named: "Accessibility XXXL Dashboard battery and range")\n        XCTAssertEqual(battery.label, "Battery")\n        XCTAssertTrue(\n            waitForValue("92%", element: battery),\n            "Accessibility-size charge mode must expose the accepted Simulator battery value."\n        )\n        keepScreenshot(named: "Dashboard Battery Accessibility XXXL Charge Landscape")\n\n        battery.tap()\n\n        let learnedRange = app.buttons["dashboard.battery-range"]\n        XCTAssertTrue(learnedRange.waitForExistence(timeout: 2))\n        XCTAssertEqual(learnedRange.label, "Learned range")\n        XCTAssertTrue(\n            waitForValue(\n                "Unavailable until a verified learned range model exists",\n                element: learnedRange\n            ),\n            "Accessibility-size learned range must remain truthful and unavailable without verified authority."\n        )\n        assertMinimumTouchTarget(learnedRange, named: "Accessibility XXXL learned range")\n        keepScreenshot(named: "Dashboard Learned Range Accessibility XXXL Unavailable Landscape")\n\n        try app.performAccessibilityAudit(\n            for: [\n                .sufficientElementDescription,\n                .hitRegion,\n                .textClipped,\n                .trait,\n                .dynamicType\n            ]\n        )\n    }\n\n'''
+          if tests.count(test_needle) != 1:
+              raise SystemExit("expected Dashboard physical-profile test insertion seam")
+          tests = tests.replace(test_needle, new_test + test_needle)
+          test_path.write_text(tests)
+
+      - name: Guard exact recovery scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          mapfile -t changed < <(git diff --name-only | sort)
+          test "${#changed[@]}" = "2"
+          test "${changed[0]}" = "NembraApp/Features/Dashboard/DashboardView.swift"
+          test "${changed[1]}" = "NembraUITests/NembraUITests.swift"
+          grep -F 'accessibilityBatteryRangeControl' NembraApp/Features/Dashboard/DashboardView.swift >/dev/null
+          grep -F '.accessibilityIdentifier("dashboard.battery-range")' NembraApp/Features/Dashboard/DashboardView.swift >/dev/null
+          grep -F 'UICTContentSizeCategoryAccessibilityXXXL' NembraUITests/NembraUITests.swift >/dev/null
+          grep -F 'let battery = app.buttons["dashboard.battery-range"]' NembraUITests/NembraUITests.swift >/dev/null
+          grep -F 'Dashboard Learned Range Accessibility XXXL Unavailable Landscape' NembraUITests/NembraUITests.swift >/dev/null
+
+      - name: Publish clean product recovery commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/dashboard-battery-ax-dynamic-type-materializer.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add NembraApp/Features/Dashboard/DashboardView.swift NembraUITests/NembraUITests.swift .github/workflows/dashboard-battery-ax-dynamic-type-materializer.yml
+          git diff --cached --check
+          test "$(git diff --cached --name-only | wc -l | tr -d ' ')" = "3"
+          git commit -m "Dashboard: retain battery control at accessibility sizes"
+          git push origin HEAD:recovery/v17-dashboard-battery-ax-dynamic-type-gpt56
