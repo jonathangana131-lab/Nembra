@@ -413,6 +413,45 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testLandscapeLowBatteryKeepsChargeTruthWhileRangeUnavailable() throws {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launch(scenario: "low-battery", orientation: .landscapeRight)
+
+        let battery = app.buttons["dashboard.battery-range"]
+        assertMinimumTouchTarget(battery, named: "Low-charge Dashboard battery and range")
+        XCTAssertEqual(battery.label, "Battery")
+        XCTAssertTrue(
+            waitForValue("14%", element: battery),
+            "Low-battery mode must expose the accepted 14% Simulator charge value."
+        )
+        keepScreenshot(named: "Dashboard Battery Low Charge Landscape")
+
+        battery.tap()
+
+        let learnedRange = app.buttons["dashboard.battery-range"]
+        XCTAssertTrue(learnedRange.waitForExistence(timeout: 2))
+        XCTAssertEqual(learnedRange.label, "Learned range")
+        XCTAssertTrue(
+            waitForValue(
+                "Unavailable until a verified learned range model exists",
+                element: learnedRange
+            ),
+            "Selecting learned range at low charge must not repurpose 14% into synthetic range."
+        )
+        assertMinimumTouchTarget(learnedRange, named: "Low-charge learned range")
+        keepScreenshot(named: "Dashboard Learned Range Low Charge Unavailable Landscape")
+
+        try app.performAccessibilityAudit(
+            for: [
+                .sufficientElementDescription,
+                .hitRegion,
+                .textClipped,
+                .trait
+            ]
+        )
+    }
+
+    @MainActor
     func testLandscapePhysicalProfileKeepsPowerUnavailableRailVisible() {
         defer { XCUIDevice.shared.orientation = .portrait }
         XCUIDevice.shared.orientation = .landscapeRight
