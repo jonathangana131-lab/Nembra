@@ -34,18 +34,32 @@ A commit, PR, review, test pass, or merge is a checkpoint, not an automatic stop
 
 ## Coordination: GitHub, not a custom swarm database
 
-There is no fixed worker quota and no requirement to fill capacity.
+There is **no fixed agent count** and no requirement to fill capacity. Concurrency is adaptive:
 
-Default to one active implementation per overlapping subsystem. Use parallel agents only when the work is obviously independent. A practical ceiling is four concurrent writers in this repository; fewer is usually better. Review/test work may happen alongside implementation.
+- default to one active implementation for an overlapping subsystem/root cause;
+- add another writer only when the next outcome is genuinely independent in files, runtime authority, and integration path;
+- reviewers/testers may work against a live candidate without spawning a competing implementation;
+- when CI, review, merge conflicts, or integration backlog grows, reduce new writing and converge existing candidates first;
+- if independent work is plentiful and current candidates are integrating cleanly, additional agents may work in parallel;
+- optimize for merged product outcomes per unit of coordination cost, not maximum simultaneous activity.
 
-Before creating a branch or large change, inspect current open PRs and branches for overlap. If another live PR already owns substantially the same code/problem:
-
-- improve/review/fix that path when possible; or
-- choose a genuinely independent target.
+Before creating a branch or large change, inspect current open PRs and branches for overlap. If another live PR already owns substantially the same code/problem, improve/review/fix that path when possible or choose a genuinely independent target.
 
 Do not create successor/recovery branches merely because a task is hard, CI is pending, a chat ended, or another agent exists. One problem should converge toward one mergeable implementation.
 
 Use ordinary short-lived Git branches and PRs as the collision and handoff mechanism. No worker IDs, mission-graph revisions, leases, heartbeats, fencing tokens, admission controller, synthetic role allocation, or stop-authority protocol is required.
+
+## Legacy swarm convergence
+
+Historical swarm/recovery PRs are candidates, not ownership authority. Do **not** block new product progress on cleaning every old branch first.
+
+When legacy PRs overlap:
+
+1. identify the strongest current delta against `main` by code/evidence, not by worker generation or PR age;
+2. keep at most one implementation path for the same root cause;
+3. update/rebase that path or transplant the useful delta into one direct-to-`main` candidate when necessary;
+4. close clearly obsolete/duplicate recovery PRs rather than stacking another recovery layer;
+5. preserve useful evidence and physical-truth notes even when the old branch itself is retired.
 
 ## Branch / PR / merge behavior
 
