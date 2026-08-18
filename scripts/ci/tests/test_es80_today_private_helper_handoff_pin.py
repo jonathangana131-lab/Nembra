@@ -50,7 +50,7 @@ class PrivateHelperHandoffPinTests(unittest.TestCase):
 
     def test_retired_handoffs_keep_secret_and_no_go_boundaries(self):
         production, custody = self.documents()
-        self.assertIn("credentials", production.lower())
+        self.assertIn("old provisioning receipt", production)
         self.assertIn("private device identifiers", custody)
         self.assertIn("AppKey/AppSecret", custody)
         self.assertIn("stay out of Git, logs, screenshots, public artifacts", custody)
