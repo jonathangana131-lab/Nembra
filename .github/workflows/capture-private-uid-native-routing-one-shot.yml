@@ -1,0 +1,71 @@
+name: Capture private UID native routing one-shot
+
+on:
+  pull_request:
+    paths:
+      - .github/nembra/private-uid-native-routing.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: >-
+      github.event.pull_request.base.ref == 'repair/v17-capture-private-uid-native-routing-gpt56sol-20260817' &&
+      github.event.pull_request.head.ref == 'trigger/v17-capture-private-uid-native-routing-gpt56sol-20260817'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact product branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.base.sha }}'
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Route every Darwin-root private lease through native transport
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('scripts/ci/capture_selected_xcode_build_orchestrator.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''        lease = _PrivateReadLease(\n            private_subjects,\n            lease_repo,\n            use_native_darwin_acl=(accepted_root is not None),\n        )\n'''
+          new = '''        lease = _PrivateReadLease(\n            private_subjects,\n            lease_repo,\n            use_native_darwin_acl=True,\n        )\n'''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one lease-routing anchor, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+      - name: Run focused portable regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-private-uid-native-pycache"
+          python3 -B -m py_compile \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py \
+            scripts/ci/tests/test_capture_private_build_uid_read_lease_current.py
+          python3 -B scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          python3 -B scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          git diff --check
+
+      - name: Publish clean product head and retire one-shot
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch='repair/v17-capture-private-uid-native-routing-gpt56sol-20260817'
+          git fetch origin "$branch"
+          test "$(git rev-parse FETCH_HEAD)" = '${{ github.event.pull_request.base.sha }}'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/ci/capture_selected_xcode_build_orchestrator.py
+          git rm .github/workflows/capture-private-uid-native-routing-one-shot.yml
+          git diff --cached --check
+          git commit -m 'Capture: route private UID lease through native Darwin ACLs'
+          git push origin HEAD:"$branch"
+          echo 'Materialized product still requires exact-head macOS private-UID and carrier gates. Physical NO-GO.'
