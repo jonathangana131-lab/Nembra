@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 46,
+    "classifiedPRTotal": 48,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1085,7 +1085,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.101,
+        "similarity": 0.107,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3321": {
@@ -1547,7 +1547,7 @@
         "lane": "",
         "pr": 3589,
         "recommendedAction": "independent-review",
-        "similarity": 0.241,
+        "similarity": 0.314,
         "title": "[Capture P0][V17][KICK] Re-arm native ACL baseline coherence repair"
       },
       "3590": {
@@ -1569,8 +1569,30 @@
         "lane": "capture-signed-install-custody",
         "pr": 3591,
         "recommendedAction": "independent-review",
-        "similarity": 0.208,
+        "similarity": 0.411,
         "title": "[Capture P0][V17][CI] Admit private-UID fixture workflow into compiler scope"
+      },
+      "3592": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3592,
+        "recommendedAction": "independent-review",
+        "similarity": 0.314,
+        "title": "[Capture P0][V17][TRIGGER] Trusted native ACL coherence materializer bridge"
+      },
+      "3593": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "f3f8c966639488f4229e57c18c8856212308a041",
+        "lane": "capture-signed-install-custody",
+        "pr": 3593,
+        "recommendedAction": "independent-review",
+        "similarity": 0.413,
+        "title": "[Capture P0][V17][CI] Admit hardened lease gate to compiler scope"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1603,7 +1625,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T02:56:05Z",
+    "liveRefreshAt": "2026-08-18T02:56:22Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5388,10 +5410,10 @@
       "userValue": 7
     }
   },
-  "revision": 968,
+  "revision": 969,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T02:56:07Z",
+  "updatedAt": "2026-08-18T02:56:24Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5467,7 +5489,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T02:56:05Z",
+      "updatedAt": "2026-08-18T02:56:22Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
