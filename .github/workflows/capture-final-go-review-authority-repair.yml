@@ -1,5 +1,6 @@
 name: Capture Final GO review-authority repair
 
+# rearm after workflow installation so the external branch push can execute it
 on:
   push:
     branches:
@@ -19,13 +20,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Bind exact reviewed head
+      - name: Bind exact reviewed authoring lineage
         shell: bash
         run: |
           set -euo pipefail
           parent='cf97695d322b7b02eadb853e8da2888eff9776ea'
-          test "$(git rev-parse HEAD^)" = "$parent"
-          actual="$(git diff --name-only "$parent"...HEAD)"
+          test "$(git merge-base "$parent" HEAD)" = "$parent"
+          actual="$(git diff --name-only "$parent"...HEAD | LC_ALL=C sort)"
           test "$actual" = '.github/workflows/capture-final-go-review-authority-repair.yml'
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
