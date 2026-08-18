@@ -1173,7 +1173,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3625,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.153,
+        "similarity": 0.163,
         "title": "[Capture P0][V17][INTEGRATION] Promote accepted-root compiler carrier"
       }
     },
@@ -1207,7 +1207,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T13:59:01Z",
+    "liveRefreshAt": "2026-08-18T14:03:50Z",
     "liveRefreshDuplicatesSuppressed": [
       3321
     ],
@@ -4992,10 +4992,10 @@
       "userValue": 7
     }
   },
-  "revision": 1136,
+  "revision": 1137,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T13:59:01Z",
+  "updatedAt": "2026-08-18T14:03:50Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5071,7 +5071,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T13:59:01Z",
+      "updatedAt": "2026-08-18T14:03:50Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
