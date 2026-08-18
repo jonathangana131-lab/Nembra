@@ -1173,7 +1173,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3625,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.22,
+        "similarity": 0.224,
         "title": "[Capture P0][V17][INTEGRATION] Promote accepted-root compiler carrier"
       },
       "3643": {
@@ -1184,7 +1184,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3643,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.326,
+        "similarity": 0.42,
         "title": "[Capture P0][V17][FINAL] Exact-head composed Capture authority carrier"
       },
       "3645": {
@@ -1195,7 +1195,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3645,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.266,
+        "similarity": 0.361,
         "title": "[Capture P0][V17][VALIDATION] Full 48-path final exact-head matrix"
       },
       "3646": {
@@ -1240,7 +1240,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T11:49:23Z",
+    "liveRefreshAt": "2026-08-18T11:49:40Z",
     "liveRefreshDuplicatesSuppressed": [
       3645
     ],
@@ -5025,10 +5025,10 @@
       "userValue": 7
     }
   },
-  "revision": 1130,
+  "revision": 1131,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T11:49:23Z",
+  "updatedAt": "2026-08-18T11:49:40Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5104,7 +5104,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T11:49:23Z",
+      "updatedAt": "2026-08-18T11:49:40Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
