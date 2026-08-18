@@ -18,11 +18,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Bind exact failing Dashboard head
+      - name: Bind exact failing Dashboard product state
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "86b9ee6f2c97a8b9d52a7bd8c8c67c117035de92"
+          PRODUCT_PARENT="86b9ee6f2c97a8b9d52a7bd8c8c67c117035de92"
+          git merge-base --is-ancestor "$PRODUCT_PARENT" HEAD
+          test -z "$(git diff --name-only "$PRODUCT_PARENT" HEAD -- . ':(exclude).github/workflows/dashboard-battery-ax-label-refresh-materializer.yml')"
 
       - name: Refresh accessibility button identity with readout state
         shell: python
