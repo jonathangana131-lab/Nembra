@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 45,
+    "classifiedPRTotal": 44,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1525,7 +1525,7 @@
         "lane": "capture-current-accepted-root-acl-transport",
         "pr": 3575,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.395,
+        "similarity": 0.365,
         "title": "[Capture P0][V17][REPAIR] Require seeded ACL baseline coherence"
       },
       "3577": {
@@ -1547,19 +1547,8 @@
         "lane": "capture-current-accepted-root-acl-transport",
         "pr": 3581,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.435,
+        "similarity": 0.369,
         "title": "[Capture P0][V17][RED TEAM] Native ACL baseline coherence exact-head classifier"
-      },
-      "3586": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-current-accepted-root-acl-transport",
-        "pr": 3586,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.456,
-        "title": "[Capture P0][V17][REPAIR] Enforce native ACL baseline coherence on current head"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1592,7 +1581,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T02:52:49Z",
+    "liveRefreshAt": "2026-08-18T02:53:08Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5377,10 +5366,10 @@
       "userValue": 7
     }
   },
-  "revision": 959,
+  "revision": 960,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T02:52:50Z",
+  "updatedAt": "2026-08-18T02:53:10Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5456,7 +5445,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T02:52:49Z",
+      "updatedAt": "2026-08-18T02:53:08Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
