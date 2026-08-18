@@ -27,8 +27,14 @@ LEGACY_OPERATIONAL_PINS = (
 CURRENT_GATE_MARKERS = (
     "Status: **NO-GO",
     "ES80_TODAY_PRIVATE_FIELD_RUNBOOK.md",
+    "RETIRED / NON-AUTHORIZING",
     "historical evidence",
     "at least **45 seconds**",
+)
+
+STALE_CURRENT_GATE_WORDING = (
+    "is still pinned to the earlier frozen Capture subject",
+    "remains historical evidence for the first fingerprint field path",
 )
 
 
@@ -59,6 +65,9 @@ def main() -> int:
     for marker in CURRENT_GATE_MARKERS:
         if marker not in gate:
             fail(f"{CURRENT_GATE.relative_to(ROOT)} lost current physical-gate marker: {marker!r}")
+    for stale in STALE_CURRENT_GATE_WORDING:
+        if stale in gate:
+            fail(f"{CURRENT_GATE.relative_to(ROOT)} contradicts retired field authority: {stale!r}")
 
     print("CAPTURE_FIELD_AUTHORITY_DOCS_GUARD PASS")
     print("physical_status=NO-GO")
