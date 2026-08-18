@@ -123,14 +123,10 @@ struct TuyaApplicationTimeoutPresentationRaceSourceTests {
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t changed < <(git status --porcelain=v1 | awk '{print $2}' | sort)
-          printf '%s\n' "${changed[@]}"
-          expected=(
-            ".github/workflows/capture-retire-duplicate-app-timeout-one-shot.yml"
-            "NembraApp/App/NembraCaptureEntrypoint.swift"
-            "Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationTimeoutPresentationRaceSourceTests.swift"
-          )
-          test "${changed[*]}" = "${expected[*]}"
+          changed="$(git status --porcelain=v1 | awk '{print $2}' | sort | tr '\n' ' ' | sed 's/ $//')"
+          expected=".github/workflows/capture-retire-duplicate-app-timeout-one-shot.yml NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationTimeoutPresentationRaceSourceTests.swift"
+          printf '%s\n' "$changed"
+          test "$changed" = "$expected"
           ! grep -q 'publishDps(' NembraApp/App/NembraCaptureEntrypoint.swift
           ! grep -q 'writeValue(' NembraApp/App/NembraCaptureEntrypoint.swift
 
@@ -158,3 +154,4 @@ struct TuyaApplicationTimeoutPresentationRaceSourceTests {
           git push origin HEAD:capture/one-time-ble-dump-gpt56
 
 # Re-armed after verifying the duplicate app-owned timeout still exists on the exact branch head.
+# macOS /bin/bash is 3.2, so exact-delta admission deliberately avoids mapfile/readarray.
