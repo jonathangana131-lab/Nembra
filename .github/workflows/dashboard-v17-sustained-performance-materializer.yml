@@ -1,0 +1,143 @@
+name: Dashboard V17 Sustained Performance Materializer
+
+on:
+  push:
+    branches:
+      - recovery/v17-dashboard-sustained-performance-current-main-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bind current-main recovery root
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "51baa116c36c873156523aa47313da52a526e519"
+          git diff --quiet HEAD^ -- NembraApp/App/AppBootstrap.swift
+
+      - name: Fetch last repaired performance donor
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin refs/pull/3118/head:refs/remotes/origin/dashboard-perf-donor
+          test "$(git rev-parse refs/remotes/origin/dashboard-perf-donor)" = "db7773c5dfbd996568546cb11e63df5444ba1898"
+          mkdir -p scripts/ci
+          git show refs/remotes/origin/dashboard-perf-donor:.github/workflows/dashboard-sustained-performance.yml > .github/workflows/dashboard-sustained-performance.yml
+          git show refs/remotes/origin/dashboard-perf-donor:scripts/ci/dashboard_sustained_performance_xcuitest.swift > scripts/ci/dashboard_sustained_performance_xcuitest.swift
+
+      - name: Rebind harness to current V17 product root
+        shell: python
+        run: |
+          from pathlib import Path
+
+          workflow = Path(".github/workflows/dashboard-sustained-performance.yml")
+          text = workflow.read_text()
+          old_parent = "c150a8287463231ee9af174c38564738bab576a3"
+          new_parent = "51baa116c36c873156523aa47313da52a526e519"
+          if text.count(old_parent) != 2:
+              raise SystemExit(f"expected two donor product-parent pins, found {text.count(old_parent)}")
+          text = text.replace(old_parent, new_parent)
+
+          old_trigger = '''  pull_request:\n    paths:\n'''
+          new_trigger = '''  pull_request:\n    types: [opened, synchronize, reopened, ready_for_review]\n    paths:\n'''
+          if text.count(old_trigger) != 1:
+              raise SystemExit("expected one pull_request trigger seam")
+          text = text.replace(old_trigger, new_trigger)
+
+          old_if = '''    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository\n'''
+          new_if = '''    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false)\n'''
+          if text.count(old_if) != 1:
+              raise SystemExit("expected one same-repo job guard")
+          text = text.replace(old_if, new_if)
+          workflow.write_text(text)
+
+      - name: Add current-main Simulator stress fixture
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("NembraApp/App/AppBootstrap.swift")
+          source = path.read_text()
+
+          replacements = [
+              (
+                  '''    private let simulatorStartsWithSpeedEvidenceGap: Bool\n    private let simulatorRoutePointCount: Int\n''',
+                  '''    private let simulatorStartsWithSpeedEvidenceGap: Bool\n    private let simulatorDrivesDashboardStress: Bool\n    private let simulatorRoutePointCount: Int\n'''
+              ),
+              (
+                  '''        simulatorStartsWithSpeedEvidenceGap: Bool,\n        simulatorRoutePointCount: Int,\n''',
+                  '''        simulatorStartsWithSpeedEvidenceGap: Bool,\n        simulatorDrivesDashboardStress: Bool,\n        simulatorRoutePointCount: Int,\n'''
+              ),
+              (
+                  '''        self.simulatorStartsWithSpeedEvidenceGap = simulatorStartsWithSpeedEvidenceGap\n        self.simulatorRoutePointCount = simulatorRoutePointCount\n''',
+                  '''        self.simulatorStartsWithSpeedEvidenceGap = simulatorStartsWithSpeedEvidenceGap\n        self.simulatorDrivesDashboardStress = simulatorDrivesDashboardStress\n        self.simulatorRoutePointCount = simulatorRoutePointCount\n'''
+              ),
+              (
+                  '''    static let simulationSpeedEvidenceGapEnvironmentKey = "NEMBRA_SIMULATION_SPEED_EVIDENCE_GAP"\n    static let simulationRoutePointCountEnvironmentKey = "NEMBRA_SIMULATION_ROUTE_POINT_COUNT"\n''',
+                  '''    static let simulationSpeedEvidenceGapEnvironmentKey = "NEMBRA_SIMULATION_SPEED_EVIDENCE_GAP"\n    static let simulationDashboardStressEnvironmentKey = "NEMBRA_SIMULATION_DASHBOARD_STRESS"\n    static let simulationRoutePointCountEnvironmentKey = "NEMBRA_SIMULATION_ROUTE_POINT_COUNT"\n'''
+              ),
+              (
+                  '''        let simulatorStartsWithSpeedEvidenceGap = bootstrap.scenario == .connectedStopped\n            && environment[simulationSpeedEvidenceGapEnvironmentKey] == "1"\n        let simulatorRoutePointCount = simulatorAutoCompletesRide\n''',
+                  '''        let simulatorStartsWithSpeedEvidenceGap = bootstrap.scenario == .connectedStopped\n            && environment[simulationSpeedEvidenceGapEnvironmentKey] == "1"\n        let simulatorDrivesDashboardStress = bootstrap.scenario == .riding\n            && environment[simulationDashboardStressEnvironmentKey] == "1"\n        let simulatorRoutePointCount = simulatorAutoCompletesRide\n'''
+              ),
+              (
+                  '''            simulatorAutoCompletesRide: simulatorAutoCompletesRide,\n            simulatorStartsWithSpeedEvidenceGap: simulatorStartsWithSpeedEvidenceGap,\n            simulatorRoutePointCount: simulatorRoutePointCount,\n''',
+                  '''            simulatorAutoCompletesRide: simulatorAutoCompletesRide,\n            simulatorStartsWithSpeedEvidenceGap: simulatorStartsWithSpeedEvidenceGap,\n            simulatorDrivesDashboardStress: simulatorDrivesDashboardStress,\n            simulatorRoutePointCount: simulatorRoutePointCount,\n'''
+              ),
+          ]
+
+          for old, new in replacements:
+              if source.count(old) != 1:
+                  raise SystemExit(f"expected exactly one AppBootstrap seam: {old[:80]!r}")
+              source = source.replace(old, new)
+
+          guard = '''        guard simulationScenario == .riding,\n              let simulatorService else { return }\n\n        simulatorRideDriverTask = Task {\n'''
+          stress = '''        guard simulationScenario == .riding,\n              let simulatorService else { return }\n\n        // Simulator-only sustained Dashboard stress fixture. This cadence is an\n        // intentionally synthetic QA load and makes no claim about AOVOPRO ES80\n        // packet cadence. `elapsedSeconds: 0` mints fresh Simulator-owned source\n        // receipts through the normal source boundary while adding zero synthetic\n        // trip/odometer distance. The detached 10 Hz driver stays off the app\n        // MainActor measured by XCTest and remains alive for the fixture lifetime.\n        // Render-clock frames remain presentation-only and never become telemetry.\n        if simulatorDrivesDashboardStress {\n            let speedsKilometersPerHour: [Double] = [\n                8, 16, 22, 12, 19, 6, 24, 14, 18, 10, 21\n            ]\n            simulatorRideDriverTask = Task.detached(priority: .userInitiated) {\n                try? await Task.sleep(nanoseconds: 500_000_000)\n                guard !Task.isCancelled else { return }\n\n                var index = 0\n                while !Task.isCancelled {\n                    await simulatorService.simulateRide(\n                        speedKilometersPerHour: speedsKilometersPerHour[index],\n                        elapsedSeconds: 0\n                    )\n                    index = (index + 1) % speedsKilometersPerHour.count\n                    try? await Task.sleep(nanoseconds: 100_000_000)\n                }\n            }\n            return\n        }\n\n        simulatorRideDriverTask = Task {\n'''
+          if source.count(guard) != 1:
+              raise SystemExit("expected exactly one riding-driver insertion seam")
+          source = source.replace(guard, stress)
+          path.write_text(source)
+
+      - name: Guard narrow V17 recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          mapfile -t changed < <(git diff --name-only | LC_ALL=C sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" = "3"
+          test "${changed[0]}" = ".github/workflows/dashboard-sustained-performance.yml"
+          test "${changed[1]}" = "NembraApp/App/AppBootstrap.swift"
+          test "${changed[2]}" = "scripts/ci/dashboard_sustained_performance_xcuitest.swift"
+          grep -F 'DASHBOARD_PRODUCT_PARENT_SHA: 51baa116c36c873156523aa47313da52a526e519' .github/workflows/dashboard-sustained-performance.yml >/dev/null
+          grep -F 'github.event.pull_request.draft == false' .github/workflows/dashboard-sustained-performance.yml >/dev/null
+          grep -F 'ready_for_review' .github/workflows/dashboard-sustained-performance.yml >/dev/null
+          grep -F 'NEMBRA_SIMULATION_DASHBOARD_STRESS' NembraApp/App/AppBootstrap.swift >/dev/null
+          grep -F 'while !Task.isCancelled' NembraApp/App/AppBootstrap.swift >/dev/null
+          grep -F 'elapsedSeconds: 0' NembraApp/App/AppBootstrap.swift >/dev/null
+          grep -F 'freshSemanticValue(identifier: "dashboard.energy-rail"' scripts/ci/dashboard_sustained_performance_xcuitest.swift >/dev/null
+          grep -F 'XCTHitchMetric(application: app)' scripts/ci/dashboard_sustained_performance_xcuitest.swift >/dev/null
+          grep -F 'XCTCPUMetric(application: app)' scripts/ci/dashboard_sustained_performance_xcuitest.swift >/dev/null
+          grep -F 'XCTMemoryMetric(application: app)' scripts/ci/dashboard_sustained_performance_xcuitest.swift >/dev/null
+
+      - name: Publish clean recovery commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/dashboard-v17-sustained-performance-materializer.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/dashboard-sustained-performance.yml NembraApp/App/AppBootstrap.swift scripts/ci/dashboard_sustained_performance_xcuitest.swift .github/workflows/dashboard-v17-sustained-performance-materializer.yml
+          git diff --cached --check
+          test "$(git diff --cached --name-only | wc -l | tr -d ' ')" = "4"
+          git commit -m "Dashboard: recover sustained performance harness on V17 main"
+          git push origin HEAD:recovery/v17-dashboard-sustained-performance-current-main-gpt56
