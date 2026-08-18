@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 18,
+    "classifiedPRTotal": 19,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1250,7 +1250,7 @@
         "lane": "capture-final-go-authority",
         "pr": 3634,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.222,
+        "similarity": 0.38,
         "title": "[Capture P0][V17][RED TEAM] Probe real sealed base loader on f0cea"
       },
       "3636": {
@@ -1263,6 +1263,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.212,
         "title": "[Capture P0][V17][COMPOSE] Add accepted Final-GO authority to field carrier"
+      },
+      "3638": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-final-go-authority",
+        "pr": 3638,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.365,
+        "title": "[Capture P0][V17][VALIDATION RECOVERY] Run real Final-GO base-loader classifier"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1295,7 +1306,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T11:15:24Z",
+    "liveRefreshAt": "2026-08-18T11:16:21Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5080,10 +5091,10 @@
       "userValue": 7
     }
   },
-  "revision": 1089,
+  "revision": 1090,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T11:15:25Z",
+  "updatedAt": "2026-08-18T11:16:22Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5159,7 +5170,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T11:15:24Z",
+      "updatedAt": "2026-08-18T11:16:21Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
