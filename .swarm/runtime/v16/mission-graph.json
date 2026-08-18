@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 8,
+    "classifiedPRTotal": 9,
     "classifiedPRs": {
       "3649": {
         "classification": "requires-review",
@@ -1096,7 +1096,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3652,
         "recommendedAction": "independent-review",
-        "similarity": 0.123,
+        "similarity": 0.173,
         "title": "[Capture P0][V17][RECOVERY] Re-earn post-merge exact-head matrix"
       },
       "3655": {
@@ -1153,6 +1153,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.438,
         "title": "[Capture P0][V17][HARDENING] Close current-gate TODAY retirement contradiction"
+      },
+      "3660": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "5cbbeb77e86b7eeb19e3349af3a85bba9b49370f",
+        "lane": "capture-signed-install-custody",
+        "pr": 3660,
+        "recommendedAction": "independent-review",
+        "similarity": 0.192,
+        "title": "[Capture P0][V17][HARDENING] Bind authenticated Final GO to immutable head"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1186,7 +1197,7 @@
       "live-pr-3082",
       "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T22:18:18Z",
+    "liveRefreshAt": "2026-08-18T22:18:32Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [],
@@ -4967,10 +4978,10 @@
       "userValue": 7
     }
   },
-  "revision": 1190,
+  "revision": 1191,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T22:18:18Z",
+  "updatedAt": "2026-08-18T22:18:32Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
