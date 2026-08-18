@@ -1551,14 +1551,14 @@
         "title": "[Capture P0][V17][RECOVERY] Apply retained-handle ACL coherence to current carrier"
       },
       "3597": {
-        "classification": "requires-review",
+        "classification": "validation",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "9f7413520d1864d40aff41192088857f49cbc72e",
+        "headSHA": "",
         "lane": "capture-private-uid-read-lease-current",
         "pr": 3597,
-        "recommendedAction": "independent-review",
-        "similarity": 0.122,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.128,
         "title": "[Capture P0][V17][TEST] Exercise native transport in real UID witness"
       },
       "3598": {
@@ -1603,7 +1603,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T03:02:41Z",
+    "liveRefreshAt": "2026-08-18T03:02:59Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5388,10 +5388,10 @@
       "userValue": 7
     }
   },
-  "revision": 984,
+  "revision": 985,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T03:02:43Z",
+  "updatedAt": "2026-08-18T03:03:01Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5467,7 +5467,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T03:02:41Z",
+      "updatedAt": "2026-08-18T03:02:59Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
