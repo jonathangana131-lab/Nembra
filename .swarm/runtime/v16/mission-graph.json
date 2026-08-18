@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 11,
+    "classifiedPRTotal": 13,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1085,7 +1085,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.096,
+        "similarity": 0.105,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3321": {
@@ -1162,7 +1162,7 @@
         "lane": "dashboard-cockpit-product-closure",
         "pr": 3497,
         "recommendedAction": "independent-review",
-        "similarity": 0.062,
+        "similarity": 0.095,
         "title": "[Dashboard V17][RECOVERY] Ship signature battery / learned-range instrument"
       },
       "3625": {
@@ -1173,7 +1173,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3625,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.202,
+        "similarity": 0.22,
         "title": "[Capture P0][V17][INTEGRATION] Promote accepted-root compiler carrier"
       },
       "3643": {
@@ -1184,8 +1184,30 @@
         "lane": "capture-signed-install-custody",
         "pr": 3643,
         "recommendedAction": "independent-review",
-        "similarity": 0.216,
+        "similarity": 0.331,
         "title": "[Capture P0][V17][FINAL] Exact-head composed Capture authority carrier"
+      },
+      "3645": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3645,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.279,
+        "title": "[Capture P0][V17][VALIDATION] Full 48-path final exact-head matrix"
+      },
+      "3646": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3646,
+        "recommendedAction": "independent-review",
+        "similarity": 0.319,
+        "title": "[Capture P0][V17][FINAL COMPOSE] Field carrier + sealed Final-GO authority"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1218,9 +1240,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T11:28:30Z",
+    "liveRefreshAt": "2026-08-18T11:30:25Z",
     "liveRefreshDuplicatesSuppressed": [
-      3321
+      3645
     ],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5003,10 +5025,10 @@
       "userValue": 7
     }
   },
-  "revision": 1115,
+  "revision": 1116,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T11:28:30Z",
+  "updatedAt": "2026-08-18T11:30:25Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5082,7 +5104,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T11:28:30Z",
+      "updatedAt": "2026-08-18T11:30:25Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
