@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 from pathlib import Path
 import subprocess
 import tempfile
@@ -16,8 +17,8 @@ assert spec and spec.loader
 control = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(control)
 
-DIGEST = "a" * 64
-OTHER_DIGEST = "b" * 64
+DIGEST = hashlib.sha256((("a" * 64) + "\n").encode()).hexdigest()
+OTHER_DIGEST = hashlib.sha256((("b" * 64) + "\n").encode()).hexdigest()
 
 
 def git(root: Path, *args: str) -> str:
@@ -30,17 +31,20 @@ def git(root: Path, *args: str) -> str:
     ).stdout.strip()
 
 
-def write_candidate(root: Path, *, helper_digest: str = DIGEST, valid_consumer: bool = True) -> str:
+def write_candidate(root: Path, *, helper_seed: str = "a" * 64, valid_consumer: bool = True) -> str:
     helper = root / control.SNAPSHOT_HELPER_PATH
     helper.parent.mkdir(parents=True, exist_ok=True)
     helper.write_text(
         "from pathlib import Path\n"
+        "import hashlib\n"
         "SCHEMA_VERSION = 1\n"
         "GENERATED_SUBJECTS = (\n"
         "    Path('Podfile.lock'), Path('NembraCapture.xcworkspace'), Path('Pods'),\n"
         "    Path('LocalSecrets/TuyaSDK'), Path('LocalSecrets/TuyaRuntime'),\n"
         ")\n"
-        f"def generated_manifest_sha256(root, source): return '{helper_digest}'\n",
+        f"def canonical_generated_manifest(root, source): return b'{helper_seed}\\n'\n"
+        "def generated_manifest_sha256(root, source): "
+        "return hashlib.sha256(canonical_generated_manifest(root, source)).hexdigest()\n",
         encoding="utf-8",
     )
 
@@ -153,7 +157,7 @@ class CurrentManifestConsumerControlTests(unittest.TestCase):
     def test_candidate_helper_semantic_drift_fails_before_parent_side_effect(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            source = write_candidate(root, helper_digest=OTHER_DIGEST)
+            source = write_candidate(root, helper_seed="b" * 64)
             parent = FakeParent(legacy_digest=DIGEST)
             with self.assertRaises(control.CurrentManifestConsumerFinalGoError):
                 control.build(candidate_repo=root, source=source, parent_module=parent)
