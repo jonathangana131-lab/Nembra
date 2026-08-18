@@ -75,7 +75,9 @@ class CapturePrivateBuildUIDReadLeaseTests(unittest.TestCase):
             self.assertNotEqual(as_build(read_code, str(payload)).returncode, 0)
             self.assertNotEqual(as_build(read_code, str(alias)).returncode, 0)
 
-            lease = orchestrator._PrivateReadLease((build_root,), repo)
+            lease = orchestrator._PrivateReadLease(
+                (build_root,), repo, use_native_darwin_acl=True
+            )
             lease.grant(name)
             direct = as_build(read_code, str(payload))
             linked = as_build(read_code, str(alias))
