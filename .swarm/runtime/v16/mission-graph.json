@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 24,
+    "classifiedPRTotal": 25,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1239,7 +1239,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3608,
         "recommendedAction": "independent-review",
-        "similarity": 0.252,
+        "similarity": 0.307,
         "title": "[Capture P0][V17][RECOVERY] Fix strict-root materializer scope accounting"
       },
       "3609": {
@@ -1294,7 +1294,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3615,
         "recommendedAction": "independent-review",
-        "similarity": 0.326,
+        "similarity": 0.384,
         "title": "[Capture P0][V17][RECOVERY] Retire complete strict-root authoring set"
       },
       "3617": {
@@ -1329,6 +1329,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.372,
         "title": "[Capture P0][V17][RED TEAM] Prove base-module review authority bypass"
+      },
+      "3621": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3621,
+        "recommendedAction": "independent-review",
+        "similarity": 0.362,
+        "title": "[Capture P0][V17][RECOVERY] Re-arm strict-root materializer liveness"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1361,7 +1372,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T11:04:17Z",
+    "liveRefreshAt": "2026-08-18T11:04:36Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5146,10 +5157,10 @@
       "userValue": 7
     }
   },
-  "revision": 1058,
+  "revision": 1059,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T11:04:18Z",
+  "updatedAt": "2026-08-18T11:04:37Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5225,7 +5236,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T11:04:17Z",
+      "updatedAt": "2026-08-18T11:04:36Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
