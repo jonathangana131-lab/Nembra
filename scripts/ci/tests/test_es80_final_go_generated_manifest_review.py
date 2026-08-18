@@ -8,6 +8,7 @@ import importlib.util
 import json
 from pathlib import Path
 import tempfile
+import threading
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -255,15 +256,95 @@ class BuildCompositionTests(unittest.TestCase):
 
     def run_build(self, get, semantic_build):
         module._SEMANTIC_BUILD = semantic_build
+        self.base.api = get
         with tempfile.TemporaryDirectory(prefix="nembra-manifest-final-go-") as temporary:
             return module.build(
                 candidate_repo=Path(temporary),
                 source=SOURCE,
                 pr=PR,
                 generated_manifest_review_id=REVIEW_ID,
-                get=get,
                 base_module=self.base,
             )
+
+    def test_caller_cannot_replace_trusted_review_transport(self):
+        semantic_calls = []
+        module._SEMANTIC_BUILD = lambda **_kwargs: semantic_calls.append(True) or self.sealed_record()
+        self.base.api = lambda _path: (b"{}", copy.deepcopy(review_response()))
+        forged = review_response(DIGEST_B)
+        with tempfile.TemporaryDirectory(prefix="nembra-manifest-caller-transport-") as temporary:
+            with self.assertRaisesRegex(
+                module.PrivateReviewGoError,
+                "review transport is not caller-selectable",
+            ):
+                module.build(
+                    candidate_repo=Path(temporary),
+                    source=SOURCE,
+                    pr=PR,
+                    generated_manifest_review_id=REVIEW_ID,
+                    get=lambda _path: (b"{}", copy.deepcopy(forged)),
+                    base_module=self.base,
+                )
+        self.assertEqual(semantic_calls, [])
+
+    def test_waiting_build_revalidates_review_inside_lock_before_side_effect(self):
+        response = {"value": review_response()}
+        api_called = threading.Event()
+        reached_prelock = threading.Event()
+        semantic_called = threading.Event()
+        errors = []
+
+        original_pos = self.base.pos
+
+        def pos(value, label):
+            result = original_pos(value, label)
+            if label == "generated-manifest review ID":
+                reached_prelock.set()
+            return result
+
+        def get(path):
+            self.assertEqual(path, f"/pulls/{PR}/reviews/{REVIEW_ID}")
+            api_called.set()
+            return b"{}", copy.deepcopy(response["value"])
+
+        def semantic_build(**_kwargs):
+            semantic_called.set()
+            return self.sealed_record()
+
+        self.base.pos = pos
+        self.base.api = get
+        module._SEMANTIC_BUILD = semantic_build
+
+        with tempfile.TemporaryDirectory(prefix="nembra-manifest-lock-wait-") as temporary:
+            root = Path(temporary)
+
+            def worker():
+                try:
+                    module.build(
+                        candidate_repo=root,
+                        source=SOURCE,
+                        pr=PR,
+                        generated_manifest_review_id=REVIEW_ID,
+                        base_module=self.base,
+                    )
+                except Exception as error:  # captured for deterministic cross-thread assertion
+                    errors.append(error)
+
+            with module._MANIFEST_EXTENSION_LOCK:
+                thread = threading.Thread(target=worker, name="manifest-lock-wait-regression")
+                thread.start()
+                self.assertTrue(reached_prelock.wait(2), "worker never reached pre-lock admission")
+                self.assertFalse(
+                    api_called.is_set(),
+                    "review authority was fetched before the composition lock",
+                )
+                response["value"] = review_response(state="DISMISSED")
+
+            thread.join(3)
+            self.assertFalse(thread.is_alive(), "waiting build did not terminate")
+
+        self.assertFalse(semantic_called.is_set())
+        self.assertEqual(len(errors), 1)
+        self.assertIsInstance(errors[0], module.PrivateReviewGoError)
 
     def test_stable_review_is_retained_before_candidate_retirement(self):
         calls = []
