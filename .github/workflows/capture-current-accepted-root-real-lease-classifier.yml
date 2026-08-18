@@ -13,7 +13,10 @@ permissions:
 
 jobs:
   classify:
-    if: github.head_ref == 'integration/v17-capture-current-accepted-root-compiler-gpt56sol-20260815'
+    if: >-
+      github.head_ref == 'integration/v17-capture-current-accepted-root-compiler-gpt56sol-20260815' ||
+      github.head_ref == 'integration/v17-capture-final-current-carrier-gpt56sol-20260818' ||
+      github.head_ref == 'assist/v17-capture-final-acl-matrix-repair-gpt56sol-20260818'
     runs-on: xcode-27
     timeout-minutes: 10
     steps:
