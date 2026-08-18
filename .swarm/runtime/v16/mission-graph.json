@@ -1173,7 +1173,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3602,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.297,
+        "similarity": 0.293,
         "title": "[Capture P0][V17][RED TEAM] Prove field installer bypasses strict accepted root"
       },
       "3603": {
@@ -1217,7 +1217,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3608,
         "recommendedAction": "independent-review",
-        "similarity": 0.186,
+        "similarity": 0.181,
         "title": "[Capture P0][V17][RECOVERY] Fix strict-root materializer scope accounting"
       },
       "3610": {
@@ -1239,7 +1239,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3625,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.343,
+        "similarity": 0.284,
         "title": "[Capture P0][V17][INTEGRATION] Promote accepted-root compiler carrier"
       },
       "3634": {
@@ -1253,16 +1253,16 @@
         "similarity": 0.222,
         "title": "[Capture P0][V17][RED TEAM] Probe real sealed base loader on f0cea"
       },
-      "3635": {
-        "classification": "canonical-candidate",
+      "3636": {
+        "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3635,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.334,
-        "title": "[Capture P0][V17][INTEGRATION] Compose strict-root field consumer onto compiler carrier"
+        "lane": "",
+        "pr": 3636,
+        "recommendedAction": "independent-review",
+        "similarity": 0.212,
+        "title": "[Capture P0][V17][COMPOSE] Add accepted Final-GO authority to field carrier"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1295,7 +1295,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T11:14:18Z",
+    "liveRefreshAt": "2026-08-18T11:15:05Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5080,10 +5080,10 @@
       "userValue": 7
     }
   },
-  "revision": 1087,
+  "revision": 1088,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T11:14:19Z",
+  "updatedAt": "2026-08-18T11:15:06Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5159,7 +5159,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T11:14:18Z",
+      "updatedAt": "2026-08-18T11:15:05Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
