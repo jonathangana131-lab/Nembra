@@ -71,6 +71,10 @@ class FakeBase:
             raise MODULE.PrivateReviewGoError(f"{label} invalid")
         return value
 
+    @staticmethod
+    def api(_path: str):
+        return b"{}", {}
+
 
 @contextlib.contextmanager
 def noop(*_args, **_kwargs):
@@ -103,7 +107,6 @@ class ManifestAwareRetirementMigrationTests(unittest.TestCase):
             source=SOURCE,
             pr=PR,
             generated_manifest_review_id=REVIEW_ID,
-            get=lambda _path: (b"{}", {}),
             base_module=base,
         )
 
