@@ -3,7 +3,7 @@ name: Capture Final GO Build Input Manifest Control
 on:
   push:
     branches:
-      - control/v17-final-go-build-input-manifest-review-sol-20260814
+      - repair/v17-capture-final-go-current-manifest-issuer-gpt56sol-20260817
     paths:
       - scripts/ci/es80_authenticated_stationary_build_input_manifest_final_go.py
       - scripts/ci/capture_accepted_build_input_snapshot.py
@@ -25,13 +25,13 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  EXACT_FINAL_GO_PARENT: 01217c20215c31c7380405dc1e2bd1330136894e
+  EXACT_FINAL_GO_PARENT: df7c68e23047bdbfde12f23372c05be6a4bbf85e
   EXACT_PARENT_MODULE_BLOB: 63567c6674003fc4ddd1caabd398060818beb938
-  EXACT_MANIFEST_HELPER_BLOB: b29cf5a7f344710515d4adec80b068c237b44db3
+  EXACT_MANIFEST_HELPER_BLOB: 317d36e2d95b2d904770908a491d17bb057ca79c
 
 jobs:
   control:
-    name: Bind owner-reviewed generated/private build inputs
+    name: Rebind owner-reviewed manifest issuer to hardened helper
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
@@ -41,7 +41,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Bind exact accepted Final-GO parent and four-path child
+      - name: Bind exact accepted V17 issuer parent and three-path successor
         shell: bash
         run: |
           set -euo pipefail
@@ -57,8 +57,7 @@ jobs:
           expected="$(printf '%s\n' \
             '.github/workflows/capture-final-go-build-input-manifest-control.yml' \
             'scripts/ci/capture_accepted_build_input_snapshot.py' \
-            'scripts/ci/es80_authenticated_stationary_build_input_manifest_final_go.py' \
-            'scripts/ci/tests/test_es80_authenticated_stationary_build_input_manifest_final_go.py' | LC_ALL=C sort)"
+            'scripts/ci/es80_authenticated_stationary_build_input_manifest_final_go.py' | LC_ALL=C sort)"
           test "$actual" = "$expected"
           test "$(git rev-parse "$EXACT_FINAL_GO_PARENT:scripts/ci/es80_authenticated_stationary_private_review_final_go.py")" = "$EXACT_PARENT_MODULE_BLOB"
           test "$(git rev-parse HEAD:scripts/ci/capture_accepted_build_input_snapshot.py)" = "$EXACT_MANIFEST_HELPER_BLOB"
@@ -89,12 +88,13 @@ jobs:
           set -euo pipefail
           control=scripts/ci/es80_authenticated_stationary_build_input_manifest_final_go.py
           grep -Fq 'NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256' "$control"
+          grep -Fq 'MANIFEST_HELPER_BLOB = "317d36e2d95b2d904770908a491d17bb057ca79c"' "$control"
           grep -Fq 'installerConsumerIntegrated": False' "$control"
           grep -Fq 'physicalAuthorityCreated": False' "$control"
           test -z "$(git diff --name-only "$EXACT_FINAL_GO_PARENT"...HEAD -- scripts/field NembraApp)"
           printf '%s\n' \
             'ownerReviewedGeneratedInputManifest=true' \
-            'exactManifestHelperGitBlob=true' \
+            'hardenedManifestHelperGitBlob=true' \
             'closedInstallerEnvironmentIssuer=true' \
             'installerConsumerIntegrated=false' \
             'sourceSnapshotIntegrated=false' \
