@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 46,
+    "classifiedPRTotal": 43,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1374,17 +1374,6 @@
         "similarity": 0.152,
         "title": "[Capture P0][RECOVERY] Execute full numeric-principal materializer without stale rewrite"
       },
-      "3457": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-read-lease",
-        "pr": 3457,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.276,
-        "title": "[Capture P0][RED TEAM] Re-anchor post-validation symlink retarget on current product"
-      },
       "3467": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1393,7 +1382,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3467,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.267,
+        "similarity": 0.261,
         "title": "[Capture P0][REPAIR] Fence held symlinks at ACL authority transition"
       },
       "3476": {
@@ -1415,7 +1404,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3492,
         "recommendedAction": "independent-review",
-        "similarity": 0.287,
+        "similarity": 0.264,
         "title": "[Capture P0][CI] Anchor private UID lease fixtures under real Darwin temp"
       },
       "3497": {
@@ -1451,17 +1440,6 @@
         "similarity": 0.277,
         "title": "[Capture P0][V17][VALIDATION] Classify Darwin ACL component-search requirements"
       },
-      "3550": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-current-accepted-root-acl-transport",
-        "pr": 3550,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.36,
-        "title": "[Capture P0][V17][VALIDATION] Prove seeded ACL restore on held Darwin fd"
-      },
       "3553": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1481,19 +1459,8 @@
         "lane": "capture-current-accepted-root-acl-transport",
         "pr": 3554,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.332,
+        "similarity": 0.195,
         "title": "[Capture P0][V17][VALIDATION] Reify held-fd absent ACL lease helper"
-      },
-      "3581": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-current-accepted-root-acl-transport",
-        "pr": 3581,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.298,
-        "title": "[Capture P0][V17][RED TEAM] Native ACL baseline coherence exact-head classifier"
       },
       "3595": {
         "classification": "requires-review",
@@ -1603,7 +1570,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T03:22:45Z",
+    "liveRefreshAt": "2026-08-18T03:23:04Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5388,10 +5355,10 @@
       "userValue": 7
     }
   },
-  "revision": 1008,
+  "revision": 1009,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T03:22:46Z",
+  "updatedAt": "2026-08-18T03:23:05Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5467,7 +5434,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T03:22:45Z",
+      "updatedAt": "2026-08-18T03:23:04Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
