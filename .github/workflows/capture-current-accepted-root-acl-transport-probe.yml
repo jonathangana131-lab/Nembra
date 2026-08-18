@@ -25,7 +25,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Bind exact two-workflow assist repair scope
+      - name: Bind exact four-workflow assist repair scope
         if: github.head_ref == 'assist/v17-capture-final-acl-matrix-repair-gpt56sol-20260818'
         shell: bash
         env:
@@ -38,6 +38,8 @@ jobs:
           printf '%s\n' \
             .github/workflows/capture-current-accepted-root-acl-transport-probe.yml \
             .github/workflows/capture-current-accepted-root-real-lease-classifier.yml \
+            .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml \
+            .github/workflows/capture-final-go-retirement-dispatch-custody.yml \
             | LC_ALL=C sort > "$RUNNER_TEMP/expected"
           diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
           git diff --check "$REPAIR_PARENT"...HEAD
