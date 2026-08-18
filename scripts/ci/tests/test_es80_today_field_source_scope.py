@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
-import subprocess
 import unittest
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -14,62 +13,37 @@ class FieldSourceScopeTests(unittest.TestCase):
     def handoff(self) -> str:
         return HANDOFF_PATH.read_text(encoding="utf-8")
 
-    def section_three(self) -> str:
+    def test_retired_handoff_has_no_frozen_field_source_command_sequence(self):
         handoff = self.handoff()
-        return handoff.split(
+        stale_source_markers = (
             "## 3. Set the signing inputs without changing the source subject",
-            1,
-        )[1].split(
             "## 3A. Run the accepted non-authorizing pre-signing preflight",
-            1,
-        )[0]
-
-    def test_section_three_scopes_sha_and_cleanliness_to_frozen_field_source(self):
-        section = self.section_three()
-        self.assertIn(
             'test "$(/usr/bin/git -C "$FIELD_SOURCE" rev-parse --verify HEAD^{commit})" = "$SOURCE_SHA"',
-            section,
-        )
-        self.assertIn(
             'test -z "$(/usr/bin/git -C "$FIELD_SOURCE" status --porcelain=v1 --untracked-files=all)"',
-            section,
+            'cd "$TOOL_REPO"',
+            '/usr/bin/git -C "$FIELD_SOURCE" rev-parse --verify HEAD^{commit}',
         )
 
-    def test_section_three_never_uses_current_working_directory_as_source_authority(self):
-        section = self.section_three()
-        self.assertNotIn(
-            'test "$(/usr/bin/git rev-parse --verify HEAD^{commit})" = "$SOURCE_SHA"',
-            section,
-        )
-        self.assertNotIn(
-            'test -z "$(/usr/bin/git status --porcelain=v1 --untracked-files=all)"',
-            section,
-        )
-        self.assertIn("current working directory must never decide which source is admitted for signing", section)
+        self.assertIn("RETIRED / NON-AUTHORIZING", handoff)
+        self.assertIn("ES80-AUTHENTICATED-STATIONARY-v1", handoff)
+        self.assertIn("fresh GitHub state", handoff)
+        for marker in stale_source_markers:
+            with self.subTest(marker=marker):
+                self.assertNotIn(marker, handoff)
 
-    def test_helper_materialization_precedes_explicit_field_source_checks(self):
+    def test_retired_handoff_does_not_expose_an_alternate_source_authority_recipe(self):
         handoff = self.handoff()
-        helper_cwd = 'cd "$TOOL_REPO"'
-        field_sha = '/usr/bin/git -C "$FIELD_SOURCE" rev-parse --verify HEAD^{commit}'
-        self.assertIn(helper_cwd, handoff)
-        self.assertIn(field_sha, handoff)
-        self.assertLess(handoff.index(helper_cwd), handoff.index(field_sha))
+        self.assertNotIn("FIELD_SOURCE=", handoff)
+        self.assertNotIn("SOURCE_SHA=", handoff)
+        self.assertNotIn("git clone", handoff)
+        self.assertNotIn("git checkout", handoff)
+        self.assertIn("old exact-head green run", handoff)
+        self.assertIn("cannot substitute for the exact current candidate", handoff)
 
-    def test_all_bash_blocks_remain_syntactically_valid(self):
+    def test_retired_handoff_contains_no_executable_bash_blocks(self):
         handoff = self.handoff()
         blocks = re.findall(r"```bash\n(.*?)```", handoff, flags=re.DOTALL)
-        self.assertGreaterEqual(len(blocks), 5)
-        for index, block in enumerate(blocks):
-            with self.subTest(block=index):
-                completed = subprocess.run(
-                    ("/bin/bash", "-n"),
-                    input=block,
-                    text=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    check=False,
-                )
-                self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(blocks, [])
 
 
 if __name__ == "__main__":
