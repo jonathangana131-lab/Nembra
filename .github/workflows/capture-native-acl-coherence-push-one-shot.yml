@@ -1,0 +1,87 @@
+name: Capture native ACL coherence push one-shot
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-seeded-acl-baseline-coherence-gpt56sol-20260817
+    paths:
+      - .github/workflows/capture-native-acl-coherence-push-one-shot.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Bind exact authoring lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='ec91775a613f3504723cca390cfa108e3e076143'
+          test "$GITHUB_REF_NAME" = 'repair/v17-capture-seeded-acl-baseline-coherence-gpt56sol-20260817'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          /usr/bin/git merge-base --is-ancestor "$parent" HEAD
+          changed="$(/usr/bin/git diff --name-only "$parent"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-native-acl-coherence-push-one-shot.yml \
+            .github/workflows/capture-seeded-acl-baseline-coherence-one-shot.yml \
+            scripts/ci/_materialize_native_acl_coherence_one_shot.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          /usr/bin/git diff --check "$parent"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize reviewed product repair
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/_materialize_native_acl_coherence_one_shot.py
+          /usr/bin/python3 -B -m py_compile \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_root_build_composition.py
+
+      - name: Prove real Darwin seeded baseline behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          field_user="$(/usr/bin/id -un)"
+          /usr/bin/sudo -n env \
+            NEMBRA_TEST_FIELD_USER="$field_user" \
+            PYTHONDONTWRITEBYTECODE=1 \
+            /usr/bin/python3 -B -I \
+            scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py \
+            --field-user "$field_user"
+
+      - name: Publish tested permanent ingredient
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-native-acl-coherence-push-one-shot.yml
+          rm .github/workflows/capture-seeded-acl-baseline-coherence-one-shot.yml
+          rm scripts/ci/_materialize_native_acl_coherence_one_shot.py
+          changed="$(git status --short | awk '{print $2}' | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-native-acl-coherence-push-one-shot.yml \
+            .github/workflows/capture-seeded-acl-baseline-coherence-one-shot.yml \
+            scripts/ci/_materialize_native_acl_coherence_one_shot.py \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Capture: require native ACL baseline coherence'
+          materialized="$(git rev-parse HEAD)"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git fetch origin "$GITHUB_REF_NAME"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          git push origin HEAD:"$GITHUB_REF_NAME"
+          echo "NEMBRA_NATIVE_ACL_COHERENCE exactHead=$materialized testedOnDarwin=true physicalAuthorityCreated=false"
