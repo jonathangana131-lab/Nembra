@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 47,
+    "classifiedPRTotal": 48,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1074,7 +1074,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3142,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.18,
+        "similarity": 0.187,
         "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
       },
       "3316": {
@@ -1582,6 +1582,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.418,
         "title": "[Capture P0][V17][VALIDATION] Prove seeded ACL restore on continuously held fd"
+      },
+      "3556": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "105627736bd17474e53707c6127cb54436605587",
+        "lane": "capture-signed-install-custody",
+        "pr": 3556,
+        "recommendedAction": "independent-review",
+        "similarity": 0.235,
+        "title": "[Capture P0][V17][RECOVERY] Retire completed native ACL one-shot"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1614,7 +1625,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T02:00:22Z",
+    "liveRefreshAt": "2026-08-18T02:32:03Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5399,10 +5410,10 @@
       "userValue": 7
     }
   },
-  "revision": 905,
+  "revision": 906,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T02:00:24Z",
+  "updatedAt": "2026-08-18T02:32:05Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5478,7 +5489,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T02:00:22Z",
+      "updatedAt": "2026-08-18T02:32:03Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
