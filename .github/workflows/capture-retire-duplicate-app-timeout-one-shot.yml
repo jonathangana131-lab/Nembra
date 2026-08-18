@@ -6,6 +6,11 @@ on:
       - capture/one-time-ble-dump-gpt56
     paths:
       - .github/workflows/capture-retire-duplicate-app-timeout-one-shot.yml
+  pull_request:
+    branches:
+      - capture/one-time-ble-dump-gpt56
+    paths:
+      - .github/workflows/capture-retire-duplicate-app-timeout-one-shot.yml
 
 permissions:
   contents: write
@@ -124,8 +129,6 @@ struct TuyaApplicationTimeoutPresentationRaceSourceTests {
         run: |
           set -euo pipefail
           changed="$(git status --porcelain=v1 | awk '{print $2}' | sort | tr '\n' ' ' | sed 's/ $//')"
-          # The one-shot workflow is already committed at checkout, so before the
-          # retirement step the working-tree delta must be exactly the two product/test paths.
           expected="NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationTimeoutPresentationRaceSourceTests.swift"
           printf '%s\n' "$changed"
           test "$changed" = "$expected"
@@ -157,4 +160,4 @@ struct TuyaApplicationTimeoutPresentationRaceSourceTests {
 
 # Re-armed after verifying the duplicate app-owned timeout still exists on the exact branch head.
 # macOS /bin/bash is 3.2, so exact-delta admission deliberately avoids mapfile/readarray.
-# PR-trigger fallback was intentionally retired after proving branch-local workflow registration was the blocker.
+# Same-repo pull_request fallback keeps execution anchored to this base branch if push registration is inert.
