@@ -1,4 +1,4 @@
-# V17 successor recovery re-arm: preserve reviewed payload, fix liveness only.
+# V17 successor recovery base: preserve reviewed payload and execute only on an exact child.
 name: Capture field strict-root wiring recovery
 
 on:
@@ -94,10 +94,15 @@ jobs:
 
       - name: Publish clean product repair and self-delete authoring files
         shell: bash
+        env:
+          TARGET_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
-          branch='recovery/v17-capture-field-strict-root-wiring-liveness-gpt56sol-20260818-0350'
-          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          branch="$TARGET_BRANCH"
+          expected_head="$EXPECTED_HEAD"
+          test -n "$branch"
+          test -n "$expected_head"
           git fetch origin "$branch"
           test "$(git rev-parse FETCH_HEAD)" = "$expected_head"
           git config user.name 'github-actions[bot]'
