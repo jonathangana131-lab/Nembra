@@ -10,14 +10,11 @@ permissions:
 
 jobs:
   rearm-target:
-    if: >-
-      github.base_ref == 'repair/v17-capture-native-acl-baseline-coherence-sol-20260817' &&
-      github.head_ref == 'repair/v17-capture-native-acl-baseline-coherence-trigger-sol-20260817'
+    if: github.base_ref == 'repair/v17-capture-native-acl-baseline-coherence-sol-20260817'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 0
 
       - name: Re-arm existing materializer and retire bridge
@@ -27,9 +24,10 @@ jobs:
         run: |
           set -euo pipefail
           target='repair/v17-capture-native-acl-baseline-coherence-sol-20260817'
-          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
           git fetch origin "$target"
           test "$(git rev-parse FETCH_HEAD)" = "$TARGET_SHA"
+          git checkout --detach "$TARGET_SHA"
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
           python3 - <<'PY'
           from pathlib import Path
           p = Path('.github/workflows/capture-native-acl-baseline-coherence-one-shot.yml')
