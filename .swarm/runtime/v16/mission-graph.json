@@ -1064,30 +1064,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 3,
+    "classifiedPRTotal": 1,
     "classifiedPRs": {
-      "3321": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3321,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.0,
-        "title": "[Capture P0][VALIDATION] Attest former-build mutation authority"
-      },
-      "3399": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-build-authority",
-        "pr": 3399,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.0,
-        "title": "[Capture P0][SECURITY][RECOVERY] Pre-scrub frozen tool exec on current carrier"
-      },
       "3497": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1131,7 +1109,7 @@
       "live-pr-3082",
       "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T18:00:26Z",
+    "liveRefreshAt": "2026-08-18T19:02:52Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [],
@@ -4912,10 +4890,10 @@
       "userValue": 7
     }
   },
-  "revision": 1144,
+  "revision": 1145,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T18:00:27Z",
+  "updatedAt": "2026-08-18T19:02:52Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
