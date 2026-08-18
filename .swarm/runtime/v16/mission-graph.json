@@ -1085,7 +1085,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.109,
+        "similarity": 0.102,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3321": {
@@ -1371,7 +1371,7 @@
         "lane": "",
         "pr": 3435,
         "recommendedAction": "independent-review",
-        "similarity": 0.156,
+        "similarity": 0.152,
         "title": "[Capture P0][RECOVERY] Execute full numeric-principal materializer without stale rewrite"
       },
       "3457": {
@@ -1426,7 +1426,7 @@
         "lane": "dashboard-cockpit-product-closure",
         "pr": 3497,
         "recommendedAction": "independent-review",
-        "similarity": 0.122,
+        "similarity": 0.108,
         "title": "[Dashboard V17][RECOVERY] Ship signature battery / learned-range instrument"
       },
       "3516": {
@@ -1536,7 +1536,7 @@
         "lane": "capture-current-accepted-root-acl-transport",
         "pr": 3588,
         "recommendedAction": "independent-review",
-        "similarity": 0.309,
+        "similarity": 0.358,
         "title": "[SUPERSEDED][Capture P0][V17][RECOVERY R2] Materialize seeded ACL baseline coherence"
       },
       "3595": {
@@ -1547,7 +1547,7 @@
         "lane": "capture-current-accepted-root-acl-transport",
         "pr": 3595,
         "recommendedAction": "independent-review",
-        "similarity": 0.31,
+        "similarity": 0.316,
         "title": "[Capture P0][V17][RECOVERY] Apply retained-handle ACL coherence to current carrier"
       },
       "3597": {
@@ -1583,17 +1583,6 @@
         "similarity": 0.141,
         "title": "[Capture P0][V17][REPAIR] Use native ACL lease on real Darwin"
       },
-      "3600": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3600,
-        "recommendedAction": "independent-review",
-        "similarity": 0.353,
-        "title": "[Capture P0][V17][TRIGGER] Materialize native private-UID routing"
-      },
       "3602": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1613,8 +1602,19 @@
         "lane": "",
         "pr": 3603,
         "recommendedAction": "independent-review",
-        "similarity": 0.482,
+        "similarity": 0.495,
         "title": "[Capture P0][V17][TRIGGER] Direct materialize current ACL coherence repair"
+      },
+      "3604": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-current-accepted-root-acl-transport",
+        "pr": 3604,
+        "recommendedAction": "independent-review",
+        "similarity": 0.483,
+        "title": "[Capture P0][V17][TRIGGER] Materialize current-carrier native ACL coherence"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1647,7 +1647,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T03:05:01Z",
+    "liveRefreshAt": "2026-08-18T03:05:18Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5432,10 +5432,10 @@
       "userValue": 7
     }
   },
-  "revision": 990,
+  "revision": 991,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T03:05:03Z",
+  "updatedAt": "2026-08-18T03:05:20Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5511,7 +5511,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T03:05:01Z",
+      "updatedAt": "2026-08-18T03:05:18Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
