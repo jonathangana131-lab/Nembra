@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 17,
+    "classifiedPRTotal": 18,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1239,7 +1239,7 @@
         "lane": "capture-final-go-authority",
         "pr": 3607,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.144,
+        "similarity": 0.224,
         "title": "[Capture P0][V17][FINAL GO] Bind reviewed generated build-input manifest"
       },
       "3608": {
@@ -1252,6 +1252,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.193,
         "title": "[Capture P0][V17][RECOVERY] Fix strict-root materializer scope accounting"
+      },
+      "3609": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-final-go-authority",
+        "pr": 3609,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.212,
+        "title": "[Capture P0][V17][REPAIR] Fence manifest authority after composition lock"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1284,7 +1295,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T10:54:21Z",
+    "liveRefreshAt": "2026-08-18T10:55:37Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5069,10 +5080,10 @@
       "userValue": 7
     }
   },
-  "revision": 1037,
+  "revision": 1038,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T10:54:22Z",
+  "updatedAt": "2026-08-18T10:55:38Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5148,7 +5159,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T10:54:21Z",
+      "updatedAt": "2026-08-18T10:55:37Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
