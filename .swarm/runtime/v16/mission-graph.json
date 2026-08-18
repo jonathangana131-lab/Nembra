@@ -1085,7 +1085,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.097,
+        "similarity": 0.096,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3321": {
@@ -1371,7 +1371,7 @@
         "lane": "",
         "pr": 3435,
         "recommendedAction": "independent-review",
-        "similarity": 0.189,
+        "similarity": 0.152,
         "title": "[Capture P0][RECOVERY] Execute full numeric-principal materializer without stale rewrite"
       },
       "3457": {
@@ -1426,7 +1426,7 @@
         "lane": "dashboard-cockpit-product-closure",
         "pr": 3497,
         "recommendedAction": "independent-review",
-        "similarity": 0.076,
+        "similarity": 0.062,
         "title": "[Dashboard V17][RECOVERY] Ship signature battery / learned-range instrument"
       },
       "3516": {
@@ -1517,17 +1517,6 @@
         "similarity": 0.332,
         "title": "[Capture P0][V17][VALIDATION] Reify held-fd absent ACL lease helper"
       },
-      "3557": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-current-accepted-root-acl-transport",
-        "pr": 3557,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.405,
-        "title": "[Capture P0][V17][RED TEAM] Reject null-errno ACL baseline promotion"
-      },
       "3564": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1536,7 +1525,7 @@
         "lane": "capture-current-accepted-root-acl-transport",
         "pr": 3564,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.401,
+        "similarity": 0.353,
         "title": "[Capture P0][V17][REPAIR] Fail closed on null native ACL baseline"
       },
       "3565": {
@@ -1558,7 +1547,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3566,
         "recommendedAction": "independent-review",
-        "similarity": 0.198,
+        "similarity": 0.292,
         "title": "[Capture P0][V17][TEST] Canonicalize rollback temp fixtures on macOS"
       },
       "3567": {
@@ -1591,7 +1580,7 @@
         "lane": "capture-private-uid-read-lease-current",
         "pr": 3569,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.175,
+        "similarity": 0.08,
         "title": "[Capture P0][V17][VALIDATION] Re-anchor UID lease fixtures under /private/tmp"
       },
       "3570": {
@@ -1649,16 +1638,27 @@
         "similarity": 0.474,
         "title": "[Capture P0][V17][REPAIR] Require seeded ACL baseline coherence"
       },
-      "3576": {
+      "3577": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
-        "lane": "",
-        "pr": 3576,
+        "lane": "capture-signed-install-custody",
+        "pr": 3577,
         "recommendedAction": "independent-review",
-        "similarity": 0.24,
-        "title": "[Capture P0][KICK] Re-arm clean ACL materialization"
+        "similarity": 0.291,
+        "title": "[Capture P0][V17][RECOVERY] Materialize clean native ACL lease repair"
+      },
+      "3578": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-current-accepted-root-acl-transport",
+        "pr": 3578,
+        "recommendedAction": "independent-review",
+        "similarity": 0.34,
+        "title": "[Capture P0][V17][TEST] Canonicalize Darwin lease fixture root"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1691,7 +1691,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T02:45:28Z",
+    "liveRefreshAt": "2026-08-18T02:45:52Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5476,10 +5476,10 @@
       "userValue": 7
     }
   },
-  "revision": 937,
+  "revision": 938,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T02:45:31Z",
+  "updatedAt": "2026-08-18T02:45:54Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5555,7 +5555,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T02:45:28Z",
+      "updatedAt": "2026-08-18T02:45:52Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
