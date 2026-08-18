@@ -1,0 +1,74 @@
+name: Capture field strict-root wiring recovery
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-field-strict-root-wiring-gpt56sol-20260817
+    paths:
+      - .github/workflows/capture-field-strict-root-wiring-recovery.yml
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Execute reviewed materializer payload directly
+        shell: python
+        run: |
+          from pathlib import Path
+          import textwrap
+
+          path = Path('.github/workflows/capture-field-strict-root-wiring-materialize.yml')
+          text = path.read_text()
+          start_marker = '''      - name: Materialize strict accepted-root field wiring
+        shell: python
+        run: |
+'''
+          end_marker = '''
+      - name: Run focused wiring regressions
+'''
+          if text.count(start_marker) != 1 or text.count(end_marker) != 1:
+              raise SystemExit('reviewed materializer block anchors drifted')
+          payload = text.split(start_marker, 1)[1].split(end_marker, 1)[0]
+          source = textwrap.dedent(payload)
+          compile(source, '<reviewed-field-strict-root-materializer>', 'exec')
+          exec(compile(source, '<reviewed-field-strict-root-materializer>', 'exec'), {'__name__': '__main__'})
+
+      - name: Run focused wiring regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -I scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py
+          python3 -B -I scripts/ci/tests/test_capture_accepted_build_input_snapshot.py
+          python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          git diff --check
+          actual="$(git diff --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            Scripts/bootstrap_capture_tuya_sdk.sh \
+            scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py \
+            scripts/field/install_one_time_capture.command | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          ! grep -nE 'publishDps\(|writeValue\(|removeDevice|factoryReset' scripts/field/install_one_time_capture.command
+
+      - name: Publish clean product repair and self-delete authoring files
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch='repair/v17-capture-field-strict-root-wiring-gpt56sol-20260817'
+          expected_head="${{ github.sha }}"
+          git fetch origin "$branch"
+          test "$(git rev-parse FETCH_HEAD)" = "$expected_head"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Scripts/bootstrap_capture_tuya_sdk.sh scripts/field/install_one_time_capture.command scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py
+          git rm .github/workflows/capture-field-strict-root-wiring-materialize.yml .github/capture-field-strict-root-wiring.trigger .github/workflows/capture-field-strict-root-wiring-recovery.yml
+          git diff --cached --check
+          git commit -m 'Capture: make field build consume accepted root'
+          git push origin HEAD:"$branch"
