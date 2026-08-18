@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 45,
+    "classifiedPRTotal": 46,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1528,6 +1528,17 @@
         "similarity": 0.379,
         "title": "[Capture P0][V17][CI] Anchor rollback fixtures under real Darwin temp"
       },
+      "3575": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-current-accepted-root-acl-transport",
+        "pr": 3575,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.41,
+        "title": "[Capture P0][V17][REPAIR] Require seeded ACL baseline coherence"
+      },
       "3577": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1547,7 +1558,7 @@
         "lane": "capture-current-accepted-root-acl-transport",
         "pr": 3581,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.332,
+        "similarity": 0.369,
         "title": "[Capture P0][V17][RED TEAM] Native ACL baseline coherence exact-head classifier"
       },
       "3585": {
@@ -1558,7 +1569,7 @@
         "lane": "capture-current-accepted-root-acl-transport",
         "pr": 3585,
         "recommendedAction": "independent-review",
-        "similarity": 0.322,
+        "similarity": 0.401,
         "title": "[Capture P0][V17][RECOVERY] Require seeded ACL baseline coherence"
       }
     },
@@ -1592,7 +1603,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T02:51:25Z",
+    "liveRefreshAt": "2026-08-18T02:51:46Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5377,10 +5388,10 @@
       "userValue": 7
     }
   },
-  "revision": 955,
+  "revision": 956,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T02:51:27Z",
+  "updatedAt": "2026-08-18T02:51:48Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5456,7 +5467,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T02:51:25Z",
+      "updatedAt": "2026-08-18T02:51:46Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
