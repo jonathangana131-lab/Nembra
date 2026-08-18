@@ -2,9 +2,7 @@
 name: Capture native ACL fail-closed one-shot
 
 on:
-  push:
-    branches:
-      - repair/v17-capture-darwin-native-acl-production-gpt56sol-20260817
+  pull_request:
     paths:
       - .github/workflows/capture-native-acl-failclosed-one-shot.yml
 
@@ -13,18 +11,20 @@ permissions:
 
 jobs:
   materialize:
+    if: github.head_ref == 'repair/v17-capture-darwin-native-acl-production-gpt56sol-20260817'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       - name: Bind exact repair branch
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF_NAME" = "repair/v17-capture-darwin-native-acl-production-gpt56sol-20260817"
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "${{ github.head_ref }}" = "repair/v17-capture-darwin-native-acl-production-gpt56sol-20260817"
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
           test -z "$(git status --porcelain)"
 
       - name: Materialize fail-closed pathname replacement repair
@@ -104,18 +104,16 @@ jobs:
           test "$changed" = "$expected"
           ! grep -nE 'publishDps\(|writeValue\(|removeDevice|factoryReset' scripts/ci/capture_selected_xcode_build_orchestrator.py
 
-      - name: Publish coherent repair and retire one-shot
+      - name: Publish coherent product repair
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          rm .github/workflows/capture-native-acl-failclosed-one-shot.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add scripts/ci/capture_selected_xcode_build_orchestrator.py \
-                  scripts/ci/tests/test_capture_private_read_lease_rollback.py \
-                  .github/workflows/capture-native-acl-failclosed-one-shot.yml
+                  scripts/ci/tests/test_capture_private_read_lease_rollback.py
           git diff --cached --check
           git commit -m "Capture: fail closed on accepted-root pathname replacement"
           git push origin HEAD:repair/v17-capture-darwin-native-acl-production-gpt56sol-20260817
