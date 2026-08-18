@@ -145,7 +145,12 @@ class CaptureSelectedXcodeBuildOrchestratorTests(unittest.TestCase):
             ]
             self.assertEqual(
                 helper._private_read_subjects(command, repo),
-                (repo / "LocalSecrets/TuyaSDK", repo / "LocalSecrets/TuyaRuntime"),
+                (
+                    repo / "LocalSecrets/TuyaSDK/ThingSmartCryption.podspec",
+                    repo / "LocalSecrets/TuyaSDK/Build",
+                    repo / "LocalSecrets/TuyaRuntime/NembraTuyaPrivateConfig.podspec",
+                    repo / "LocalSecrets/TuyaRuntime/Sources/NembraTuyaPrivateConfig",
+                ),
             )
             escaped = list(command)
             escaped[escaped.index("--identity-sources") + 1] = str(repo / "other")
@@ -240,9 +245,10 @@ def run_custodied_build(command, *, app_relative, fingerprint_helper_base64):
         class FakeLease:
             instances: list["FakeLease"] = []
 
-            def __init__(self, subjects, repo):
+            def __init__(self, subjects, repo, *, use_native_darwin_acl=False):
                 self.subjects = tuple(subjects)
                 self.repo = repo
+                self.use_native_darwin_acl = bool(use_native_darwin_acl)
                 self._opened: list[object] = []
                 self._principal = ""
                 self.events: list[str] = []
@@ -317,6 +323,7 @@ def run_custodied_build(command, *, app_relative, fingerprint_helper_base64):
             self.assertEqual(stage, Path("/private/tmp/nembra-authenticated-capture-install.fixture"))
             self.assertEqual(fingerprint, "b" * 64)
             self.assertEqual(len(FakeLease.instances), 1)
+            self.assertFalse(FakeLease.instances[0].use_native_darwin_acl)
             self.assertEqual(
                 FakeLease.instances[0].events,
                 ["grant:nembrabuildfixture", "revoke"],

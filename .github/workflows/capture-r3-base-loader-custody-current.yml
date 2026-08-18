@@ -1,0 +1,31 @@
+name: Capture R3 Base Loader Custody Current
+on:
+  push:
+    branches: [repair/v14-r3-base-module-execution-sol-20260811]
+  pull_request:
+    paths:
+      - scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py
+      - scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py
+      - .github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml
+      - .github/workflows/capture-r3-base-loader-custody-current.yml
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          export PYTHONDONTWRITEBYTECODE=1
+          python3 -m py_compile scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py
+          python3 scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py
