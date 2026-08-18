@@ -1,0 +1,185 @@
+name: Capture native ACL closure materialize
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-native-acl-closure-materialize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.head_ref == 'repair/v17-capture-native-acl-closure-gpt56sol-20260817'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact closure head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ github.head_ref }}" = "repair/v17-capture-native-acl-closure-gpt56sol-20260817"
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          test -z "$(git status --porcelain)"
+
+      - name: Materialize remaining permanent closure
+        shell: python
+        run: |
+          from pathlib import Path
+
+          orchestrator = Path("scripts/ci/capture_selected_xcode_build_orchestrator.py")
+          text = orchestrator.read_text()
+          old_constructor = '''        lease = _PrivateReadLease(
+            private_subjects,
+            lease_repo,
+            use_native_darwin_acl=(accepted_root is not None),
+        )
+'''
+          new_constructor = '''        if accepted_root is None:
+            lease = _PrivateReadLease(private_subjects, lease_repo)
+        else:
+            lease = _PrivateReadLease(
+                private_subjects,
+                lease_repo,
+                use_native_darwin_acl=True,
+            )
+'''
+          if text.count(old_constructor) != 1:
+              raise SystemExit(
+                  f"expected one private-lease constructor anchor, found {text.count(old_constructor)}"
+              )
+          text = text.replace(old_constructor, new_constructor, 1)
+          required_revoke = '''                        if not path_matches:
+                            failures.append(
+                                f"private read-lease pathname no longer identifies opened object: {path}"
+                            )
+                        else:
+                            restored = _path_acl_listing(
+'''
+          if text.count(required_revoke) != 1:
+              raise SystemExit(
+                  f"expected materialized native fail-closed revoke on parent, found {text.count(required_revoke)}"
+              )
+          orchestrator.write_text(text)
+
+          rollback_path = Path("scripts/ci/tests/test_capture_private_read_lease_rollback.py")
+          rollback = rollback_path.read_text()
+          if "import os\n" not in rollback:
+              rollback = rollback.replace(
+                  "import importlib.util\n",
+                  "import importlib.util\nimport os\n",
+                  1,
+              )
+          old_class = '''class CapturePrivateReadLeaseRollbackTests(unittest.TestCase):
+    def _subject(self, temporary: str) -> tuple[Path, Path]:
+'''
+          new_class = '''class CapturePrivateReadLeaseRollbackTests(unittest.TestCase):
+    def _temporary_directory(self, prefix: str) -> tempfile.TemporaryDirectory[str]:
+        # macOS commonly reports /var/folders/... even though /var is a symlink
+        # to /private/var. Exercise the production no-symlink pinning contract
+        # through the canonical temporary root instead of the alias.
+        return tempfile.TemporaryDirectory(
+            prefix=prefix,
+            dir=os.path.realpath(tempfile.gettempdir()),
+        )
+
+    def _subject(self, temporary: str) -> tuple[Path, Path]:
+'''
+          if rollback.count(old_class) != 1:
+              raise SystemExit(f"expected one rollback class anchor, found {rollback.count(old_class)}")
+          rollback = rollback.replace(old_class, new_class, 1)
+          prefixes = (
+              "nembra-lease-rollback-",
+              "nembra-lease-chmod-failure-",
+              "nembra-lease-rollback-failure-",
+              "nembra-lease-native-revoke-",
+          )
+          for prefix in prefixes:
+              old = f'with tempfile.TemporaryDirectory(prefix="{prefix}") as temporary:'
+              new = f'with self._temporary_directory("{prefix}") as temporary:'
+              if rollback.count(old) != 1:
+                  raise SystemExit(f"expected one rollback temp anchor for {prefix}, found {rollback.count(old)}")
+              rollback = rollback.replace(old, new, 1)
+          required = '''                with self.assertRaisesRegex(
+                    helper.SelectedXcodeBuildOrchestratorError,
+                    "pathname no longer identifies opened object",
+                ):
+                    lease.revoke()
+                self.assertEqual(subject.read_bytes(), b"attacker replacement\\n")
+                self.assertEqual(moved.read_bytes(), b"fixture\\n")
+'''
+          if rollback.count(required) != 1:
+              raise SystemExit(f"expected one strict rollback assertion, found {rollback.count(required)}")
+          rollback_path.write_text(rollback)
+
+          composition_path = Path("scripts/ci/tests/test_capture_accepted_root_build_composition.py")
+          composition = composition_path.read_text()
+          old_fake = '''            def __init__(self, subjects, repo):
+                self.subjects = tuple(subjects)
+                self.repo = repo
+                self._opened: list[object] = []
+'''
+          new_fake = '''            def __init__(self, subjects, repo, *, use_native_darwin_acl=False):
+                self.subjects = tuple(subjects)
+                self.repo = repo
+                self.use_native_darwin_acl = bool(use_native_darwin_acl)
+                self._opened: list[object] = []
+'''
+          if composition.count(old_fake) != 1:
+              raise SystemExit(f"expected one strict FakeLease constructor, found {composition.count(old_fake)}")
+          composition = composition.replace(old_fake, new_fake, 1)
+          old_assert = '''            self.assertEqual(lease.repo, accepted_root)
+            self.assertEqual(
+                lease.events,
+'''
+          new_assert = '''            self.assertEqual(lease.repo, accepted_root)
+            self.assertTrue(lease.use_native_darwin_acl)
+            self.assertEqual(
+                lease.events,
+'''
+          if composition.count(old_assert) != 1:
+              raise SystemExit(f"expected one strict native-mode assertion anchor, found {composition.count(old_assert)}")
+          composition_path.write_text(composition.replace(old_assert, new_assert, 1))
+
+      - name: Run focused closure regressions
+        run: |
+          python3 scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          python3 scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          python3 scripts/ci/tests/test_capture_accepted_root_build_composition.py
+          python3 scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+          python3 scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py
+
+      - name: Enforce exact permanent delta and passive boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only | sort)"
+          expected="$(printf '%s\n' \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_accepted_root_build_composition.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py | sort)"
+          test "$changed" = "$expected"
+          git diff --check
+          ! grep -nE 'publishDps\(|writeValue\(|removeDevice|factoryReset' scripts/ci/capture_selected_xcode_build_orchestrator.py
+
+      - name: Publish clean closure and remove authoring workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch='repair/v17-capture-native-acl-closure-gpt56sol-20260817'
+          expected='${{ github.event.pull_request.head.sha }}'
+          git fetch origin "$branch"
+          test "$(git rev-parse FETCH_HEAD)" = "$expected"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/ci/capture_selected_xcode_build_orchestrator.py \
+                  scripts/ci/tests/test_capture_accepted_root_build_composition.py \
+                  scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          git rm .github/workflows/capture-native-acl-closure-materialize.yml
+          git diff --cached --check
+          git commit -m "Capture: close native ACL composition and rollback portability"
+          git push origin HEAD:"$branch"
