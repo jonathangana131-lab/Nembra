@@ -6,11 +6,6 @@ on:
       - capture/one-time-ble-dump-gpt56
     paths:
       - .github/workflows/capture-retire-duplicate-app-timeout-one-shot.yml
-  pull_request:
-    branches:
-      - capture/one-time-ble-dump-gpt56
-    paths:
-      - .github/workflows/capture-retire-duplicate-app-timeout-one-shot.yml
 
 permissions:
   contents: write
@@ -20,18 +15,24 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
-          ref: capture/one-time-ble-dump-gpt56
-          fetch-depth: 0
+          ref: ${{ github.sha }}
+          fetch-depth: 2
           persist-credentials: true
 
-      - name: Bind exact branch head
+      - name: Bind exact reviewed parent and authoring head
         shell: bash
+        env:
+          EXPECTED_PARENT_SHA: 23fe89ca1432c3f3cbfab19a49803ad77c00233f
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          test "$(git branch --show-current)" = "capture/one-time-ble-dump-gpt56"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT_SHA"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          delta="$(git diff --name-only "$EXPECTED_PARENT_SHA" HEAD)"
+          test "$delta" = ".github/workflows/capture-retire-duplicate-app-timeout-one-shot.yml"
 
       - name: Remove duplicate app-owned timeout terminal
         shell: bash
@@ -79,9 +80,6 @@ struct TuyaApplicationTimeoutPresentationRaceSourceTests {
         #expect(!source.contains("authenticated_application_timeout"))
         #expect(!source.contains("Authenticated session produced no application update before the observation deadline."))
 
-        // The watchdog still advances package-owned liveness. The ledger's canonical
-        // incomplete-session horizon owns retirement for zero, one-bootstrap, and
-        // early-only callback cases, so app presentation cannot create a competing terminal.
         #expect(source.contains("try await self.sessionLedger.observeCurrentConnection(for: token)"))
         #expect(source.contains("TuyaAuthenticatedReadOnlyPreflight.verdict(for: self.ledgerSnapshot)"))
         #expect(source.contains("mirrorAlreadyTerminalObservationContinuity"))
@@ -97,7 +95,7 @@ struct TuyaApplicationTimeoutPresentationRaceSourceTests {
         )
         #expect(!helper.contains("sdkLocalBLEOnline = false"))
         #expect(helper.contains("driver = nil"))
-        #expect(helper.contains("no disconnect" ) || helper.contains("does not claim BLE"))
+        #expect(helper.contains("no disconnect") || helper.contains("does not claim BLE"))
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> String {
@@ -146,19 +144,20 @@ struct TuyaApplicationTimeoutPresentationRaceSourceTests {
 
       - name: Publish clean successor and retire one-shot
         shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          remote_head="$(git ls-remote origin refs/heads/capture/one-time-ble-dump-gpt56 | awk '{print $1}')"
+          test "$remote_head" = "$EXPECTED_HEAD_SHA"
           rm .github/workflows/capture-retire-duplicate-app-timeout-one-shot.yml
           git add NembraApp/App/NembraCaptureEntrypoint.swift \
             Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationTimeoutPresentationRaceSourceTests.swift \
             .github/workflows/capture-retire-duplicate-app-timeout-one-shot.yml
-          test -z "$(git diff --cached --name-only | grep -v -E '^(NembraApp/App/NembraCaptureEntrypoint.swift|Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationTimeoutPresentationRaceSourceTests.swift|.github/workflows/capture-retire-duplicate-app-timeout-one-shot.yml)$')"
+          names="$(git diff --cached --name-only | sort | tr '\n' ' ' | sed 's/ $//')"
+          expected=".github/workflows/capture-retire-duplicate-app-timeout-one-shot.yml NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationTimeoutPresentationRaceSourceTests.swift"
+          test "$names" = "$expected"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Capture: let package own incomplete observation terminal"
           git push origin HEAD:capture/one-time-ble-dump-gpt56
-
-# Re-armed after verifying the duplicate app-owned timeout still exists on the exact branch head.
-# macOS /bin/bash is 3.2, so exact-delta admission deliberately avoids mapfile/readarray.
-# Same-repo pull_request fallback keeps execution anchored to this base branch if push registration is inert.
-# Direct re-arm nonce: gpt56sol-20260818-1522.
