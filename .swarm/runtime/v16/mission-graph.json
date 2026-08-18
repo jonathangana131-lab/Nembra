@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 19,
+    "classifiedPRTotal": 18,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1213,11 +1213,11 @@
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "cf97695d322b7b02eadb853e8da2888eff9776ea",
+        "headSHA": "4f835aad98126aa21e2c498fb1e73e0aea125592",
         "lane": "capture-final-go-authority",
         "pr": 3607,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.192,
+        "similarity": 0.188,
         "title": "[Capture P0][V17][FINAL GO] Bind reviewed generated build-input manifest"
       },
       "3608": {
@@ -1263,17 +1263,6 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.284,
         "title": "[Capture P0][V17][INTEGRATION] Promote accepted-root compiler carrier"
-      },
-      "3631": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-final-go-authority",
-        "pr": 3631,
-        "recommendedAction": "independent-review",
-        "similarity": 0.211,
-        "title": "[Capture P0][V17][TRIGGER] Re-arm Final-GO base transport materializer"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1306,7 +1295,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T11:10:33Z",
+    "liveRefreshAt": "2026-08-18T11:10:53Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5091,10 +5080,10 @@
       "userValue": 7
     }
   },
-  "revision": 1077,
+  "revision": 1078,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T11:10:33Z",
+  "updatedAt": "2026-08-18T11:10:53Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5170,7 +5159,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T11:10:33Z",
+      "updatedAt": "2026-08-18T11:10:53Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
