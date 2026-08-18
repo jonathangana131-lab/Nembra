@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 53,
+    "classifiedPRTotal": 50,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1528,17 +1528,6 @@
         "similarity": 0.34,
         "title": "[Capture P0][V17][REPAIR] Fail closed on null native ACL baseline"
       },
-      "3565": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-current-accepted-root-acl-transport",
-        "pr": 3565,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.347,
-        "title": "[Capture P0][V17][VALIDATION] Pin native ACL mode to strict accepted root"
-      },
       "3566": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1547,7 +1536,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3566,
         "recommendedAction": "independent-review",
-        "similarity": 0.32,
+        "similarity": 0.292,
         "title": "[Capture P0][V17][TEST] Canonicalize rollback temp fixtures on macOS"
       },
       "3567": {
@@ -1613,19 +1602,8 @@
         "lane": "capture-signed-install-custody",
         "pr": 3577,
         "recommendedAction": "independent-review",
-        "similarity": 0.445,
+        "similarity": 0.291,
         "title": "[Capture P0][V17][RECOVERY] Materialize clean native ACL lease repair"
-      },
-      "3578": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-current-accepted-root-acl-transport",
-        "pr": 3578,
-        "recommendedAction": "independent-review",
-        "similarity": 0.34,
-        "title": "[Capture P0][V17][TEST] Canonicalize Darwin lease fixture root"
       },
       "3579": {
         "classification": "duplicate",
@@ -1637,17 +1615,6 @@
         "recommendedAction": "join-or-archive-after-review",
         "similarity": 0.878,
         "title": "[Capture P0][V17][RED TEAM] Reject uncorrelated native ACL baselines (R2)"
-      },
-      "3580": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3580,
-        "recommendedAction": "independent-review",
-        "similarity": 0.442,
-        "title": "[Capture P0][V17][RECOVERY] Materialize fail-closed native ACL repair"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1680,7 +1647,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T02:47:38Z",
+    "liveRefreshAt": "2026-08-18T02:48:00Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5465,10 +5432,10 @@
       "userValue": 7
     }
   },
-  "revision": 943,
+  "revision": 944,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T02:47:41Z",
+  "updatedAt": "2026-08-18T02:48:02Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5544,7 +5511,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T02:47:38Z",
+      "updatedAt": "2026-08-18T02:48:00Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
