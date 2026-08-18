@@ -9,15 +9,15 @@
   "generation": 11,
   "status": "ACTIVE",
   "claimedAt": "2026-08-18T02:50:30Z",
-  "lastHeartbeatAt": "2026-08-18T02:52:30Z",
+  "lastHeartbeatAt": "2026-08-18T02:55:00Z",
   "leaseSeconds": 1800,
   "branch": "repair/v17-capture-rollback-temp-canonical-gpt56sol-20260817",
   "pr": 3583,
   "sourceSHA": "ec91775a613f3504723cca390cfa108e3e076143",
-  "currentHeadSHA": "a9d92570dd58551866f65dfa1953f0c88e9b26d2",
+  "currentHeadSHA": "0e90968768732c492c5ae9847d3b0503eba4831f",
   "takeoverFromWorkerId": "gpt56-sol-20260817-1527-go",
   "takeoverFromLeaseId": "capture-signed-install-tests-gpt56-20260817-222700",
   "takeoverReason": "Generation-10 tests claim was released. Claimed narrow test-only repair after exact macOS evidence showed TemporaryDirectory's textual /var/folders alias is rejected by production no-symlink host pinning before rollback assertions run.",
-  "intent": "Canonicalize only the existing rollback fixture root so portable rollback regressions exercise ACL behavior on macOS without weakening production symlink defenses. Child PR #3583 targets current #3553; no orchestrator/app/install/device/Bluetooth/Tuya/DP/physical bytes.",
-  "checkpoint": "PR #3583@a9d92570 is exact one-file +1/-1 against #3553@ec91775a: `_subject()` now uses `Path(temporary).resolve(strict=True)`. Exact compare confirms no other byte changes. Child has no direct workflow runs yet; acceptance requires composition into refreshed #3553 then exact macOS Private Build UID evidence. PHYSICAL NO-GO."
+  "intent": "Verify the merged one-line rollback fixture canonicalization on the live #3553 carrier. No production edits. Release after the exact-head macOS Private Build UID lease proves the rollback suite and dedicated identity witness execute successfully, or classify and repair the next test-only blocker.",
+  "checkpoint": "PR #3583@a9d92570 merged into #3553 with merge commit e70b40e3. Live carrier is now 0e909687 after two zero-net-tree authoring-lane commits; the one-line `Path(temporary).resolve(strict=True)` repair is retained. Exact Private Build UID run 32093422114 is queued. Previous-head macOS failure/cancellation is not acceptance evidence. PHYSICAL NO-GO."
 }
