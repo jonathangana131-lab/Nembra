@@ -35,33 +35,33 @@ jobs:
           orchestrator = Path("scripts/ci/capture_selected_xcode_build_orchestrator.py")
           text = orchestrator.read_text()
           old = '''                        # Path replacement is not a rollback failure: descriptor custody
-                          # intentionally restores the original vnode. Verify path text only
-                          # when the canonical name still identifies that exact object.
-                          if path_matches:
-                              restored = _path_acl_listing(
-                                  path, descriptor, accepted_signature, is_directory
-                              )
-                              if restored != str(record["before"]):
-                                  failures.append(
-                                      f"private read-lease did not restore exact ACL listing: {path}"
-                                  )
-  '''
+                        # intentionally restores the original vnode. Verify path text only
+                        # when the canonical name still identifies that exact object.
+                        if path_matches:
+                            restored = _path_acl_listing(
+                                path, descriptor, accepted_signature, is_directory
+                            )
+                            if restored != str(record["before"]):
+                                failures.append(
+                                    f"private read-lease did not restore exact ACL listing: {path}"
+                                )
+'''
           new = '''                        # Descriptor custody restores the original vnode even if the
-                          # canonical name was replaced, but namespace identity loss during an
-                          # authority-bearing lease is still terminal. Never mutate the replacement.
-                          if not path_matches:
-                              failures.append(
-                                  f"private read-lease pathname no longer identifies opened object: {path}"
-                              )
-                          else:
-                              restored = _path_acl_listing(
-                                  path, descriptor, accepted_signature, is_directory
-                              )
-                              if restored != str(record["before"]):
-                                  failures.append(
-                                      f"private read-lease did not restore exact ACL listing: {path}"
-                                  )
-  '''
+                        # canonical name was replaced, but namespace identity loss during an
+                        # authority-bearing lease is still terminal. Never mutate the replacement.
+                        if not path_matches:
+                            failures.append(
+                                f"private read-lease pathname no longer identifies opened object: {path}"
+                            )
+                        else:
+                            restored = _path_acl_listing(
+                                path, descriptor, accepted_signature, is_directory
+                            )
+                            if restored != str(record["before"]):
+                                failures.append(
+                                    f"private read-lease did not restore exact ACL listing: {path}"
+                                )
+'''
           if text.count(old) != 1:
               raise SystemExit(f"expected one native revoke anchor, found {text.count(old)}")
           orchestrator.write_text(text.replace(old, new, 1))
@@ -69,23 +69,23 @@ jobs:
           test_path = Path("scripts/ci/tests/test_capture_private_read_lease_rollback.py")
           test_text = test_path.read_text()
           old_test = '''                subject.rename(moved)
-                  subject.write_bytes(b"attacker replacement\\n")
-                  lease.revoke()
-  
-              capture.assert_called_once_with(descriptor)
-  '''
+                subject.write_bytes(b"attacker replacement\\n")
+                lease.revoke()
+
+            capture.assert_called_once_with(descriptor)
+'''
           new_test = '''                subject.rename(moved)
-                  subject.write_bytes(b"attacker replacement\\n")
-                  with self.assertRaisesRegex(
-                      helper.SelectedXcodeBuildOrchestratorError,
-                      "pathname no longer identifies opened object",
-                  ):
-                      lease.revoke()
-                  self.assertEqual(subject.read_bytes(), b"attacker replacement\\n")
-                  self.assertEqual(moved.read_bytes(), b"fixture\\n")
-  
-              capture.assert_called_once_with(descriptor)
-  '''
+                subject.write_bytes(b"attacker replacement\\n")
+                with self.assertRaisesRegex(
+                    helper.SelectedXcodeBuildOrchestratorError,
+                    "pathname no longer identifies opened object",
+                ):
+                    lease.revoke()
+                self.assertEqual(subject.read_bytes(), b"attacker replacement\\n")
+                self.assertEqual(moved.read_bytes(), b"fixture\\n")
+
+            capture.assert_called_once_with(descriptor)
+'''
           if test_text.count(old_test) != 1:
               raise SystemExit(f"expected one rollback test anchor, found {test_text.count(old_test)}")
           test_path.write_text(test_text.replace(old_test, new_test, 1))
