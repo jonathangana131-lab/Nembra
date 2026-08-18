@@ -8,36 +8,25 @@ HANDOFF_PATH = REPOSITORY_ROOT / "docs" / "ES80_TODAY_SIGNED_FIELD_CANDIDATE_PRO
 
 
 class FieldCandidateDeveloperDirHandoffTests(unittest.TestCase):
-    def test_handoff_clears_ambient_developer_dir_before_preflight_and_producer(self):
+    def test_retired_handoff_has_no_xcode_selection_or_producer_recipe(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
-        unset_guard = "unset DEVELOPER_DIR"
-        absent_guard = 'test -z "${DEVELOPER_DIR+x}"'
-        preflight_invocation = '/usr/bin/python3 -I "$PREFLIGHT"'
-        producer_invocation = "\n./scripts/ci/xcode27_today_research_field_candidate.sh\n"
 
-        self.assertIn(unset_guard, handoff)
-        self.assertGreaterEqual(handoff.count(absent_guard), 3)
-        self.assertIn(preflight_invocation, handoff)
-        self.assertIn(producer_invocation, handoff)
+        self.assertIn("RETIRED / NON-AUTHORIZING", handoff)
+        self.assertIn("PHYSICAL STATUS: NO-GO", handoff)
+        self.assertIn("ES80-AUTHENTICATED-STATIONARY-v1", handoff)
+        self.assertNotIn("unset DEVELOPER_DIR", handoff)
+        self.assertNotIn("xcode-select", handoff)
+        self.assertNotIn("xcode27_today_research_field_candidate.sh", handoff)
+        self.assertNotIn("```bash", handoff)
 
-        preflight_index = handoff.index(preflight_invocation)
-        producer_index = handoff.index(producer_invocation) + 1
-        self.assertLess(handoff.index(unset_guard), preflight_index)
-        self.assertLess(handoff.index(unset_guard), producer_index)
-
-        preflight_guard = handoff.rfind(absent_guard, 0, preflight_index)
-        producer_guard = handoff.rfind(absent_guard, 0, producer_index)
-        self.assertGreater(preflight_guard, handoff.index(unset_guard))
-        self.assertGreater(producer_guard, preflight_index)
-
-    def test_handoff_never_reintroduces_a_developer_dir_override(self):
+    def test_retired_handoff_cannot_reintroduce_a_developer_dir_override(self):
         handoff = HANDOFF_PATH.read_text(encoding="utf-8")
         self.assertIsNone(
             re.search(r"(?m)^\s*(?:export\s+)?DEVELOPER_DIR=", handoff),
-            "The signed-field handoff must select Xcode through xcode-select, not a caller DEVELOPER_DIR override.",
+            "A retired field handoff must not contain an executable Xcode-selection recipe.",
         )
-        self.assertIn("xcode-select", handoff)
-        self.assertIn("DEVELOPER_DIR", handoff)
+        self.assertIn("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md", handoff)
+        self.assertIn("Do not recover an older commit", handoff)
 
 
 if __name__ == "__main__":
