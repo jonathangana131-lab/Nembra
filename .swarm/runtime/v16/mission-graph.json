@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 19,
+    "classifiedPRTotal": 18,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1263,17 +1263,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.357,
         "title": "[Capture P0][V17][RED TEAM] Prove manifest review authority bypasses"
-      },
-      "3612": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "d6e030dd290aa2126da27ca56eb1f6db2bd4225e",
-        "lane": "capture-signed-install-custody",
-        "pr": 3612,
-        "recommendedAction": "independent-review",
-        "similarity": 0.263,
-        "title": "[Capture P0][V17] Admit frozen-Xcode oracle to compiler scope"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1306,7 +1295,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T10:59:30Z",
+    "liveRefreshAt": "2026-08-18T10:59:47Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5091,10 +5080,10 @@
       "userValue": 7
     }
   },
-  "revision": 1045,
+  "revision": 1046,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T10:59:31Z",
+  "updatedAt": "2026-08-18T10:59:48Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5170,7 +5159,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T10:59:30Z",
+      "updatedAt": "2026-08-18T10:59:47Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
