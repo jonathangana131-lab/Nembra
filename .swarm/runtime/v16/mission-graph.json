@@ -1473,17 +1473,6 @@
         "similarity": 0.394,
         "title": "[Capture P0][V17][VALIDATION] Classify Darwin ACL component-search requirements"
       },
-      "3548": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-darwin-filesec-held-fd-remove-oracle",
-        "pr": 3548,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.093,
-        "title": "[Capture P0][DIAGNOSTIC] Prove Darwin filesec held-fd ACL removal"
-      },
       "3549": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1547,7 +1536,7 @@
         "lane": "capture-current-accepted-root-acl-transport",
         "pr": 3557,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.382,
+        "similarity": 0.405,
         "title": "[Capture P0][V17][RED TEAM] Reject null-errno ACL baseline promotion"
       },
       "3564": {
@@ -1582,6 +1571,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.198,
         "title": "[Capture P0][V17][TEST] Canonicalize rollback temp fixtures on macOS"
+      },
+      "3567": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-current-accepted-root-acl-transport",
+        "pr": 3567,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.414,
+        "title": "[Capture P0][V17][RED TEAM] Bind native FD baseline to canonical ACL"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1614,7 +1614,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T02:42:41Z",
+    "liveRefreshAt": "2026-08-18T02:42:55Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5399,10 +5399,10 @@
       "userValue": 7
     }
   },
-  "revision": 929,
+  "revision": 930,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T02:42:43Z",
+  "updatedAt": "2026-08-18T02:42:56Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5478,7 +5478,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T02:42:41Z",
+      "updatedAt": "2026-08-18T02:42:55Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
