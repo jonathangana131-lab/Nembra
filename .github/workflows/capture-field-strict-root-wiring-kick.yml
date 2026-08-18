@@ -1,3 +1,4 @@
+# V17 execution nudge: workflow already exists on this branch, so this push is eligible.
 name: Capture field strict-root wiring kick
 
 on:
