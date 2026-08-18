@@ -1,0 +1,165 @@
+name: Capture native ACL recovery materialize
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-native-acl-recovery-materialize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.head_ref == 'repair/v17-capture-native-acl-materialized-recovery-gpt56sol-20260817'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact recovery head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ github.head_ref }}" = "repair/v17-capture-native-acl-materialized-recovery-gpt56sol-20260817"
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          test -z "$(git status --porcelain)"
+
+      - name: Materialize permanent native ACL repair
+        shell: python
+        run: |
+          from pathlib import Path
+
+          orchestrator = Path("scripts/ci/capture_selected_xcode_build_orchestrator.py")
+          text = orchestrator.read_text()
+
+          old_revoke = '''                        # Path replacement is not a rollback failure: descriptor custody
+                        # intentionally restores the original vnode. Verify path text only
+                        # when the canonical name still identifies that exact object.
+                        if path_matches:
+                            restored = _path_acl_listing(
+                                path, descriptor, accepted_signature, is_directory
+                            )
+                            if restored != str(record["before"]):
+                                failures.append(
+                                    f"private read-lease did not restore exact ACL listing: {path}"
+                                )
+'''
+          new_revoke = '''                        # Descriptor custody restores the original vnode even if the
+                        # canonical name was replaced, but namespace identity loss during an
+                        # authority-bearing lease is still terminal. Never mutate the replacement.
+                        if not path_matches:
+                            failures.append(
+                                f"private read-lease pathname no longer identifies opened object: {path}"
+                            )
+                        else:
+                            restored = _path_acl_listing(
+                                path, descriptor, accepted_signature, is_directory
+                            )
+                            if restored != str(record["before"]):
+                                failures.append(
+                                    f"private read-lease did not restore exact ACL listing: {path}"
+                                )
+'''
+          if text.count(old_revoke) != 1:
+              raise SystemExit(f"expected one native revoke anchor, found {text.count(old_revoke)}")
+          text = text.replace(old_revoke, new_revoke, 1)
+
+          old_constructor = '''        lease = _PrivateReadLease(
+            private_subjects,
+            lease_repo,
+            use_native_darwin_acl=(accepted_root is not None),
+        )
+'''
+          new_constructor = '''        if accepted_root is None:
+            lease = _PrivateReadLease(private_subjects, lease_repo)
+        else:
+            lease = _PrivateReadLease(
+                private_subjects,
+                lease_repo,
+                use_native_darwin_acl=True,
+            )
+'''
+          if text.count(old_constructor) != 1:
+              raise SystemExit(
+                  f"expected one private-lease constructor anchor, found {text.count(old_constructor)}"
+              )
+          orchestrator.write_text(text.replace(old_constructor, new_constructor, 1))
+
+          composition_path = Path("scripts/ci/tests/test_capture_accepted_root_build_composition.py")
+          composition = composition_path.read_text()
+          old_fake = '''            def __init__(self, subjects, repo):
+                self.subjects = tuple(subjects)
+                self.repo = repo
+                self._opened: list[object] = []
+'''
+          new_fake = '''            def __init__(self, subjects, repo, *, use_native_darwin_acl=False):
+                self.subjects = tuple(subjects)
+                self.repo = repo
+                self.use_native_darwin_acl = bool(use_native_darwin_acl)
+                self._opened: list[object] = []
+'''
+          if composition.count(old_fake) != 1:
+              raise SystemExit(f"expected one strict FakeLease constructor, found {composition.count(old_fake)}")
+          composition = composition.replace(old_fake, new_fake, 1)
+
+          old_assert = '''            self.assertEqual(lease.repo, accepted_root)
+            self.assertEqual(
+                lease.events,
+'''
+          new_assert = '''            self.assertEqual(lease.repo, accepted_root)
+            self.assertTrue(lease.use_native_darwin_acl)
+            self.assertEqual(
+                lease.events,
+'''
+          if composition.count(old_assert) != 1:
+              raise SystemExit(f"expected one strict native-mode assertion anchor, found {composition.count(old_assert)}")
+          composition_path.write_text(composition.replace(old_assert, new_assert, 1))
+
+          rollback = Path("scripts/ci/tests/test_capture_private_read_lease_rollback.py").read_text()
+          required = '''                with self.assertRaisesRegex(
+                    helper.SelectedXcodeBuildOrchestratorError,
+                    "pathname no longer identifies opened object",
+                ):
+                    lease.revoke()
+'''
+          if rollback.count(required) != 1:
+              raise SystemExit(f"expected exact strict rollback regression already on head, found {rollback.count(required)}")
+
+      - name: Run focused product regressions
+        run: |
+          python3 scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          python3 scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          python3 scripts/ci/tests/test_capture_accepted_root_build_composition.py
+
+      - name: Enforce permanent delta and passive boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only | sort)"
+          expected="$(printf '%s\n' \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_accepted_root_build_composition.py | sort)"
+          test "$changed" = "$expected"
+          git diff --check
+          ! grep -nE 'publishDps\(|writeValue\(|removeDevice|factoryReset' scripts/ci/capture_selected_xcode_build_orchestrator.py
+
+      - name: Publish recovery bytes and remove authoring workflow
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch='repair/v17-capture-native-acl-materialized-recovery-gpt56sol-20260817'
+          expected='${{ github.event.pull_request.head.sha }}'
+          git fetch origin "$branch"
+          test "$(git rev-parse FETCH_HEAD)" = "$expected"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/ci/capture_selected_xcode_build_orchestrator.py \
+                  scripts/ci/tests/test_capture_accepted_root_build_composition.py
+          git rm .github/workflows/capture-native-acl-recovery-materialize.yml
+          git diff --cached --check
+          git commit -m "Capture: materialize fail-closed native ACL recovery"
+          git push origin HEAD:"$branch"
