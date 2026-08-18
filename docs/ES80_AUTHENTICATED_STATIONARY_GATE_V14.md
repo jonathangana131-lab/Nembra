@@ -36,9 +36,9 @@ No DP ID, field meaning, scale, signedness, cadence, command acknowledgement, ba
 
 ## Superseded field-path warning
 
-`docs/ES80_TODAY_PRIVATE_FIELD_RUNBOOK.md` is still pinned to the earlier frozen Capture subject `#833@a0f4a33451f61411d6e0541f2e70edea5438342d` and the original private `ES80-FINGERPRINT-v1` field flow.
+`docs/ES80_TODAY_PRIVATE_FIELD_RUNBOOK.md` is **RETIRED / NON-AUTHORIZING**. It no longer pins or authorizes the earlier frozen Capture subject `#833@a0f4a33451f61411d6e0541f2e70edea5438342d` or the original private `ES80-FINGERPRINT-v1` field flow.
 
-That prior runbook remains historical evidence for the first fingerprint field path, but its frozen source/build record **does not authorize this post-C7D09A22 authenticated-session experiment**. Do not reuse its old Final GO subject, signed IPA, retained-artifact identity, or historical target UUID as authorization for this gate.
+The old TODAY runbook and its Final-GO/operator-attestation materials are historical evidence only. Do not reuse their old frozen source/build record, Final GO subject, signed IPA, retained-artifact identity, historical target UUID, or executable path as authorization for this post-C7D09A22 authenticated-session gate. Resolve all mutable authority from fresh live GitHub state and the current authenticated-stationary lineage.
 
 ## Current software convergence snapshot
 
