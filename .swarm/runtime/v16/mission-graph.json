@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 47,
+    "classifiedPRTotal": 45,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1415,7 +1415,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3492,
         "recommendedAction": "independent-review",
-        "similarity": 0.356,
+        "similarity": 0.287,
         "title": "[Capture P0][CI] Anchor private UID lease fixtures under real Darwin temp"
       },
       "3497": {
@@ -1517,17 +1517,6 @@
         "similarity": 0.332,
         "title": "[Capture P0][V17][VALIDATION] Reify held-fd absent ACL lease helper"
       },
-      "3568": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "5d4d401ba19400b683c7056dae23376bfc4c65d2",
-        "lane": "capture-private-read-lease",
-        "pr": 3568,
-        "recommendedAction": "independent-review",
-        "similarity": 0.379,
-        "title": "[Capture P0][V17][CI] Anchor rollback fixtures under real Darwin temp"
-      },
       "3575": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1536,7 +1525,7 @@
         "lane": "capture-current-accepted-root-acl-transport",
         "pr": 3575,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.41,
+        "similarity": 0.395,
         "title": "[Capture P0][V17][REPAIR] Require seeded ACL baseline coherence"
       },
       "3577": {
@@ -1560,17 +1549,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.435,
         "title": "[Capture P0][V17][RED TEAM] Native ACL baseline coherence exact-head classifier"
-      },
-      "3585": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-current-accepted-root-acl-transport",
-        "pr": 3585,
-        "recommendedAction": "independent-review",
-        "similarity": 0.401,
-        "title": "[Capture P0][V17][RECOVERY] Require seeded ACL baseline coherence"
       },
       "3586": {
         "classification": "canonical-candidate",
@@ -1614,7 +1592,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T02:52:28Z",
+    "liveRefreshAt": "2026-08-18T02:52:49Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5399,10 +5377,10 @@
       "userValue": 7
     }
   },
-  "revision": 958,
+  "revision": 959,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T02:52:29Z",
+  "updatedAt": "2026-08-18T02:52:50Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5478,7 +5456,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T02:52:28Z",
+      "updatedAt": "2026-08-18T02:52:49Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
