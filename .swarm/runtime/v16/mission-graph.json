@@ -1136,11 +1136,11 @@
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "55e750607ef2feb6bfee5afc3b3a2fd5c5235265",
+        "headSHA": "70671e120f26e7a989160cc32a1149efa360ef7c",
         "lane": "capture-product-visual-closure",
         "pr": 3666,
         "recommendedAction": "independent-review",
-        "similarity": 0.134,
+        "similarity": 0.123,
         "title": "[Capture P0][V17][PRODUCT/VISUAL] Tighten Standard copy; pin structural visual red"
       },
       "3668": {
@@ -1186,7 +1186,7 @@
       "live-pr-3082",
       "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T22:34:40Z",
+    "liveRefreshAt": "2026-08-18T22:35:26Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [],
@@ -4967,10 +4967,10 @@
       "userValue": 7
     }
   },
-  "revision": 1229,
+  "revision": 1230,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T22:34:41Z",
+  "updatedAt": "2026-08-18T22:35:26Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
