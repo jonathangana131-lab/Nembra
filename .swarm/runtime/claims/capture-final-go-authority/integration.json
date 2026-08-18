@@ -9,16 +9,16 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-18T03:22:30Z",
-  "lastHeartbeatAt": "2026-08-18T03:56:30Z",
+  "lastHeartbeatAt": "2026-08-18T04:02:00Z",
   "leaseSeconds": 2700,
   "branch": "repair/v17-capture-final-go-generated-manifest-issuer-gpt56sol-20260817",
   "pr": 3607,
   "sourceSHA": "01217c20215c31c7380405dc1e2bd1330136894e",
-  "currentHeadSHA": "29cf916f05444daffaec0f9afc85b5f1ab1b2645",
+  "currentHeadSHA": "cf97695d322b7b02eadb853e8da2888eff9776ea",
   "resource": "RELEASE_INTEGRATION",
   "takeoverFromWorkerId": "sol-20260811-1606dg",
-  "takeoverFromLeaseId": "capture-final-go-integration-1606dg-20260811-2323",
-  "takeoverReason": "Generation-3 Final-GO integration was explicitly RELEASED. Foundry V17 live state shows signed-install production is actively occupied, while #3606 requires an independently preaccepted generated/private compiler-input manifest digest from Final-GO authority.",
-  "intent": "Extend exact accepted Final-GO carrier #3082@01217c20 in place with an independent GitHub-owner-reviewed generated/private compiler-input manifest digest bound to the exact candidate source. Inject only that reviewed digest at the final inherited closed installer-environment boundary for #3606 consumption. Preserve #3082 predecessor/retirement/object-chain structure, private-input secrecy, no-command boundaries, and PHYSICAL NO-GO.",
-  "checkpoint": "PR #3607 OPEN DRAFT at exact head 29cf916f05444daffaec0f9afc85b5f1ab1b2645. EXACT-HEAD SOFTWARE GATES GREEN: Capture Final GO Sealed Candidate Handoff run 32097165707 succeeded and executed exact five-path binding, compilation, unchanged sealed/retirement primitives, manifest-aware build-level race migration, continuous tracked-tree races, object-chain/descriptor/committed-parent custody, reviewed-manifest adversarial suite, physical/command boundary checks, and diff hygiene; Capture Final GO Retirement Dispatch Custody run 32097165786 succeeded with the same migrated and inherited retirement coverage; Capture Authenticated Stationary Private Review Final GO run 32097165805 succeeded across inherited private-review/raw-fs/fsmonitor/filter/inode/vnode/committed-parent gates. Xcode 27 PR Exact-Head QA was skipped because this slice is non-app control-plane only and is not being counted as acceptance. Independent review/acceptance is still required before promotion. #3606 consumer must still materialize permanent product bytes and compose this authority. PHYSICAL NO-GO."
+  "takeoverFromLeaseId": "capture-final-go-integration-1606dg-20260811-2321",
+  "takeoverReason": "Generation-3 Final-GO integration was explicitly RELEASED. Foundry V17 live state shows signed-install production is occupied by active field-build convergence, while #3606 requires an independently preaccepted generated/private compiler-input manifest digest from Final-GO authority.",
+  "intent": "Extend exact accepted Final-GO carrier #3082@01217c20 in place with an independent GitHub-owner-reviewed generated/private compiler-input manifest digest bound to the exact candidate source. Inject only that reviewed digest through the live canonical field-build environment ABI NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256. Preserve #3082 predecessor/retirement/object-chain structure, private-input secrecy, no-command boundaries, and PHYSICAL NO-GO.",
+  "checkpoint": "PR #3607 OPEN DRAFT at corrected exact head cf97695d322b7b02eadb853e8da2888eff9776ea, ONE commit / five paths / zero behind #3082. Fresh #3606 recovery head 881260165b86978372e75bd056a4edd1def6a744 exposed canonical consumer key NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256; the earlier shorter key on #3607 was immediately treated as stale green, replaced, and CI now requires canonical presence plus stale-key absence. CORRECTED EXACT-HEAD SOFTWARE GATES GREEN: sealed-handoff run 32097465894 SUCCESS; retirement-dispatch run 32097465941 SUCCESS; authenticated-stationary private-review run 32097465875 SUCCESS. Xcode QA skipped as expected for non-app control-plane slice and is not counted. Durable coordination comment 5323426156 posted to #3606 with exact #3607 head/key and no-physical-GO boundary. Independent adversarial review/acceptance remains required before promotion; review slot is currently RELEASED and this author/integration worker is not self-accepting. #3606 still must materialize permanent product bytes and final composition must re-earn exact-head authority. PHYSICAL NO-GO."
 }
