@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 3,
+    "classifiedPRTotal": 4,
     "classifiedPRs": {
       "3649": {
         "classification": "requires-review",
@@ -1096,8 +1096,19 @@
         "lane": "",
         "pr": 3651,
         "recommendedAction": "independent-review",
-        "similarity": 0.121,
+        "similarity": 0.268,
         "title": "[Capture P0][V17][SYNC] Reconcile accepted final carrier with current main"
+      },
+      "3652": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3652,
+        "recommendedAction": "independent-review",
+        "similarity": 0.276,
+        "title": "[Capture P0][V17][RECOVERY] Re-earn post-merge exact-head matrix"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1131,7 +1142,7 @@
       "live-pr-3082",
       "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T22:12:24Z",
+    "liveRefreshAt": "2026-08-18T22:12:39Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [],
@@ -4912,10 +4923,10 @@
       "userValue": 7
     }
   },
-  "revision": 1170,
+  "revision": 1171,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T22:12:24Z",
+  "updatedAt": "2026-08-18T22:12:40Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
