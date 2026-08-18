@@ -7,6 +7,7 @@ on:
       - scripts/ci/tests/test_capture_accepted_root_build_composition.py
       - scripts/ci/tests/test_capture_accepted_root_whole_read_lease.py
       - scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py
+      - scripts/ci/tests/test_capture_private_build_uid_read_lease_current.py
       - scripts/ci/tests/test_capture_private_read_lease_component_walk.py
       - scripts/ci/tests/test_capture_private_read_lease_rollback.py
       - scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py
@@ -63,6 +64,7 @@ jobs:
             scripts/ci/tests/test_capture_accepted_root_build_composition.py \
             scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py \
             scripts/ci/tests/test_capture_accepted_root_whole_read_lease.py \
+            scripts/ci/tests/test_capture_private_build_uid_read_lease_current.py \
             scripts/ci/tests/test_capture_private_read_lease_component_walk.py \
             scripts/ci/tests/test_capture_private_read_lease_rollback.py \
             scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py \
@@ -81,6 +83,7 @@ jobs:
               "scripts/ci/tests/test_capture_accepted_root_build_composition.py",
               "scripts/ci/tests/test_capture_accepted_root_whole_read_lease.py",
               "scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py",
+              "scripts/ci/tests/test_capture_private_build_uid_read_lease_current.py",
               "scripts/ci/tests/test_capture_private_read_lease_component_walk.py",
               "scripts/ci/tests/test_capture_private_read_lease_rollback.py",
               "scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py",
