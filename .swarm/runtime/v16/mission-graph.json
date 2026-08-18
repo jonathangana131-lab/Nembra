@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 5,
+    "classifiedPRTotal": 7,
     "classifiedPRs": {
       "3649": {
         "classification": "requires-review",
@@ -1074,7 +1074,7 @@
         "lane": "dashboard-cockpit-product-closure",
         "pr": 3649,
         "recommendedAction": "independent-review",
-        "similarity": 0.069,
+        "similarity": 0.071,
         "title": "[Dashboard V17][RECOVERY] Restore battery control accessibility role"
       },
       "3650": {
@@ -1096,7 +1096,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3652,
         "recommendedAction": "independent-review",
-        "similarity": 0.099,
+        "similarity": 0.123,
         "title": "[Capture P0][V17][RECOVERY] Re-earn post-merge exact-head matrix"
       },
       "3655": {
@@ -1107,7 +1107,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3655,
         "recommendedAction": "independent-review",
-        "similarity": 0.082,
+        "similarity": 0.089,
         "title": "[Capture P0][V17][TRIGGER] Materialize package-owned incomplete horizon cleanup"
       },
       "3656": {
@@ -1118,8 +1118,30 @@
         "lane": "capture-field-authority-retirement-consistency",
         "pr": 3656,
         "recommendedAction": "independent-review",
-        "similarity": 0.257,
+        "similarity": 0.28,
         "title": "[Capture P0][V17][RECOVERY] Rebase retired-TODAY gate fix onto live guard"
+      },
+      "3657": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "318ea84d0036fefd7dd92c96287ffe48688b2599",
+        "lane": "capture-field-authority-retirement-consistency",
+        "pr": 3657,
+        "recommendedAction": "independent-review",
+        "similarity": 0.294,
+        "title": "[Capture P0][V17][RECOVERY] Retire stale TODAY preflight handoff assertions"
+      },
+      "3658": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3658,
+        "recommendedAction": "independent-review",
+        "similarity": 0.122,
+        "title": "[Capture V17][P0] Re-anchor accepted field authority on current main"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1153,7 +1175,7 @@
       "live-pr-3082",
       "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T22:16:07Z",
+    "liveRefreshAt": "2026-08-18T22:16:35Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [],
@@ -4934,10 +4956,10 @@
       "userValue": 7
     }
   },
-  "revision": 1183,
+  "revision": 1184,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T22:16:07Z",
+  "updatedAt": "2026-08-18T22:16:36Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
