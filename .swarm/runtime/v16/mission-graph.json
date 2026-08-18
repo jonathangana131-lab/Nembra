@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 10,
+    "classifiedPRTotal": 9,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1164,17 +1164,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.062,
         "title": "[Dashboard V17][RECOVERY] Ship signature battery / learned-range instrument"
-      },
-      "3625": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3625,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.163,
-        "title": "[Capture P0][V17][INTEGRATION] Promote accepted-root compiler carrier"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1207,7 +1196,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T15:00:20Z",
+    "liveRefreshAt": "2026-08-18T16:01:39Z",
     "liveRefreshDuplicatesSuppressed": [
       3321
     ],
@@ -4992,10 +4981,10 @@
       "userValue": 7
     }
   },
-  "revision": 1138,
+  "revision": 1139,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T15:00:20Z",
+  "updatedAt": "2026-08-18T16:01:40Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5071,7 +5060,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T15:00:20Z",
+      "updatedAt": "2026-08-18T16:01:39Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
