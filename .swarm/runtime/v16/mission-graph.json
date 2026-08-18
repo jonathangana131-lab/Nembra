@@ -1481,7 +1481,7 @@
         "lane": "capture-current-accepted-root-acl-transport",
         "pr": 3541,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.373,
+        "similarity": 0.367,
         "title": "[Capture P0][VALIDATION] Prove native fd ACL access semantics on held root"
       },
       "3542": {
@@ -1536,8 +1536,8 @@
         "lane": "capture-current-accepted-root-acl-transport",
         "pr": 3550,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.361,
-        "title": "[Capture P0][V17][VALIDATION] Prove public fd ACL captured-baseline restore"
+        "similarity": 0.416,
+        "title": "[Capture P0][V17][VALIDATION] Prove seeded ACL restore on held Darwin fd"
       },
       "3552": {
         "classification": "requires-review",
@@ -1614,7 +1614,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-17T22:55:53Z",
+    "liveRefreshAt": "2026-08-18T02:00:22Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5399,10 +5399,10 @@
       "userValue": 7
     }
   },
-  "revision": 904,
+  "revision": 905,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-17T22:55:55Z",
+  "updatedAt": "2026-08-18T02:00:24Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5478,7 +5478,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-17T22:55:53Z",
+      "updatedAt": "2026-08-18T02:00:22Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
