@@ -60,8 +60,8 @@ def write_candidate(root: Path, *, helper_digest: str = DIGEST, valid_consumer: 
         installer.write_text(
             "#!/bin/bash\n"
             f': "${{{control.CURRENT_ENV_KEY}:?review required}}"\n'
-            "python3 scripts/ci/capture_selected_xcode_build_orchestrator.py \\\n"
-            f'  {control.INSTALLER_OPTION} "${{{control.CURRENT_ENV_KEY}}}"\n',
+            "python3 scripts/ci/capture_selected_xcode_build_orchestrator.py "
+            f'{control.INSTALLER_OPTION} "${{{control.CURRENT_ENV_KEY}}}"\n',
             encoding="utf-8",
         )
     else:
