@@ -8,4 +8,6 @@
 
 "Prepare the scooter link" = "Link this scooter";
 "Link the Tuya Smart account that owns this scooter. Bluetooth and physical evidence stay locked until the reviewed field build and fresh scooter authority are verified." = "Link the Tuya Smart account that owns this scooter.";
+"Account setup is available. Bluetooth scanning, connection, and physical evidence stay locked until the reviewed field build is installed." = "Bluetooth stays locked until the reviewed field build is installed.";
+"Prepare account metadata" = "Link scooter account";
 "This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings." = "Account metadata only. This step does not start Bluetooth or change scooter settings.";
