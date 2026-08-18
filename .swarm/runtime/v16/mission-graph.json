@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 46,
+    "classifiedPRTotal": 47,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1558,7 +1558,7 @@
         "lane": "capture-private-uid-read-lease-current",
         "pr": 3597,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.128,
+        "similarity": 0.13,
         "title": "[Capture P0][V17][TEST] Exercise native transport in real UID witness"
       },
       "3598": {
@@ -1571,6 +1571,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.268,
         "title": "[Capture P0][V17][TRIGGER] Re-arm current native ACL coherence materializer"
+      },
+      "3599": {
+        "classification": "canonical-candidate",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3599,
+        "recommendedAction": "review-for-canonical-selection",
+        "similarity": 0.141,
+        "title": "[Capture P0][V17][REPAIR] Use native ACL lease on real Darwin"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1603,7 +1614,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T03:02:59Z",
+    "liveRefreshAt": "2026-08-18T03:03:16Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5388,10 +5399,10 @@
       "userValue": 7
     }
   },
-  "revision": 985,
+  "revision": 986,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T03:03:01Z",
+  "updatedAt": "2026-08-18T03:03:17Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5467,7 +5478,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T03:02:59Z",
+      "updatedAt": "2026-08-18T03:03:16Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
