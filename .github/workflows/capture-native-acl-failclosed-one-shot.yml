@@ -1,4 +1,4 @@
-# V17 direct materialization re-arm: publish the already-reviewed fail-closed repair.
+# V17 exact-head re-arm after the rollback regression landed first.
 name: Capture native ACL fail-closed one-shot
 
 on:
@@ -27,7 +27,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test -z "$(git status --porcelain)"
 
-      - name: Materialize fail-closed pathname replacement repair
+      - name: Materialize fail-closed production repair
         shell: python
         run: |
           from pathlib import Path
@@ -66,6 +66,8 @@ jobs:
               raise SystemExit(f"expected one native revoke anchor, found {text.count(old)}")
           text = text.replace(old, new, 1)
 
+          # Preserve the legacy constructor shape so the non-strict path and its
+          # existing regression doubles do not gain a needless keyword contract.
           old_constructor = '''        lease = _PrivateReadLease(
             private_subjects,
             lease_repo,
@@ -87,57 +89,47 @@ jobs:
               )
           orchestrator.write_text(text.replace(old_constructor, new_constructor, 1))
 
-          test_path = Path("scripts/ci/tests/test_capture_private_read_lease_rollback.py")
-          test_text = test_path.read_text()
-          old_test = '''                subject.rename(moved)
-                subject.write_bytes(b"attacker replacement\\n")
-                lease.revoke()
-
-            capture.assert_called_once_with(descriptor)
-'''
-          new_test = '''                subject.rename(moved)
-                subject.write_bytes(b"attacker replacement\\n")
-                with self.assertRaisesRegex(
+          rollback = Path("scripts/ci/tests/test_capture_private_read_lease_rollback.py").read_text()
+          required = '''                with self.assertRaisesRegex(
                     helper.SelectedXcodeBuildOrchestratorError,
                     "pathname no longer identifies opened object",
                 ):
                     lease.revoke()
                 self.assertEqual(subject.read_bytes(), b"attacker replacement\\n")
                 self.assertEqual(moved.read_bytes(), b"fixture\\n")
-
-            capture.assert_called_once_with(descriptor)
 '''
-          if test_text.count(old_test) != 1:
-              raise SystemExit(f"expected one rollback test anchor, found {test_text.count(old_test)}")
-          test_path.write_text(test_text.replace(old_test, new_test, 1))
+          if rollback.count(required) != 1:
+              raise SystemExit(
+                  f"expected exact strict rollback regression already on head, found {rollback.count(required)}"
+              )
 
       - name: Run focused regressions
         run: |
           python3 scripts/ci/tests/test_capture_private_read_lease_rollback.py
           python3 scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
 
-      - name: Enforce exact product delta
+      - name: Enforce exact working delta
         shell: bash
         run: |
           set -euo pipefail
           changed="$(git diff --name-only | sort)"
-          expected="$(printf '%s\n' \
-            scripts/ci/capture_selected_xcode_build_orchestrator.py \
-            scripts/ci/tests/test_capture_private_read_lease_rollback.py | sort)"
-          test "$changed" = "$expected"
+          test "$changed" = 'scripts/ci/capture_selected_xcode_build_orchestrator.py'
           ! grep -nE 'publishDps\(|writeValue\(|removeDevice|factoryReset' scripts/ci/capture_selected_xcode_build_orchestrator.py
+          git diff --check
 
-      - name: Publish coherent product repair and remove one-shot
+      - name: Publish clean product repair
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          branch='repair/v17-capture-darwin-native-acl-production-gpt56sol-20260817'
+          git fetch origin "$branch"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add scripts/ci/capture_selected_xcode_build_orchestrator.py \
-                  scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          git add scripts/ci/capture_selected_xcode_build_orchestrator.py
           git rm .github/workflows/capture-native-acl-failclosed-one-shot.yml
           git diff --cached --check
           git commit -m "Capture: fail closed on accepted-root pathname replacement"
-          git push origin HEAD:repair/v17-capture-darwin-native-acl-production-gpt56sol-20260817
+          git push origin HEAD:"$branch"
