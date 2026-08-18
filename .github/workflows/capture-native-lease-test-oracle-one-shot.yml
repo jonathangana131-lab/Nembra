@@ -1,0 +1,88 @@
+name: Capture native lease test oracle one-shot
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-native-lease-test-oracle-gpt56sol-20260817
+    paths:
+      - .github/workflows/capture-native-lease-test-oracle-one-shot.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bind exact V17 child lane
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "repair/v17-capture-native-lease-test-oracle-gpt56sol-20260817"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          /usr/bin/git merge-base --is-ancestor 1333b3b659111630e0a8f59ce74fcd2f29e121e7 HEAD
+          test -z "$(git status --porcelain)"
+
+      - name: Update strict lease test double contract
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py")
+          text = path.read_text(encoding="utf-8")
+          old = '''            def __init__(self, subjects, repo):
+                self.subjects = tuple(subjects)
+                self.repo = repo
+                self._opened: list[object] = []
+'''
+          new = '''            def __init__(self, subjects, repo, *, use_native_darwin_acl=False):
+                self.subjects = tuple(subjects)
+                self.repo = repo
+                self.use_native_darwin_acl = bool(use_native_darwin_acl)
+                self._opened: list[object] = []
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f"expected one FakeLease constructor anchor, found {text.count(old)}")
+          text = text.replace(old, new, 1)
+
+          old_assert = '''            self.assertEqual(len(FakeLease.instances), 1)
+            self.assertEqual(
+                FakeLease.instances[0].events,
+'''
+          new_assert = '''            self.assertEqual(len(FakeLease.instances), 1)
+            self.assertTrue(FakeLease.instances[0].use_native_darwin_acl)
+            self.assertEqual(
+                FakeLease.instances[0].events,
+'''
+          if text.count(old_assert) != 1:
+              raise SystemExit(f"expected one FakeLease assertion anchor, found {text.count(old_assert)}")
+          path.write_text(text.replace(old_assert, new_assert, 1), encoding="utf-8")
+
+      - name: Run exact focused regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-native-lease-test-oracle-pycache"
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          test -z "$(git diff --name-only | grep -v '^scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py$' || true)"
+          /usr/bin/git diff --check
+
+      - name: Publish test-only repair and retire one-shot
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-native-lease-test-oracle-one-shot.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py \
+                  .github/workflows/capture-native-lease-test-oracle-one-shot.yml
+          git diff --cached --check
+          git commit -m "Capture: align strict lease test double"
+          git push origin HEAD:repair/v17-capture-native-lease-test-oracle-gpt56sol-20260817
