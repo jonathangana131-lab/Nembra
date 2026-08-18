@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 23,
+    "classifiedPRTotal": 24,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1316,8 +1316,19 @@
         "lane": "capture-final-go-authority",
         "pr": 3619,
         "recommendedAction": "independent-review",
-        "similarity": 0.345,
+        "similarity": 0.397,
         "title": "[Capture P0][V17][RECOVERY] Seal Final-GO base review transport"
+      },
+      "3620": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-final-go-authority",
+        "pr": 3620,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.372,
+        "title": "[Capture P0][V17][RED TEAM] Prove base-module review authority bypass"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1350,7 +1361,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T11:03:58Z",
+    "liveRefreshAt": "2026-08-18T11:04:17Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5135,10 +5146,10 @@
       "userValue": 7
     }
   },
-  "revision": 1057,
+  "revision": 1058,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T11:03:59Z",
+  "updatedAt": "2026-08-18T11:04:18Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5214,7 +5225,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T11:03:58Z",
+      "updatedAt": "2026-08-18T11:04:17Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
