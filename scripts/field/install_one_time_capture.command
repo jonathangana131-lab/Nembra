@@ -29,6 +29,11 @@ SOURCE_SHA="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
 [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Working tree has local changes. Commit/stash them first."
 say "Exact requested Capture source matched: $SOURCE_SHA"
 
+: "${NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256:?Final GO must provide NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256 as the accepted generated/private compiler-input manifest SHA-256.}"
+[[ "$NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]] || die "NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256 must be exactly 64 hex characters."
+NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256" | tr '[:upper:]' '[:lower:]')"
+export NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256
+
 # The intended-device identifier is private field-admission input, never product
 # evidence. Reuse the canonical descriptor-bound reader so the private file is
 # opened once with no-follow component checks and stable metadata/read custody.
@@ -342,6 +347,7 @@ exec(
         --build-origin-blob "$BUILD_ORIGIN_CUSTODY_HELPER_BLOB" \
         --install-custody-base64 "$SIGNED_APP_CUSTODY_HELPER_BASE64" \
         --install-custody-blob "$SIGNED_APP_CUSTODY_HELPER_BLOB" \
+        --accepted-generated-manifest-sha256 "$NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256" \
         -- \
         /usr/bin/python3 -I "$TUYA_BUILD_WINDOW_GUARD" \
         --lockfile "$ROOT/Podfile.lock" \
@@ -367,6 +373,7 @@ exec(
 )"; then
     die "The signed build could not bind frozen selected-Xcode execution to isolated compiler output and protected install custody. No field artifact was admitted."
 fi
+unset NEMBRA_CAPTURE_ACCEPTED_GENERATED_BUILD_INPUT_MANIFEST_SHA256 || true
 
 [[ "$BUILD_ORIGIN_CUSTODY_RESULT" == *$'\t'* ]] || die "Build-origin custody returned no canonical stage/fingerprint record."
 [[ "${BUILD_ORIGIN_CUSTODY_RESULT#*$'\t'}" != *$'\t'* ]] || die "Build-origin custody returned an ambiguous stage/fingerprint record."
