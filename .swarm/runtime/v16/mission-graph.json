@@ -1536,7 +1536,7 @@
         "lane": "capture-current-accepted-root-acl-transport",
         "pr": 3567,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.549,
+        "similarity": 0.518,
         "title": "[Capture P0][V17][RED TEAM] Bind native FD baseline to canonical ACL"
       },
       "3568": {
@@ -1558,7 +1558,7 @@
         "lane": "capture-current-accepted-root-acl-transport",
         "pr": 3572,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.545,
+        "similarity": 0.484,
         "title": "[Capture P0][V17][RED TEAM] Require seeded native ACL baseline equivalence"
       },
       "3574": {
@@ -1636,7 +1636,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T02:48:39Z",
+    "liveRefreshAt": "2026-08-18T02:48:58Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5421,10 +5421,10 @@
       "userValue": 7
     }
   },
-  "revision": 946,
+  "revision": 947,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T02:48:41Z",
+  "updatedAt": "2026-08-18T02:48:59Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5500,7 +5500,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T02:48:39Z",
+      "updatedAt": "2026-08-18T02:48:58Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
