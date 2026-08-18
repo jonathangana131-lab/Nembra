@@ -1,0 +1,216 @@
+name: Capture Final GO Retirement Dispatch Custody
+
+on:
+  push:
+    branches:
+      - repair/v14-final-go-retirement-dispatch-current-sol-20260811
+      - repair/v17-capture-final-go-generated-manifest-issuer-gpt56sol-20260817
+      - integration/v17-capture-final-current-carrier-gpt56sol-20260818
+    paths:
+      - .github/workflows/capture-authenticated-stationary-final-go.yml
+      - .github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml
+      - .github/workflows/capture-authenticated-stationary-private-review-final-go.yml
+      - .github/workflows/capture-current-accepted-root-acl-transport-probe.yml
+      - .github/workflows/capture-current-accepted-root-compiler-composition.yml
+      - .github/workflows/capture-current-accepted-root-real-lease-classifier.yml
+      - .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml
+      - .github/workflows/capture-final-go-retirement-dispatch-custody.yml
+      - .github/workflows/capture-r3-base-loader-custody-current.yml
+      - scripts/ci/es80_authenticated_stationary_final_go.py
+      - scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py
+      - scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+      - scripts/ci/es80_authenticated_stationary_signed_artifact.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact_device_custody.py
+      - scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
+      - scripts/ci/tests/test_es80_final_go_control_module_execution_custody.py
+      - scripts/ci/tests/test_es80_final_go_control_worktree_custody_current.py
+      - scripts/ci/tests/test_es80_final_go_current_vnode_contract.py
+      - scripts/ci/tests/test_es80_final_go_descriptor_read_custody.py
+      - scripts/ci/tests/test_es80_final_go_generated_manifest_review.py
+      - scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py
+      - scripts/ci/tests/test_es80_final_go_manifest_retirement_migration.py
+      - scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py
+      - scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py
+      - scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py
+      - scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py
+      - scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
+  pull_request:
+    paths:
+      - .github/workflows/capture-authenticated-stationary-final-go.yml
+      - .github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml
+      - .github/workflows/capture-authenticated-stationary-private-review-final-go.yml
+      - .github/workflows/capture-current-accepted-root-acl-transport-probe.yml
+      - .github/workflows/capture-current-accepted-root-compiler-composition.yml
+      - .github/workflows/capture-current-accepted-root-real-lease-classifier.yml
+      - .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml
+      - .github/workflows/capture-final-go-retirement-dispatch-custody.yml
+      - .github/workflows/capture-r3-base-loader-custody-current.yml
+      - scripts/ci/es80_authenticated_stationary_final_go.py
+      - scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py
+      - scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+      - scripts/ci/es80_authenticated_stationary_signed_artifact.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_final_go.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact_device_custody.py
+      - scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
+      - scripts/ci/tests/test_es80_final_go_control_module_execution_custody.py
+      - scripts/ci/tests/test_es80_final_go_control_worktree_custody_current.py
+      - scripts/ci/tests/test_es80_final_go_current_vnode_contract.py
+      - scripts/ci/tests/test_es80_final_go_descriptor_read_custody.py
+      - scripts/ci/tests/test_es80_final_go_generated_manifest_review.py
+      - scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py
+      - scripts/ci/tests/test_es80_final_go_manifest_retirement_migration.py
+      - scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py
+      - scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py
+      - scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py
+      - scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py
+      - scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  retirement-dispatch:
+    name: Keep candidate Git retired through nested teardown
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      EXACT_PARENT: b6623eb796df77cbdc0899bc834ca1ca9d03b9d6
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPYCACHEPREFIX: /tmp/nembra-finalgo-retirement-pycache
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact current carrier and 33-path final composition
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
+          git diff --name-only "$EXACT_PARENT" HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          printf '%s\n' \
+            .github/workflows/capture-authenticated-stationary-final-go.yml \
+            .github/workflows/capture-authenticated-stationary-generated-subject-final-go.yml \
+            .github/workflows/capture-authenticated-stationary-private-review-final-go.yml \
+            .github/workflows/capture-current-accepted-root-acl-transport-probe.yml \
+            .github/workflows/capture-current-accepted-root-compiler-composition.yml \
+            .github/workflows/capture-current-accepted-root-real-lease-classifier.yml \
+            .github/workflows/capture-final-go-continuous-tracked-tree-custody.yml \
+            .github/workflows/capture-final-go-retirement-dispatch-custody.yml \
+            .github/workflows/capture-r3-base-loader-custody-current.yml \
+            scripts/ci/es80_authenticated_stationary_final_go.py \
+            scripts/ci/es80_authenticated_stationary_generated_subject_final_go.py \
+            scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/es80_authenticated_stationary_signed_artifact.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_final_go_installer_environment_custody.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_generated_subject_workflow_gates.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_signed_artifact_device_custody.py \
+            scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py \
+            scripts/ci/tests/test_es80_final_go_control_module_execution_custody.py \
+            scripts/ci/tests/test_es80_final_go_control_worktree_custody_current.py \
+            scripts/ci/tests/test_es80_final_go_current_vnode_contract.py \
+            scripts/ci/tests/test_es80_final_go_descriptor_read_custody.py \
+            scripts/ci/tests/test_es80_final_go_generated_manifest_review.py \
+            scripts/ci/tests/test_es80_final_go_git_object_chain_custody.py \
+            scripts/ci/tests/test_es80_final_go_manifest_retirement_migration.py \
+            scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py \
+            scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py \
+            scripts/ci/tests/test_es80_generated_subject_base_module_execution_custody.py \
+            scripts/ci/tests/test_es80_generated_subject_helper_execution_custody.py \
+            scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py \
+            | LC_ALL=C sort > "$RUNNER_TEMP/expected"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile successor and inherited permanent acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py \
+            scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py \
+            scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py \
+            scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py \
+            scripts/ci/tests/test_es80_final_go_generated_manifest_review.py \
+            scripts/ci/tests/test_es80_final_go_manifest_retirement_migration.py
+
+      - name: Preserve continuous tracked-tree custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_continuous_tracked_tree_custody.py
+
+      - name: Preserve unchanged retirement dispatcher primitives
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py \
+            RetirementDispatchCustodyTests.test_exact_continuous_custody_parent_remains_pinned \
+            RetirementDispatchCustodyTests.test_dispatcher_forwards_before_retirement_and_blocks_after
+
+      - name: Preserve unchanged sealed handoff primitives
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py \
+            FinalGoSealedCandidateHandoffTests.test_exact_predecessor_is_captured_before_execution \
+            FinalGoSealedCandidateHandoffTests.test_handoff_requires_completed_install_and_retained_signed_subject \
+            FinalGoSealedCandidateHandoffTests.test_retirement_blocks_candidate_git_and_blob_reopen_until_teardown \
+            FinalGoSealedCandidateHandoffTests.test_exact_base_publishes_record_without_reopening_candidate
+
+      - name: Replay build-level retirement races with required manifest review
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_manifest_retirement_migration.py
+
+      - name: Preserve current committed-parent execution custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_private_review_committed_parent_execution_custody.py
+
+      - name: Reject manifest caller authority and post-side-effect review drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_final_go_generated_manifest_review.py \
+            ReviewAuthorityTests \
+            EnvironmentAuthorityTests \
+            BuildCompositionTests
+
+      - name: Preserve physical NO-GO
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F 'physical authorization remains NO-GO' scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+          ! grep -Eq 'physicalResultCollected[[:space:]]*=[[:space:]]*True|BLE write|DP write|publishDps\(|writeValue\(' scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+
+      - name: Diff hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check "$EXACT_PARENT" HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
