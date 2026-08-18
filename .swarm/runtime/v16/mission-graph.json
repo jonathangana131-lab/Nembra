@@ -1100,14 +1100,14 @@
         "title": "[Capture V17][P0] Re-anchor accepted field authority on current main"
       },
       "3662": {
-        "classification": "requires-review",
+        "classification": "superseded",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "",
+        "headSHA": "86b9ee6f2c97a8b9d52a7bd8c8c67c117035de92",
         "lane": "dashboard-cockpit-product-closure",
         "pr": 3662,
-        "recommendedAction": "independent-review",
-        "similarity": 0.086,
+        "recommendedAction": "archive-after-evidence-transfer",
+        "similarity": 0.11,
         "title": "[Dashboard V17][ACCESSIBILITY] Keep battery/range control at AX sizes"
       },
       "3664": {
@@ -1136,7 +1136,7 @@
         "classification": "validation",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "9fdaa07a31e56813cc7b2a38b4c7defadfce1bfb",
+        "headSHA": "e93c00cb3526d6e07ff136670e98c5175cf8a1ee",
         "lane": "capture-product-visual-closure",
         "pr": 3666,
         "recommendedAction": "attach-evidence-to-canonical",
@@ -1186,7 +1186,7 @@
       "live-pr-3082",
       "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T22:27:18Z",
+    "liveRefreshAt": "2026-08-18T22:27:36Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [],
@@ -4967,10 +4967,10 @@
       "userValue": 7
     }
   },
-  "revision": 1214,
+  "revision": 1215,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T22:27:18Z",
+  "updatedAt": "2026-08-18T22:27:37Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
