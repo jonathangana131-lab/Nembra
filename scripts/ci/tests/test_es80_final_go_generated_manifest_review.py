@@ -8,6 +8,7 @@ import importlib.util
 import json
 from pathlib import Path
 import tempfile
+import threading
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -255,15 +256,19 @@ class BuildCompositionTests(unittest.TestCase):
 
     def run_build(self, get, semantic_build):
         module._SEMANTIC_BUILD = semantic_build
-        with tempfile.TemporaryDirectory(prefix="nembra-manifest-final-go-") as temporary:
-            return module.build(
-                candidate_repo=Path(temporary),
-                source=SOURCE,
-                pr=PR,
-                generated_manifest_review_id=REVIEW_ID,
-                get=get,
-                base_module=self.base,
-            )
+        original_api = self.base.api
+        self.base.api = get
+        try:
+            with tempfile.TemporaryDirectory(prefix="nembra-manifest-final-go-") as temporary:
+                return module.build(
+                    candidate_repo=Path(temporary),
+                    source=SOURCE,
+                    pr=PR,
+                    generated_manifest_review_id=REVIEW_ID,
+                    base_module=self.base,
+                )
+        finally:
+            self.base.api = original_api
 
     def test_stable_review_is_retained_before_candidate_retirement(self):
         calls = []
@@ -336,6 +341,96 @@ class BuildCompositionTests(unittest.TestCase):
         with self.assertRaises(module.PrivateReviewGoError):
             self.run_build(get, lambda **_kwargs: self.sealed_record())
         self.assertFalse(module._CANDIDATE_RETIRED.get())
+
+    def test_caller_cannot_replace_production_review_transport(self):
+        accepted = review_response(DIGEST_A)
+        forged = review_response(DIGEST_B)
+        self.base.api = lambda _path: (b"{}", copy.deepcopy(accepted))
+        side_effect = []
+
+        def semantic_build(**_kwargs):
+            side_effect.append("ran")
+            return self.sealed_record()
+
+        module._SEMANTIC_BUILD = semantic_build
+        with tempfile.TemporaryDirectory(prefix="nembra-manifest-final-go-") as temporary:
+            with self.assertRaisesRegex(
+                module.PrivateReviewGoError,
+                "caller-supplied GitHub review transport is forbidden",
+            ):
+                module.build(
+                    candidate_repo=Path(temporary),
+                    source=SOURCE,
+                    pr=PR,
+                    generated_manifest_review_id=REVIEW_ID,
+                    base_module=self.base,
+                    get=lambda _path: (b"{}", copy.deepcopy(forged)),
+                )
+        self.assertEqual(side_effect, [])
+
+    def test_lock_wait_review_drift_fails_before_semantic_side_effect(self):
+        current = {"review": review_response(DIGEST_A)}
+        api_calls = []
+        semantic_side_effect = threading.Event()
+        entered_lock = threading.Event()
+        release_lock = threading.Event()
+        failures = []
+
+        def api(path):
+            api_calls.append(path)
+            return b"{}", copy.deepcopy(current["review"])
+
+        self.base.api = api
+
+        class GateLock:
+            def __enter__(inner_self):
+                entered_lock.set()
+                if not release_lock.wait(5):
+                    raise AssertionError("test gate was not released")
+                return inner_self
+
+            def __exit__(inner_self, exc_type, exc, tb):
+                return False
+
+        original_lock = module._MANIFEST_EXTENSION_LOCK
+        module._MANIFEST_EXTENSION_LOCK = GateLock()
+        try:
+            with tempfile.TemporaryDirectory(prefix="nembra-manifest-final-go-") as temporary:
+                candidate = Path(temporary)
+
+                def semantic_build(**_kwargs):
+                    semantic_side_effect.set()
+                    return self.sealed_record()
+
+                module._SEMANTIC_BUILD = semantic_build
+
+                def worker():
+                    try:
+                        module.build(
+                            candidate_repo=candidate,
+                            source=SOURCE,
+                            pr=PR,
+                            generated_manifest_review_id=REVIEW_ID,
+                            base_module=self.base,
+                        )
+                    except Exception as error:
+                        failures.append(error)
+
+                thread = threading.Thread(target=worker, daemon=True)
+                thread.start()
+                self.assertTrue(entered_lock.wait(5), "composition never reached lock")
+                current["review"] = review_response(DIGEST_A, state="DISMISSED")
+                release_lock.set()
+                thread.join(5)
+                self.assertFalse(thread.is_alive(), "composition worker did not finish")
+        finally:
+            release_lock.set()
+            module._MANIFEST_EXTENSION_LOCK = original_lock
+
+        self.assertFalse(semantic_side_effect.is_set())
+        self.assertEqual(len(api_calls), 1)
+        self.assertEqual(len(failures), 1)
+        self.assertIsInstance(failures[0], module.PrivateReviewGoError)
 
     def test_semantic_failure_restores_adapter_context_and_candidate_dispatch(self):
         def get(path):
