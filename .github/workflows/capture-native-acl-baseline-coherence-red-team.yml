@@ -1,0 +1,88 @@
+name: Capture Native ACL Baseline Coherence Red Team
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-native-acl-baseline-coherence-red-team.yml
+      - scripts/ci/tests/test_capture_native_acl_baseline_coherence_red_team.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  classify:
+    if: github.head_ref == 'validation/v17-capture-native-acl-baseline-coherence-redteam-r3-gpt56sol-20260817'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact attacked product head and validation scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='9561edb03579fbe882f2d2ba287cfd2bfc82da41'
+          test "$(git rev-parse HEAD^)" != "$parent" || true
+          test "$(git merge-base HEAD "$parent")" = "$parent"
+          changed="$(git diff --name-only "$parent"...HEAD | sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-native-acl-baseline-coherence-red-team.yml \
+            scripts/ci/tests/test_capture_native_acl_baseline_coherence_red_team.py | sort)"
+          test "$changed" = "$expected"
+          git diff --check "$parent"...HEAD
+          git diff --quiet "$parent"...HEAD -- scripts/ci/capture_selected_xcode_build_orchestrator.py
+
+      - name: Reproduce missing native baseline coherence rejection
+        id: classifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_capture_native_acl_baseline_coherence_red_team.py \
+            | tee "$RUNNER_TEMP/nembra-native-acl-baseline-coherence.txt"
+          grep -F 'NEMBRA_NATIVE_ACL_BASELINE_COHERENCE_GAP fdBaselineSeeded=true canonicalPathBaselineEmpty=true nativeSemanticComparisonAbsent=true canonicalPathGrantStillSucceeded=true' \
+            "$RUNNER_TEMP/nembra-native-acl-baseline-coherence.txt"
+
+      - name: Publish exact classifier result
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          EXACT_HEAD: ${{ github.event.pull_request.head.sha }}
+          CLASSIFIER_OUTCOME: ${{ steps.classifier.outcome }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const outputPath = path.join(process.env.RUNNER_TEMP, 'nembra-native-acl-baseline-coherence.txt');
+            let output = fs.existsSync(outputPath)
+              ? fs.readFileSync(outputPath, 'utf8')
+              : 'classifier did not persist output';
+            output = output.slice(-10000).replaceAll('```', '~~~');
+            const body = [
+              `NEMBRA_NATIVE_ACL_BASELINE_COHERENCE_DIAGNOSTIC exactHead=${process.env.EXACT_HEAD} outcome=${process.env.CLASSIFIER_OUTCOME}`,
+              '',
+              '```text',
+              output,
+              '```',
+              '',
+              'Exploit-positive validation only. Attacked product bytes are unchanged. A successful classifier means the exact attacked product can grant while the retained fd rollback baseline is not natively correlated to the canonical-path baseline. PHYSICAL NO-GO.'
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
+      - name: Truth boundary
+        if: always()
+        shell: bash
+        run: |
+          echo 'NEMBRA_NATIVE_ACL_BASELINE_COHERENCE_RED_TEAM validationOnly=true productionChanged=false physicalAuthorityCreated=false'
+          echo 'No install, signing, device, Bluetooth, Tuya, DP, telemetry, command, or riding authority is created.'
