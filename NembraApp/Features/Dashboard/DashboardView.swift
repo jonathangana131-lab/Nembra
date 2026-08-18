@@ -212,6 +212,7 @@ struct DashboardView: View {
         .accessibilityValue(batteryAccessibilityValue)
         .accessibilityHint("Double tap to switch between battery charge and learned range. Learned range remains unavailable until Nembra has verified battery evidence and a learned range model.")
         .accessibilityIdentifier("dashboard.battery-range")
+        .id(batteryReadout)
         .buttonStyle(.plain)
         .frame(minWidth: 44, minHeight: 44, alignment: .leading)
         .sensoryFeedback(.selection, trigger: batteryReadout)
@@ -277,7 +278,6 @@ struct DashboardView: View {
             Spacer(minLength: 0)
 
             batteryRangeInstrument
-
             dashboardMetric(
                 title: "TRIP",
                 value: tripText,
@@ -697,7 +697,6 @@ struct DashboardView: View {
         if isBatteryLow, batteryPercent != nil { return .red }
         return .secondary
     }
-
     private var batteryOutlineColor: Color {
         if isBatteryLow, !isRetainedBatteryData, batteryPercent != nil {
             return .red.opacity(colorSchemeContrast == .increased ? 1.0 : 0.88)
