@@ -20,6 +20,20 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Bind exact abandoned authoring lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='c871c5ae713a178d799c5876809a14a296b7fc67'
+          test "$(git merge-base HEAD "$parent")" = "$parent"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          actual="$(git diff --name-only "$parent"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/capture-field-strict-root-wiring.trigger \
+            .github/workflows/capture-field-strict-root-wiring-materialize.yml \
+            .github/workflows/capture-field-strict-root-wiring-recovery.yml | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+
       - name: Execute reviewed materializer payload directly
         shell: python
         run: |
