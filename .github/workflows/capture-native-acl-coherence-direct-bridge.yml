@@ -1,0 +1,121 @@
+name: Capture native ACL coherence direct bridge
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - .github/capture-native-acl-coherence-direct-trigger.txt
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: >-
+      github.base_ref == 'recovery/v17-capture-acl-coherence-current-direct-gpt56sol-20260817' &&
+      github.head_ref == 'recovery/v17-capture-acl-coherence-current-direct-trigger-gpt56sol-20260817'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PRODUCT_PARENT: c871c5ae713a178d799c5876809a14a296b7fc67
+      DONOR_HEAD: 8c22d58956fc67dc4d3b82ab612757670d0275c3
+      DONOR_BLOB: d8e17ebdda5a9fee5731e1dbb13b88738f763728
+      BRIDGE_PATH: .github/workflows/capture-native-acl-coherence-direct-bridge.yml
+      TRIGGER_PATH: .github/capture-native-acl-coherence-direct-trigger.txt
+      TARGET_BRANCH: recovery/v17-capture-acl-coherence-current-direct-gpt56sol-20260817
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+
+      - name: Bind trusted base and exact trigger child
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$BASE_SHA"
+          git merge-base --is-ancestor "$PRODUCT_PARENT" "$BASE_SHA"
+          base_delta="$(git diff --name-only "$PRODUCT_PARENT".."$BASE_SHA" | LC_ALL=C sort)"
+          test "$base_delta" = "$BRIDGE_PATH"
+
+          git fetch origin "$HEAD_SHA"
+          test "$(git rev-parse FETCH_HEAD)" = "$HEAD_SHA"
+          git merge-base --is-ancestor "$BASE_SHA" "$HEAD_SHA"
+          trigger_delta="$(git diff --name-only "$BASE_SHA".."$HEAD_SHA" | LC_ALL=C sort)"
+          test "$trigger_delta" = "$TRIGGER_PATH"
+          test "$(git show "$HEAD_SHA:$TRIGGER_PATH")" = 'V17 direct trusted-base trigger for native ACL coherence materialization.'
+          test -z "$(git status --porcelain)"
+
+      - name: Bind reviewed donor materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin "$DONOR_HEAD"
+          git cat-file -e "$DONOR_HEAD^{commit}"
+          test "$(git rev-parse "$DONOR_HEAD:.github/workflows/capture-native-acl-baseline-coherence-one-shot.yml")" = "$DONOR_BLOB"
+          git show "$DONOR_HEAD:.github/workflows/capture-native-acl-baseline-coherence-one-shot.yml" > "$RUNNER_TEMP/reviewed-coherence-donor.yml"
+
+      - name: Materialize reviewed native fd path coherence
+        shell: python
+        run: |
+          from pathlib import Path
+          import os
+          import textwrap
+
+          donor = Path(os.environ["RUNNER_TEMP"]) / "reviewed-coherence-donor.yml"
+          text = donor.read_text()
+          start = "      - name: Materialize native fd/path baseline coherence\n        shell: python\n        run: |\n"
+          end = "\n      - name: Run focused portable regressions\n"
+          if text.count(start) != 1 or text.count(end) != 1:
+              raise SystemExit("reviewed donor materializer boundaries changed")
+          payload = text.split(start, 1)[1].split(end, 1)[0]
+          script = textwrap.dedent(payload)
+          compile(script, "reviewed-native-acl-coherence-materializer", "exec")
+          exec(compile(script, "reviewed-native-acl-coherence-materializer", "exec"), {"__name__": "__main__"})
+
+      - name: Run focused portable regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          python3 -B scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          python3 -B scripts/ci/tests/test_capture_accepted_root_build_composition.py
+
+      - name: Enforce exact product delta and publish
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          grep -q '_require_native_acl_baseline_coherence' scripts/ci/capture_selected_xcode_build_orchestrator.py
+          grep -q '_native_descriptor_acl_state' scripts/ci/capture_selected_xcode_build_orchestrator.py
+          grep -q '_native_path_acl_state' scripts/ci/capture_selected_xcode_build_orchestrator.py
+          ! grep -nE 'publishDps\(|writeValue\(|removeDevice|factoryReset' scripts/ci/capture_selected_xcode_build_orchestrator.py
+          git diff --check
+
+          git fetch origin "$TARGET_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$BASE_SHA"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/ci/capture_selected_xcode_build_orchestrator.py \
+                  scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          git rm "$BRIDGE_PATH"
+          git diff --cached --check
+          git commit -m 'Capture: bind retained FD ACL to fresh canonical baseline'
+
+          final_changed="$(git diff --name-only "$PRODUCT_PARENT"..HEAD | LC_ALL=C sort)"
+          test "$final_changed" = "$expected"
+          test -z "$(git status --porcelain)"
+          python3 -B scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          python3 -B scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          python3 -B scripts/ci/tests/test_capture_accepted_root_build_composition.py
+          test -z "$(git status --porcelain)"
+          git push origin HEAD:"$TARGET_BRANCH"
