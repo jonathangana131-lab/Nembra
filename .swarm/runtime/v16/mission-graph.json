@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 2,
+    "classifiedPRTotal": 1,
     "classifiedPRs": {
       "3497": {
         "classification": "requires-review",
@@ -1074,19 +1074,8 @@
         "lane": "dashboard-cockpit-product-closure",
         "pr": 3497,
         "recommendedAction": "independent-review",
-        "similarity": 0.107,
+        "similarity": 0.0,
         "title": "[Dashboard V17][RECOVERY] Ship signature battery / learned-range instrument"
-      },
-      "3648": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3648,
-        "recommendedAction": "independent-review",
-        "similarity": 0.106,
-        "title": "Trigger package-owned incomplete-observation cleanup"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1120,7 +1109,7 @@
       "live-pr-3082",
       "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T21:02:07Z",
+    "liveRefreshAt": "2026-08-18T21:02:50Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [],
@@ -4901,10 +4890,10 @@
       "userValue": 7
     }
   },
-  "revision": 1150,
+  "revision": 1151,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T21:02:07Z",
+  "updatedAt": "2026-08-18T21:02:50Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
