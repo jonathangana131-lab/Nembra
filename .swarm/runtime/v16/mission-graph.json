@@ -1085,7 +1085,7 @@
         "lane": "",
         "pr": 3650,
         "recommendedAction": "independent-review",
-        "similarity": 0.255,
+        "similarity": 0.254,
         "title": "[Capture P0][V17][HARDENING] Retire stale TODAY field authority fail closed"
       },
       "3652": {
@@ -1114,11 +1114,11 @@
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "ede7b068cf564953fa38a0b481684a8992d454ef",
+        "headSHA": "e98b556deed3dbb54dcdee5460794633fee36424",
         "lane": "capture-field-authority-retirement-consistency",
         "pr": 3656,
         "recommendedAction": "independent-review",
-        "similarity": 0.28,
+        "similarity": 0.288,
         "title": "[Capture P0][V17][RECOVERY] Rebase retired-TODAY gate fix onto live guard"
       },
       "3657": {
@@ -1129,7 +1129,7 @@
         "lane": "capture-field-authority-retirement-consistency",
         "pr": 3657,
         "recommendedAction": "independent-review",
-        "similarity": 0.294,
+        "similarity": 0.285,
         "title": "[Capture P0][V17][RECOVERY] Retire stale TODAY preflight handoff assertions"
       },
       "3658": {
@@ -1175,7 +1175,7 @@
       "live-pr-3082",
       "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T22:16:49Z",
+    "liveRefreshAt": "2026-08-18T22:17:04Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [],
@@ -4956,10 +4956,10 @@
       "userValue": 7
     }
   },
-  "revision": 1185,
+  "revision": 1186,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T22:16:50Z",
+  "updatedAt": "2026-08-18T22:17:04Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
