@@ -26,6 +26,16 @@ def load():
 
 
 class CapturePrivateReadLeaseRollbackTests(unittest.TestCase):
+    def _temporary_directory(self, prefix: str) -> tempfile.TemporaryDirectory[str]:
+        # macOS commonly reports /var/folders/... as its temporary directory even
+        # though /var is a symlink to /private/var. These regressions exercise the
+        # production no-symlink pinning contract, so build fixtures beneath the
+        # canonicalized temporary root rather than accidentally testing that alias.
+        return tempfile.TemporaryDirectory(
+            prefix=prefix,
+            dir=os.path.realpath(tempfile.gettempdir()),
+        )
+
     def _subject(self, temporary: str) -> tuple[Path, Path]:
         outer = Path(temporary)
         outer.chmod(0o711)
@@ -37,7 +47,7 @@ class CapturePrivateReadLeaseRollbackTests(unittest.TestCase):
 
     def test_failed_post_grant_verification_revokes_the_exact_acl(self) -> None:
         helper = load()
-        with tempfile.TemporaryDirectory(prefix="nembra-lease-rollback-") as temporary:
+        with self._temporary_directory("nembra-lease-rollback-") as temporary:
             repo, subject = self._subject(temporary)
             lease = helper._PrivateReadLease((subject,), repo)
             mutations: list[tuple[str, str]] = []
@@ -65,7 +75,7 @@ class CapturePrivateReadLeaseRollbackTests(unittest.TestCase):
 
     def test_chmod_failure_after_observable_mutation_still_revokes_the_exact_acl(self) -> None:
         helper = load()
-        with tempfile.TemporaryDirectory(prefix="nembra-lease-chmod-failure-") as temporary:
+        with self._temporary_directory("nembra-lease-chmod-failure-") as temporary:
             repo, subject = self._subject(temporary)
             lease = helper._PrivateReadLease((subject,), repo)
             mutations: list[tuple[str, str]] = []
@@ -95,7 +105,7 @@ class CapturePrivateReadLeaseRollbackTests(unittest.TestCase):
 
     def test_grant_surfaces_rollback_failure_instead_of_silently_forgetting_it(self) -> None:
         helper = load()
-        with tempfile.TemporaryDirectory(prefix="nembra-lease-rollback-failure-") as temporary:
+        with self._temporary_directory("nembra-lease-rollback-failure-") as temporary:
             repo, subject = self._subject(temporary)
             lease = helper._PrivateReadLease((subject,), repo)
             listings = iter(("before", "after-plus-a"))
@@ -124,7 +134,7 @@ class CapturePrivateReadLeaseRollbackTests(unittest.TestCase):
 
     def test_native_strict_revoke_restores_held_object_after_path_replacement(self) -> None:
         helper = load()
-        with tempfile.TemporaryDirectory(prefix="nembra-lease-native-revoke-") as temporary:
+        with self._temporary_directory("nembra-lease-native-revoke-") as temporary:
             repo, subject = self._subject(temporary)
             descriptor = os.open(subject, os.O_RDONLY)
             signature = helper._descriptor_signature(descriptor)
