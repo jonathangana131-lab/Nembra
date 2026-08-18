@@ -96,10 +96,14 @@ def _exact_blob(
     *,
     expected_blob: str | None = None,
 ) -> tuple[str, bytes]:
-    source = source.lower()
-    if source != "head" and HEX40.fullmatch(source) is None:
-        raise CurrentManifestConsumerFinalGoError("candidate source is malformed")
-    resolved = str(_git(root, "rev-parse", f"{source}:{relative}")).lower()
+    revision = source
+    if source == "HEAD":
+        revision = "HEAD"
+    else:
+        revision = source.lower()
+        if HEX40.fullmatch(revision) is None:
+            raise CurrentManifestConsumerFinalGoError("candidate source is malformed")
+    resolved = str(_git(root, "rev-parse", f"{revision}:{relative}")).lower()
     if re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", resolved) is None:
         raise CurrentManifestConsumerFinalGoError(f"Git blob identity is malformed: {relative}")
     if expected_blob is not None and resolved != expected_blob:
@@ -116,7 +120,7 @@ def _exact_blob(
 
 
 def _load_parent(root: Path):
-    _blob, payload = _exact_blob(root, "head", PARENT_PATH, expected_blob=PARENT_BLOB)
+    _blob, payload = _exact_blob(root, "HEAD", PARENT_PATH, expected_blob=PARENT_BLOB)
     module = types.ModuleType("nembra_v17_build_input_manifest_parent")
     module.__file__ = str((root / PARENT_PATH).resolve())
     try:
