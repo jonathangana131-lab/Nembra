@@ -78,6 +78,180 @@ jobs:
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py
 
+      - name: Classify canonical-path swap between native identity check and chmod
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -E /usr/bin/python3 -B -I - <<'PY'
+          import importlib.util
+          import os
+          from pathlib import Path
+          import pwd
+          import re
+          import shutil
+          import subprocess
+          import tempfile
+
+          repository = Path(os.environ['GITHUB_WORKSPACE']).resolve(strict=True)
+          orchestrator_path = repository / 'scripts/ci/capture_selected_xcode_build_orchestrator.py'
+          spec = importlib.util.spec_from_file_location('nembra_acl_path_swap', orchestrator_path)
+          if spec is None or spec.loader is None:
+              raise SystemExit('could not load selected-Xcode orchestrator')
+          helper = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(helper)
+
+          field_name = os.environ.get('SUDO_USER', '')
+          if not field_name or field_name == 'root':
+              raise SystemExit('classifier requires the separate invoking runner identity')
+          field = pwd.getpwnam(field_name)
+          nobody = pwd.getpwnam('nobody')
+
+          outer = Path(tempfile.mkdtemp(prefix='nembra-native-acl-path-swap.', dir='/private/tmp'))
+          subject = outer / 'private.fixture'
+          moved = outer / 'private.fixture.held-original'
+          descriptor = -1
+          real_run = helper.subprocess.run
+          swapped = False
+
+          def run_as(name: str, code: str, *args: str) -> subprocess.CompletedProcess:
+              return real_run(
+                  ['/usr/bin/sudo', '-n', '-u', name, '/usr/bin/python3', '-B', '-I', '-c', code, *args],
+                  stdin=subprocess.DEVNULL,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  text=True,
+                  check=False,
+              )
+
+          def acl_entries(path: Path) -> tuple[str, ...]:
+              result = real_run(
+                  ['/bin/ls', '-Hlde', str(path)],
+                  stdin=subprocess.DEVNULL,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+                  text=True,
+                  check=False,
+              )
+              if result.returncode != 0:
+                  raise SystemExit(result.stderr or f'could not inspect ACL: {path}')
+              return tuple(
+                  line.strip()
+                  for line in result.stdout.splitlines()
+                  if re.match(r'^\s*\d+:', line)
+              )
+
+          try:
+              # The field identity owns the namespace parent and can rename entries in it,
+              # while the accepted object itself is root-owned and unreadable to nobody.
+              os.chown(outer, field.pw_uid, field.pw_gid)
+              os.chmod(outer, 0o711)
+              subject.write_bytes(b'held-original\n')
+              os.chown(subject, 0, 0)
+              os.chmod(subject, 0o600)
+              real_run(['/bin/chmod', '-N', str(subject)], check=False)
+
+              descriptor = os.open(subject, os.O_RDONLY)
+              signature = helper._descriptor_signature(descriptor)
+              if acl_entries(subject):
+                  raise SystemExit('classifier subject unexpectedly starts with an ACL')
+
+              read_code = "from pathlib import Path; import sys; Path(sys.argv[1]).read_bytes()"
+              before_nobody = run_as(nobody.pw_name, read_code, str(subject))
+              if before_nobody.returncode == 0:
+                  raise SystemExit('nobody could read classifier subject before grant')
+
+              acl = helper._acl_text(nobody.pw_name, False, False)
+
+              def swap_then_run(command, *args, **kwargs):
+                  nonlocal swapped
+                  command_list = list(command)
+                  if (
+                      not swapped
+                      and len(command_list) >= 4
+                      and command_list[0] == '/bin/chmod'
+                      and command_list[1] == '+a'
+                      and command_list[-1] == str(subject)
+                  ):
+                      attacker = (
+                          "from pathlib import Path; import os,sys; "
+                          "src=Path(sys.argv[1]); moved=Path(sys.argv[2]); "
+                          "os.rename(src,moved); src.write_bytes(b'attacker-replacement\\n'); "
+                          "os.chmod(src,0o600)"
+                      )
+                      attack = run_as(field_name, attacker, str(subject), str(moved))
+                      if attack.returncode != 0:
+                          raise SystemExit(
+                              'separate field UID could not swap canonical subject: '
+                              + (attack.stderr or attack.stdout)
+                          )
+                      swapped = True
+                  return real_run(command, *args, **kwargs)
+
+              helper.subprocess.run = swap_then_run
+              post_check_failed = False
+              try:
+                  helper._chmod_acl_path(subject, descriptor, signature, False, acl)
+              except helper.SelectedXcodeBuildOrchestratorError as error:
+                  post_check_failed = 'private read-lease' in str(error)
+              finally:
+                  helper.subprocess.run = real_run
+
+              if not swapped:
+                  raise SystemExit('classifier did not reach the canonical chmod mutation point')
+              if not post_check_failed:
+                  raise SystemExit('production did not fail after canonical pathname replacement')
+              if helper._descriptor_signature(descriptor) != signature:
+                  raise SystemExit('held descriptor changed during classifier')
+              if helper._path_signature(moved) != signature:
+                  raise SystemExit('moved original no longer matches the held descriptor')
+              if helper._path_signature(subject) == signature:
+                  raise SystemExit('attacker replacement unexpectedly matches held original')
+
+              moved_entries = acl_entries(moved)
+              replacement_entries = acl_entries(subject)
+              if moved_entries:
+                  raise SystemExit(f'held original received unexpected ACL mutation: {moved_entries!r}')
+              if not any(nobody.pw_name in entry for entry in replacement_entries):
+                  raise SystemExit(
+                      f'attacker replacement did not receive the build ACL: {replacement_entries!r}'
+                  )
+
+              moved_nobody = run_as(nobody.pw_name, read_code, str(moved))
+              replacement_nobody = run_as(nobody.pw_name, read_code, str(subject))
+              if moved_nobody.returncode == 0:
+                  raise SystemExit('nobody gained read authority on held original')
+              if replacement_nobody.returncode != 0:
+                  raise SystemExit(
+                      'ACL mutation did not grant nobody real read authority on replacement: '
+                      + (replacement_nobody.stderr or replacement_nobody.stdout)
+                  )
+
+              print(
+                  'NEMBRA_NATIVE_ACL_PATH_SWAP_CLASSIFIER '
+                  f'exactHead={os.environ.get("GITHUB_SHA", "unknown")} '
+                  'separateFieldUIDSwap=true wrongVnodeMutated=true '
+                  'replacementReadAuthorityMinted=true heldOriginalUnchanged=true '
+                  'postMutationIdentityFailure=true productionChanged=false '
+                  'physicalAuthorityCreated=false'
+              )
+          finally:
+              helper.subprocess.run = real_run
+              if descriptor >= 0:
+                  os.close(descriptor)
+              for path in (subject, moved):
+                  try:
+                      real_run(['/bin/chmod', '-N', str(path)], check=False)
+                  except Exception:
+                      pass
+              try:
+                  os.chown(outer, 0, 0)
+                  os.chmod(outer, 0o700)
+              except OSError:
+                  pass
+              shutil.rmtree(outer, ignore_errors=True)
+          PY
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
       - name: Prove dedicated identity receives read/search only and loses it after revoke
         shell: bash
         run: |
