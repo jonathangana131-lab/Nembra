@@ -1175,7 +1175,7 @@
       "live-pr-3082",
       "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T22:20:47Z",
+    "liveRefreshAt": "2026-08-18T22:21:32Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [],
@@ -4956,10 +4956,10 @@
       "userValue": 7
     }
   },
-  "revision": 1197,
+  "revision": 1198,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T22:20:48Z",
+  "updatedAt": "2026-08-18T22:21:33Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
