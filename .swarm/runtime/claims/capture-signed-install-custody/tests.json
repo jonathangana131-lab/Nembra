@@ -9,15 +9,15 @@
   "generation": 11,
   "status": "ACTIVE",
   "claimedAt": "2026-08-18T02:50:30Z",
-  "lastHeartbeatAt": "2026-08-18T02:50:30Z",
+  "lastHeartbeatAt": "2026-08-18T02:52:30Z",
   "leaseSeconds": 1800,
   "branch": "repair/v17-capture-rollback-temp-canonical-gpt56sol-20260817",
-  "pr": null,
+  "pr": 3583,
   "sourceSHA": "ec91775a613f3504723cca390cfa108e3e076143",
-  "currentHeadSHA": "ec91775a613f3504723cca390cfa108e3e076143",
+  "currentHeadSHA": "a9d92570dd58551866f65dfa1953f0c88e9b26d2",
   "takeoverFromWorkerId": "gpt56-sol-20260817-1527-go",
   "takeoverFromLeaseId": "capture-signed-install-tests-gpt56-20260817-222700",
-  "takeoverReason": "Generation-10 tests claim was released. Claim a narrow non-production test repair after exact macOS evidence showed TemporaryDirectory's textual /var/folders alias is rejected by the production no-symlink host ancestry pinning before rollback assertions run.",
-  "intent": "Canonicalize only the already-existing rollback test fixture root so portable rollback regressions exercise ACL behavior on macOS without weakening production symlink defenses. Target current #3553 as a tiny child repair; no orchestrator/app/install/device/Bluetooth/Tuya/DP/physical bytes.",
-  "checkpoint": "Source #3553@ec91775a has already incorporated the strict accepted-root FakeLease native-mode repair. Remaining known deterministic blocker is rollback test fixture root `Path(temporary)` under Darwin /var/folders alias. Proposed exact repair: `Path(temporary).resolve(strict=True)` in `_subject()`. PHYSICAL NO-GO."
+  "takeoverReason": "Generation-10 tests claim was released. Claimed narrow test-only repair after exact macOS evidence showed TemporaryDirectory's textual /var/folders alias is rejected by production no-symlink host pinning before rollback assertions run.",
+  "intent": "Canonicalize only the existing rollback fixture root so portable rollback regressions exercise ACL behavior on macOS without weakening production symlink defenses. Child PR #3583 targets current #3553; no orchestrator/app/install/device/Bluetooth/Tuya/DP/physical bytes.",
+  "checkpoint": "PR #3583@a9d92570 is exact one-file +1/-1 against #3553@ec91775a: `_subject()` now uses `Path(temporary).resolve(strict=True)`. Exact compare confirms no other byte changes. Child has no direct workflow runs yet; acceptance requires composition into refreshed #3553 then exact macOS Private Build UID evidence. PHYSICAL NO-GO."
 }
