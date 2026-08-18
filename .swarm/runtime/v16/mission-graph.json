@@ -1074,7 +1074,7 @@
         "lane": "dashboard-cockpit-product-closure",
         "pr": 3649,
         "recommendedAction": "independent-review",
-        "similarity": 0.341,
+        "similarity": 0.069,
         "title": "[Dashboard V17][RECOVERY] Restore battery control accessibility role"
       },
       "3650": {
@@ -1099,17 +1099,6 @@
         "similarity": 0.099,
         "title": "[Capture P0][V17][RECOVERY] Re-earn post-merge exact-head matrix"
       },
-      "3653": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "dashboard-cockpit-product-closure",
-        "pr": 3653,
-        "recommendedAction": "independent-review",
-        "similarity": 0.354,
-        "title": "[Dashboard V17][RECOVERY] Restore native battery button acceptance"
-      },
       "3654": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1118,7 +1107,7 @@
         "lane": "capture-field-authority-retirement-consistency",
         "pr": 3654,
         "recommendedAction": "independent-review",
-        "similarity": 0.299,
+        "similarity": 0.41,
         "title": "[Capture P0][V17][HARDENING] Make current gate agree with retired TODAY authority"
       },
       "3655": {
@@ -1131,6 +1120,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.082,
         "title": "[Capture P0][V17][TRIGGER] Materialize package-owned incomplete horizon cleanup"
+      },
+      "3656": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "ede7b068cf564953fa38a0b481684a8992d454ef",
+        "lane": "capture-field-authority-retirement-consistency",
+        "pr": 3656,
+        "recommendedAction": "independent-review",
+        "similarity": 0.421,
+        "title": "[Capture P0][V17][RECOVERY] Rebase retired-TODAY gate fix onto live guard"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1164,7 +1164,7 @@
       "live-pr-3082",
       "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T22:15:29Z",
+    "liveRefreshAt": "2026-08-18T22:15:48Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [],
@@ -4945,10 +4945,10 @@
       "userValue": 7
     }
   },
-  "revision": 1181,
+  "revision": 1182,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T22:15:29Z",
+  "updatedAt": "2026-08-18T22:15:49Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
