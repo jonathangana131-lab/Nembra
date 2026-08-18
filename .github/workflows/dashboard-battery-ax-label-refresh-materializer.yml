@@ -1,0 +1,68 @@
+name: Dashboard Battery AX Label Refresh Materializer
+
+on:
+  push:
+    branches:
+      - recovery/v17-dashboard-battery-ax-dynamic-type-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bind exact failing Dashboard head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "86b9ee6f2c97a8b9d52a7bd8c8c67c117035de92"
+
+      - name: Refresh accessibility button identity with readout state
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("NembraApp/Features/Dashboard/DashboardView.swift")
+          source = path.read_text()
+          needle = '''        .accessibilityHint("Double tap to switch between battery charge and learned range. Learned range remains unavailable until Nembra has verified battery evidence and a learned range model.")
+        .accessibilityIdentifier("dashboard.battery-range")
+        .buttonStyle(.plain)
+'''
+          replacement = '''        .accessibilityHint("Double tap to switch between battery charge and learned range. Learned range remains unavailable until Nembra has verified battery evidence and a learned range model.")
+        .accessibilityIdentifier("dashboard.battery-range")
+        .id(batteryReadout)
+        .buttonStyle(.plain)
+'''
+          if source.count(needle) != 1:
+              raise SystemExit("expected exactly one accessibility battery-range modifier seam")
+          if ".id(batteryReadout)\n        .buttonStyle(.plain)" in source:
+              raise SystemExit("battery readout identity refresh already present")
+          path.write_text(source.replace(needle, replacement))
+
+      - name: Guard bounded product delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test "$(git diff --name-only | wc -l | tr -d ' ')" = "1"
+          test "$(git diff --name-only)" = "NembraApp/Features/Dashboard/DashboardView.swift"
+          grep -F '.id(batteryReadout)' NembraApp/Features/Dashboard/DashboardView.swift >/dev/null
+
+      - name: Publish clean accessibility fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/dashboard-battery-ax-label-refresh-materializer.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add NembraApp/Features/Dashboard/DashboardView.swift .github/workflows/dashboard-battery-ax-label-refresh-materializer.yml
+          git diff --cached --check
+          test "$(git diff --cached --name-only | wc -l | tr -d ' ')" = "2"
+          git commit -m "Dashboard: refresh battery range accessibility semantics"
+          git push origin HEAD:recovery/v17-dashboard-battery-ax-dynamic-type-gpt56
