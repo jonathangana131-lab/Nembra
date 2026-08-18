@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 6,
+    "classifiedPRTotal": 5,
     "classifiedPRs": {
       "3649": {
         "classification": "requires-review",
@@ -1081,11 +1081,11 @@
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "07bf400a1b37840e69a6fc5d0dddae95628f7c1d",
+        "headSHA": "4c67250632c8591fbb585902e8c9492659b18ce6",
         "lane": "capture-field-authority-retirement",
         "pr": 3650,
         "recommendedAction": "independent-review",
-        "similarity": 0.109,
+        "similarity": 0.123,
         "title": "[Capture P0][V17][HARDENING] Retire stale TODAY field authority fail closed"
       },
       "3652": {
@@ -1120,17 +1120,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.221,
         "title": "[Dashboard V17][ACCESSIBILITY] Keep battery/range control at AX sizes"
-      },
-      "3663": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "d8a55d6aa80df13256a09c590337b0762fe1d97e",
-        "lane": "capture-field-authority-retirement-consistency",
-        "pr": 3663,
-        "recommendedAction": "independent-review",
-        "similarity": 0.089,
-        "title": "[Capture P0][V17][HARDENING] Align current gate with retired TODAY authority"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1164,7 +1153,7 @@
       "live-pr-3082",
       "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T22:24:23Z",
+    "liveRefreshAt": "2026-08-18T22:24:38Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [],
@@ -4945,10 +4934,10 @@
       "userValue": 7
     }
   },
-  "revision": 1206,
+  "revision": 1207,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T22:24:23Z",
+  "updatedAt": "2026-08-18T22:24:38Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
