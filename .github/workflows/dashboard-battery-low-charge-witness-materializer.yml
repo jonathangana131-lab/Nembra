@@ -1,0 +1,64 @@
+name: Dashboard Battery Low Charge Witness Materializer
+
+on:
+  push:
+    branches:
+      - recovery/v17-dashboard-battery-ax-dynamic-type-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bind exact accessibility recovery head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "e2b932566f56c9f16bc74cf72c0941f8ceb90897"
+
+      - name: Add low-charge interaction witness
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("NembraUITests/NembraUITests.swift")
+          source = path.read_text()
+          needle = '''    @MainActor\n    func testLandscapePhysicalProfileKeepsPowerUnavailableRailVisible() {'''
+          test = '''    @MainActor\n    func testLandscapeLowBatteryKeepsChargeTruthWhileRangeUnavailable() throws {\n        defer { XCUIDevice.shared.orientation = .portrait }\n        let app = launch(scenario: "low-battery", orientation: .landscapeRight)\n\n        let battery = app.buttons["dashboard.battery-range"]\n        assertMinimumTouchTarget(battery, named: "Low-charge Dashboard battery and range")\n        XCTAssertEqual(battery.label, "Battery")\n        XCTAssertTrue(\n            waitForValue("14%", element: battery),\n            "Low-battery mode must expose the accepted 14% Simulator charge value."\n        )\n        keepScreenshot(named: "Dashboard Battery Low Charge Landscape")\n\n        battery.tap()\n\n        let learnedRange = app.buttons["dashboard.battery-range"]\n        XCTAssertTrue(learnedRange.waitForExistence(timeout: 2))\n        XCTAssertEqual(learnedRange.label, "Learned range")\n        XCTAssertTrue(\n            waitForValue(\n                "Unavailable until a verified learned range model exists",\n                element: learnedRange\n            ),\n            "Selecting learned range at low charge must not repurpose 14% into synthetic range."\n        )\n        assertMinimumTouchTarget(learnedRange, named: "Low-charge learned range")\n        keepScreenshot(named: "Dashboard Learned Range Low Charge Unavailable Landscape")\n\n        try app.performAccessibilityAudit(\n            for: [\n                .sufficientElementDescription,\n                .hitRegion,\n                .textClipped,\n                .trait\n            ]\n        )\n    }\n\n'''
+          if source.count(needle) != 1:
+              raise SystemExit("expected physical-profile test insertion seam")
+          if "testLandscapeLowBatteryKeepsChargeTruthWhileRangeUnavailable" in source:
+              raise SystemExit("low-charge witness already present")
+          path.write_text(source.replace(needle, test + needle))
+
+      - name: Guard test-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test "$(git diff --name-only | wc -l | tr -d ' ')" = "1"
+          test "$(git diff --name-only)" = "NembraUITests/NembraUITests.swift"
+          grep -F 'launch(scenario: "low-battery", orientation: .landscapeRight)' NembraUITests/NembraUITests.swift >/dev/null
+          grep -F 'waitForValue("14%", element: battery)' NembraUITests/NembraUITests.swift >/dev/null
+          grep -F 'Dashboard Learned Range Low Charge Unavailable Landscape' NembraUITests/NembraUITests.swift >/dev/null
+          grep -F 'let battery = app.buttons["dashboard.battery-range"]' NembraUITests/NembraUITests.swift >/dev/null
+
+      - name: Publish clean test witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/dashboard-battery-low-charge-witness-materializer.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add NembraUITests/NembraUITests.swift .github/workflows/dashboard-battery-low-charge-witness-materializer.yml
+          git diff --cached --check
+          test "$(git diff --cached --name-only | wc -l | tr -d ' ')" = "2"
+          git commit -m "Dashboard: witness low-charge battery range toggle"
+          git push origin HEAD:recovery/v17-dashboard-battery-ax-dynamic-type-gpt56
