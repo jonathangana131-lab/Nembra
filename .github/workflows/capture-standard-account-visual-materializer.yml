@@ -1,0 +1,228 @@
+name: Capture Standard account visual materializer
+
+on:
+  pull_request:
+    branches:
+      - materializer/v17-capture-standard-account-ui-base-gpt56sol-20260818
+    paths:
+      - .github/nembra/capture-standard-account-visual.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.head_ref == 'trigger/v17-capture-standard-account-ui-gpt56sol-20260818'
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      TARGET_BRANCH: qa/v17-capture-standard-account-link-visual-contract-gpt56sol-20260818
+      TARGET_SHA: 70671e120f26e7a989160cc32a1149efa360ef7c
+      BASE_BRANCH: materializer/v17-capture-standard-account-ui-base-gpt56sol-20260818
+      TRIGGER_BRANCH: trigger/v17-capture-standard-account-ui-gpt56sol-20260818
+      TRIGGER_MARKER: .github/nembra/capture-standard-account-visual.trigger
+    steps:
+      - name: Checkout exact product head
+        uses: actions/checkout@v4
+        with:
+          ref: 70671e120f26e7a989160cc32a1149efa360ef7c
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind trigger and immutable product parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin "$TARGET_BRANCH" "$BASE_BRANCH" "$TRIGGER_BRANCH"
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+          test "$(git rev-parse FETCH_HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          test "$(git rev-parse "origin/$TARGET_BRANCH")" = "$TARGET_SHA"
+          test "$(git rev-parse "origin/$TRIGGER_BRANCH")" = "${{ github.event.pull_request.head.sha }}"
+          delta="$(git diff --name-only "origin/$BASE_BRANCH"..."origin/$TRIGGER_BRANCH")"
+          test "$delta" = "$TRIGGER_MARKER"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize integrated Standard account control
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text(encoding="utf-8")
+
+          start = '''                    VStack(alignment: .leading, spacing: 7) {
+                        Text(isAccessibilityLayout ? "Tuya user code" : "Tuya Smart user code")
+'''
+          end = '''                    if isAccessibilityLayout, tuya.phase != .needsUserCode {
+'''
+          if source.count(start) != 1:
+              raise SystemExit(f"expected one legacy account-field start, found {source.count(start)}")
+          a = source.index(start)
+          b = source.index(end, a)
+          legacy = source[a:b]
+          required = [
+              'TextField(isAccessibilityLayout ? "Tuya user code" : "Paste user code"',
+              '.background(Color.white.opacity(0.085), in: RoundedRectangle(cornerRadius: 14, style: .continuous))',
+              'Label(isAccessibilityLayout ? "Create QR" : "Create approval QR", systemImage: "qrcode")',
+              '.buttonStyle(.borderedProminent)',
+              '.tint(.cyan)',
+              'tuya.requestApproval()',
+              'nembra.capture.root.account-link-action',
+          ]
+          for needle in required:
+              if needle not in legacy:
+                  raise SystemExit(f"legacy account control missing reviewed anchor: {needle}")
+
+          replacement = '''                    let accountControlLayout = isAccessibilityLayout
+                        ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
+                        : AnyLayout(HStackLayout(alignment: .center, spacing: 12))
+
+                    accountControlLayout {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(isAccessibilityLayout ? "Tuya user code" : "Tuya Smart user code")
+                                .font(.subheadline.weight(.semibold))
+                                .accessibilityHidden(true)
+                            TextField(isAccessibilityLayout ? "Tuya user code" : "Paste user code", text: $tuya.userCode)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .textFieldStyle(.plain)
+                                .padding(.horizontal, isAccessibilityLayout ? 14 : 2)
+                                .frame(minHeight: 50)
+                                .background {
+                                    if isAccessibilityLayout {
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .fill(Color.white.opacity(0.075))
+                                    }
+                                }
+                                .overlay(alignment: .bottom) {
+                                    if isAccessibilityLayout {
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                                    } else {
+                                        Rectangle()
+                                            .fill(Color.white.opacity(0.20))
+                                            .frame(height: 1)
+                                    }
+                                }
+                                .accessibilityLabel("Tuya Smart user code")
+                                .accessibilityHint("Used only to create the Tuya account approval QR for metadata setup.")
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        Button {
+                            tuya.requestApproval()
+                        } label: {
+                            Label(isAccessibilityLayout ? "Create QR" : "Create approval QR", systemImage: "qrcode")
+                                .font(isAccessibilityLayout ? .body.bold() : .subheadline.weight(.semibold))
+                                .frame(maxWidth: .infinity, minHeight: 50)
+                        }
+                        .buttonStyle(.plain)
+                        .frame(maxWidth: isAccessibilityLayout ? .infinity : 174)
+                        .background(
+                            Color.cyan.opacity(isAccessibilityLayout ? 0.12 : 0.14),
+                            in: Capsule(style: .continuous)
+                        )
+                        .overlay {
+                            Capsule(style: .continuous)
+                                .stroke(Color.cyan.opacity(0.38), lineWidth: 1)
+                        }
+                        .foregroundStyle(Color.cyan)
+                        .accessibilityIdentifier("nembra.capture.root.account-link-action")
+                        .accessibilityLabel("Create approval QR")
+                        .accessibilityHint("Creates the account-metadata approval QR. It does not start Bluetooth or physical Capture.")
+                    }
+                    .padding(isAccessibilityLayout ? 0 : 10)
+                    .background {
+                        if !isAccessibilityLayout {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(Color.white.opacity(0.045))
+                        }
+                    }
+                    .overlay {
+                        if !isAccessibilityLayout {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                        }
+                    }
+
+'''
+          source = source[:a] + replacement + source[b:]
+
+          old_disclosure = '''            Label(isAccessibilityLayout ? "Details" : "Engineering details", systemImage: "wrench.and.screwdriver")
+                .font(.subheadline.weight(.semibold))
+                .accessibilityLabel("Engineering details")
+'''
+          new_disclosure = '''            Label("Details", systemImage: "info.circle")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.white.opacity(0.62))
+                .accessibilityLabel("Engineering details")
+'''
+          if source.count(old_disclosure) != 1:
+              raise SystemExit(f"expected one legacy Engineering details label, found {source.count(old_disclosure)}")
+          source = source.replace(old_disclosure, new_disclosure, 1)
+
+          if source.count("tuya.requestApproval()") != 1:
+              raise SystemExit("account approval action count changed")
+          if source.count('nembra.capture.root.account-link-action') != 1:
+              raise SystemExit("account-link accessibility identifier count changed")
+          if 'markApplicationObservationTimedOut(for: token)' in source and source.count('markApplicationObservationTimedOut(for: token)') < 1:
+              raise SystemExit("unexpected lifecycle mutation")
+
+          path.write_text(source, encoding="utf-8")
+
+      - name: Enforce one-file product mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only)"
+          test "$changed" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
+          git diff --check
+          grep -Fq 'AnyLayout(HStackLayout(alignment: .center, spacing: 12))' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'Label("Details", systemImage: "info.circle")' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'Physical capture locked' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'This public build can prepare account metadata only. Bluetooth and physical evidence collection are locked.' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'Creates the account-metadata approval QR. It does not start Bluetooth or physical Capture.' NembraApp/App/NembraCaptureEntrypoint.swift
+          test "$(grep -Fc 'tuya.requestApproval()' NembraApp/App/NembraCaptureEntrypoint.swift)" = 1
+          test "$(grep -Fc 'nembra.capture.root.account-link-action' NembraApp/App/NembraCaptureEntrypoint.swift)" = 1
+
+      - name: Run focused truth and product contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVELOPER_DIR=/Applications/Xcode_26.3.app/Contents/Developer
+          xcodebuild -version
+          cd Packages/NembraBluetoothCapture
+          swift test --filter CaptureFirstFoldCopySourceTests
+          swift test --filter CaptureP0RootVisualAcceptanceTests
+          swift test --filter TuyaCaptureRootProductSurfaceSourceTests
+          swift test --filter CaptureRootLargeTypeHierarchySourceTests
+
+      - name: Build standalone Capture smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEVELOPER_DIR=/Applications/Xcode_26.3.app/Contents/Developer
+          rm -rf "${RUNNER_TEMP}/NembraCaptureVisualMaterializer"
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "${RUNNER_TEMP}/NembraCaptureVisualMaterializer" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Publish exact tested product successor
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          test "$(git diff --cached --name-only)" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'ui(capture): integrate Standard account link control'
+          materialized="$(git rev-parse HEAD)"
+          git fetch origin "$TARGET_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$TARGET_SHA"
+          git push origin "$materialized:refs/heads/$TARGET_BRANCH"
+          printf 'NEMBRA_CAPTURE_STANDARD_VISUAL materialized=%s parent=%s physicalAuthorityCreated=false\n' "$materialized" "$TARGET_SHA"
