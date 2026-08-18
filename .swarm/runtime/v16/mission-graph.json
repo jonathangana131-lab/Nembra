@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 32,
+    "classifiedPRTotal": 29,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1118,41 +1118,8 @@
         "lane": "capture-signed-install-custody",
         "pr": 3353,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.309,
+        "similarity": 0.247,
         "title": "[Capture P0][SECURITY] Seal APFS backing before writable attach"
-      },
-      "3355": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-read-lease",
-        "pr": 3355,
-        "recommendedAction": "independent-review",
-        "similarity": 0.38,
-        "title": "[Capture P0][HARDENING] Fail-closed private lease rollback on c8ccf"
-      },
-      "3356": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "40886f3f89cb3bbd6b78f92c55bc388d6716677a",
-        "lane": "capture-signed-install-custody",
-        "pr": 3356,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.304,
-        "title": "[Capture P0][REPAIR] Preaccept private Tuya provenance before field build"
-      },
-      "3358": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-read-lease",
-        "pr": 3358,
-        "recommendedAction": "independent-review",
-        "similarity": 0.381,
-        "title": "[Capture P0][HARDENING] Close 4da private-lease ACL failure window"
       },
       "3359": {
         "classification": "validation",
@@ -1449,7 +1416,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T03:24:39Z",
+    "liveRefreshAt": "2026-08-18T03:24:59Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5234,10 +5201,10 @@
       "userValue": 7
     }
   },
-  "revision": 1013,
+  "revision": 1014,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T03:24:40Z",
+  "updatedAt": "2026-08-18T03:25:00Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5313,7 +5280,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T03:24:39Z",
+      "updatedAt": "2026-08-18T03:24:59Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
