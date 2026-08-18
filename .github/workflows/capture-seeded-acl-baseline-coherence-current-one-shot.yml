@@ -1,0 +1,117 @@
+name: Capture current seeded ACL baseline coherence one-shot
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-seeded-acl-baseline-coherence-current-one-shot.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.head_ref == 'repair/v17-capture-seeded-acl-coherence-current-sol-20260817'
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact current stacked parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='ec91775a613f3504723cca390cfa108e3e076143'
+          test "${{ github.head_ref }}" = 'repair/v17-capture-seeded-acl-coherence-current-sol-20260817'
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          test "$(git rev-parse HEAD^)" = "$parent"
+          changed="$(git diff --name-only "$parent"...HEAD)"
+          test "$changed" = '.github/workflows/capture-seeded-acl-baseline-coherence-current-one-shot.yml'
+          git diff --check "$parent"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Reuse reviewed current-compatible materialization payload
+        shell: python
+        run: |
+          import subprocess
+
+          donor = '2ac806c309a553a12823f91060788fd1c7146545'
+          donor_path = '.github/workflows/capture-seeded-acl-baseline-coherence-one-shot.yml'
+          source = subprocess.check_output(
+              ['/usr/bin/git', 'show', f'{donor}:{donor_path}'],
+              text=True,
+          )
+          opening = (
+              '      - name: Materialize native fd-path baseline coherence\n'
+              '        shell: python\n'
+              '        run: |\n'
+          )
+          closing = '\n      - name: Enforce two-path permanent delta\n'
+          if source.count(opening) != 1 or source.count(closing) != 1:
+              raise SystemExit('accepted coherence donor payload markers are not unique')
+          body = source.split(opening, 1)[1].split(closing, 1)[0]
+          lines = body.splitlines()
+          if any(line and not line.startswith('          ') for line in lines):
+              raise SystemExit('accepted donor payload indentation is malformed')
+          payload = '\n'.join(line[10:] if line else '' for line in lines) + '\n'
+          exec(compile(payload, f'{donor}:{donor_path}#materialize', 'exec'), {})
+
+      - name: Enforce two-path permanent delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          grep -q '_require_native_acl_baseline_coherence' scripts/ci/capture_selected_xcode_build_orchestrator.py
+          grep -q 'acl_get_file' scripts/ci/capture_selected_xcode_build_orchestrator.py
+          grep -q 'acl_to_text' scripts/ci/capture_selected_xcode_build_orchestrator.py
+          grep -q 'test_seeded_fd_path_baseline_mismatch_fails_before_authority' scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py
+          git diff --check
+
+      - name: Commit exact materialized product ingredient
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/ci/capture_selected_xcode_build_orchestrator.py \
+                  scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py
+          git rm .github/workflows/capture-seeded-acl-baseline-coherence-current-one-shot.yml
+          git diff --cached --check
+          git commit -m 'Capture: require native ACL baseline coherence'
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          echo "NEMBRA_SEEDED_ACL_COHERENCE_MATERIALIZED_SHA=$(git rev-parse HEAD)"
+
+      - name: Prove exact materialized seeded-baseline behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          materialized="$(git rev-parse HEAD)"
+          /usr/bin/python3 -B -m py_compile \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py
+          field_user="$(/usr/bin/id -un)"
+          /usr/bin/sudo -n env \
+            NEMBRA_TEST_FIELD_USER="$field_user" \
+            PYTHONDONTWRITEBYTECODE=1 \
+            /usr/bin/python3 -B -I \
+            scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py \
+            --field-user "$field_user"
+          test "$(git rev-parse HEAD)" = "$materialized"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          echo "NEMBRA_SEEDED_ACL_COHERENCE exactHead=$materialized fdPathSemanticEqualityRequired=true seededBaselineExactRestore=true mismatchFailsBeforeAuthority=true physicalAuthorityCreated=false"
+
+      - name: Publish exact tested ingredient
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch='repair/v17-capture-seeded-acl-coherence-current-sol-20260817'
+          git fetch origin "$branch"
+          test "$(git rev-parse FETCH_HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          git push origin HEAD:"$branch"
+          echo 'Validation/product ingredient only. Final #3553/#3535 carrier must compose this on one unchanged head and re-earn exact-head gates. Physical NO-GO.'
