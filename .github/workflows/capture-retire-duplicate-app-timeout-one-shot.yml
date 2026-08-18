@@ -1,11 +1,11 @@
 name: Capture retire duplicate app-timeout one-shot
 
 on:
-  pull_request:
+  push:
     branches:
       - capture/one-time-ble-dump-gpt56
     paths:
-      - .github/nembra-timeout-cleanup-trigger
+      - .github/workflows/capture-retire-duplicate-app-timeout-one-shot.yml
 
 permissions:
   contents: write
@@ -153,5 +153,6 @@ struct TuyaApplicationTimeoutPresentationRaceSourceTests {
           git commit -m "Capture: let package own incomplete observation terminal"
           git push origin HEAD:capture/one-time-ble-dump-gpt56
 
-# Same reviewed product patch; only admission moved from unreliable branch-push re-arms to a same-repo PR trigger.
+# Re-armed after verifying the duplicate app-owned timeout still exists on the exact branch head.
 # macOS /bin/bash is 3.2, so exact-delta admission deliberately avoids mapfile/readarray.
+# PR-trigger fallback was intentionally retired after proving branch-local workflow registration was the blocker.
