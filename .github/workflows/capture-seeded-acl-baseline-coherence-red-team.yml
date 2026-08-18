@@ -1,0 +1,55 @@
+name: Capture Seeded ACL Baseline Coherence Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_seeded_acl_baseline_coherence_red_team.py
+      - .github/workflows/capture-seeded-acl-baseline-coherence-red-team.yml
+
+permissions:
+  contents: read
+
+jobs:
+  exploit-positive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact attacked product and validation-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='8456750395c0a5cb1472834300785a5d52c1cae4'
+          head="$(git rev-parse HEAD)"
+          test "$head" = '${{ github.event.pull_request.head.sha }}'
+          test "$(git merge-base "$parent" "$head")" = "$parent"
+
+          changed="$(git diff --name-only "$parent...$head" | sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-seeded-acl-baseline-coherence-red-team.yml \
+            scripts/ci/tests/test_capture_seeded_acl-baseline-coherence-red-team.py | sort)"
+          # Keep the explicit spelling below authoritative; the first expected
+          # construction intentionally cannot hide a filename typo.
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-seeded-acl-baseline-coherence-red-team.yml \
+            scripts/ci/tests/test_capture_seeded_acl_baseline_coherence_red_team.py | sort)"
+          test "$changed" = "$expected"
+
+          parent_blob="$(git rev-parse "$parent:scripts/ci/capture_selected_xcode_build_orchestrator.py")"
+          head_blob="$(git rev-parse "$head:scripts/ci/capture_selected_xcode_build_orchestrator.py")"
+          test "$parent_blob" = "$head_blob"
+          git diff --check "$parent...$head"
+
+      - name: Run exploit-positive seeded-baseline classifier
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/tests/test_capture_seeded_acl_baseline_coherence_red_team.py
+          python3 scripts/ci/tests/test_capture_seeded_acl_baseline_coherence_red_team.py
+
+      - name: Reassert truth boundary
+        run: |
+          echo 'SUCCESS here means the exact attacked production head grants without native fd/path seeded-baseline semantic equality.'
+          echo 'Validation only. physicalAuthorityCreated=false installAuthorityCreated=false bluetoothAuthorityCreated=false commandAuthorityCreated=false'
