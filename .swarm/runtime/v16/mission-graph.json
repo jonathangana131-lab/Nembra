@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 7,
+    "classifiedPRTotal": 8,
     "classifiedPRs": {
       "3649": {
         "classification": "requires-review",
@@ -1107,7 +1107,7 @@
         "lane": "capture-field-authority-retirement-consistency",
         "pr": 3656,
         "recommendedAction": "independent-review",
-        "similarity": 0.12,
+        "similarity": 0.456,
         "title": "[Capture P0][V17][RECOVERY] Rebase retired-TODAY gate fix onto live guard"
       },
       "3658": {
@@ -1142,6 +1142,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.221,
         "title": "[Dashboard V17][ACCESSIBILITY] Keep battery/range control at AX sizes"
+      },
+      "3663": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "d8a55d6aa80df13256a09c590337b0762fe1d97e",
+        "lane": "capture-field-authority-retirement-consistency",
+        "pr": 3663,
+        "recommendedAction": "independent-review",
+        "similarity": 0.448,
+        "title": "[Capture P0][V17][HARDENING] Align current gate with retired TODAY authority"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1175,7 +1186,7 @@
       "live-pr-3082",
       "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T22:22:24Z",
+    "liveRefreshAt": "2026-08-18T22:22:41Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [],
@@ -4956,10 +4967,10 @@
       "userValue": 7
     }
   },
-  "revision": 1201,
+  "revision": 1202,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T22:22:25Z",
+  "updatedAt": "2026-08-18T22:22:41Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
