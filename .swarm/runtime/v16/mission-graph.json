@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 47,
+    "classifiedPRTotal": 48,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1085,7 +1085,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.096,
+        "similarity": 0.109,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3321": {
@@ -1371,7 +1371,7 @@
         "lane": "",
         "pr": 3435,
         "recommendedAction": "independent-review",
-        "similarity": 0.152,
+        "similarity": 0.156,
         "title": "[Capture P0][RECOVERY] Execute full numeric-principal materializer without stale rewrite"
       },
       "3457": {
@@ -1426,7 +1426,7 @@
         "lane": "dashboard-cockpit-product-closure",
         "pr": 3497,
         "recommendedAction": "independent-review",
-        "similarity": 0.108,
+        "similarity": 0.122,
         "title": "[Dashboard V17][RECOVERY] Ship signature battery / learned-range instrument"
       },
       "3516": {
@@ -1558,7 +1558,7 @@
         "lane": "capture-private-uid-read-lease-current",
         "pr": 3597,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.13,
+        "similarity": 0.206,
         "title": "[Capture P0][V17][TEST] Exercise native transport in real UID witness"
       },
       "3598": {
@@ -1569,7 +1569,7 @@
         "lane": "",
         "pr": 3598,
         "recommendedAction": "independent-review",
-        "similarity": 0.268,
+        "similarity": 0.348,
         "title": "[Capture P0][V17][TRIGGER] Re-arm current native ACL coherence materializer"
       },
       "3599": {
@@ -1582,6 +1582,17 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.141,
         "title": "[Capture P0][V17][REPAIR] Use native ACL lease on real Darwin"
+      },
+      "3600": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3600,
+        "recommendedAction": "independent-review",
+        "similarity": 0.353,
+        "title": "[Capture P0][V17][TRIGGER] Materialize native private-UID routing"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1614,7 +1625,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T03:03:16Z",
+    "liveRefreshAt": "2026-08-18T03:03:34Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5399,10 +5410,10 @@
       "userValue": 7
     }
   },
-  "revision": 986,
+  "revision": 987,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T03:03:17Z",
+  "updatedAt": "2026-08-18T03:03:35Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5478,7 +5489,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T03:03:16Z",
+      "updatedAt": "2026-08-18T03:03:34Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
