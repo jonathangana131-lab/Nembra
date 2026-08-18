@@ -15,6 +15,9 @@ on:
       - scripts/ci/tests/test_capture_private_read_lease_rollback.py
       - scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py
       - scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+      - scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py
+      - Scripts/bootstrap_capture_tuya_sdk.sh
+      - scripts/field/install_one_time_capture.command
       - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerSourceCustodyOrderingSourceTests.swift
       - .github/workflows/capture-current-accepted-root-acl-transport-probe.yml
       - .github/workflows/capture-current-accepted-root-real-lease-classifier.yml
@@ -116,6 +119,7 @@ jobs:
               "scripts/ci/tests/test_capture_private_read_lease_rollback.py",
               "scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py",
               "scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py",
+              "scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py",
           ):
               path = Path(raw)
               compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
@@ -127,6 +131,7 @@ jobs:
           set -euo pipefail
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_root_build_composition.py
           /usr/bin/python3 -B -I scripts/ci/tests/test_capture_accepted_root_whole_read_lease.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py
 
       - name: Adversary — symlink authority transition
         shell: bash
@@ -169,7 +174,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "NEMBRA_CURRENT_ACCEPTED_ROOT_COMPILER sealedRoot=true canonicalWorkspace=true wholeRootReadLease=true rollbackRequired=true signingAuthority=false installAuthority=false deviceTouched=false bluetoothTouched=false physicalAuthorityCreated=false"
+          echo "NEMBRA_CURRENT_ACCEPTED_ROOT_COMPILER sealedRoot=true canonicalWorkspace=true wholeRootReadLease=true fieldConsumer=true rollbackRequired=true signingAuthority=false installAuthority=false deviceTouched=false bluetoothTouched=false physicalAuthorityCreated=false"
 
   real-macos-authority:
     name: Real whole-root compiler read lease
