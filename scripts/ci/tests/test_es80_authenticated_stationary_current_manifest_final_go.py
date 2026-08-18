@@ -50,7 +50,10 @@ def write_candidate(root: Path, *, helper_digest: str = DIGEST, valid_consumer: 
         "#!/bin/bash\n"
         f': "${{{control.CURRENT_ENV_KEY}:?review required}}"\n'
         f'HELPER="scripts/ci/capture_accepted_build_input_snapshot.py"\n'
-        "generated_manifest_sha256\n",
+        'SOURCE_SHA="0123456789012345678901234567890123456789"\n'
+        'GENERATED_MANIFEST_SHA256="$(/usr/bin/python3 -I "$HELPER" manifest --root "$PWD" '
+        '--source-sha "$SOURCE_SHA" | /usr/bin/shasum -a 256)"\n'
+        'ACCEPTED_GENERATED_MANIFEST_SHA256="$GENERATED_MANIFEST_SHA256"\n',
         encoding="utf-8",
     )
 
