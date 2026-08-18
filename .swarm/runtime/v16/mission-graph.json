@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 9,
+    "classifiedPRTotal": 7,
     "classifiedPRs": {
       "3649": {
         "classification": "requires-review",
@@ -1074,7 +1074,7 @@
         "lane": "dashboard-cockpit-product-closure",
         "pr": 3649,
         "recommendedAction": "independent-review",
-        "similarity": 0.071,
+        "similarity": 0.079,
         "title": "[Dashboard V17][RECOVERY] Restore battery control accessibility role"
       },
       "3650": {
@@ -1085,7 +1085,7 @@
         "lane": "",
         "pr": 3650,
         "recommendedAction": "independent-review",
-        "similarity": 0.313,
+        "similarity": 0.269,
         "title": "[Capture P0][V17][HARDENING] Retire stale TODAY field authority fail closed"
       },
       "3652": {
@@ -1096,7 +1096,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3652,
         "recommendedAction": "independent-review",
-        "similarity": 0.173,
+        "similarity": 0.123,
         "title": "[Capture P0][V17][RECOVERY] Re-earn post-merge exact-head matrix"
       },
       "3655": {
@@ -1121,17 +1121,6 @@
         "similarity": 0.455,
         "title": "[Capture P0][V17][RECOVERY] Rebase retired-TODAY gate fix onto live guard"
       },
-      "3657": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "318ea84d0036fefd7dd92c96287ffe48688b2599",
-        "lane": "capture-field-authority-retirement-consistency",
-        "pr": 3657,
-        "recommendedAction": "independent-review",
-        "similarity": 0.351,
-        "title": "[Capture P0][V17][RECOVERY] Retire stale TODAY preflight handoff assertions"
-      },
       "3658": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1153,17 +1142,6 @@
         "recommendedAction": "independent-review",
         "similarity": 0.438,
         "title": "[Capture P0][V17][HARDENING] Close current-gate TODAY retirement contradiction"
-      },
-      "3660": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "5cbbeb77e86b7eeb19e3349af3a85bba9b49370f",
-        "lane": "capture-signed-install-custody",
-        "pr": 3660,
-        "recommendedAction": "independent-review",
-        "similarity": 0.192,
-        "title": "[Capture P0][V17][HARDENING] Bind authenticated Final GO to immutable head"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1197,7 +1175,7 @@
       "live-pr-3082",
       "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T22:19:20Z",
+    "liveRefreshAt": "2026-08-18T22:20:10Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [],
@@ -4978,10 +4956,10 @@
       "userValue": 7
     }
   },
-  "revision": 1194,
+  "revision": 1195,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T22:19:20Z",
+  "updatedAt": "2026-08-18T22:20:10Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
