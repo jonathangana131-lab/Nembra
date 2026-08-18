@@ -1,8 +1,10 @@
-# V17 recovery re-arm: materialize the already-reviewed fail-closed repair.
-name: Capture native ACL fail-closed one-shot
+# V17 rebased child recovery: materialize fail-closed repair plus legacy lease compatibility.
+name: Capture native ACL exact-guard recovery one-shot
 
 on:
-  pull_request:
+  push:
+    branches:
+      - repair/v17-capture-native-acl-exact-guard-recovery2-gpt56sol-go
     paths:
       - .github/workflows/capture-native-acl-failclosed-one-shot.yml
 
@@ -11,23 +13,21 @@ permissions:
 
 jobs:
   materialize:
-    if: github.head_ref == 'repair/v17-capture-darwin-native-acl-production-gpt56sol-20260817'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
-      - name: Bind exact repair branch
+      - name: Bind exact recovery branch
         shell: bash
         run: |
           set -euo pipefail
-          test "${{ github.head_ref }}" = "repair/v17-capture-darwin-native-acl-production-gpt56sol-20260817"
-          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          test "$GITHUB_REF_NAME" = "repair/v17-capture-native-acl-exact-guard-recovery2-gpt56sol-go"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test -z "$(git status --porcelain)"
 
-      - name: Materialize fail-closed pathname replacement repair
+      - name: Materialize fail-closed repair and legacy construction compatibility
         shell: python
         run: |
           from pathlib import Path
@@ -64,7 +64,26 @@ jobs:
 '''
           if text.count(old) != 1:
               raise SystemExit(f"expected one native revoke anchor, found {text.count(old)}")
-          orchestrator.write_text(text.replace(old, new, 1))
+          text = text.replace(old, new, 1)
+
+          old_ctor = '''        lease = _PrivateReadLease(
+            private_subjects,
+            lease_repo,
+            use_native_darwin_acl=(accepted_root is not None),
+        )
+'''
+          new_ctor = '''        if accepted_root is None:
+            lease = _PrivateReadLease(private_subjects, lease_repo)
+        else:
+            lease = _PrivateReadLease(
+                private_subjects,
+                lease_repo,
+                use_native_darwin_acl=True,
+            )
+'''
+          if text.count(old_ctor) != 1:
+              raise SystemExit(f"expected one private lease construction anchor, found {text.count(old_ctor)}")
+          orchestrator.write_text(text.replace(old_ctor, new_ctor, 1))
 
           test_path = Path("scripts/ci/tests/test_capture_private_read_lease_rollback.py")
           test_text = test_path.read_text()
@@ -90,8 +109,11 @@ jobs:
               raise SystemExit(f"expected one rollback test anchor, found {test_text.count(old_test)}")
           test_path.write_text(test_text.replace(old_test, new_test, 1))
 
-      - name: Run focused rollback regression
-        run: python3 scripts/ci/tests/test_capture_private_read_lease_rollback.py
+      - name: Run focused regressions
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          python3 scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
 
       - name: Enforce exact product delta
         shell: bash
@@ -104,16 +126,18 @@ jobs:
           test "$changed" = "$expected"
           ! grep -nE 'publishDps\(|writeValue\(|removeDevice|factoryReset' scripts/ci/capture_selected_xcode_build_orchestrator.py
 
-      - name: Publish coherent product repair
+      - name: Publish coherent recovery and retire one-shot
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          rm .github/workflows/capture-native-acl-failclosed-one-shot.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add scripts/ci/capture_selected_xcode_build_orchestrator.py \
-                  scripts/ci/tests/test_capture_private_read_lease_rollback.py
+                  scripts/ci/tests/test_capture_private_read_lease_rollback.py \
+                  .github/workflows/capture-native-acl-failclosed-one-shot.yml
           git diff --cached --check
-          git commit -m "Capture: fail closed on accepted-root pathname replacement"
-          git push origin HEAD:repair/v17-capture-darwin-native-acl-production-gpt56sol-20260817
+          git commit -m "Capture: close native ACL exact-guard recovery"
+          git push origin HEAD:repair/v17-capture-native-acl-exact-guard-recovery2-gpt56sol-go
