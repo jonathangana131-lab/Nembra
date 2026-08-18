@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 18,
+    "classifiedPRTotal": 19,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1261,8 +1261,19 @@
         "lane": "capture-final-go-authority",
         "pr": 3609,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.212,
+        "similarity": 0.361,
         "title": "[Capture P0][V17][REPAIR] Fence manifest authority after composition lock"
+      },
+      "3610": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-final-go-authority",
+        "pr": 3610,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.357,
+        "title": "[Capture P0][V17][RED TEAM] Prove manifest review authority bypasses"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1295,7 +1306,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T10:55:52Z",
+    "liveRefreshAt": "2026-08-18T10:56:37Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5080,10 +5091,10 @@
       "userValue": 7
     }
   },
-  "revision": 1039,
+  "revision": 1040,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T10:55:52Z",
+  "updatedAt": "2026-08-18T10:56:38Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5159,7 +5170,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T10:55:52Z",
+      "updatedAt": "2026-08-18T10:56:37Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
