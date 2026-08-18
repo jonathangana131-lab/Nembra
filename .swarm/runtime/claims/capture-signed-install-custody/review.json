@@ -9,15 +9,15 @@
   "generation": 20,
   "status": "ACTIVE",
   "claimedAt": "2026-08-18T02:38:30Z",
-  "lastHeartbeatAt": "2026-08-18T02:42:30Z",
+  "lastHeartbeatAt": "2026-08-18T02:49:30Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3553,
   "sourceSHA": "22b2ec853c0637662a8551a8fb869caf65fe12da",
-  "currentHeadSHA": "8456750395c0a5cb1472834300785a5d52c1cae4",
+  "currentHeadSHA": "9561edb03579fbe882f2d2ba287cfd2bfc82da41",
   "takeoverFromWorkerId": "gpt56-sol-20260814-1553-go-review",
   "takeoverFromLeaseId": "capture-signed-install-review-gpt56-20260814-225300",
-  "takeoverReason": "Generation-19 review lease expired on 2026-08-14. Recover non-conflicting truth review while the live #3553 integration author is actively changing the materializer; do not edit production paths.",
+  "takeoverReason": "Generation-19 review lease expired on 2026-08-14. Recover non-conflicting truth review while #3553 integration is active; do not edit production paths.",
   "intent": "Adversarially review #3553 native Darwin accepted-root ACL productionization, exact-scope materialization, rollback/path-replacement behavior, composition tests, and same-head gate requirements. Do not mutate the active implementation branch. PHYSICAL NO-GO.",
-  "checkpoint": "At #3553@84567503, review finding 4956628655 was incorporated into the authoring plan: strict accepted-root composition FakeLease will accept/record native mode and its focused regression will run. Exact compiler run 32092606132 still stops portable jobs at scope because the one-shot remains, while xcode-27 real whole-root read/search->revoke is terminal SUCCESS. Separate macOS Private Build UID run 32092606074 exposes a real test-fixture defect: rollback tests use the textual /var/folders temp alias, so production no-symlink pinning fails before ACL assertions. Reviews 4956638838/4956642768 require canonicalizing the rollback fixture root (smallest proposed fix: Path(temporary).resolve(strict=True)) without weakening production. Exact Private Guard and Field Provenance are green on 84567503. Materialization, macOS rollback repair, and final same-head acceptance remain pending. PHYSICAL NO-GO."
+  "checkpoint": "#3553 reached clean self-deleted head 9561edb0; temporary authoring workflow is absent and current PR delta is four product/test paths. Main Selective Graft red on the prior head was classified as one-shot-only scope contamination, not a separate defect. Clean-head review found two blockers still present: (1) strict accepted-root composition FakeLease remains two-argument and will TypeError when production passes use_native_darwin_acl=True; review 4956679799 requires the previously-planned keyword adaptation/native assertion; (2) macOS rollback fixture still uses textual Path(temporary), preserving the /var/folders symlink-alias failure seen in Private Build UID run 32092606074; reviews 4956638838/4956642768 propose canonicalizing the existing temp root without weakening production. Clean-head exact gates are queued and not acceptance evidence yet. PHYSICAL NO-GO."
 }
