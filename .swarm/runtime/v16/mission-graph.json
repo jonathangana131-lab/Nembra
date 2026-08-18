@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 46,
+    "classifiedPRTotal": 45,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1528,17 +1528,6 @@
         "similarity": 0.375,
         "title": "[Capture P0][V17][REPAIR] Require seeded ACL baseline coherence"
       },
-      "3577": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3577,
-        "recommendedAction": "independent-review",
-        "similarity": 0.257,
-        "title": "[Capture P0][V17][RECOVERY] Materialize clean native ACL lease repair"
-      },
       "3581": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1603,7 +1592,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T02:54:45Z",
+    "liveRefreshAt": "2026-08-18T02:55:08Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5388,10 +5377,10 @@
       "userValue": 7
     }
   },
-  "revision": 964,
+  "revision": 965,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T02:54:47Z",
+  "updatedAt": "2026-08-18T02:55:10Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5467,7 +5456,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T02:54:45Z",
+      "updatedAt": "2026-08-18T02:55:08Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
