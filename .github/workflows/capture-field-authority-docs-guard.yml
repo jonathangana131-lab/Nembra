@@ -4,6 +4,8 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
+      - 'CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md'
+      - 'docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md'
       - 'docs/ES80_TODAY_PRIVATE_FIELD_RUNBOOK.md'
       - 'docs/ES80_TODAY_FINAL_GO_OPERATOR_ATTESTATION.md'
       - 'docs/ES80_AUTHENTICATED_STATIONARY_GATE_V14.md'
