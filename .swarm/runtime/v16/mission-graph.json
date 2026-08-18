@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 7,
+    "classifiedPRTotal": 8,
     "classifiedPRs": {
       "3649": {
         "classification": "requires-review",
@@ -1085,7 +1085,7 @@
         "lane": "",
         "pr": 3650,
         "recommendedAction": "independent-review",
-        "similarity": 0.254,
+        "similarity": 0.313,
         "title": "[Capture P0][V17][HARDENING] Retire stale TODAY field authority fail closed"
       },
       "3652": {
@@ -1118,7 +1118,7 @@
         "lane": "capture-field-authority-retirement-consistency",
         "pr": 3656,
         "recommendedAction": "independent-review",
-        "similarity": 0.288,
+        "similarity": 0.455,
         "title": "[Capture P0][V17][RECOVERY] Rebase retired-TODAY gate fix onto live guard"
       },
       "3657": {
@@ -1129,7 +1129,7 @@
         "lane": "capture-field-authority-retirement-consistency",
         "pr": 3657,
         "recommendedAction": "independent-review",
-        "similarity": 0.285,
+        "similarity": 0.351,
         "title": "[Capture P0][V17][RECOVERY] Retire stale TODAY preflight handoff assertions"
       },
       "3658": {
@@ -1142,6 +1142,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.122,
         "title": "[Capture V17][P0] Re-anchor accepted field authority on current main"
+      },
+      "3659": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "19254d45a007fd18871fc24a0383b2f6ee4b2fa2",
+        "lane": "capture-field-authority-retirement-consistency",
+        "pr": 3659,
+        "recommendedAction": "independent-review",
+        "similarity": 0.438,
+        "title": "[Capture P0][V17][HARDENING] Close current-gate TODAY retirement contradiction"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1175,7 +1186,7 @@
       "live-pr-3082",
       "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T22:17:04Z",
+    "liveRefreshAt": "2026-08-18T22:17:21Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [],
@@ -4956,10 +4967,10 @@
       "userValue": 7
     }
   },
-  "revision": 1186,
+  "revision": 1187,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T22:17:04Z",
+  "updatedAt": "2026-08-18T22:17:22Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
