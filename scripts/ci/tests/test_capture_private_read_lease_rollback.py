@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib.util
 import os
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -25,6 +26,20 @@ def load():
     return module
 
 
+def temporary_authority_directory(prefix: str) -> tempfile.TemporaryDirectory[str]:
+    root: str | None = None
+    if sys.platform == "darwin":
+        canonical_root = Path("/private/tmp")
+        if (
+            not canonical_root.is_dir()
+            or canonical_root.is_symlink()
+            or canonical_root.resolve(strict=True) != canonical_root
+        ):
+            raise RuntimeError("canonical Darwin authority fixture root is unavailable")
+        root = str(canonical_root)
+    return tempfile.TemporaryDirectory(prefix=prefix, dir=root)
+
+
 class CapturePrivateReadLeaseRollbackTests(unittest.TestCase):
     def _subject(self, temporary: str) -> tuple[Path, Path]:
         outer = Path(temporary)
@@ -37,7 +52,7 @@ class CapturePrivateReadLeaseRollbackTests(unittest.TestCase):
 
     def test_failed_post_grant_verification_revokes_the_exact_acl(self) -> None:
         helper = load()
-        with tempfile.TemporaryDirectory(prefix="nembra-lease-rollback-") as temporary:
+        with temporary_authority_directory("nembra-lease-rollback-") as temporary:
             repo, subject = self._subject(temporary)
             lease = helper._PrivateReadLease((subject,), repo)
             mutations: list[tuple[str, str]] = []
@@ -65,7 +80,7 @@ class CapturePrivateReadLeaseRollbackTests(unittest.TestCase):
 
     def test_chmod_failure_after_observable_mutation_still_revokes_the_exact_acl(self) -> None:
         helper = load()
-        with tempfile.TemporaryDirectory(prefix="nembra-lease-chmod-failure-") as temporary:
+        with temporary_authority_directory("nembra-lease-chmod-failure-") as temporary:
             repo, subject = self._subject(temporary)
             lease = helper._PrivateReadLease((subject,), repo)
             mutations: list[tuple[str, str]] = []
@@ -95,7 +110,7 @@ class CapturePrivateReadLeaseRollbackTests(unittest.TestCase):
 
     def test_grant_surfaces_rollback_failure_instead_of_silently_forgetting_it(self) -> None:
         helper = load()
-        with tempfile.TemporaryDirectory(prefix="nembra-lease-rollback-failure-") as temporary:
+        with temporary_authority_directory("nembra-lease-rollback-failure-") as temporary:
             repo, subject = self._subject(temporary)
             lease = helper._PrivateReadLease((subject,), repo)
             listings = iter(("before", "after-plus-a"))
@@ -124,7 +139,7 @@ class CapturePrivateReadLeaseRollbackTests(unittest.TestCase):
 
     def test_native_strict_revoke_restores_held_object_after_path_replacement(self) -> None:
         helper = load()
-        with tempfile.TemporaryDirectory(prefix="nembra-lease-native-revoke-") as temporary:
+        with temporary_authority_directory("nembra-lease-native-revoke-") as temporary:
             repo, subject = self._subject(temporary)
             descriptor = os.open(subject, os.O_RDONLY)
             signature = helper._descriptor_signature(descriptor)
