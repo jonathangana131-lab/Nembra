@@ -150,10 +150,11 @@ def _load_candidate_snapshot_helper(candidate_repo: Path, source: str):
     subjects = tuple(path.as_posix() for path in getattr(module, "GENERATED_SUBJECTS", ()))
     if subjects != EXPECTED_GENERATED_SUBJECTS:
         raise CurrentManifestConsumerFinalGoError("current candidate manifest subject set moved")
+    canonical = getattr(module, "canonical_generated_manifest", None)
     derive = getattr(module, "generated_manifest_sha256", None)
-    if not callable(derive):
+    if not callable(canonical) or not callable(derive):
         raise CurrentManifestConsumerFinalGoError(
-            "current candidate snapshot helper exposes no digest authority"
+            "current candidate snapshot helper exposes no canonical digest authority"
         )
     return blob, module
 
@@ -164,23 +165,32 @@ def _derive_candidate_manifest(
 ) -> tuple[str, str]:
     blob, helper = _load_candidate_snapshot_helper(candidate_repo, source)
     try:
-        first = helper.generated_manifest_sha256(candidate_repo, source)
-        second = helper.generated_manifest_sha256(candidate_repo, source)
+        first_payload = helper.canonical_generated_manifest(candidate_repo, source)
+        second_payload = helper.canonical_generated_manifest(candidate_repo, source)
+        helper_digest = helper.generated_manifest_sha256(candidate_repo, source)
     except Exception as error:
         raise CurrentManifestConsumerFinalGoError(
             "current candidate helper rejected generated/private build inputs"
         ) from error
     if (
-        not isinstance(first, str)
-        or not isinstance(second, str)
-        or HEX64.fullmatch(first) is None
-        or first != first.lower()
-        or first != second
+        not isinstance(first_payload, bytes)
+        or not first_payload
+        or first_payload != second_payload
     ):
         raise CurrentManifestConsumerFinalGoError(
-            "current candidate generated/private manifest is unstable or malformed"
+            "current candidate canonical manifest bytes are unstable or malformed"
         )
-    return blob, first
+    current = hashlib.sha256(first_payload).hexdigest()
+    if (
+        not isinstance(helper_digest, str)
+        or HEX64.fullmatch(helper_digest) is None
+        or helper_digest != helper_digest.lower()
+        or helper_digest != current
+    ):
+        raise CurrentManifestConsumerFinalGoError(
+            "current candidate digest API disagrees with canonical manifest bytes"
+        )
+    return blob, current
 
 
 def _utf8_source(candidate_repo: Path, source: str, relative: str) -> str:
