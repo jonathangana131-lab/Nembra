@@ -1415,7 +1415,7 @@
         "lane": "capture-private-read-lease",
         "pr": 3492,
         "recommendedAction": "independent-review",
-        "similarity": 0.287,
+        "similarity": 0.356,
         "title": "[Capture P0][CI] Anchor private UID lease fixtures under real Darwin temp"
       },
       "3497": {
@@ -1495,17 +1495,6 @@
         "similarity": 0.36,
         "title": "[Capture P0][V17][VALIDATION] Prove seeded ACL restore on held Darwin fd"
       },
-      "3552": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-darwin-native-acl-fd-rollback",
-        "pr": 3552,
-        "recommendedAction": "independent-review",
-        "similarity": 0.126,
-        "title": "[Capture P0][DIAGNOSTIC] Restore absent Darwin ACL through held fd"
-      },
       "3553": {
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
@@ -1582,6 +1571,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.414,
         "title": "[Capture P0][V17][RED TEAM] Bind native FD baseline to canonical ACL"
+      },
+      "3568": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "5d4d401ba19400b683c7056dae23376bfc4c65d2",
+        "lane": "capture-private-read-lease",
+        "pr": 3568,
+        "recommendedAction": "independent-review",
+        "similarity": 0.379,
+        "title": "[Capture P0][V17][CI] Anchor rollback fixtures under real Darwin temp"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1614,7 +1614,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T02:42:55Z",
+    "liveRefreshAt": "2026-08-18T02:43:12Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5399,10 +5399,10 @@
       "userValue": 7
     }
   },
-  "revision": 930,
+  "revision": 931,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T02:42:56Z",
+  "updatedAt": "2026-08-18T02:43:13Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5478,7 +5478,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T02:42:55Z",
+      "updatedAt": "2026-08-18T02:43:12Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
