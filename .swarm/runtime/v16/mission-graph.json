@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 23,
+    "classifiedPRTotal": 22,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1162,7 +1162,7 @@
         "lane": "dashboard-cockpit-product-closure",
         "pr": 3497,
         "recommendedAction": "independent-review",
-        "similarity": 0.121,
+        "similarity": 0.098,
         "title": "[Dashboard V17][RECOVERY] Ship signature battery / learned-range instrument"
       },
       "3602": {
@@ -1253,17 +1253,6 @@
         "similarity": 0.325,
         "title": "[V17 Capture][RECOVERY] Rebind field build to accepted generated root"
       },
-      "3615": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3615,
-        "recommendedAction": "independent-review",
-        "similarity": 0.384,
-        "title": "[Capture P0][V17][RECOVERY] Retire complete strict-root authoring set"
-      },
       "3617": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1272,7 +1261,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3617,
         "recommendedAction": "independent-review",
-        "similarity": 0.318,
+        "similarity": 0.341,
         "title": "[Capture P0][V17][TRIGGER] Execute complete strict-root recovery"
       },
       "3619": {
@@ -1294,19 +1283,8 @@
         "lane": "capture-signed-install-custody",
         "pr": 3621,
         "recommendedAction": "independent-review",
-        "similarity": 0.362,
+        "similarity": 0.322,
         "title": "[Capture P0][V17][RECOVERY] Re-arm strict-root materializer liveness"
-      },
-      "3624": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3624,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.149,
-        "title": "[V17 Capture][VALIDATION] Exact strict-root field wiring head"
       },
       "3625": {
         "classification": "canonical-candidate",
@@ -1318,6 +1296,17 @@
         "recommendedAction": "review-for-canonical-selection",
         "similarity": 0.284,
         "title": "[Capture P0][V17][INTEGRATION] Promote accepted-root compiler carrier"
+      },
+      "3626": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3626,
+        "recommendedAction": "independent-review",
+        "similarity": 0.343,
+        "title": "[Capture P0][V17][TRIGGER] Execute complete strict-root cleanup recovery"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1350,7 +1339,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T11:06:51Z",
+    "liveRefreshAt": "2026-08-18T11:07:12Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5135,10 +5124,10 @@
       "userValue": 7
     }
   },
-  "revision": 1066,
+  "revision": 1067,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T11:06:52Z",
+  "updatedAt": "2026-08-18T11:07:13Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5214,7 +5203,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T11:06:51Z",
+      "updatedAt": "2026-08-18T11:07:12Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
