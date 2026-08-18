@@ -1162,7 +1162,7 @@
         "lane": "dashboard-cockpit-product-closure",
         "pr": 3497,
         "recommendedAction": "independent-review",
-        "similarity": 0.098,
+        "similarity": 0.121,
         "title": "[Dashboard V17][RECOVERY] Ship signature battery / learned-range instrument"
       },
       "3602": {
@@ -1231,17 +1231,6 @@
         "similarity": 0.252,
         "title": "[Capture P0][V17][RECOVERY] Fix strict-root materializer scope accounting"
       },
-      "3609": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-final-go-authority",
-        "pr": 3609,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.436,
-        "title": "[Capture P0][V17][REPAIR] Fence manifest authority after composition lock"
-      },
       "3610": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1261,7 +1250,7 @@
         "lane": "capture-final-go-authority",
         "pr": 3613,
         "recommendedAction": "independent-review",
-        "similarity": 0.424,
+        "similarity": 0.42,
         "title": "[Capture P0][V17][RECOVERY] Seal manifest review authority before side effects"
       },
       "3614": {
@@ -1318,6 +1307,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.372,
         "title": "[Capture P0][V17][RED TEAM] Prove base-module review authority bypass"
+      },
+      "3624": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3624,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.149,
+        "title": "[V17 Capture][VALIDATION] Exact strict-root field wiring head"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1350,7 +1350,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T11:05:43Z",
+    "liveRefreshAt": "2026-08-18T11:05:56Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5135,10 +5135,10 @@
       "userValue": 7
     }
   },
-  "revision": 1062,
+  "revision": 1063,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T11:05:44Z",
+  "updatedAt": "2026-08-18T11:05:57Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5214,7 +5214,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T11:05:43Z",
+      "updatedAt": "2026-08-18T11:05:56Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
