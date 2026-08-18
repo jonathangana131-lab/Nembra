@@ -1525,8 +1525,19 @@
         "lane": "capture-current-accepted-root-acl-transport",
         "pr": 3581,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.272,
+        "similarity": 0.319,
         "title": "[Capture P0][V17][RED TEAM] Native ACL baseline coherence exact-head classifier"
+      },
+      "3588": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-current-accepted-root-acl-transport",
+        "pr": 3588,
+        "recommendedAction": "independent-review",
+        "similarity": 0.309,
+        "title": "[SUPERSEDED][Capture P0][V17][RECOVERY R2] Materialize seeded ACL baseline coherence"
       },
       "3595": {
         "classification": "requires-review",
@@ -1536,19 +1547,8 @@
         "lane": "capture-current-accepted-root-acl-transport",
         "pr": 3595,
         "recommendedAction": "independent-review",
-        "similarity": 0.27,
+        "similarity": 0.31,
         "title": "[Capture P0][V17][RECOVERY] Apply retained-handle ACL coherence to current carrier"
-      },
-      "3596": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-private-read-lease",
-        "pr": 3596,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.273,
-        "title": "[Capture P0][V17][VALIDATION] Prove native transport on private build UID lease"
       },
       "3597": {
         "classification": "requires-review",
@@ -1603,7 +1603,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T03:02:21Z",
+    "liveRefreshAt": "2026-08-18T03:02:41Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5388,10 +5388,10 @@
       "userValue": 7
     }
   },
-  "revision": 983,
+  "revision": 984,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T03:02:22Z",
+  "updatedAt": "2026-08-18T03:02:43Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5467,7 +5467,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T03:02:21Z",
+      "updatedAt": "2026-08-18T03:02:41Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
