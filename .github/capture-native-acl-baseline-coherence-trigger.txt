@@ -1,1 +1,2 @@
 trigger-current-6fd5ced0d324c0db071d8945df05c2dac6db395e
+synchronize-1
