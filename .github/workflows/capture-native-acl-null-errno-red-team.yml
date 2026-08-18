@@ -1,0 +1,53 @@
+name: Capture Native ACL Null-Errno Red Team
+
+on:
+  push:
+    branches:
+      - validation/v17-capture-native-acl-null-errno-redteam-r2-gpt56sol-20260817
+  pull_request:
+    paths:
+      - scripts/ci/capture_selected_xcode_build_orchestrator.py
+      - scripts/ci/tests/test_capture_native_acl_null_errno_red_team.py
+      - .github/workflows/capture-native-acl-null-errno-red-team.yml
+
+permissions:
+  contents: read
+
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bind attacked production head and exact validation scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          attacked=bcb848af4b1fe7143f9217774ab1c3f119d9ef7c
+          git cat-file -e "$attacked^{commit}"
+          git merge-base --is-ancestor "$attacked" HEAD
+          changed="$(git diff --name-only "$attacked"..HEAD | sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-native-acl-null-errno-red-team.yml \
+            scripts/ci/tests/test_capture_native_acl_null_errno_red_team.py | sort)"
+          test "$changed" = "$expected"
+          git diff --check "$attacked"..HEAD
+
+      - name: Require attacked fail-open classifier shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F 'if baseline_errno not in (0, errno.ENOENT):' \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py
+
+      - name: Reproduce null-errno promotion
+        run: python3 scripts/ci/tests/test_capture_native_acl_null_errno_red_team.py
+
+      - name: Truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'NEMBRA_NATIVE_ACL_NULL_ERRNO_CLASSIFIER exploitPositive=true productionBytesChanged=false physicalAuthorityCreated=false'
+          ! git diff --name-only bcb848af4b1fe7143f9217774ab1c3f119d9ef7c..HEAD | grep -E '(^Nembra/|^NembraCapture/|install_one_time_capture|TuyaRuntime|LocalSecrets)'
