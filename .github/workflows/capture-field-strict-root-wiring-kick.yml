@@ -1,4 +1,4 @@
-# V17 execution nudge 2: this workflow already existed before this push.
+# V17 execution nudge 3: re-trigger the already-existing push workflow without changing product logic.
 name: Capture field strict-root wiring kick
 
 on:
