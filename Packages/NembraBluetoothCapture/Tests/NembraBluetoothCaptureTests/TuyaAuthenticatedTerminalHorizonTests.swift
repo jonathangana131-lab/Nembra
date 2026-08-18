@@ -15,8 +15,28 @@ struct TuyaAuthenticatedTerminalHorizonTests {
         try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
         clock.advance(to: 3_000)
         try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
+
+        let secondPayload = 2_000
+            + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
+            + 1
+        try await advanceContinuously(
+            clock: clock,
+            ledger: ledger,
+            token: token,
+            from: 3_000,
+            through: secondPayload - 1
+        )
+        clock.advance(to: secondPayload)
+        try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
+
         let target = 2_000 + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds
-        try await advanceContinuously(clock: clock, ledger: ledger, token: token, from: 3_000, through: target)
+        try await advanceContinuously(
+            clock: clock,
+            ledger: ledger,
+            token: token,
+            from: secondPayload,
+            through: target
+        )
 
         let ready = await ledger.currentPreflightSnapshot()
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: ready) == .readyForStationaryMapping)
@@ -51,7 +71,7 @@ struct TuyaAuthenticatedTerminalHorizonTests {
         try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
     }
 
-    @Test("no-application deadline is terminal without inventing disconnect")
+    @Test("incomplete-evidence deadline is terminal without inventing disconnect")
     func applicationTimeoutIsDistinctTerminalFact() async throws {
         let clock = TerminalClock(1_000)
         let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
@@ -64,12 +84,13 @@ struct TuyaAuthenticatedTerminalHorizonTests {
         clock.advance(to: 60_000_002_000)
         try await ledger.markApplicationObservationTimedOut(for: token)
         let terminal = await ledger.currentPreflightSnapshot()
+        let reason = "Authenticated session ended because required repeated application evidence did not become sufficient before the observation deadline."
 
-        #expect(terminal.authenticationState == .failed(reason: "Authenticated session produced no application update before the observation deadline."))
+        #expect(terminal.authenticationState == .failed(reason: reason))
         #expect(terminal.authenticationMethod == .smartLifeAppSDK)
         #expect(terminal.authenticatedAtUptimeNanoseconds == 2_000)
         #expect(terminal.applicationPayloadCount == 0)
-        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: terminal) == .blocked(reason: "Authenticated session produced no application update before the observation deadline."))
+        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: terminal) == .blocked(reason: reason))
 
         clock.advance(to: 61_000_002_000)
         await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection) {
