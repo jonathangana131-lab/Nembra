@@ -3,6 +3,9 @@ name: Capture Current Accepted Root Compiler Composition
 on:
   pull_request:
     paths:
+      - Scripts/bootstrap_capture_tuya_sdk.sh
+      - scripts/field/install_one_time_capture.command
+      - scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py
       - scripts/ci/capture_selected_xcode_build_orchestrator.py
       - scripts/ci/tests/test_capture_accepted_root_build_composition.py
       - scripts/ci/tests/test_capture_accepted_root_whole_read_lease.py
@@ -62,15 +65,18 @@ jobs:
             .github/workflows/capture-field-build-provenance.yml \
             .github/workflows/capture-private-build-uid-read-lease-current.yml \
             Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerSourceCustodyOrderingSourceTests.swift \
+            Scripts/bootstrap_capture_tuya_sdk.sh \
             scripts/ci/capture_selected_xcode_build_orchestrator.py \
             scripts/ci/tests/test_capture_accepted_root_build_composition.py \
             scripts/ci/tests/test_capture_accepted_root_real_whole_read_lease.py \
             scripts/ci/tests/test_capture_accepted_root_whole_read_lease.py \
+            scripts/ci/tests/test_capture_field_strict_accepted_root_wiring.py \
             scripts/ci/tests/test_capture_private_build_uid_read_lease_current.py \
             scripts/ci/tests/test_capture_private_read_lease_component_walk.py \
             scripts/ci/tests/test_capture_private_read_lease_rollback.py \
             scripts/ci/tests/test_capture_private_read_lease_symlink_authority_transition.py \
-            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py | LC_ALL=C sort)"
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py \
+            scripts/field/install_one_time_capture.command | LC_ALL=C sort)"
           test "$actual" = "$expected"
           git diff --check "$EXACT_PARENT"...HEAD
 
