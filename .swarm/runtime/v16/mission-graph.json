@@ -1246,11 +1246,11 @@
         "classification": "canonical-candidate",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "29cf916f05444daffaec0f9afc85b5f1ab1b2645",
+        "headSHA": "cf97695d322b7b02eadb853e8da2888eff9776ea",
         "lane": "capture-final-go-authority",
         "pr": 3607,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.114,
+        "similarity": 0.144,
         "title": "[Capture P0][V17][FINAL GO] Bind reviewed generated build-input manifest"
       }
     },
@@ -1284,7 +1284,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T03:59:03Z",
+    "liveRefreshAt": "2026-08-18T03:59:41Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5069,10 +5069,10 @@
       "userValue": 7
     }
   },
-  "revision": 1029,
+  "revision": 1030,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T03:59:04Z",
+  "updatedAt": "2026-08-18T03:59:41Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5148,7 +5148,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T03:59:03Z",
+      "updatedAt": "2026-08-18T03:59:41Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
