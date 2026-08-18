@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-"""Migrate #3082 build-level retirement races to the required manifest review ABI.
+"""Replay Final-GO retirement races under the real-checkout base-loader ABI.
 
-Historical retirement/object tests remain byte-for-byte unchanged. Their two
-build-level fixtures predate the V17 generated-manifest review argument, so this
-file replays those exact race shapes with one stable independently reviewed
-manifest subject rather than weakening production build() back to an optional
-review authority.
+Historical retirement/object semantics remain unchanged. Test-only fake bases are
+injected by replacing the new internal real-checkout loader, never by reopening a
+caller-selected production base/root argument.
 """
 from __future__ import annotations
 
@@ -62,12 +60,10 @@ class FakeBase:
         self.original_git_bytes = git_bytes
 
     @staticmethod
-    def api(_path):
-        return b"{}", {}
+    def api(_path): return b"{}", {}
 
     @staticmethod
-    def canon(value: str, _label: str) -> str:
-        return value.lower()
+    def canon(value: str, _label: str) -> str: return value.lower()
 
     @staticmethod
     def pos(value: int, label: str) -> int:
@@ -89,6 +85,7 @@ class ManifestAwareRetirementMigrationTests(unittest.TestCase):
         self.original_semantic = MODULE._SEMANTIC_BUILD
         self.original_dispatch = MODULE._dispatch_predecessor_physical_reads
         self.original_semantic_adapter = MODULE._SEMANTIC_MODULE._private_environment_adapter
+        self.original_base_loader = MODULE._load_generated_base_module_from_checkout
         MODULE.generated_manifest_review = stable_manifest_review
 
     def tearDown(self) -> None:
@@ -98,21 +95,18 @@ class ManifestAwareRetirementMigrationTests(unittest.TestCase):
         MODULE._SEMANTIC_BUILD = self.original_semantic
         MODULE._dispatch_predecessor_physical_reads = self.original_dispatch
         MODULE._SEMANTIC_MODULE._private_environment_adapter = self.original_semantic_adapter
+        MODULE._load_generated_base_module_from_checkout = self.original_base_loader
         self.assertFalse(MODULE._CANDIDATE_RETIRED.get())
         self.assertIsNone(MODULE._ACTIVE_MANIFEST_REVIEW.get())
 
     def _build(self, root: Path, base: FakeBase):
-        original_loader = MODULE.generated._load_base_module
-        MODULE.generated._load_base_module = lambda: base
-        try:
-            return MODULE.build(
-                candidate_repo=root,
-                source=SOURCE,
-                pr=PR,
-                generated_manifest_review_id=REVIEW_ID,
-            )
-        finally:
-            MODULE.generated._load_base_module = original_loader
+        MODULE._load_generated_base_module_from_checkout = lambda: base
+        return MODULE.build(
+            candidate_repo=root,
+            source=SOURCE,
+            pr=PR,
+            generated_manifest_review_id=REVIEW_ID,
+        )
 
     def test_sealed_build_retires_before_candidate_release_with_manifest_review(self) -> None:
         base = FakeBase()

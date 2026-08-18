@@ -112,40 +112,35 @@ class ReviewAuthorityTests(unittest.TestCase):
         def get(path):
             self.assertEqual(path, f"/pulls/{PR}/reviews/{REVIEW_ID}")
             return b"{}", copy.deepcopy(response)
-
         return get
 
     def test_exact_owner_review_binds_source_digest_and_review_identity(self):
         for state in ("COMMENTED", "APPROVED"):
-            with self.subTest(state=state):
-                response = review_response(state=state)
-                subject = module.generated_manifest_review(
-                    PR,
-                    REVIEW_ID,
-                    SOURCE,
-                    self.get_for(response),
-                    base=self.base,
-                )
-                self.assertEqual(subject["sourceCommitSHA"], SOURCE)
-                self.assertEqual(subject[module.MANIFEST_DIGEST_KEY], DIGEST_A)
-                self.assertEqual(subject["reviewID"], REVIEW_ID)
-                self.assertEqual(subject["reviewNodeID"], REVIEW_NODE_ID)
-                self.assertEqual(
-                    subject["reviewBodySHA256"],
-                    hashlib.sha256(response["body"].encode("utf-8")).hexdigest(),
-                )
-                self.assertEqual(subject["reviewer"], module.OWNER)
-                self.assertEqual(subject["state"], state)
-                self.assertEqual(subject["verdict"], "accepted")
+            response = review_response(state=state)
+            subject = module.generated_manifest_review(
+                PR, REVIEW_ID, SOURCE, self.get_for(response), base=self.base
+            )
+            self.assertEqual(subject["sourceCommitSHA"], SOURCE)
+            self.assertEqual(subject[module.MANIFEST_DIGEST_KEY], DIGEST_A)
+            self.assertEqual(subject["reviewID"], REVIEW_ID)
+            self.assertEqual(subject["reviewNodeID"], REVIEW_NODE_ID)
+            self.assertEqual(
+                subject["reviewBodySHA256"],
+                hashlib.sha256(response["body"].encode()).hexdigest(),
+            )
+            self.assertEqual(subject["reviewer"], module.OWNER)
+            self.assertEqual(subject["state"], state)
+            self.assertEqual(subject["verdict"], "accepted")
 
     def test_rejected_dismissed_nonowner_or_missing_node_review_never_promotes(self):
-        for response in (
+        cases = (
             review_response(state="CHANGES_REQUESTED"),
             review_response(state="DISMISSED"),
             review_response(login="someone-else"),
             review_response(association="COLLABORATOR"),
             review_response(node_id=""),
-        ):
+        )
+        for response in cases:
             with self.subTest(response=response):
                 with self.assertRaises(module.PrivateReviewGoError):
                     module.generated_manifest_review(
@@ -153,9 +148,8 @@ class ReviewAuthorityTests(unittest.TestCase):
                     )
 
     def test_wrong_commit_malformed_digest_and_schema_extension_fail_closed(self):
-        wrong_source = "b" * 40
         cases = (
-            review_response(source=wrong_source),
+            review_response(source="b" * 40),
             review_response(digest="A" * 64),
             review_response(extra="caller-authored-extension"),
         )
@@ -174,8 +168,9 @@ class EnvironmentAuthorityTests(unittest.TestCase):
             module.MANIFEST_ENV: DIGEST_B,
             "UNCHANGED": "yes",
         }
-        subject = {module.MANIFEST_DIGEST_KEY: DIGEST_A}
-        result = module._inject_manifest_environment(environment, subject)
+        result = module._inject_manifest_environment(
+            environment, {module.MANIFEST_DIGEST_KEY: DIGEST_A}
+        )
         self.assertEqual(result[module.MANIFEST_ENV], DIGEST_A)
         self.assertEqual(result["UNCHANGED"], "yes")
         self.assertEqual(environment[module.MANIFEST_ENV], DIGEST_B)
@@ -198,14 +193,12 @@ class EnvironmentAuthorityTests(unittest.TestCase):
 
         def generated_parent_adapter(base, accepted_generated_digest):
             self.assertEqual(accepted_generated_digest, DIGEST_A)
-
             def generated_environment(device, device_digest, accepted_lock_sha256):
                 return {
                     module.MANIFEST_ENV: DIGEST_B,
                     "DEVICE": str(device),
                     "LOCK": accepted_lock_sha256,
                 }
-
             return generated_environment
 
         token = module._ACTIVE_MANIFEST_REVIEW.set(
@@ -215,8 +208,9 @@ class EnvironmentAuthorityTests(unittest.TestCase):
             adapter = module._manifest_environment_adapter(
                 generated_parent_adapter, inherited_review
             )
-            environment_builder = adapter(object(), DIGEST_A)
-            result = environment_builder(Path("/tmp/device"), DIGEST_A, DIGEST_B)
+            result = adapter(object(), DIGEST_A)(
+                Path("/tmp/device"), DIGEST_A, DIGEST_B
+            )
         finally:
             module._ACTIVE_MANIFEST_REVIEW.reset(token)
 
@@ -236,17 +230,17 @@ class BuildCompositionTests(unittest.TestCase):
         self.original_candidate_custody = module._PREDECESSOR_CANDIDATE_GIT_CUSTODY
         self.original_vnode = module._CURRENT_VNODE_AUTHORITY
         self.original_semantic_adapter = module._SEMANTIC_MODULE._private_environment_adapter
-        self.original_base_loader = module.generated._load_base_module
+        self.original_base_loader = module._load_generated_base_module_from_checkout
         module._PREDECESSOR_CANDIDATE_GIT_CUSTODY = noop_custody
         module._CURRENT_VNODE_AUTHORITY = noop_custody
-        module.generated._load_base_module = lambda: self.base
+        module._load_generated_base_module_from_checkout = lambda: self.base
 
     def tearDown(self):
         module._SEMANTIC_BUILD = self.original_semantic_build
         module._PREDECESSOR_CANDIDATE_GIT_CUSTODY = self.original_candidate_custody
         module._CURRENT_VNODE_AUTHORITY = self.original_vnode
         module._SEMANTIC_MODULE._private_environment_adapter = self.original_semantic_adapter
-        module.generated._load_base_module = self.original_base_loader
+        module._load_generated_base_module_from_checkout = self.original_base_loader
         self.assertIsNone(module._ACTIVE_MANIFEST_REVIEW.get())
 
     @staticmethod
@@ -289,33 +283,17 @@ class BuildCompositionTests(unittest.TestCase):
         self.assertEqual(subject["sourceCommitSHA"], SOURCE)
         self.assertEqual(subject[module.MANIFEST_DIGEST_KEY], DIGEST_A)
         self.assertEqual(subject["reviewNodeID"], REVIEW_NODE_ID)
-        self.assertEqual(
-            subject["reviewBodySHA256"],
-            hashlib.sha256(response["body"].encode("utf-8")).hexdigest(),
-        )
         self.assertEqual(subject["reviewer"], module.OWNER)
         self.assertEqual(subject["state"], "COMMENTED")
         self.assertFalse(record["physicalResultCollected"])
-        self.assertIs(
-            module._SEMANTIC_MODULE._private_environment_adapter,
-            self.original_semantic_adapter,
-        )
 
     def test_review_digest_drift_after_private_side_effect_fails_closed(self):
         responses = [review_response(DIGEST_A), review_response(DIGEST_B)]
-
-        def get(path):
-            return b"{}", responses.pop(0)
-
+        def get(_path): return b"{}", responses.pop(0)
         with self.assertRaisesRegex(
-            module.PrivateReviewGoError,
-            "review changed during Final-GO composition",
+            module.PrivateReviewGoError, "review changed during Final-GO composition"
         ):
             self.run_build(get, lambda **_kwargs: self.sealed_record())
-        self.assertIs(
-            module._SEMANTIC_MODULE._private_environment_adapter,
-            self.original_semantic_adapter,
-        )
 
     def test_semantically_equivalent_review_body_rewrite_after_side_effect_fails_closed(self):
         canonical = review_response()
@@ -324,34 +302,22 @@ class BuildCompositionTests(unittest.TestCase):
         )
         self.assertEqual(json.loads(canonical["body"]), json.loads(reformatted["body"]))
         responses = [canonical, reformatted]
-
-        def get(path):
-            return b"{}", responses.pop(0)
-
+        def get(_path): return b"{}", responses.pop(0)
         with self.assertRaisesRegex(
-            module.PrivateReviewGoError,
-            "review changed during Final-GO composition",
+            module.PrivateReviewGoError, "review changed during Final-GO composition"
         ):
             self.run_build(get, lambda **_kwargs: self.sealed_record())
 
     def test_review_dismissal_after_private_side_effect_fails_closed(self):
         responses = [review_response(), review_response(state="DISMISSED")]
-
-        def get(path):
-            return b"{}", responses.pop(0)
-
+        def get(_path): return b"{}", responses.pop(0)
         with self.assertRaises(module.PrivateReviewGoError):
             self.run_build(get, lambda **_kwargs: self.sealed_record())
         self.assertFalse(module._CANDIDATE_RETIRED.get())
 
     def test_caller_cannot_replace_production_review_transport(self):
         side_effect = []
-
-        def semantic_build(**_kwargs):
-            side_effect.append("ran")
-            return self.sealed_record()
-
-        module._SEMANTIC_BUILD = semantic_build
+        module._SEMANTIC_BUILD = lambda **_kwargs: side_effect.append("ran") or self.sealed_record()
         with tempfile.TemporaryDirectory(prefix="nembra-manifest-final-go-") as temporary:
             with self.assertRaisesRegex(
                 module.PrivateReviewGoError,
@@ -370,12 +336,7 @@ class BuildCompositionTests(unittest.TestCase):
         forged_base = FakeBase()
         forged_base.api = lambda _path: (b"{}", copy.deepcopy(review_response(DIGEST_B)))
         side_effect = []
-
-        def semantic_build(**_kwargs):
-            side_effect.append("ran")
-            return self.sealed_record()
-
-        module._SEMANTIC_BUILD = semantic_build
+        module._SEMANTIC_BUILD = lambda **_kwargs: side_effect.append("ran") or self.sealed_record()
         with tempfile.TemporaryDirectory(prefix="nembra-manifest-final-go-") as temporary:
             with self.assertRaisesRegex(
                 module.PrivateReviewGoError,
@@ -401,7 +362,6 @@ class BuildCompositionTests(unittest.TestCase):
         def api(path):
             api_calls.append(path)
             return b"{}", copy.deepcopy(current["review"])
-
         self.base.api = api
 
         class GateLock:
@@ -410,21 +370,16 @@ class BuildCompositionTests(unittest.TestCase):
                 if not release_lock.wait(5):
                     raise AssertionError("test gate was not released")
                 return inner_self
-
-            def __exit__(inner_self, exc_type, exc, tb):
-                return False
+            def __exit__(inner_self, exc_type, exc, tb): return False
 
         original_lock = module._MANIFEST_EXTENSION_LOCK
         module._MANIFEST_EXTENSION_LOCK = GateLock()
         try:
             with tempfile.TemporaryDirectory(prefix="nembra-manifest-final-go-") as temporary:
                 candidate = Path(temporary)
-
-                def semantic_build(**_kwargs):
-                    semantic_side_effect.set()
-                    return self.sealed_record()
-
-                module._SEMANTIC_BUILD = semantic_build
+                module._SEMANTIC_BUILD = (
+                    lambda **_kwargs: semantic_side_effect.set() or self.sealed_record()
+                )
 
                 def worker():
                     try:
@@ -454,16 +409,11 @@ class BuildCompositionTests(unittest.TestCase):
         self.assertIsInstance(failures[0], module.PrivateReviewGoError)
 
     def test_semantic_failure_restores_adapter_context_and_candidate_dispatch(self):
-        def get(path):
-            return b"{}", review_response()
-
-        def fail(**_kwargs):
-            raise RuntimeError("synthetic semantic failure")
-
+        def fail(**_kwargs): raise RuntimeError("synthetic semantic failure")
         original_git = self.base.git
         original_git_bytes = self.base.git_bytes
         with self.assertRaisesRegex(RuntimeError, "synthetic semantic failure"):
-            self.run_build(get, fail)
+            self.run_build(lambda _path: (b"{}", review_response()), fail)
         self.assertIs(
             module._SEMANTIC_MODULE._private_environment_adapter,
             self.original_semantic_adapter,

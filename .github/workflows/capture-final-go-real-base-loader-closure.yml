@@ -1,0 +1,85 @@
+name: Capture Final GO Real Base Loader Closure
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+      - scripts/ci/tests/test_es80_final_go_generated_manifest_review.py
+      - scripts/ci/tests/test_es80_final_go_manifest_retirement_migration.py
+      - scripts/ci/tests/test_es80_final_go_real_base_loader_closure.py
+      - .github/workflows/capture-final-go-real-base-loader-closure.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  closure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      EXACT_PARENT: bd97acd7b1c9065b16189e30a876f1af0a76a6a1
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPYCACHEPREFIX: /tmp/nembra-finalgo-loader-closure-pycache
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact composition parent and repair scope
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
+          git diff --name-only "$EXACT_PARENT" HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          printf '%s\n' \
+            .github/workflows/capture-final-go-real-base-loader-closure.yml \
+            scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_final_go_generated_manifest_review.py \
+            scripts/ci/tests/test_es80_final_go_manifest_retirement_migration.py \
+            scripts/ci/tests/test_es80_final_go_real_base_loader_closure.py \
+            | LC_ALL=C sort > "$RUNNER_TEMP/expected"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile repaired authority and adversarial tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -I -m py_compile \
+            scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_final_go_generated_manifest_review.py \
+            scripts/ci/tests/test_es80_final_go_manifest_retirement_migration.py \
+            scripts/ci/tests/test_es80_final_go_real_base_loader_closure.py
+
+      - name: Prove real-checkout base loader closes synthetic root
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -I scripts/ci/tests/test_es80_final_go_real_base_loader_closure.py
+          grep -Fq 'base = _load_generated_base_module_from_checkout()' scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+          ! grep -Fq 'base = generated._load_base_module()' scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+
+      - name: Re-run manifest review authority and retirement races
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -I scripts/ci/tests/test_es80_final_go_generated_manifest_review.py
+          python3 -B -I scripts/ci/tests/test_es80_final_go_manifest_retirement_migration.py
+          python3 -B -I scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py
+          python3 -B -I scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py
+
+      - name: Preserve nonphysical boundary and diff hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'physical authorization remains NO-GO' scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+          grep -Fq 'Validation only.' scripts/ci/tests/test_es80_final_go_real_base_loader_closure.py
+          ! grep -Eq 'publishDps\(|writeValue\(|physicalResultCollected[[:space:]]*=[[:space:]]*True' \
+            scripts/ci/tests/test_es80_final_go_real_base_loader_closure.py
+          git diff --check "$EXACT_PARENT"...HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"

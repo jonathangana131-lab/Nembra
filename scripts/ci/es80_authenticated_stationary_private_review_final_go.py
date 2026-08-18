@@ -160,6 +160,89 @@ FIELD_INPUT_FILES = _previous.FIELD_INPUT_FILES
 review_v5 = _previous.review_v5
 candidate_private_authority = _previous.candidate_private_authority
 
+
+def _load_generated_base_module_from_checkout() -> types.ModuleType:
+    """Load the generated-subject base from this real checkout, never synthetic __file__.
+
+    The accepted generated-subject module is itself executed from a pinned Git blob,
+    so its ``__file__`` is intentionally synthetic. Production Final-GO therefore
+    derives the repository root only from this outer real module path, requires a
+    real non-symlink ``.git`` directory, resolves the exact current HEAD object,
+    binds the base path to the generated module's pinned blob identity, re-hashes
+    those bytes, and only then executes them. No caller-selected root/base/client
+    participates in this authority path.
+    """
+    root = Path(__file__).resolve().parents[2]
+    git_dir = root / ".git"
+    try:
+        metadata = git_dir.lstat()
+    except OSError as error:
+        raise PrivateReviewGoError(
+            "accepted Final-GO base checkout Git directory unavailable"
+        ) from error
+    if not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+        raise PrivateReviewGoError(
+            "accepted Final-GO base checkout requires one real .git directory"
+        )
+
+    environment = _closed_predecessor_object_environment()
+    try:
+        source = subprocess.run(
+            ["/usr/bin/git", f"--git-dir={git_dir}", "rev-parse", "HEAD"],
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+        ).stdout.strip().lower()
+        accepted_blob = subprocess.run(
+            [
+                "/usr/bin/git",
+                f"--git-dir={git_dir}",
+                "rev-parse",
+                f"{source}:{generated.BASE_MODULE_PATH}",
+            ],
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+        ).stdout.strip().lower()
+        payload = subprocess.run(
+            ["/usr/bin/git", f"--git-dir={git_dir}", "cat-file", "blob", accepted_blob],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError, UnicodeDecodeError) as error:
+        raise PrivateReviewGoError(
+            "accepted Final-GO base Git custody failed"
+        ) from error
+
+    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", source):
+        raise PrivateReviewGoError("accepted Final-GO base control source is invalid")
+    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", accepted_blob):
+        raise PrivateReviewGoError("accepted Final-GO base Git blob is invalid")
+    if accepted_blob != generated.PARENT_BASE_MODULE_GIT_BLOB:
+        raise PrivateReviewGoError(
+            "accepted Final-GO base Git blob does not match generated-subject authority"
+        )
+    if not payload or _canonical_git_blob_oid(payload, accepted_blob) != accepted_blob:
+        raise PrivateReviewGoError("accepted Final-GO base Git bytes failed identity verification")
+
+    filename = f"git:{source}:{generated.BASE_MODULE_PATH}"
+    module = types.ModuleType("nembra_authenticated_stationary_final_go")
+    module.__file__ = filename
+    module.__nembra_accepted_control_source__ = source
+    module.__nembra_accepted_control_blob__ = accepted_blob
+    try:
+        exec(compile(payload, filename, "exec", dont_inherit=True), module.__dict__)
+    except Exception as error:
+        raise PrivateReviewGoError("accepted Final-GO base Git blob could not execute") from error
+    return module
+
+
 _PREDECESSOR_PHYSICAL_BLOB_OID = _previous._physical_blob_oid
 _PREDECESSOR_AUDIT_CANDIDATE_TREE = _previous._audit_candidate_tree
 _PREDECESSOR_CANDIDATE_GIT_CUSTODY = _previous._candidate_git_custody
@@ -425,10 +508,11 @@ def build(
 ) -> dict[str, Any]:
     """Complete candidate consumers under one independently reviewed manifest authority.
 
-    The production entrypoint never accepts caller-selected GitHub review transport
-    or base authority. It loads the accepted base internally, fetches the manifest
-    review after entering the composition lock, and re-fetches it after the private
-    semantic-build side effect before candidate retirement.
+    The production entrypoint never accepts caller-selected GitHub review transport,
+    base authority, or repository root. It loads the exact accepted base from this
+    real checkout, fetches the manifest review after entering the composition lock,
+    and re-fetches it after the private semantic-build side effect before candidate
+    retirement.
     """
     forbidden = {"get", "base_module"}.intersection(kwargs)
     if forbidden:
@@ -436,7 +520,7 @@ def build(
             "caller-supplied Final-GO review authority is forbidden"
         )
 
-    base = generated._load_base_module()
+    base = _load_generated_base_module_from_checkout()
     source = base.canon(source, "source")
     pr = base.pos(pr, "PR")
     generated_manifest_review_id = base.pos(
