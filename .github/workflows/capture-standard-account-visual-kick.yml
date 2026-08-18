@@ -1,0 +1,55 @@
+name: Capture Standard account visual kick
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-standard-account-visual-kick.yml
+
+permissions:
+  contents: write
+
+jobs:
+  kick-target:
+    if: >-
+      github.head_ref == 'trigger/v17-capture-standard-account-ui-gpt56sol-20260818' &&
+      github.base_ref == 'qa/v17-capture-standard-account-link-visual-contract-gpt56sol-20260818'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Re-arm exact target one-shot without importing kick workflow
+        shell: bash
+        env:
+          EXPECTED_BASE: c746156793da9ad9597c46c6ad6d203a734c30b8
+          TARGET_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          target='qa/v17-capture-standard-account-link-visual-contract-gpt56sol-20260818'
+          one_shot='.github/workflows/capture-standard-account-visual-one-shot.yml'
+          test "$TARGET_SHA" = "$EXPECTED_BASE"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_BASE"
+          git fetch origin "$target"
+          test "$(git rev-parse FETCH_HEAD)" = "$EXPECTED_BASE"
+          test -f "$one_shot"
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('.github/workflows/capture-standard-account-visual-one-shot.yml')
+          text = p.read_text(encoding='utf-8')
+          marker = '# V17 exact-head rearm after direct human visual rejection.\n'
+          if text.startswith(marker):
+              raise SystemExit('target one-shot already rearmed')
+          p.write_text(marker + text, encoding='utf-8')
+          PY
+          changed="$(git status --porcelain=v1 | awk '{print $2}')"
+          test "$changed" = "$one_shot"
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$one_shot"
+          git commit -m 'ci(capture): rearm Standard account visual materializer'
+          git push origin HEAD:"$target"
