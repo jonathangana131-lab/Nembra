@@ -1,0 +1,69 @@
+name: Capture Native ACL FD Path Baseline Coherence Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_native_acl_fd_path_baseline_coherence_red_team.py
+      - .github/workflows/capture-native-acl-fd-path-baseline-coherence-red-team.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ATTACKED_PRODUCT_HEAD: 8456750395c0a5cb1472834300785a5d52c1cae4
+  PYTHONDONTWRITEBYTECODE: 1
+
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind attacked product and exact validation scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          git merge-base --is-ancestor "$ATTACKED_PRODUCT_HEAD" HEAD
+          actual="$(git diff --name-only "$ATTACKED_PRODUCT_HEAD"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-native-acl-fd-path-baseline-coherence-red-team.yml \
+            scripts/ci/tests/test_capture_native_acl_fd_path_baseline_coherence_red_team.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git diff --check "$ATTACKED_PRODUCT_HEAD"...HEAD
+
+      - name: Require attacked baseline-capture chronology
+        shell: python
+        run: |
+          from pathlib import Path
+          source = Path("scripts/ci/capture_selected_xcode_build_orchestrator.py").read_text()
+          capture = 'record["native_baseline_acl"] = _capture_fd_acl_baseline(descriptor)'
+          canonical = '''before = _path_acl_listing(
+                        path, descriptor, accepted_signature, is_directory
+                    )'''
+          restore = '''_restore_fd_acl_baseline(
+                            descriptor, int(record.get("native_baseline_acl", 0))
+                        )'''
+          if source.count(capture) != 1 or source.count(canonical) != 1 or source.count(restore) != 1:
+              raise SystemExit("attacked native ACL baseline chronology changed; re-review required")
+          if source.index(capture) > source.index(canonical):
+              raise SystemExit("descriptor baseline no longer precedes canonical baseline capture")
+
+      - name: Reproduce destructive baseline-coherence gap
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="$(python3 scripts/ci/tests/test_capture_native_acl_fd_path_baseline_coherence_red_team.py 2>&1)"
+          printf '%s\n' "$output"
+          grep -F 'NEMBRA_NATIVE_ACL_BASELINE_COHERENCE_GAP fdBaselineCaptured=true canonicalBaselineCaptured=true preGrantEqualityRequired=false mismatchedRestoreApplied=true mismatchDetectedOnlyAfterRestore=true' <<<"$output"
+
+      - name: Truth boundary
+        run: |
+          echo 'NEMBRA_CAPTURE_TRUTH validationOnly=true exploitPositive=true productAccepted=false signingAuthority=false installAuthority=false bluetoothTouched=false scooterTouched=false physicalAuthorityCreated=false'
