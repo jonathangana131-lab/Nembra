@@ -1547,19 +1547,8 @@
         "lane": "",
         "pr": 3589,
         "recommendedAction": "independent-review",
-        "similarity": 0.314,
+        "similarity": 0.33,
         "title": "[Capture P0][V17][KICK] Re-arm native ACL baseline coherence repair"
-      },
-      "3590": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-current-accepted-root-acl-transport",
-        "pr": 3590,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.423,
-        "title": "[Capture P0][V17][REPAIR] Bind native rollback ACL to canonical baseline"
       },
       "3592": {
         "classification": "requires-review",
@@ -1569,8 +1558,19 @@
         "lane": "",
         "pr": 3592,
         "recommendedAction": "independent-review",
-        "similarity": 0.314,
+        "similarity": 0.438,
         "title": "[Capture P0][V17][TRIGGER] Trusted native ACL coherence materializer bridge"
+      },
+      "3594": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3594,
+        "recommendedAction": "independent-review",
+        "similarity": 0.425,
+        "title": "[Capture P0][V17][TRIGGER2] Exact-base native ACL coherence materializer"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1603,7 +1603,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T02:58:11Z",
+    "liveRefreshAt": "2026-08-18T02:58:31Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5388,10 +5388,10 @@
       "userValue": 7
     }
   },
-  "revision": 974,
+  "revision": 975,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T02:58:13Z",
+  "updatedAt": "2026-08-18T02:58:33Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5467,7 +5467,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T02:58:11Z",
+      "updatedAt": "2026-08-18T02:58:31Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
