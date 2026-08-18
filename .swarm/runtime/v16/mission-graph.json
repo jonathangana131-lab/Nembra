@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 49,
+    "classifiedPRTotal": 48,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1451,17 +1451,6 @@
         "similarity": 0.363,
         "title": "[Capture P0][INTEGRATION] Execute compiler from complete accepted root"
       },
-      "3537": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3537,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.387,
-        "title": "[Capture P0][VALIDATION] Split Darwin pathname vs fd ACL acquisition"
-      },
       "3538": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1472,17 +1461,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.406,
         "title": "[Capture P0][V17][VALIDATION] Classify native ACL acquisition and held-fd revoke"
-      },
-      "3541": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-current-accepted-root-acl-transport",
-        "pr": 3541,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.367,
-        "title": "[Capture P0][VALIDATION] Prove native fd ACL access semantics on held root"
       },
       "3542": {
         "classification": "validation",
@@ -1536,7 +1514,7 @@
         "lane": "capture-current-accepted-root-acl-transport",
         "pr": 3550,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.372,
+        "similarity": 0.36,
         "title": "[Capture P0][V17][VALIDATION] Prove seeded ACL restore on held Darwin fd"
       },
       "3552": {
@@ -1604,6 +1582,17 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.338,
         "title": "[Capture P0][V17][VALIDATION] Pin native ACL mode to strict accepted root"
+      },
+      "3566": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3566,
+        "recommendedAction": "independent-review",
+        "similarity": 0.198,
+        "title": "[Capture P0][V17][TEST] Canonicalize rollback temp fixtures on macOS"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1636,7 +1625,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T02:41:07Z",
+    "liveRefreshAt": "2026-08-18T02:42:23Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5421,10 +5410,10 @@
       "userValue": 7
     }
   },
-  "revision": 927,
+  "revision": 928,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T02:41:08Z",
+  "updatedAt": "2026-08-18T02:42:25Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5500,7 +5489,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T02:41:07Z",
+      "updatedAt": "2026-08-18T02:42:23Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
