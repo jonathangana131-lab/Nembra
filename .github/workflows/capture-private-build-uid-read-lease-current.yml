@@ -163,7 +163,7 @@ jobs:
               acl = helper._acl_text(nobody.pw_name, False, False)
 
               def swap_then_run(command, *args, **kwargs):
-                  nonlocal swapped
+                  global swapped
                   command_list = list(command)
                   if (
                       not swapped
