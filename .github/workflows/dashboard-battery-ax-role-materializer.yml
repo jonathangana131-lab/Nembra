@@ -1,0 +1,64 @@
+name: Dashboard Battery AX Role Materializer
+
+on:
+  push:
+    branches:
+      - recovery/v17-dashboard-battery-ax-role-gpt56
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bind recovery parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "76c3d01f86db17cbab16f3ee19fc4bfc8ad18dff"
+
+      - name: Materialize battery button accessibility role repair
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("NembraApp/Features/Dashboard/DashboardView.swift")
+          source = path.read_text()
+          old = '''        .sensoryFeedback(.selection, trigger: batteryReadout)\n        .accessibilityElement(children: .ignore)\n        .accessibilityLabel(batteryReadout == .charge ? "Battery" : "Learned range")'''
+          new = '''        .sensoryFeedback(.selection, trigger: batteryReadout)\n        .accessibilityLabel(batteryReadout == .charge ? "Battery" : "Learned range")'''
+          if source.count(old) != 1:
+              raise SystemExit("expected exactly one batteryRangeInstrument accessibility wrapper seam")
+          path.write_text(source.replace(old, new))
+
+      - name: Guard exact product delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test "$(git diff --name-only | wc -l | tr -d ' ')" = "1"
+          test "$(git diff --name-only)" = "NembraApp/Features/Dashboard/DashboardView.swift"
+          test "$(git diff --numstat -- NembraApp/Features/Dashboard/DashboardView.swift | awk '{print $1":"$2}')" = "0:1"
+          grep -F '.accessibilityIdentifier("dashboard.battery-range")' NembraApp/Features/Dashboard/DashboardView.swift >/dev/null
+          if sed -n '/private var batteryRangeInstrument:/,/private var batterySilhouette:/p' NembraApp/Features/Dashboard/DashboardView.swift | grep -F '.accessibilityElement(children: .ignore)' >/dev/null; then
+            echo "battery button still wrapped as a synthetic accessibility element" >&2
+            exit 1
+          fi
+
+      - name: Publish product-only recovery commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/dashboard-battery-ax-role-materializer.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add NembraApp/Features/Dashboard/DashboardView.swift .github/workflows/dashboard-battery-ax-role-materializer.yml
+          git diff --cached --check
+          test "$(git diff --cached --name-only | wc -l | tr -d ' ')" = "2"
+          git commit -m "Dashboard: restore battery button accessibility role"
+          git push origin HEAD:recovery/v17-dashboard-battery-ax-role-gpt56
