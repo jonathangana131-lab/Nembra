@@ -42,8 +42,14 @@ ROOT_DIRECTIVE_MARKERS = (
 CURRENT_GATE_MARKERS = (
     "Status: **NO-GO",
     "ES80_TODAY_PRIVATE_FIELD_RUNBOOK.md",
+    "RETIRED / NON-AUTHORIZING",
     "historical evidence",
     "at least **45 seconds**",
+)
+
+STALE_CURRENT_GATE_WORDING = (
+    "is still pinned to the earlier frozen Capture subject",
+    "remains historical evidence for the first fingerprint field path",
 )
 
 CURRENT_PROCEDURE_MARKERS = (
@@ -89,6 +95,11 @@ def main() -> int:
     require_markers(ROOT_DIRECTIVE, ROOT_DIRECTIVE_MARKERS)
     require_markers(CURRENT_GATE, CURRENT_GATE_MARKERS)
     require_markers(CURRENT_PROCEDURE, CURRENT_PROCEDURE_MARKERS)
+
+    gate = read(CURRENT_GATE)
+    for stale in STALE_CURRENT_GATE_WORDING:
+        if stale in gate:
+            fail(f"{CURRENT_GATE.relative_to(ROOT)} contradicts retired field authority: {stale!r}")
 
     runbook = read(RETIRED_DOCS[0])
     if "docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md" not in runbook:
