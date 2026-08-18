@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 19,
+    "classifiedPRTotal": 21,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1228,7 +1228,7 @@
         "lane": "capture-final-go-authority",
         "pr": 3607,
         "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.224,
+        "similarity": 0.299,
         "title": "[Capture P0][V17][FINAL GO] Bind reviewed generated build-input manifest"
       },
       "3608": {
@@ -1239,7 +1239,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3608,
         "recommendedAction": "independent-review",
-        "similarity": 0.193,
+        "similarity": 0.252,
         "title": "[Capture P0][V17][RECOVERY] Fix strict-root materializer scope accounting"
       },
       "3609": {
@@ -1274,6 +1274,28 @@
         "recommendedAction": "independent-review",
         "similarity": 0.424,
         "title": "[Capture P0][V17][RECOVERY] Seal manifest review authority before side effects"
+      },
+      "3614": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "",
+        "pr": 3614,
+        "recommendedAction": "independent-review",
+        "similarity": 0.292,
+        "title": "[V17 Capture][RECOVERY] Rebind field build to accepted generated root"
+      },
+      "3615": {
+        "classification": "requires-review",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3615,
+        "recommendedAction": "independent-review",
+        "similarity": 0.273,
+        "title": "[Capture P0][V17][RECOVERY] Retire complete strict-root authoring set"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1306,7 +1328,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T11:00:48Z",
+    "liveRefreshAt": "2026-08-18T11:01:51Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5091,10 +5113,10 @@
       "userValue": 7
     }
   },
-  "revision": 1049,
+  "revision": 1050,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T11:00:48Z",
+  "updatedAt": "2026-08-18T11:01:52Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5170,7 +5192,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T11:00:48Z",
+      "updatedAt": "2026-08-18T11:01:51Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
