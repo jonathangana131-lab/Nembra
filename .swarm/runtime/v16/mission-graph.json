@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 8,
+    "classifiedPRTotal": 7,
     "classifiedPRs": {
       "3649": {
         "classification": "requires-review",
@@ -1085,7 +1085,7 @@
         "lane": "capture-field-authority-retirement",
         "pr": 3650,
         "recommendedAction": "independent-review",
-        "similarity": 0.137,
+        "similarity": 0.109,
         "title": "[Capture P0][V17][HARDENING] Retire stale TODAY field authority fail closed"
       },
       "3652": {
@@ -1096,7 +1096,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3652,
         "recommendedAction": "independent-review",
-        "similarity": 0.158,
+        "similarity": 0.136,
         "title": "[Capture P0][V17][RECOVERY] Re-earn post-merge exact-head matrix"
       },
       "3656": {
@@ -1118,19 +1118,8 @@
         "lane": "",
         "pr": 3658,
         "recommendedAction": "independent-review",
-        "similarity": 0.156,
+        "similarity": 0.133,
         "title": "[Capture V17][P0] Re-anchor accepted field authority on current main"
-      },
-      "3661": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "422e0fbb67e034c51ba43e67d552dd3ef28ded9d",
-        "lane": "",
-        "pr": 3661,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.157,
-        "title": "[Capture P0][V17][INTEGRATION] Re-establish exact current-main Capture gate"
       },
       "3662": {
         "classification": "requires-review",
@@ -1186,7 +1175,7 @@
       "live-pr-3082",
       "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T22:22:58Z",
+    "liveRefreshAt": "2026-08-18T22:23:46Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [],
@@ -4967,10 +4956,10 @@
       "userValue": 7
     }
   },
-  "revision": 1203,
+  "revision": 1204,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T22:22:59Z",
+  "updatedAt": "2026-08-18T22:23:46Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
