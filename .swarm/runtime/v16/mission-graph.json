@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 8,
+    "classifiedPRTotal": 7,
     "classifiedPRs": {
       "3650": {
         "classification": "requires-review",
@@ -1118,7 +1118,7 @@
         "lane": "",
         "pr": 3664,
         "recommendedAction": "independent-review",
-        "similarity": 0.151,
+        "similarity": 0.139,
         "title": "[Capture P0][V17][RECOVERY] Restore field provenance + visual dependencies"
       },
       "3665": {
@@ -1133,26 +1133,15 @@
         "title": "Retire swarm scheduler in favor of lightweight autonomous development"
       },
       "3666": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "e93c00cb3526d6e07ff136670e98c5175cf8a1ee",
-        "lane": "capture-product-visual-closure",
-        "pr": 3666,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.126,
-        "title": "[Capture P0][V17][VISUAL RED] Pin rejected Standard account-link hierarchy"
-      },
-      "3667": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-tuya-readonly-preflight",
-        "pr": 3667,
+        "headSHA": "55e750607ef2feb6bfee5afc3b3a2fd5c5235265",
+        "lane": "capture-product-visual-closure",
+        "pr": 3666,
         "recommendedAction": "independent-review",
-        "similarity": 0.137,
-        "title": "[Capture P0][V17][RECOVERY] Let package own incomplete observation horizon"
+        "similarity": 0.131,
+        "title": "[Capture P0][V17][PRODUCT/VISUAL] Tighten Standard copy; pin structural visual red"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1186,7 +1175,7 @@
       "live-pr-3082",
       "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T22:28:48Z",
+    "liveRefreshAt": "2026-08-18T22:29:10Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [],
@@ -4967,10 +4956,10 @@
       "userValue": 7
     }
   },
-  "revision": 1219,
+  "revision": 1220,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T22:28:49Z",
+  "updatedAt": "2026-08-18T22:29:10Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
