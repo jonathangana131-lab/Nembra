@@ -76,6 +76,16 @@ jobs:
           set -euo pipefail
           swift test --filter CoreBluetoothCaptureMappingTests
           swift test --filter TuyaAuthenticatedReadOnlyPreflightTests
+          swift test --filter TuyaAuthenticatedReadOnlySessionLedgerTests
+          swift test --filter TuyaAuthenticatedReadOnlyHorizonTests
+          swift test --filter TuyaAuthenticatedTerminalHorizonTests
+          swift test --filter TuyaDeviceSharingAuthenticationAuthorityTests
+          swift test --filter TuyaIncompleteObservationSemanticTerminalTests
+          swift test --filter TuyaApplicationObservationPhaseAdmissionSourceTests
+          swift test --filter TuyaAcceptedApplicationEvidenceSealSourceTests
+          swift test --filter TuyaSmartLifeApplicationSourceAttributionSourceTests
+          swift test --filter TuyaAppIncompleteHorizonTerminalSourceTests
+          swift test --filter TuyaApplicationTimeoutPresentationRaceSourceTests
           swift test --filter TuyaAuthenticatedReadOnlyCommandFenceSourceTests
           swift test --filter CaptureFirstFoldCopySourceTests
 
