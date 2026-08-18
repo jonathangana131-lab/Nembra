@@ -211,7 +211,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_private_review_final_go.py \
             CandidateRawFilesystemAuthorityTests.test_child_executes_exact_2873_parent_blob \
             CandidateRawFilesystemAuthorityTests.test_inherited_parent_candidate_runs_through_raw_authority \
             CandidateRawFilesystemAuthorityTests.test_core_worktree_decoy_cannot_redirect_physical_candidate
