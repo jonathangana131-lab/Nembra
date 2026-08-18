@@ -1064,19 +1064,8 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 7,
+    "classifiedPRTotal": 6,
     "classifiedPRs": {
-      "3142": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3142,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.179,
-        "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze"
-      },
       "3321": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1172,16 +1161,13 @@
     "livePRWorkItemsAdded": [],
     "livePRWorkItemsDeferred": [],
     "livePRsMissingFromLatestOpenSnapshot": [
-      "live-pr-3082"
+      "live-pr-3082",
+      "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T17:59:12Z",
-    "liveRefreshDuplicatesSuppressed": [
-      3321
-    ],
+    "liveRefreshAt": "2026-08-18T17:59:31Z",
+    "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
-    "liveRefreshSelectedCanonicalPRs": [
-      3142
-    ],
+    "liveRefreshSelectedCanonicalPRs": [],
     "phase": "ACTIVE",
     "phaseUpdatedAt": "2026-08-12T10:52:46Z"
   },
@@ -4959,10 +4945,10 @@
       "userValue": 7
     }
   },
-  "revision": 1140,
+  "revision": 1141,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T17:59:12Z",
+  "updatedAt": "2026-08-18T17:59:32Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
