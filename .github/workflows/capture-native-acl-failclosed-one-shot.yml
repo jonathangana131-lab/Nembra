@@ -1,8 +1,10 @@
-# V17 recovery re-arm: materialize the already-reviewed fail-closed repair.
+# V17 direct materialization re-arm: publish the already-reviewed fail-closed repair.
 name: Capture native ACL fail-closed one-shot
 
 on:
-  pull_request:
+  push:
+    branches:
+      - repair/v17-capture-darwin-native-acl-production-gpt56sol-20260817
     paths:
       - .github/workflows/capture-native-acl-failclosed-one-shot.yml
 
@@ -11,20 +13,18 @@ permissions:
 
 jobs:
   materialize:
-    if: github.head_ref == 'repair/v17-capture-darwin-native-acl-production-gpt56sol-20260817'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       - name: Bind exact repair branch
         shell: bash
         run: |
           set -euo pipefail
-          test "${{ github.head_ref }}" = "repair/v17-capture-darwin-native-acl-production-gpt56sol-20260817"
-          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          test "$GITHUB_REF_NAME" = "repair/v17-capture-darwin-native-acl-production-gpt56sol-20260817"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test -z "$(git status --porcelain)"
 
       - name: Materialize fail-closed pathname replacement repair
