@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 6,
+    "classifiedPRTotal": 5,
     "classifiedPRs": {
       "3649": {
         "classification": "requires-review",
@@ -1088,17 +1088,6 @@
         "similarity": 0.315,
         "title": "[Capture P0][V17][HARDENING] Retire stale TODAY field authority fail closed"
       },
-      "3651": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3651,
-        "recommendedAction": "independent-review",
-        "similarity": 0.268,
-        "title": "[Capture P0][V17][SYNC] Reconcile accepted final carrier with current main"
-      },
       "3652": {
         "classification": "requires-review",
         "destructiveActionAllowed": false,
@@ -1107,7 +1096,7 @@
         "lane": "capture-signed-install-custody",
         "pr": 3652,
         "recommendedAction": "independent-review",
-        "similarity": 0.276,
+        "similarity": 0.099,
         "title": "[Capture P0][V17][RECOVERY] Re-earn post-merge exact-head matrix"
       },
       "3653": {
@@ -1164,7 +1153,7 @@
       "live-pr-3082",
       "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T22:14:24Z",
+    "liveRefreshAt": "2026-08-18T22:14:40Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [],
@@ -4945,10 +4934,10 @@
       "userValue": 7
     }
   },
-  "revision": 1177,
+  "revision": 1178,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T22:14:24Z",
+  "updatedAt": "2026-08-18T22:14:40Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
