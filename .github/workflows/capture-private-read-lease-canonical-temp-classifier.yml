@@ -1,0 +1,67 @@
+name: Capture Private Read Lease Canonical Temp Classifier
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/capture-private-read-lease-canonical-temp-classifier.yml
+      - scripts/ci/capture_selected_xcode_build_orchestrator.py
+      - scripts/ci/tests/test_capture_private_read_lease_rollback.py
+
+permissions:
+  contents: read
+
+jobs:
+  classify:
+    runs-on: macos-15
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 1
+
+      - name: Bind exact live production base and canonical temp root
+        shell: bash
+        env:
+          EXPECTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_BASE_SHA"
+          test -d /private/tmp
+          test ! -L /private/tmp
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+          root = Path('/private/tmp')
+          assert root.resolve(strict=True) == root, root.resolve(strict=True)
+          PY
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Re-run exact portable lease contracts with canonical temp root
+        shell: bash
+        run: |
+          set -euo pipefail
+          export TMPDIR=/private/tmp
+          export TMP=/private/tmp
+          export TEMP=/private/tmp
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/nembra-private-read-lease-canonical-temp-pycache"
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/capture_signed_app_build_origin_custody.py \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_build_uid_read_lease_current.py \
+            scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py \
+            scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_host_ancestry.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_private_read_lease_descriptor_transport.py
+
+      - name: Truth boundary
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          echo "NEMBRA_CAPTURE_CANONICAL_TMP_CLASSIFIER baseSha=$BASE_SHA tmp=/private/tmp portableLeaseContracts=true productionBytesChanged=false physicalAuthorityCreated=false"
