@@ -7,6 +7,7 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
     @Test("public unprovisioned launch is guided fail-closed Capture preflight, not an engineering console")
     func publicRootIsGuidedPreflight() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let strings = try readRepositoryFile("NembraApp/Resources/Localizable.strings")
         let root = try section(
             in: app,
             from: "private struct CaptureP0Root: View",
@@ -17,12 +18,13 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
         #expect(body.contains(".navigationTitle(\"Nembra Capture\")"))
         #expect(!body.contains("NEMBRA CAPTURE"))
         #expect(body.contains("private let buildIdentity = NembraCaptureBuildIdentity.current"))
-        #expect(body.contains("isAccessibilityLayout ? \"Capture locked\" : \"Physical capture locked\""))
+        #expect(body.contains("Physical capture locked"))
         #expect(body.contains(".accessibilityLabel(fieldBuildIsAuthoritative ? \"Build provenance ready\" : \"Physical capture locked\")"))
         #expect(body.contains("This public build can prepare account metadata only. Bluetooth and physical evidence collection are locked."))
-        #expect(body.contains("Account setup is available. Bluetooth scanning, connection, and physical evidence stay locked until the reviewed field build is installed."))
         #expect(body.contains("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings."))
-        #expect(body.contains("Engineering details"))
+        #expect(strings.contains("\"Prepare account metadata\" = \"Link scooter account\";"))
+        #expect(strings.contains("\"Account setup is available. Bluetooth scanning, connection, and physical evidence stay locked until the reviewed field build is installed.\" = \"Bluetooth stays locked until the reviewed field build is installed.\";"))
+        #expect(body.contains(".accessibilityLabel(\"Engineering details\")"))
         #expect(body.contains("Build provenance: ready"))
         #expect(body.contains("Continue to preflight"))
         #expect(!body.contains("Field build ready"))
@@ -68,9 +70,9 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
         #expect(root.contains("private var isAccessibilityLayout: Bool"))
         #expect(root.contains("private var rootHero: some View"))
         #expect(root.contains("if !isAccessibilityLayout"))
-        #expect(root.contains("isAccessibilityLayout ? \"Capture locked\" : \"Physical capture locked\""))
+        #expect(root.contains("Physical capture locked"))
         #expect(root.contains(".dynamicTypeSize(...DynamicTypeSize.accessibility1)"))
-        #expect(root.contains("isAccessibilityLayout ? \"Account setup\" : \"Prepare account metadata\""))
+        #expect(root.contains("Account setup"))
         #expect(root.contains(".accessibilityAddTraits(.isHeader)"))
         #expect(root.contains("Text(\"Choose this scooter\")\n                .font(.title3.bold())\n                .accessibilityAddTraits(.isHeader)"))
         #expect(root.contains("TextField(isAccessibilityLayout ? \"Tuya user code\" : \"Paste user code\""))
