@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 48,
+    "classifiedPRTotal": 46,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1550,17 +1550,6 @@
         "similarity": 0.126,
         "title": "[Capture P0][DIAGNOSTIC] Restore absent Darwin ACL through held fd"
       },
-      "3553": {
-        "classification": "canonical-candidate",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-signed-install-custody",
-        "pr": 3553,
-        "recommendedAction": "review-for-canonical-selection",
-        "similarity": 0.355,
-        "title": "[Capture P0][REPAIR] Restore accepted-root ACL through held fd"
-      },
       "3554": {
         "classification": "validation",
         "destructiveActionAllowed": false,
@@ -1582,17 +1571,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.266,
         "title": "[Capture P0][V17][RED TEAM] Reject null-errno ACL baseline promotion"
-      },
-      "3558": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-native-acl-exact-guard-recovery",
-        "pr": 3558,
-        "recommendedAction": "independent-review",
-        "similarity": 0.109,
-        "title": "[V17][Capture P0][RECOVERY] Close native ACL exact-guard regression"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1625,7 +1603,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T02:34:35Z",
+    "liveRefreshAt": "2026-08-18T02:35:10Z",
     "liveRefreshDuplicatesSuppressed": [
       3549
     ],
@@ -5410,10 +5388,10 @@
       "userValue": 7
     }
   },
-  "revision": 911,
+  "revision": 912,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T02:34:37Z",
+  "updatedAt": "2026-08-18T02:35:11Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5489,7 +5467,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T02:34:35Z",
+      "updatedAt": "2026-08-18T02:35:10Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
