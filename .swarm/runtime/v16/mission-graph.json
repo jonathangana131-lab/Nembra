@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 24,
+    "classifiedPRTotal": 23,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1318,17 +1318,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.372,
         "title": "[Capture P0][V17][RED TEAM] Prove base-module review authority bypass"
-      },
-      "3622": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-final-go-authority",
-        "pr": 3622,
-        "recommendedAction": "independent-review",
-        "similarity": 0.268,
-        "title": "[Capture P0][V17][TRIGGER] Materialize Final-GO manifest lock repair"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1361,7 +1350,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T11:05:28Z",
+    "liveRefreshAt": "2026-08-18T11:05:43Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5146,10 +5135,10 @@
       "userValue": 7
     }
   },
-  "revision": 1061,
+  "revision": 1062,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T11:05:29Z",
+  "updatedAt": "2026-08-18T11:05:44Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5225,7 +5214,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T11:05:28Z",
+      "updatedAt": "2026-08-18T11:05:43Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
