@@ -102,13 +102,17 @@ class ManifestAwareRetirementMigrationTests(unittest.TestCase):
         self.assertIsNone(MODULE._ACTIVE_MANIFEST_REVIEW.get())
 
     def _build(self, root: Path, base: FakeBase):
-        return MODULE.build(
-            candidate_repo=root,
-            source=SOURCE,
-            pr=PR,
-            generated_manifest_review_id=REVIEW_ID,
-            base_module=base,
-        )
+        original_loader = MODULE.generated._load_base_module
+        MODULE.generated._load_base_module = lambda: base
+        try:
+            return MODULE.build(
+                candidate_repo=root,
+                source=SOURCE,
+                pr=PR,
+                generated_manifest_review_id=REVIEW_ID,
+            )
+        finally:
+            MODULE.generated._load_base_module = original_loader
 
     def test_sealed_build_retires_before_candidate_release_with_manifest_review(self) -> None:
         base = FakeBase()
