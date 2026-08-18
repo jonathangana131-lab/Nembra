@@ -217,9 +217,16 @@ def _validate_current_consumer(candidate_repo: Path, source: str) -> None:
         raise CurrentManifestConsumerFinalGoError(
             "field bootstrap does not require current reviewed manifest authority"
         )
-    if SNAPSHOT_HELPER_PATH not in bootstrap or "generated_manifest_sha256" not in bootstrap:
+    if (
+        SNAPSHOT_HELPER_PATH not in bootstrap
+        or " manifest " not in bootstrap
+        or "--source-sha" not in bootstrap
+        or "shasum -a 256" not in bootstrap
+        or "GENERATED_MANIFEST_SHA256" not in bootstrap
+        or "ACCEPTED_GENERATED_MANIFEST_SHA256" not in bootstrap
+    ):
         raise CurrentManifestConsumerFinalGoError(
-            "field bootstrap does not rederive the canonical accepted-input manifest"
+            "field bootstrap does not rederive and compare the canonical accepted-input manifest"
         )
     if LEGACY_ENV_KEY in installer or LEGACY_ENV_KEY in bootstrap:
         raise CurrentManifestConsumerFinalGoError(
