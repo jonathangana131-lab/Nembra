@@ -1,0 +1,331 @@
+name: Capture native ACL baseline coherence one-shot
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-darwin-native-acl-production-gpt56sol-20260817
+    paths:
+      - .github/workflows/capture-native-acl-baseline-coherence-one-shot.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bind exact repair head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'repair/v17-capture-darwin-native-acl-production-gpt56sol-20260817'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain)"
+
+      - name: Materialize pre-grant native ACL coherence gate
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('scripts/ci/capture_selected_xcode_build_orchestrator.py')
+          text = path.read_text()
+
+          constants_old = '''ACCEPTED_BUILD_INPUT_SNAPSHOT_RELATIVE = Path("scripts/ci/capture_accepted_build_input_snapshot.py")
+'''
+          constants_new = '''ACCEPTED_BUILD_INPUT_SNAPSHOT_RELATIVE = Path("scripts/ci/capture_accepted_build_input_snapshot.py")
+DARWIN_ACL_TYPE_EXTENDED = 0x00000100
+'''
+          if text.count(constants_old) != 1:
+              raise SystemExit(f'constant anchor count={text.count(constants_old)}')
+          text = text.replace(constants_old, constants_new, 1)
+
+          library_old = '''    library.acl_get_fd.argtypes = [ctypes.c_int]
+    library.acl_get_fd.restype = ctypes.c_void_p
+    library.acl_dup.argtypes = [ctypes.c_void_p]
+    library.acl_dup.restype = ctypes.c_void_p
+    library.acl_init.argtypes = [ctypes.c_int]
+    library.acl_init.restype = ctypes.c_void_p
+    library.acl_set_fd.argtypes = [ctypes.c_int, ctypes.c_void_p]
+    library.acl_set_fd.restype = ctypes.c_int
+    library.acl_free.argtypes = [ctypes.c_void_p]
+    library.acl_free.restype = ctypes.c_int
+'''
+          library_new = '''    library.acl_get_fd.argtypes = [ctypes.c_int]
+    library.acl_get_fd.restype = ctypes.c_void_p
+    library.acl_get_file.argtypes = [ctypes.c_char_p, ctypes.c_int]
+    library.acl_get_file.restype = ctypes.c_void_p
+    library.acl_dup.argtypes = [ctypes.c_void_p]
+    library.acl_dup.restype = ctypes.c_void_p
+    library.acl_init.argtypes = [ctypes.c_int]
+    library.acl_init.restype = ctypes.c_void_p
+    library.acl_set_fd.argtypes = [ctypes.c_int, ctypes.c_void_p]
+    library.acl_set_fd.restype = ctypes.c_int
+    library.acl_to_text.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ssize_t)]
+    library.acl_to_text.restype = ctypes.c_void_p
+    library.acl_free.argtypes = [ctypes.c_void_p]
+    library.acl_free.restype = ctypes.c_int
+'''
+          if text.count(library_old) != 1:
+              raise SystemExit(f'library anchor count={text.count(library_old)}')
+          text = text.replace(library_old, library_new, 1)
+
+          insertion_anchor = '''def _restore_fd_acl_baseline(descriptor: int, baseline_acl: int) -> None:
+'''
+          helpers = '''def _capture_path_acl_baseline(
+    path: Path,
+    descriptor: int,
+    accepted_signature: tuple[int, int, int],
+    is_directory: bool,
+) -> int:
+    """Capture canonical-path ACL semantics while it still names the held object."""
+    _require_canonical_acl_identity(path, descriptor, accepted_signature, is_directory)
+    library = _darwin_acl_library()
+    ctypes.set_errno(0)
+    current = library.acl_get_file(os.fsencode(path), DARWIN_ACL_TYPE_EXTENDED)
+    saved_errno = ctypes.get_errno()
+    try:
+        _require_canonical_acl_identity(path, descriptor, accepted_signature, is_directory)
+    except Exception:
+        if current:
+            library.acl_free(current)
+        raise
+    if current:
+        return int(current)
+    if saved_errno != errno.ENOENT:
+        raise SelectedXcodeBuildOrchestratorError(
+            "could not classify canonical private read-lease ACL baseline"
+            f": errno {saved_errno}"
+        )
+    ctypes.set_errno(0)
+    empty = library.acl_init(0)
+    empty_errno = ctypes.get_errno()
+    if not empty:
+        raise SelectedXcodeBuildOrchestratorError(
+            "could not create empty canonical private read-lease ACL baseline"
+            + (f": errno {empty_errno}" if empty_errno else "")
+        )
+    return int(empty)
+
+
+def _acl_handle_text(acl_handle: int, label: str) -> bytes:
+    if acl_handle <= 0:
+        raise SelectedXcodeBuildOrchestratorError(f"{label} ACL baseline is unavailable")
+    library = _darwin_acl_library()
+    length = ctypes.c_ssize_t(0)
+    ctypes.set_errno(0)
+    raw = library.acl_to_text(ctypes.c_void_p(acl_handle), ctypes.byref(length))
+    saved_errno = ctypes.get_errno()
+    if not raw:
+        raise SelectedXcodeBuildOrchestratorError(
+            f"could not serialize {label} ACL baseline"
+            + (f": errno {saved_errno}" if saved_errno else "")
+        )
+    if length.value < 0:
+        library.acl_free(ctypes.c_void_p(raw))
+        raise SelectedXcodeBuildOrchestratorError(
+            f"{label} ACL baseline serialization length is invalid"
+        )
+    serialized = ctypes.string_at(raw, length.value)
+    if library.acl_free(ctypes.c_void_p(raw)) != 0:
+        raise SelectedXcodeBuildOrchestratorError(
+            f"could not free serialized {label} ACL baseline"
+        )
+    return serialized
+
+
+def _require_fd_path_acl_baseline_equal(
+    path: Path,
+    descriptor: int,
+    accepted_signature: tuple[int, int, int],
+    is_directory: bool,
+    fd_baseline_acl: int,
+) -> None:
+    """Fail closed before grant unless held-FD and canonical ACL semantics agree."""
+    path_baseline_acl = _capture_path_acl_baseline(
+        path, descriptor, accepted_signature, is_directory
+    )
+    try:
+        fd_text = _acl_handle_text(fd_baseline_acl, "descriptor-pinned private read-lease")
+        path_text = _acl_handle_text(path_baseline_acl, "canonical private read-lease")
+        if fd_text != path_text:
+            raise SelectedXcodeBuildOrchestratorError(
+                f"private read-lease descriptor/canonical ACL baselines diverge before grant: {path}"
+            )
+    finally:
+        _free_fd_acl_baseline(path_baseline_acl)
+
+
+'''
+          if text.count(insertion_anchor) != 1:
+              raise SystemExit(f'helper insertion anchor count={text.count(insertion_anchor)}')
+          text = text.replace(insertion_anchor, helpers + insertion_anchor, 1)
+
+          grant_old = '''                if self._use_native_darwin_acl:
+                    record["native_baseline_acl"] = _capture_fd_acl_baseline(descriptor)
+                    before = _path_acl_listing(
+                        path, descriptor, accepted_signature, is_directory
+                    )
+'''
+          grant_new = '''                if self._use_native_darwin_acl:
+                    record["native_baseline_acl"] = _capture_fd_acl_baseline(descriptor)
+                    _require_fd_path_acl_baseline_equal(
+                        path,
+                        descriptor,
+                        accepted_signature,
+                        is_directory,
+                        int(record["native_baseline_acl"]),
+                    )
+                    before = _path_acl_listing(
+                        path, descriptor, accepted_signature, is_directory
+                    )
+'''
+          if text.count(grant_old) != 1:
+              raise SystemExit(f'grant anchor count={text.count(grant_old)}')
+          path.write_text(text.replace(grant_old, grant_new, 1))
+
+          test_path = Path('scripts/ci/tests/test_capture_private_read_lease_rollback.py')
+          tests = test_path.read_text()
+          strict_patch_anchor = '''                mock.patch.object(
+                    helper, "_capture_fd_acl_baseline", return_value=4242
+                ) as capture,
+                mock.patch.object(
+                    helper, "_path_acl_listing", side_effect=lambda *_args: next(listings)
+                ),
+                mock.patch.object(helper, "_chmod_acl_path") as grant,
+'''
+          strict_patch_new = '''                mock.patch.object(
+                    helper, "_capture_fd_acl_baseline", return_value=4242
+                ) as capture,
+                mock.patch.object(
+                    helper, "_require_fd_path_acl_baseline_equal"
+                ) as coherence,
+                mock.patch.object(
+                    helper, "_path_acl_listing", side_effect=lambda *_args: next(listings)
+                ),
+                mock.patch.object(helper, "_chmod_acl_path") as grant,
+'''
+          if tests.count(strict_patch_anchor) != 1:
+              raise SystemExit(f'strict patch anchor count={tests.count(strict_patch_anchor)}')
+          tests = tests.replace(strict_patch_anchor, strict_patch_new, 1)
+
+          strict_assert_anchor = '''            capture.assert_called_once_with(descriptor)
+            grant.assert_called_once()
+'''
+          strict_assert_new = '''            capture.assert_called_once_with(descriptor)
+            coherence.assert_called_once_with(subject, descriptor, signature, False, 4242)
+            grant.assert_called_once()
+'''
+          if tests.count(strict_assert_anchor) != 1:
+              raise SystemExit(f'strict assertion anchor count={tests.count(strict_assert_anchor)}')
+          tests = tests.replace(strict_assert_anchor, strict_assert_new, 1)
+
+          class_end = '''\n\nif __name__ == "__main__":\n    unittest.main(verbosity=2)\n'''
+          new_tests = '''
+    def test_native_fd_path_baseline_mismatch_fails_closed_before_grant(self) -> None:
+        helper = load()
+        with tempfile.TemporaryDirectory(prefix="nembra-lease-native-coherence-") as temporary:
+            repo, subject = self._subject(temporary)
+            descriptor = os.open(subject, os.O_RDONLY)
+            signature = helper._descriptor_signature(descriptor)
+            freed: list[int] = []
+
+            def fake_text(handle: int, _label: str) -> bytes:
+                return b"descriptor-A" if handle == 0xA11 else b"canonical-B"
+
+            with (
+                mock.patch.object(
+                    helper, "_capture_path_acl_baseline", return_value=0xB22
+                ) as capture_path,
+                mock.patch.object(helper, "_acl_handle_text", side_effect=fake_text),
+                mock.patch.object(
+                    helper,
+                    "_free_fd_acl_baseline",
+                    side_effect=lambda handle: freed.append(handle),
+                ),
+                self.assertRaisesRegex(
+                    helper.SelectedXcodeBuildOrchestratorError,
+                    "descriptor/canonical ACL baselines diverge before grant",
+                ),
+            ):
+                helper._require_fd_path_acl_baseline_equal(
+                    subject, descriptor, signature, False, 0xA11
+                )
+
+            capture_path.assert_called_once_with(subject, descriptor, signature, False)
+            self.assertEqual(freed, [0xB22])
+            os.close(descriptor)
+
+    def test_native_path_null_acl_without_enoent_fails_closed(self) -> None:
+        helper = load()
+        library = mock.Mock()
+        library.acl_get_file.return_value = None
+        library.acl_init.return_value = 0xC0FFEE
+        library.acl_free.return_value = 0
+
+        with tempfile.TemporaryDirectory(prefix="nembra-lease-native-path-null-") as temporary:
+            repo, subject = self._subject(temporary)
+            descriptor = os.open(subject, os.O_RDONLY)
+            signature = helper._descriptor_signature(descriptor)
+            with (
+                mock.patch.object(helper, "_darwin_acl_library", return_value=library),
+                mock.patch.object(helper, "_require_canonical_acl_identity"),
+                self.assertRaisesRegex(
+                    helper.SelectedXcodeBuildOrchestratorError,
+                    "could not classify canonical private read-lease ACL baseline: errno 0",
+                ),
+            ):
+                helper._capture_path_acl_baseline(subject, descriptor, signature, False)
+            os.close(descriptor)
+
+        library.acl_get_file.assert_called_once_with(
+            os.fsencode(subject), helper.DARWIN_ACL_TYPE_EXTENDED
+        )
+        library.acl_init.assert_not_called()
+
+'''
+          if tests.count(class_end) != 1:
+              raise SystemExit(f'class end anchor count={tests.count(class_end)}')
+          test_path.write_text(tests.replace(class_end, new_tests + class_end, 1))
+
+      - name: Run focused portable regressions
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          python3 scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          python3 scripts/ci/tests/test_capture_accepted_root_build_composition.py
+          python3 -m py_compile scripts/ci/capture_selected_xcode_build_orchestrator.py
+
+      - name: Enforce exact repair delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py | LC_ALL=C sort)"
+          test "$changed" = "$expected"
+          git diff --check
+          ! grep -nE 'publishDps\(|writeValue\(|removeDevice|factoryReset' scripts/ci/capture_selected_xcode_build_orchestrator.py
+
+      - name: Publish coherent exact-head repair
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch='repair/v17-capture-darwin-native-acl-production-gpt56sol-20260817'
+          git fetch origin "$branch"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/ci/capture_selected_xcode_build_orchestrator.py \
+                  scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          git rm .github/workflows/capture-native-acl-baseline-coherence-one-shot.yml
+          git diff --cached --check
+          git commit -m 'Capture: bind held-FD ACL baseline before grant'
+          git push origin HEAD:"$branch"
