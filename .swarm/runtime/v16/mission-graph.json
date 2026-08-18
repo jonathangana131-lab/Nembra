@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 13,
+    "classifiedPRTotal": 12,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1085,7 +1085,7 @@
         "lane": "capture-tuya-readonly-preflight",
         "pr": 3316,
         "recommendedAction": "independent-review",
-        "similarity": 0.105,
+        "similarity": 0.096,
         "title": "[Capture P0][CONVERGENCE] Callback authority + terminal presentation exact candidate"
       },
       "3321": {
@@ -1162,7 +1162,7 @@
         "lane": "dashboard-cockpit-product-closure",
         "pr": 3497,
         "recommendedAction": "independent-review",
-        "similarity": 0.095,
+        "similarity": 0.062,
         "title": "[Dashboard V17][RECOVERY] Ship signature battery / learned-range instrument"
       },
       "3625": {
@@ -1197,17 +1197,6 @@
         "recommendedAction": "attach-evidence-to-canonical",
         "similarity": 0.361,
         "title": "[Capture P0][V17][VALIDATION] Full 48-path final exact-head matrix"
-      },
-      "3646": {
-        "classification": "requires-review",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "",
-        "pr": 3646,
-        "recommendedAction": "independent-review",
-        "similarity": 0.315,
-        "title": "[Capture P0][V17][FINAL COMPOSE] Field carrier + sealed Final-GO authority"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1240,7 +1229,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T11:49:40Z",
+    "liveRefreshAt": "2026-08-18T11:55:32Z",
     "liveRefreshDuplicatesSuppressed": [
       3645
     ],
@@ -5025,10 +5014,10 @@
       "userValue": 7
     }
   },
-  "revision": 1131,
+  "revision": 1132,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T11:49:40Z",
+  "updatedAt": "2026-08-18T11:55:33Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5104,7 +5093,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T11:49:40Z",
+      "updatedAt": "2026-08-18T11:55:32Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
