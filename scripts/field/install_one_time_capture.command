@@ -227,7 +227,7 @@ else
         read -r -p "Choose Apple Development team number: " PICK
         TEAM_ID="$(printf '%s\n' "$TEAM_IDS" | sed -n "${PICK}p")"
     else
-        read -r -p "Enter the 10-character Team ID from Xcode Signing & Capabilities: " TEAM_ID
+        read -r -p "Enter the 10-character Apple Team ID from Xcode Signing & Capabilities: " TEAM_ID
     fi
 fi
 [[ "$TEAM_ID" =~ ^[A-Z0-9]{10}$ ]] || die "Could not determine a valid 10-character Team ID."
@@ -526,7 +526,7 @@ if [[ "$INSTALLED" != "1" ]]; then
 import re
 import sys
 from pathlib import Path
-payload=sys.stdin.buffer.read()
+payload = sys.stdin.buffer.read()
 try:
     private_udid_raw, selector_raw = payload.split(b"\0", 1)
     private_udid = private_udid_raw.decode("utf-8")
