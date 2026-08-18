@@ -1,0 +1,304 @@
+name: Capture Final GO review-authority repair
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-final-go-generated-manifest-issuer-gpt56sol-20260817
+    paths:
+      - .github/workflows/capture-final-go-review-authority-repair.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bind exact reviewed head
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='cf97695d322b7b02eadb853e8da2888eff9776ea'
+          test "$(git rev-parse HEAD^)" = "$parent"
+          actual="$(git diff --name-only "$parent"...HEAD)"
+          test "$actual" = '.github/workflows/capture-final-go-review-authority-repair.yml'
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Repair authority transport and stale-lock chronology
+        shell: python
+        run: |
+          from pathlib import Path
+
+          source_path = Path('scripts/ci/es80_authenticated_stationary_private_review_final_go.py')
+          source = source_path.read_text()
+          start = source.index('\ndef build(\n')
+          end = source.index('\n\ndef __getattr__', start)
+          replacement = r'''
+def build(
+    *,
+    candidate_repo: Path,
+    source: str,
+    pr: int,
+    generated_manifest_review_id: int,
+    base_module: Any | None = None,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Complete candidate consumers under one independently reviewed manifest authority.
+
+    #3057 exact validation proved that the accepted semantic stack performs the
+    private installer, retained signed-artifact inspection/reinspection, and all
+    candidate postchecks before `_SEMANTIC_BUILD` returns. V17 additionally
+    requires the generated/private compiler-input manifest digest to be bound by
+    an exact GitHub OWNER review before that semantic build, injected only into
+    its closed installer environment, then revalidated after the private side
+    effect and before candidate retirement.
+
+    The review transport is never caller-selected. The accepted base GitHub API
+    client is captured once and used by both this manifest extension and the
+    inherited semantic build. The initial manifest review is fetched only after
+    entering the composition lock so authority cannot go stale while queued
+    behind another composition.
+    """
+    if "get" in kwargs:
+        raise PrivateReviewGoError(
+            "caller-supplied GitHub review transport is forbidden"
+        )
+
+    base = base_module or generated._load_base_module()
+    source = base.canon(source, "source")
+    pr = base.pos(pr, "PR")
+    generated_manifest_review_id = base.pos(
+        generated_manifest_review_id, "generated-manifest review ID"
+    )
+    trusted_get = base.api
+    if not callable(trusted_get):
+        raise PrivateReviewGoError("accepted GitHub review transport is unavailable")
+    candidate_repo = candidate_repo.expanduser().resolve(strict=True)
+
+    with _MANIFEST_EXTENSION_LOCK:
+        original_environment_adapter = _SEMANTIC_MODULE._private_environment_adapter
+        if original_environment_adapter is not _PREDECESSOR_PRIVATE_ENVIRONMENT_ADAPTER:
+            raise PrivateReviewGoError(
+                "Final-GO private environment adapter is not exact accepted authority"
+            )
+
+        pre_review = generated_manifest_review(
+            pr, generated_manifest_review_id, source, trusted_get, base=base
+        )
+        token = _ACTIVE_MANIFEST_REVIEW.set(pre_review)
+        _SEMANTIC_MODULE._private_environment_adapter = _manifest_environment_adapter
+        try:
+            with _CandidateRetirementBoundary(base) as retirement, _dispatch_predecessor_physical_reads():
+                with _PREDECESSOR_CANDIDATE_GIT_CUSTODY(
+                    base, candidate_repo, source
+                ), _CURRENT_VNODE_AUTHORITY():
+                    record = _SEMANTIC_BUILD(
+                        candidate_repo=candidate_repo,
+                        source=source,
+                        pr=pr,
+                        get=trusted_get,
+                        base_module=base,
+                        **kwargs,
+                    )
+                    post_review = generated_manifest_review(
+                        pr,
+                        generated_manifest_review_id,
+                        source,
+                        trusted_get,
+                        base=base,
+                    )
+                    if post_review != pre_review:
+                        raise PrivateReviewGoError(
+                            "generated-manifest OWNER review changed during Final-GO composition"
+                        )
+                    if not isinstance(record, dict):
+                        raise PrivateReviewGoError(
+                            "accepted Final-GO semantic build returned invalid record"
+                        )
+                    if MANIFEST_RECORD_KEY in record:
+                        raise PrivateReviewGoError(
+                            "Final-GO record unexpectedly predefines generated-manifest authority"
+                        )
+                    record[MANIFEST_RECORD_KEY] = {
+                        "authority": MANIFEST_RECORD_AUTHORITY,
+                        "reviewAuthority": MANIFEST_REVIEW_AUTHORITY,
+                        "reviewID": pre_review["reviewID"],
+                        "reviewNodeID": pre_review["reviewNodeID"],
+                        "reviewBodySHA256": pre_review["reviewBodySHA256"],
+                        "reviewedAtUTC": pre_review["reviewedAtUTC"],
+                        "reviewer": pre_review["reviewer"],
+                        "state": pre_review["state"],
+                        "sourceCommitSHA": source,
+                        MANIFEST_DIGEST_KEY: pre_review[MANIFEST_DIGEST_KEY],
+                    }
+                    return retirement.retire(record)
+        finally:
+            _SEMANTIC_MODULE._private_environment_adapter = original_environment_adapter
+            _ACTIVE_MANIFEST_REVIEW.reset(token)
+'''
+          source_path.write_text(source[:start] + replacement + source[end:])
+
+          test_path = Path('scripts/ci/tests/test_es80_final_go_generated_manifest_review.py')
+          tests = test_path.read_text()
+          if 'import threading\n' not in tests:
+              tests = tests.replace('import tempfile\n', 'import tempfile\nimport threading\n', 1)
+
+          old_run = '''    def run_build(self, get, semantic_build):\n        module._SEMANTIC_BUILD = semantic_build\n        with tempfile.TemporaryDirectory(prefix="nembra-manifest-final-go-") as temporary:\n            return module.build(\n                candidate_repo=Path(temporary),\n                source=SOURCE,\n                pr=PR,\n                generated_manifest_review_id=REVIEW_ID,\n                get=get,\n                base_module=self.base,\n            )\n'''
+          new_run = '''    def run_build(self, get, semantic_build):\n        module._SEMANTIC_BUILD = semantic_build\n        original_api = self.base.api\n        self.base.api = get\n        try:\n            with tempfile.TemporaryDirectory(prefix="nembra-manifest-final-go-") as temporary:\n                return module.build(\n                    candidate_repo=Path(temporary),\n                    source=SOURCE,\n                    pr=PR,\n                    generated_manifest_review_id=REVIEW_ID,\n                    base_module=self.base,\n                )\n        finally:\n            self.base.api = original_api\n'''
+          if tests.count(old_run) != 1:
+              raise SystemExit('manifest test run_build seam drifted')
+          tests = tests.replace(old_run, new_run, 1)
+
+          anchor = '''    def test_semantic_failure_restores_adapter_context_and_candidate_dispatch(self):\n'''
+          if tests.count(anchor) != 1:
+              raise SystemExit('manifest test insertion anchor drifted')
+          additions = r'''    def test_caller_cannot_replace_production_review_transport(self):
+        accepted = review_response(DIGEST_A)
+        forged = review_response(DIGEST_B)
+        self.base.api = lambda _path: (b"{}", copy.deepcopy(accepted))
+        side_effect = []
+
+        def semantic_build(**_kwargs):
+            side_effect.append("ran")
+            return self.sealed_record()
+
+        module._SEMANTIC_BUILD = semantic_build
+        with tempfile.TemporaryDirectory(prefix="nembra-manifest-final-go-") as temporary:
+            with self.assertRaisesRegex(
+                module.PrivateReviewGoError,
+                "caller-supplied GitHub review transport is forbidden",
+            ):
+                module.build(
+                    candidate_repo=Path(temporary),
+                    source=SOURCE,
+                    pr=PR,
+                    generated_manifest_review_id=REVIEW_ID,
+                    base_module=self.base,
+                    get=lambda _path: (b"{}", copy.deepcopy(forged)),
+                )
+        self.assertEqual(side_effect, [])
+
+    def test_lock_wait_review_drift_fails_before_semantic_side_effect(self):
+        current = {"review": review_response(DIGEST_A)}
+        api_calls = []
+        semantic_side_effect = threading.Event()
+        entered_lock = threading.Event()
+        release_lock = threading.Event()
+        failures = []
+
+        def api(path):
+            api_calls.append(path)
+            return b"{}", copy.deepcopy(current["review"])
+
+        self.base.api = api
+
+        class GateLock:
+            def __enter__(inner_self):
+                entered_lock.set()
+                if not release_lock.wait(5):
+                    raise AssertionError("test gate was not released")
+                return inner_self
+
+            def __exit__(inner_self, exc_type, exc, tb):
+                return False
+
+        original_lock = module._MANIFEST_EXTENSION_LOCK
+        module._MANIFEST_EXTENSION_LOCK = GateLock()
+        try:
+            with tempfile.TemporaryDirectory(prefix="nembra-manifest-final-go-") as temporary:
+                candidate = Path(temporary)
+
+                def semantic_build(**_kwargs):
+                    semantic_side_effect.set()
+                    return self.sealed_record()
+
+                module._SEMANTIC_BUILD = semantic_build
+
+                def worker():
+                    try:
+                        module.build(
+                            candidate_repo=candidate,
+                            source=SOURCE,
+                            pr=PR,
+                            generated_manifest_review_id=REVIEW_ID,
+                            base_module=self.base,
+                        )
+                    except Exception as error:
+                        failures.append(error)
+
+                thread = threading.Thread(target=worker, daemon=True)
+                thread.start()
+                self.assertTrue(entered_lock.wait(5), "composition never reached lock")
+                current["review"] = review_response(DIGEST_A, state="DISMISSED")
+                release_lock.set()
+                thread.join(5)
+                self.assertFalse(thread.is_alive(), "composition worker did not finish")
+        finally:
+            release_lock.set()
+            module._MANIFEST_EXTENSION_LOCK = original_lock
+
+        self.assertFalse(semantic_side_effect.is_set())
+        self.assertEqual(len(api_calls), 1)
+        self.assertEqual(len(failures), 1)
+        self.assertIsInstance(failures[0], module.PrivateReviewGoError)
+
+'''
+          tests = tests.replace(anchor, additions + anchor, 1)
+          test_path.write_text(tests)
+
+          migration_path = Path('scripts/ci/tests/test_es80_final_go_manifest_retirement_migration.py')
+          migration = migration_path.read_text()
+          old_base_tail = '''        self.original_git = git\n        self.original_git_bytes = git_bytes\n\n    @staticmethod\n    def canon(value: str, _label: str) -> str:\n'''
+          new_base_tail = '''        self.original_git = git\n        self.original_git_bytes = git_bytes\n\n    @staticmethod\n    def api(_path):\n        return b"{}", {}\n\n    @staticmethod\n    def canon(value: str, _label: str) -> str:\n'''
+          if migration.count(old_base_tail) != 1:
+              raise SystemExit('migration FakeBase seam drifted')
+          migration = migration.replace(old_base_tail, new_base_tail, 1)
+          old_get = '''            generated_manifest_review_id=REVIEW_ID,\n            get=lambda _path: (b"{}", {}),\n            base_module=base,\n'''
+          new_get = '''            generated_manifest_review_id=REVIEW_ID,\n            base_module=base,\n'''
+          if migration.count(old_get) != 1:
+              raise SystemExit('migration caller-get seam drifted')
+          migration = migration.replace(old_get, new_get, 1)
+          migration_path.write_text(migration)
+
+      - name: Run focused authority regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+          python3 -B -I scripts/ci/tests/test_es80_final_go_generated_manifest_review.py
+          python3 -B -I scripts/ci/tests/test_es80_final_go_manifest_retirement_migration.py
+          python3 -B -I scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py
+          python3 -B -I scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py
+          grep -Fq 'caller-supplied GitHub review transport is forbidden' scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+          grep -Fq 'trusted_get = base.api' scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+          ! grep -Fq 'get: Callable[[str], tuple[bytes, dict[str, Any]]] | None = None' scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+          git diff --check
+          actual="$(git diff --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_final_go_generated_manifest_review.py \
+            scripts/ci/tests/test_es80_final_go_manifest_retirement_migration.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+
+      - name: Publish clean reviewed repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch='repair/v17-capture-final-go-generated-manifest-issuer-gpt56sol-20260817'
+          expected_head="${{ github.sha }}"
+          git fetch origin "$branch"
+          test "$(git rev-parse FETCH_HEAD)" = "$expected_head"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_final_go_generated_manifest_review.py \
+            scripts/ci/tests/test_es80_final_go_manifest_retirement_migration.py
+          git rm .github/workflows/capture-final-go-review-authority-repair.yml
+          git diff --cached --check
+          git commit -m 'Capture: seal manifest review authority transport'
+          git push origin HEAD:"$branch"
