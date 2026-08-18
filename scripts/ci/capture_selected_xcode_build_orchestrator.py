@@ -980,9 +980,12 @@ def _capture_fd_acl_baseline(descriptor: int) -> int:
         return int(baseline)
 
     baseline_errno = ctypes.get_errno()
-    if baseline_errno not in (0, errno.ENOENT):
+    # Only the Darwin ENOENT result has been physically classified as an absent
+    # extended ACL. A null return with errno 0 is not evidence of absence and
+    # must never be promoted into an authoritative empty rollback baseline.
+    if baseline_errno != errno.ENOENT:
         raise SelectedXcodeBuildOrchestratorError(
-            "could not capture descriptor-pinned private read-lease ACL baseline"
+            "could not classify descriptor-pinned private read-lease ACL baseline"
             f": errno {baseline_errno}"
         )
     ctypes.set_errno(0)
@@ -1189,10 +1192,14 @@ class _PrivateReadLease:
                         _restore_fd_acl_baseline(
                             descriptor, int(record.get("native_baseline_acl", 0))
                         )
-                        # Path replacement is not a rollback failure: descriptor custody
-                        # intentionally restores the original vnode. Verify path text only
-                        # when the canonical name still identifies that exact object.
-                        if path_matches:
+                        # Descriptor custody restores the original vnode even if the
+                        # canonical name was replaced, but namespace identity loss during an
+                        # authority-bearing lease is still terminal. Never mutate the replacement.
+                        if not path_matches:
+                            failures.append(
+                                f"private read-lease pathname no longer identifies opened object: {path}"
+                            )
+                        else:
                             restored = _path_acl_listing(
                                 path, descriptor, accepted_signature, is_directory
                             )
