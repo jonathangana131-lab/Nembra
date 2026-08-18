@@ -1,0 +1,64 @@
+name: Capture Final GO Real Base Loader Root Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+      - scripts/ci/tests/test_es80_final_go_real_base_loader_root_redteam.py
+      - .github/workflows/capture-final-go-real-base-loader-root-redteam.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ATTACKED_HEAD: f0cea3854b9ff34da458522909adb4a78b789398
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPYCACHEPREFIX: /tmp/nembra-finalgo-loader-redteam-pycache
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact attacked authoring head and validation-only delta
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          test "$(git merge-base "$ATTACKED_HEAD" HEAD)" = "$ATTACKED_HEAD"
+          git diff --name-only "$ATTACKED_HEAD" HEAD | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          printf '%s\n' \
+            .github/workflows/capture-final-go-real-base-loader-root-redteam.yml \
+            scripts/ci/tests/test_es80_final_go_real_base-loader-root-redteam.py \
+            | LC_ALL=C sort > "$RUNNER_TEMP/expected"
+          diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Compile attacked authority and runtime probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -I -m py_compile \
+            scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_final_go_real_base_loader_root_redteam.py
+
+      - name: Exploit-positive real-loader classification
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -I scripts/ci/tests/test_es80_final_go_real_base_loader_root_redteam.py
+
+      - name: Preserve validation-only physical boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'Validation only.' scripts/ci/tests/test_es80_final_go_real_base_loader_root_redteam.py
+          ! grep -Eq 'publishDps\(|writeValue\(|physicalResultCollected[[:space:]]*=[[:space:]]*True' scripts/ci/tests/test_es80_final_go_real_base_loader_root_redteam.py
+          git diff --check "$ATTACKED_HEAD"...HEAD
