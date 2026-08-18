@@ -9,15 +9,15 @@
   "generation": 20,
   "status": "ACTIVE",
   "claimedAt": "2026-08-18T02:38:30Z",
-  "lastHeartbeatAt": "2026-08-18T02:38:30Z",
+  "lastHeartbeatAt": "2026-08-18T02:42:30Z",
   "leaseSeconds": 1800,
   "branch": "",
   "pr": 3553,
   "sourceSHA": "22b2ec853c0637662a8551a8fb869caf65fe12da",
-  "currentHeadSHA": "22b2ec853c0637662a8551a8fb869caf65fe12da",
+  "currentHeadSHA": "8456750395c0a5cb1472834300785a5d52c1cae4",
   "takeoverFromWorkerId": "gpt56-sol-20260814-1553-go-review",
   "takeoverFromLeaseId": "capture-signed-install-review-gpt56-20260814-225300",
   "takeoverReason": "Generation-19 review lease expired on 2026-08-14. Recover non-conflicting truth review while the live #3553 integration author is actively changing the materializer; do not edit production paths.",
   "intent": "Adversarially review #3553 native Darwin accepted-root ACL productionization, exact-scope materialization, rollback/path-replacement behavior, composition tests, and same-head gate requirements. Do not mutate the active implementation branch. PHYSICAL NO-GO.",
-  "checkpoint": "Fresh review at #3553@22b2ec85 confirms the current production test FakeLease still rejects the new use_native_darwin_acl keyword, so the live one-shot's proposed constructor adaptation and explicit native-mode assertion are necessary. The accepted-root compiler scope oracle already includes scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py, so that adaptation does not itself exceed the exact-parent gate. Materialization and exact-head validation remain pending."
+  "checkpoint": "At #3553@84567503, review finding 4956628655 was incorporated into the authoring plan: strict accepted-root composition FakeLease will accept/record native mode and its focused regression will run. Exact compiler run 32092606132 still stops portable jobs at scope because the one-shot remains, while xcode-27 real whole-root read/search->revoke is terminal SUCCESS. Separate macOS Private Build UID run 32092606074 exposes a real test-fixture defect: rollback tests use the textual /var/folders temp alias, so production no-symlink pinning fails before ACL assertions. Reviews 4956638838/4956642768 require canonicalizing the rollback fixture root (smallest proposed fix: Path(temporary).resolve(strict=True)) without weakening production. Exact Private Guard and Field Provenance are green on 84567503. Materialization, macOS rollback repair, and final same-head acceptance remain pending. PHYSICAL NO-GO."
 }
