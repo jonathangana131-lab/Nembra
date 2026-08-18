@@ -1,0 +1,122 @@
+# V17 one-shot production child: fail closed on unclassified native ACL acquisition.
+name: Capture native ACL null-errno fail-closed one-shot
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-native-acl-null-errno-failclosed-gpt56sol-20260817
+    paths:
+      - .github/workflows/capture-native-acl-null-errno-failclosed-one-shot.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bind exact child branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "repair/v17-capture-native-acl-null-errno-failclosed-gpt56sol-20260817"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor e54f9582fb5713d1353ba64914c63e5e6d9e663d HEAD
+          test -z "$(git status --porcelain)"
+
+      - name: Materialize null-errno fail-closed classifier and regression
+        shell: python
+        run: |
+          from pathlib import Path
+
+          orchestrator = Path("scripts/ci/capture_selected_xcode_build_orchestrator.py")
+          text = orchestrator.read_text()
+          old = '''    baseline_errno = ctypes.get_errno()
+    if baseline_errno not in (0, errno.ENOENT):
+        raise SelectedXcodeBuildOrchestratorError(
+            "could not capture descriptor-pinned private read-lease ACL baseline"
+            f": errno {baseline_errno}"
+        )
+'''
+          new = '''    baseline_errno = ctypes.get_errno()
+    if baseline_errno != errno.ENOENT:
+        detail = (
+            f": errno {baseline_errno}"
+            if baseline_errno
+            else ": native ACL acquisition returned null without an absence classification"
+        )
+        raise SelectedXcodeBuildOrchestratorError(
+            "could not capture descriptor-pinned private read-lease ACL baseline" + detail
+        )
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f"expected one null-errno ACL classifier anchor, found {text.count(old)}")
+          orchestrator.write_text(text.replace(old, new, 1))
+
+          tests = Path("scripts/ci/tests/test_capture_private_read_lease_rollback.py")
+          test_text = tests.read_text()
+          anchor = '''    def test_native_strict_revoke_restores_held_object_after_path_replacement(self) -> None:
+'''
+          regression = '''    def test_native_acl_null_without_errno_fails_closed_before_empty_baseline(self) -> None:
+        helper = load()
+        library = mock.Mock()
+        library.acl_get_fd.return_value = None
+
+        with (
+            mock.patch.object(helper, "_darwin_acl_library", return_value=library),
+            mock.patch.object(helper.ctypes, "get_errno", return_value=0),
+            self.assertRaisesRegex(
+                helper.SelectedXcodeBuildOrchestratorError,
+                "native ACL acquisition returned null without an absence classification",
+            ),
+        ):
+            helper._capture_fd_acl_baseline(73)
+
+        library.acl_get_fd.assert_called_once_with(73)
+        library.acl_init.assert_not_called()
+        library.acl_free.assert_not_called()
+
+'''
+          if test_text.count(anchor) != 1:
+              raise SystemExit(f"expected one native rollback test anchor, found {test_text.count(anchor)}")
+          if "test_native_acl_null_without_errno_fails_closed_before_empty_baseline" in test_text:
+              raise SystemExit("null-errno fail-closed regression already exists")
+          tests.write_text(test_text.replace(anchor, regression + anchor, 1))
+
+      - name: Run focused permanent regressions
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          python3 scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          git diff --check
+
+      - name: Enforce exact product delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only | sort)"
+          expected="$(printf '%s\n' \
+            scripts/ci/capture_selected_xcode_build_orchestrator.py \
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py | sort)"
+          test "$changed" = "$expected"
+          ! grep -nE 'publishDps\(|writeValue\(|removeDevice|factoryReset' scripts/ci/capture_selected_xcode_build_orchestrator.py
+
+      - name: Publish production child and self-delete
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/ci/capture_selected_xcode_build_orchestrator.py \
+                  scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          git rm .github/workflows/capture-native-acl-null-errno-failclosed-one-shot.yml
+          git diff --cached --check
+          git commit -m "Capture: fail closed on unclassified native ACL baseline"
+          git push origin HEAD:repair/v17-capture-native-acl-null-errno-failclosed-gpt56sol-20260817
