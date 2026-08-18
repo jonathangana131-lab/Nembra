@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 19,
+    "classifiedPRTotal": 18,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1250,19 +1250,8 @@
         "lane": "capture-final-go-authority",
         "pr": 3634,
         "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.38,
+        "similarity": 0.222,
         "title": "[Capture P0][V17][RED TEAM] Probe real sealed base loader on f0cea"
-      },
-      "3638": {
-        "classification": "validation",
-        "destructiveActionAllowed": false,
-        "duplicateOf": null,
-        "headSHA": "",
-        "lane": "capture-final-go-authority",
-        "pr": 3638,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.365,
-        "title": "[Capture P0][V17][VALIDATION RECOVERY] Run real Final-GO base-loader classifier"
       },
       "3639": {
         "classification": "canonical-candidate",
@@ -1306,7 +1295,7 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T11:19:05Z",
+    "liveRefreshAt": "2026-08-18T11:19:35Z",
     "liveRefreshDuplicatesSuppressed": [
       3602
     ],
@@ -5091,10 +5080,10 @@
       "userValue": 7
     }
   },
-  "revision": 1096,
+  "revision": 1097,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T11:19:06Z",
+  "updatedAt": "2026-08-18T11:19:35Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5170,7 +5159,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T11:19:05Z",
+      "updatedAt": "2026-08-18T11:19:35Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
