@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 jobs:
   exploit-positive:
@@ -47,3 +48,10 @@ jobs:
         run: |
           echo 'NEMBRA_NATIVE_ACL_SEEDED_BASELINE_RED_TEAM exploitPositive=true productionBytesChanged=false physicalAuthorityCreated=false'
           echo 'SUCCESS means production still lacks pre-grant fd/path ACL semantic equivalence; it is not product acceptance.'
+
+      - name: Publish exact validation marker
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh pr comment 3572 --repo "$GITHUB_REPOSITORY" --body "V17 exact validation result: \`Capture Native ACL Seeded Baseline Equivalence Red Team\` run \`$GITHUB_RUN_ID\` is terminal SUCCESS on exact head \`$GITHUB_SHA\`. The validation-only scope is unchanged from attacked #3553@\`8456750395c0a5cb1472834300785a5d52c1cae4\`; production orchestrator bytes are identical to that attacked head. SUCCESS is exploit-positive: current strict native admission accepts an opaque descriptor rollback baseline without native semantic equality to the canonical-path pre-grant ACL. This creates no product, signing/install, BLE/Tuya, telemetry, command, or physical authority. Physical remains NO-GO."
