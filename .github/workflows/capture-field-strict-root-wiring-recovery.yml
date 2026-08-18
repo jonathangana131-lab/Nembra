@@ -1,4 +1,4 @@
-# V17 direct recovery re-arm: external branch push after workflow installation.
+# V17 direct recovery re-arm: re-anchored onto accepted #3553 carrier.
 name: Capture field strict-root wiring recovery
 
 on:
@@ -21,11 +21,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Bind exact abandoned authoring lineage
+      - name: Bind exact accepted-carrier authoring lineage
         shell: bash
         run: |
           set -euo pipefail
-          parent='c871c5ae713a178d799c5876809a14a296b7fc67'
+          parent='ae71a2c8fa6db4cd86c462320e8e05349856960a'
           test "$(git merge-base HEAD "$parent")" = "$parent"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           actual="$(git diff --name-only "$parent"...HEAD | LC_ALL=C sort)"
