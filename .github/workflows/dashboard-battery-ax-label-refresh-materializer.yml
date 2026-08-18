@@ -1,4 +1,5 @@
 # Merge-only kick: changes no product bytes; target workflow self-deletes after materializing the bounded fix.
+# Retrigger after exact-product bind correction.
 name: Dashboard Battery AX Label Refresh Materializer
 
 on:
