@@ -1,4 +1,4 @@
-# V17 exact-head re-arm after the rollback regression landed first.
+# V17 exact-head re-arm after current #3535 base sync.
 name: Capture native ACL fail-closed one-shot
 
 on:
