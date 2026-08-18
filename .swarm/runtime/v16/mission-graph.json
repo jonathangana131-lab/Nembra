@@ -1064,7 +1064,7 @@
   },
   "migration": {
     "activationMainSHA": "fea1c5be18f2f7add6e7a9c7ef7dda73c5b9002e",
-    "classifiedPRTotal": 48,
+    "classifiedPRTotal": 49,
     "classifiedPRs": {
       "3142": {
         "classification": "canonical-candidate",
@@ -1593,6 +1593,17 @@
         "recommendedAction": "independent-review",
         "similarity": 0.353,
         "title": "[Capture P0][V17][TRIGGER] Materialize native private-UID routing"
+      },
+      "3601": {
+        "classification": "validation",
+        "destructiveActionAllowed": false,
+        "duplicateOf": null,
+        "headSHA": "",
+        "lane": "capture-signed-install-custody",
+        "pr": 3601,
+        "recommendedAction": "attach-evidence-to-canonical",
+        "similarity": 0.226,
+        "title": "[Capture P0][V17][RED TEAM] Prove field installer bypasses strict accepted root"
       }
     },
     "classifiedPRsTruncated": false,
@@ -1625,9 +1636,9 @@
     "livePRsMissingFromLatestOpenSnapshot": [
       "live-pr-3082"
     ],
-    "liveRefreshAt": "2026-08-18T03:03:34Z",
+    "liveRefreshAt": "2026-08-18T03:03:55Z",
     "liveRefreshDuplicatesSuppressed": [
-      3549
+      3601
     ],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [
@@ -5410,10 +5421,10 @@
       "userValue": 7
     }
   },
-  "revision": 987,
+  "revision": 988,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T03:03:35Z",
+  "updatedAt": "2026-08-18T03:03:57Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
@@ -5489,7 +5500,7 @@
       "status": "QUEUED",
       "title": "[Capture P0][SECURITY] Compose dedicated-UID APFS compiler-output freeze",
       "tournamentId": "",
-      "updatedAt": "2026-08-18T03:03:34Z",
+      "updatedAt": "2026-08-18T03:03:55Z",
       "workItemId": "live-pr-3142"
     },
     "swarm-v16-integration": {
