@@ -1070,11 +1070,11 @@
         "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
-        "headSHA": "76c3d01f86db17cbab16f3ee19fc4bfc8ad18dff",
+        "headSHA": "13219835e472b7ca4083c0d3e1050f1192e1d83a",
         "lane": "dashboard-cockpit-product-closure",
         "pr": 3497,
         "recommendedAction": "independent-review",
-        "similarity": 0.229,
+        "similarity": 0.276,
         "title": "[Dashboard V17][RECOVERY] Ship signature battery / learned-range instrument"
       },
       "3649": {
@@ -1085,7 +1085,7 @@
         "lane": "dashboard-cockpit-product-closure",
         "pr": 3649,
         "recommendedAction": "independent-review",
-        "similarity": 0.22,
+        "similarity": 0.259,
         "title": "[Dashboard V17][RECOVERY] Restore battery control accessibility role"
       }
     },
@@ -1120,7 +1120,7 @@
       "live-pr-3082",
       "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T22:07:59Z",
+    "liveRefreshAt": "2026-08-18T22:08:15Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [],
@@ -4901,10 +4901,10 @@
       "userValue": 7
     }
   },
-  "revision": 1156,
+  "revision": 1157,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T22:07:59Z",
+  "updatedAt": "2026-08-18T22:08:16Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
