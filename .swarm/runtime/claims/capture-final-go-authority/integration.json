@@ -9,16 +9,16 @@
   "generation": 4,
   "status": "ACTIVE",
   "claimedAt": "2026-08-18T03:22:30Z",
-  "lastHeartbeatAt": "2026-08-18T03:39:30Z",
+  "lastHeartbeatAt": "2026-08-18T03:42:30Z",
   "leaseSeconds": 2700,
   "branch": "repair/v17-capture-final-go-generated-manifest-issuer-gpt56sol-20260817",
   "pr": null,
   "sourceSHA": "01217c20215c31c7380405dc1e2bd1330136894e",
-  "currentHeadSHA": "6a11b5cfa5a05a6d6ee5ca377c1ffc12e433f7c1",
+  "currentHeadSHA": "477089772c58aee81edac9530de7548635b888e8",
   "resource": "RELEASE_INTEGRATION",
   "takeoverFromWorkerId": "sol-20260811-1606dg",
   "takeoverFromLeaseId": "capture-final-go-integration-1606dg-20260811-2323",
   "takeoverReason": "Generation-3 Final-GO integration was explicitly RELEASED. Foundry V17 live state shows signed-install production is actively occupied, while #3606 requires an independently preaccepted generated/private compiler-input manifest digest from Final-GO authority.",
   "intent": "Extend exact accepted Final-GO carrier #3082@01217c20 with an independent GitHub-owner-reviewed generated/private compiler-input manifest digest bound to the exact candidate source. Inject only that reviewed digest at the final inherited closed installer-environment boundary for #3606 consumption. Do not edit the active capture-signed-install-custody production branch. Preserve #3082 custody, private-input secrecy, no-command boundaries, and PHYSICAL NO-GO.",
-  "checkpoint": "Durable successor head 6a11b5cfa5a05a6d6ee5ca377c1ffc12e433f7c1 is ahead-only from exact #3082 parent and changes exactly four paths: two Final-GO workflows, the current Final-GO successor, and one adversarial test. Source mechanically binds #3082 commit:path to exact blob 63567c66; accepts only OWNER COMMENTED/APPROVED review with explicit ACCEPT and exact candidate source; overwrites hostile ambient NEMBRA_CAPTURE_ACCEPTED_GENERATED_MANIFEST_SHA256 only at the inherited two-stage final environment boundary; re-fetches review after private side effect; retains secret-safe digest provenance; tests cover adapter shape/drift/dismissal/cleanup. Push acceptance enabled because GitHub PR creation endpoint is temporarily secondary-rate-limited; two PR-create attempts returned 403 while contents writes remain healthy. #3606 exact patch remains recovery/trigger authoring files despite three-file count, so consumer materialization is still pending. PHYSICAL NO-GO."
+  "checkpoint": "Exact branch head 477089772c58aee81edac9530de7548635b888e8 is ahead-only from #3082@01217c20 and still changes exactly four expected paths. Successor mechanically binds #3082 commit:path to blob 63567c66; requires exact OWNER COMMENTED/APPROVED review with explicit ACCEPT, exact source, nonempty review node ID, reviewer/state/timestamp and review-body SHA-256; overwrites hostile ambient NEMBRA_CAPTURE_ACCEPTED_GENERATED_MANIFEST_SHA256 only at the inherited two-stage final environment boundary; refetches the exact review after private side effect; retains secret-safe exact review identity in the Final-GO record. Adversarial tests now cover hostile env, actual two-stage adapter shape, malformed/nonowner/dismissed authority, digest drift, semantically-equivalent body rewrite, retained provenance, and cleanup. Push acceptance remains enabled. PR creation was twice blocked only by GitHub secondary content-creation rate limiting; no PR exists yet. #3606 exact patch remains recovery/trigger authoring, not permanent product bytes. PHYSICAL NO-GO."
 }
