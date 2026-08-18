@@ -141,6 +141,7 @@ struct DashboardView: View {
             }
 
             DashboardSpeedInstrumentView(modePersonality: personality)
+                .dynamicTypeSize(.large)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .layoutPriority(3)
 
