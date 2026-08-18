@@ -27,7 +27,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          parent='4cbc0198a6c88734cfa9ab62efd0227222087ac8'
+          parent='9561edb03579fbe882f2d2ba287cfd2bfc82da41'
           test "$(git merge-base HEAD "$parent")" = "$parent"
           changed="$(git diff --name-only "$parent"...HEAD | sort)"
           expected="$(printf '%s\n' \
