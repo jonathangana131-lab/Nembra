@@ -1,11 +1,12 @@
 import Foundation
 import Testing
 
-@Suite("Capture P0 root visual acceptance")
+@Suite("Capture P0 root truth and accessibility acceptance")
 struct CaptureP0RootVisualAcceptanceTests {
     @Test("public root visibly fails closed while preserving metadata-only setup")
     func publicRootShowsBuildAuthorityBeforeAccountSetup() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let strings = try readRepositoryFile("NembraApp/Resources/Localizable.strings")
         let root = try section(
             in: source,
             from: "private struct CaptureP0Root: View",
@@ -16,18 +17,22 @@ struct CaptureP0RootVisualAcceptanceTests {
         #expect(body.contains("@Environment(\\.dynamicTypeSize) private var dynamicTypeSize"))
         #expect(body.contains("private let buildIdentity = NembraCaptureBuildIdentity.current"))
         #expect(body.contains("buildIdentity.isAuthoritativeFieldBuild"))
-        #expect(body.contains("isAccessibilityLayout ? \"Capture locked\" : \"Physical capture locked\""))
+        #expect(body.contains("Physical capture locked"))
         #expect(body.contains(".accessibilityLabel(fieldBuildIsAuthoritative ? \"Build provenance ready\" : \"Physical capture locked\")"))
         #expect(body.contains("This public build can prepare account metadata only. Bluetooth and physical evidence collection are locked."))
-        #expect(body.contains("Account setup is available. Bluetooth scanning, connection, and physical evidence stay locked until the reviewed field build is installed."))
         #expect(body.contains("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings."))
         #expect(body.contains("NavigationLink(fieldBuildIsAuthoritative ? \"Continue to preflight\" : \"View locked preflight\")"))
+
+        // Sighted Standard copy may improve independently of the authority-bearing
+        // source keys. Do not force the human-rejected implementation wording.
+        #expect(strings.contains("\"Prepare account metadata\" = \"Link scooter account\";"))
+        #expect(strings.contains("\"Account setup is available. Bluetooth scanning, connection, and physical evidence stay locked until the reviewed field build is installed.\" = \"Bluetooth stays locked until the reviewed field build is installed.\";"))
 
         let heroUse = try #require(body.range(of: "rootHero\n                        buildAuthorityStatus\n                        accountSetupPanel"))
         #expect(heroUse.lowerBound < body.endIndex)
     }
 
-    @Test("Accessibility XXXL exposes the metadata action before support copy")
+    @Test("Accessibility XXXL exposes metadata action before support copy")
     func accessibilityRootRecomposesForTheFirstFold() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let root = String(try section(
@@ -39,10 +44,10 @@ struct CaptureP0RootVisualAcceptanceTests {
         #expect(root.contains("private var isAccessibilityLayout: Bool"))
         #expect(root.contains("private var rootHero: some View"))
         #expect(root.contains("if !isAccessibilityLayout"))
-        #expect(root.contains("isAccessibilityLayout ? \"Capture locked\" : \"Physical capture locked\""))
+        #expect(root.contains("Physical capture locked"))
         #expect(root.contains(".font(isAccessibilityLayout ? .body.weight(.semibold) : .headline)"))
         #expect(root.contains(".dynamicTypeSize(...DynamicTypeSize.accessibility1)"))
-        #expect(root.contains("isAccessibilityLayout ? \"Account setup\" : \"Prepare account metadata\""))
+        #expect(root.contains("Account setup"))
         #expect(root.contains("TextField(isAccessibilityLayout ? \"Tuya user code\" : \"Paste user code\""))
         #expect(root.contains("Label(isAccessibilityLayout ? \"Create QR\" : \"Create approval QR\""))
         #expect(root.contains(".accessibilityLabel(\"Create approval QR\")"))
@@ -78,8 +83,8 @@ struct CaptureP0RootVisualAcceptanceTests {
         #expect(authority.contains("This public build can prepare account metadata only. Bluetooth and physical evidence collection are locked."))
     }
 
-    @Test("Accessibility action remains full-width and precedes verbose status")
-    func accessibilityActionRemainsFullWidthAndBeforeVerboseStatus() throws {
+    @Test("Accessibility action keeps target size and precedes verbose status without dictating Standard styling")
+    func accessibilityActionRemainsUsableAndBeforeVerboseStatus() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let panel = String(try section(
             in: source,
@@ -108,8 +113,11 @@ struct CaptureP0RootVisualAcceptanceTests {
         #expect(action.lowerBound < accessibilityBranch.lowerBound)
         #expect(accessibilityBranch.lowerBound < accessibilityStatus.lowerBound)
         #expect(panel.contains(".frame(maxWidth: .infinity, minHeight: 50)"))
-        #expect(panel.contains(".tint(.cyan)"))
         #expect(panel.contains(".accessibilityLabel(\"Create approval QR\")"))
+
+        // Human #3395 review supersedes the older pixel prescription. Do not
+        // require cyan or bordered-prominent styling here; fresh screenshots own it.
+        #expect(panel.contains("nembra.capture.root.account-link-action"))
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
