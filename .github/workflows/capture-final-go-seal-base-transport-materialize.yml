@@ -1,0 +1,231 @@
+name: Capture Final GO Seal Base Transport Materialize
+
+on:
+  push:
+    branches:
+      - repair/v17-capture-final-go-seal-base-transport-gpt56sol-20260818
+    paths:
+      - .github/workflows/capture-final-go-seal-base-transport-materialize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Bind exact reviewed recovery parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent='c39d7cd873173246cfbc609b7bcbb6eb9a000962'
+          test "$(git merge-base HEAD "$parent")" = "$parent"
+          test "$(git rev-list --count "$parent"..HEAD)" = 1
+          actual="$(git diff --name-only "$parent"...HEAD | LC_ALL=C sort)"
+          expected='.github/workflows/capture-final-go-seal-base-transport-materialize.yml'
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Seal production base and review transport
+        shell: python
+        run: |
+          from pathlib import Path
+
+          source_path = Path('scripts/ci/es80_authenticated_stationary_private_review_final_go.py')
+          source = source_path.read_text(encoding='utf-8')
+
+          old_signature = '''    generated_manifest_review_id: int,
+    get: Callable[[str], tuple[bytes, dict[str, Any]]] | None = None,
+    base_module: Any | None = None,
+    **kwargs: Any,
+) -> dict[str, Any]:
+'''
+          new_signature = '''    generated_manifest_review_id: int,
+    **kwargs: Any,
+) -> dict[str, Any]:
+'''
+          if source.count(old_signature) != 1:
+              raise SystemExit('production build signature seam drifted')
+          source = source.replace(old_signature, new_signature, 1)
+
+          old_authority = '''    if get is not None:
+        raise PrivateReviewGoError(
+            "Final-GO generated-manifest review transport is not caller-selectable"
+        )
+    base = base_module or generated._load_base_module()
+'''
+          new_authority = '''    if "get" in kwargs:
+        raise PrivateReviewGoError(
+            "Final-GO generated-manifest review transport is not caller-selectable"
+        )
+    if "base_module" in kwargs:
+        raise PrivateReviewGoError(
+            "Final-GO generated-manifest base module is not caller-selectable"
+        )
+    base = generated._load_base_module()
+'''
+          if source.count(old_authority) != 1:
+              raise SystemExit('production base-authority seam drifted')
+          source = source.replace(old_authority, new_authority, 1)
+          if 'base = base_module or generated._load_base_module()' in source:
+              raise SystemExit('caller-selected base authority survived')
+          source_path.write_text(source, encoding='utf-8')
+
+          test_path = Path('scripts/ci/tests/test_es80_final_go_generated_manifest_review.py')
+          test = test_path.read_text(encoding='utf-8')
+
+          old_setup = '''        self.original_semantic_adapter = module._SEMANTIC_MODULE._private_environment_adapter
+        module._PREDECESSOR_CANDIDATE_GIT_CUSTODY = noop_custody
+        module._CURRENT_VNODE_AUTHORITY = noop_custody
+'''
+          new_setup = '''        self.original_semantic_adapter = module._SEMANTIC_MODULE._private_environment_adapter
+        self.original_base_loader = module.generated._load_base_module
+        module.generated._load_base_module = lambda: self.base
+        module._PREDECESSOR_CANDIDATE_GIT_CUSTODY = noop_custody
+        module._CURRENT_VNODE_AUTHORITY = noop_custody
+'''
+          if test.count(old_setup) != 1:
+              raise SystemExit('generated-manifest test setup seam drifted')
+          test = test.replace(old_setup, new_setup, 1)
+
+          old_teardown = '''        module._SEMANTIC_MODULE._private_environment_adapter = self.original_semantic_adapter
+        self.assertIsNone(module._ACTIVE_MANIFEST_REVIEW.get())
+'''
+          new_teardown = '''        module._SEMANTIC_MODULE._private_environment_adapter = self.original_semantic_adapter
+        module.generated._load_base_module = self.original_base_loader
+        self.assertIsNone(module._ACTIVE_MANIFEST_REVIEW.get())
+'''
+          if test.count(old_teardown) != 1:
+              raise SystemExit('generated-manifest test teardown seam drifted')
+          test = test.replace(old_teardown, new_teardown, 1)
+
+          old_run = '''                generated_manifest_review_id=REVIEW_ID,
+                base_module=self.base,
+            )
+
+    def test_caller_cannot_replace_trusted_review_transport(self):
+'''
+          new_run = '''                generated_manifest_review_id=REVIEW_ID,
+            )
+
+    def test_caller_cannot_replace_trusted_review_transport(self):
+'''
+          if test.count(old_run) != 1:
+              raise SystemExit('generated-manifest run_build seam drifted')
+          test = test.replace(old_run, new_run, 1)
+
+          marker = '''        self.assertEqual(semantic_calls, [])
+
+    def test_waiting_build_revalidates_review_inside_lock_before_side_effect(self):
+'''
+          addition = '''        self.assertEqual(semantic_calls, [])
+
+    def test_caller_cannot_replace_trusted_base_module_transport(self):
+        semantic_calls = []
+        module._SEMANTIC_BUILD = lambda **_kwargs: semantic_calls.append(True) or self.sealed_record()
+        forged_base = FakeBase()
+        forged_base.api = lambda _path: (b"{}", copy.deepcopy(review_response(DIGEST_B)))
+        with tempfile.TemporaryDirectory(prefix="nembra-manifest-caller-base-") as temporary:
+            with self.assertRaisesRegex(
+                module.PrivateReviewGoError,
+                "base module is not caller-selectable",
+            ):
+                module.build(
+                    candidate_repo=Path(temporary),
+                    source=SOURCE,
+                    pr=PR,
+                    generated_manifest_review_id=REVIEW_ID,
+                    base_module=forged_base,
+                )
+        self.assertEqual(semantic_calls, [])
+
+    def test_waiting_build_revalidates_review_inside_lock_before_side_effect(self):
+'''
+          if test.count(marker) != 1:
+              raise SystemExit('base-module regression insertion seam drifted')
+          test = test.replace(marker, addition, 1)
+
+          waiting_call = '''                        generated_manifest_review_id=REVIEW_ID,
+                        base_module=self.base,
+                    )
+'''
+          replacement = '''                        generated_manifest_review_id=REVIEW_ID,
+                    )
+'''
+          if test.count(waiting_call) != 1:
+              raise SystemExit('waiting-build base injection seam drifted')
+          test = test.replace(waiting_call, replacement, 1)
+          test_path.write_text(test, encoding='utf-8')
+
+          migration_path = Path('scripts/ci/tests/test_es80_final_go_manifest_retirement_migration.py')
+          migration = migration_path.read_text(encoding='utf-8')
+          old_migration = '''    def _build(self, root: Path, base: FakeBase):
+        return MODULE.build(
+            candidate_repo=root,
+            source=SOURCE,
+            pr=PR,
+            generated_manifest_review_id=REVIEW_ID,
+            base_module=base,
+        )
+'''
+          new_migration = '''    def _build(self, root: Path, base: FakeBase):
+        original_loader = MODULE.generated._load_base_module
+        MODULE.generated._load_base_module = lambda: base
+        try:
+            return MODULE.build(
+                candidate_repo=root,
+                source=SOURCE,
+                pr=PR,
+                generated_manifest_review_id=REVIEW_ID,
+            )
+        finally:
+            MODULE.generated._load_base_module = original_loader
+'''
+          if migration.count(old_migration) != 1:
+              raise SystemExit('retirement migration base seam drifted')
+          migration = migration.replace(old_migration, new_migration, 1)
+          migration_path.write_text(migration, encoding='utf-8')
+
+      - name: Run authority and retirement regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -I -m py_compile scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+          python3 -B -I scripts/ci/tests/test_es80_final_go_generated_manifest_review.py
+          python3 -B -I scripts/ci/tests/test_es80_final_go_manifest_retirement_migration.py
+          python3 -B -I scripts/ci/tests/test_es80_final_go_sealed_candidate_handoff.py
+          python3 -B -I scripts/ci/tests/test_es80_final_go_retirement_dispatch_custody.py
+          ! grep -n 'base = base_module or generated._load_base_module()' scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+          grep -Fq 'base = generated._load_base_module()' scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+          grep -Fq 'Final-GO generated-manifest base module is not caller-selectable' scripts/ci/es80_authenticated_stationary_private_review_final_go.py
+          git diff --check
+          actual="$(git diff --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_final_go_generated_manifest_review.py \
+            scripts/ci/tests/test_es80_final_go_manifest_retirement_migration.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+
+      - name: Publish clean three-file repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch='repair/v17-capture-final-go-seal-base-transport-gpt56sol-20260818'
+          expected_head="${{ github.sha }}"
+          git fetch origin "$branch"
+          test "$(git rev-parse FETCH_HEAD)" = "$expected_head"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            scripts/ci/es80_authenticated_stationary_private_review_final_go.py \
+            scripts/ci/tests/test_es80_final_go_generated_manifest_review.py \
+            scripts/ci/tests/test_es80_final_go_manifest_retirement_migration.py
+          git rm .github/workflows/capture-final-go-seal-base-transport-materialize.yml
+          git diff --cached --check
+          git commit -m 'Capture: seal Final-GO base review transport'
+          git push origin HEAD:"$branch"
