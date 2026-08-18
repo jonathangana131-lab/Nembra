@@ -90,8 +90,39 @@ jobs:
               raise SystemExit(f"expected one rollback test anchor, found {test_text.count(old_test)}")
           test_path.write_text(test_text.replace(old_test, new_test, 1))
 
-      - name: Run focused rollback regression
-        run: python3 scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          composition_path = Path("scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py")
+          composition = composition_path.read_text()
+          old_mock = '''            def __init__(self, subjects, repo):
+                self.subjects = tuple(subjects)
+                self.repo = repo
+                self._opened: list[object] = []
+'''
+          new_mock = '''            def __init__(self, subjects, repo, *, use_native_darwin_acl=False):
+                self.subjects = tuple(subjects)
+                self.repo = repo
+                self.use_native_darwin_acl = bool(use_native_darwin_acl)
+                self._opened: list[object] = []
+'''
+          if composition.count(old_mock) != 1:
+              raise SystemExit(f"expected one composition lease mock anchor, found {composition.count(old_mock)}")
+          composition = composition.replace(old_mock, new_mock, 1)
+          old_assertion = '''            self.assertEqual(len(FakeLease.instances), 1)
+            self.assertEqual(
+                FakeLease.instances[0].events,
+'''
+          new_assertion = '''            self.assertEqual(len(FakeLease.instances), 1)
+            self.assertTrue(FakeLease.instances[0].use_native_darwin_acl)
+            self.assertEqual(
+                FakeLease.instances[0].events,
+'''
+          if composition.count(old_assertion) != 1:
+              raise SystemExit(f"expected one native-mode assertion anchor, found {composition.count(old_assertion)}")
+          composition_path.write_text(composition.replace(old_assertion, new_assertion, 1))
+
+      - name: Run focused regressions
+        run: |
+          python3 scripts/ci/tests/test_capture_private_read_lease_rollback.py
+          python3 scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
 
       - name: Enforce exact product delta
         shell: bash
@@ -100,11 +131,12 @@ jobs:
           changed="$(git diff --name-only | sort)"
           expected="$(printf '%s\n' \
             scripts/ci/capture_selected_xcode_build_orchestrator.py \
-            scripts/ci/tests/test_capture_private_read_lease_rollback.py | sort)"
+            scripts/ci/tests/test_capture_private_read_lease_rollback.py \
+            scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py | sort)"
           test "$changed" = "$expected"
           ! grep -nE 'publishDps\(|writeValue\(|removeDevice|factoryReset' scripts/ci/capture_selected_xcode_build_orchestrator.py
 
-      - name: Publish coherent product repair
+      - name: Publish coherent product repair and remove one-shot
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -113,7 +145,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add scripts/ci/capture_selected_xcode_build_orchestrator.py \
-                  scripts/ci/tests/test_capture_private_read_lease_rollback.py
+                  scripts/ci/tests/test_capture_private_read_lease_rollback.py \
+                  scripts/ci/tests/test_capture_selected_xcode_build_orchestrator.py
+          git rm .github/workflows/capture-native-acl-failclosed-one-shot.yml
           git diff --cached --check
           git commit -m "Capture: fail closed on accepted-root pathname replacement"
           git push origin HEAD:repair/v17-capture-darwin-native-acl-production-gpt56sol-20260817
