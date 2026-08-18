@@ -1,0 +1,65 @@
+name: Capture Field Installer Strict Root Routing Red Team
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/tests/test_capture_field_installer_strict_root_routing_red_team.py
+      - .github/workflows/capture-field-installer-strict-root-routing-red-team.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-field-installer-strict-root-red-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_ATTACKED_PARENT: c871c5ae713a178d799c5876809a14a296b7fc67
+  PYTHONDONTWRITEBYTECODE: 1
+
+jobs:
+  exploit-positive:
+    name: Prove strict accepted-root routing is absent
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind fixed attacked product and additive scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          test "$(git merge-base HEAD "$EXACT_ATTACKED_PARENT")" = "$EXACT_ATTACKED_PARENT"
+          actual="$(git diff --name-only "$EXACT_ATTACKED_PARENT"...HEAD | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/capture-field-installer-strict-root-routing-red-team.yml \
+            scripts/ci/tests/test_capture_field_installer_strict_root_routing_red_team.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git diff --check "$EXACT_ATTACKED_PARENT"...HEAD
+
+      - name: Compile fixed-head oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I - <<'PY'
+          from pathlib import Path
+          path = Path("scripts/ci/tests/test_capture_field_installer_strict_root_routing_red_team.py")
+          compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
+          PY
+
+      - name: Reproduce field routing defect
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -B -I scripts/ci/tests/test_capture_field_installer_strict_root_routing_red_team.py
+
+      - name: Preserve truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "NEMBRA_FIELD_INSTALLER_STRICT_ROOT_RED exploitPositive=true productionModified=false installExecuted=false deviceTouched=false bluetoothTouched=false physicalAuthorityCreated=false"
