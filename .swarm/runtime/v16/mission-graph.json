@@ -1118,7 +1118,7 @@
         "lane": "",
         "pr": 3664,
         "recommendedAction": "independent-review",
-        "similarity": 0.143,
+        "similarity": 0.139,
         "title": "[Capture P0][V17][RECOVERY] Restore field provenance + visual dependencies"
       },
       "3665": {
@@ -1129,7 +1129,7 @@
         "lane": "",
         "pr": 3665,
         "recommendedAction": "independent-review",
-        "similarity": 0.053,
+        "similarity": 0.055,
         "title": "Retire swarm scheduler in favor of lightweight autonomous development"
       },
       "3666": {
@@ -1140,18 +1140,18 @@
         "lane": "capture-product-visual-closure",
         "pr": 3666,
         "recommendedAction": "independent-review",
-        "similarity": 0.123,
+        "similarity": 0.131,
         "title": "[Capture P0][V17][PRODUCT/VISUAL] Tighten Standard copy; pin structural visual red"
       },
       "3668": {
-        "classification": "validation",
+        "classification": "requires-review",
         "destructiveActionAllowed": false,
         "duplicateOf": null,
         "headSHA": "",
         "lane": "",
         "pr": 3668,
-        "recommendedAction": "attach-evidence-to-canonical",
-        "similarity": 0.134,
+        "recommendedAction": "independent-review",
+        "similarity": 0.136,
         "title": "[Capture P0][V17][RED-TEAM] Pin package-horizon transport truth"
       }
     },
@@ -1186,7 +1186,7 @@
       "live-pr-3082",
       "live-pr-3142"
     ],
-    "liveRefreshAt": "2026-08-18T22:36:15Z",
+    "liveRefreshAt": "2026-08-18T22:38:13Z",
     "liveRefreshDuplicatesSuppressed": [],
     "liveRefreshMainSHA": "51baa116c36c873156523aa47313da52a526e519",
     "liveRefreshSelectedCanonicalPRs": [],
@@ -4967,10 +4967,10 @@
       "userValue": 7
     }
   },
-  "revision": 1231,
+  "revision": 1232,
   "schemaVersion": 16,
   "solutions": {},
-  "updatedAt": "2026-08-18T22:36:15Z",
+  "updatedAt": "2026-08-18T22:38:13Z",
   "workItems": {
     "live-pr-3082": {
       "allowedAdjacentScope": [
