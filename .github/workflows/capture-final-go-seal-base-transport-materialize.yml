@@ -1,4 +1,5 @@
 name: Capture Final GO Seal Base Transport Materialize
+# V17 trigger-only re-arm for reviewed authoring head b594617741e732cdd333741de943919e1b4e85de.
 
 on:
   push:
