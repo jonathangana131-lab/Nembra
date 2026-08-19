@@ -15,20 +15,22 @@ REVIEW_ONLY=0
 FIELD_MODE=0
 PROVENANCE_HELPER_SOURCE_B64=""
 EXPECTED_FIELD_SOURCE_SHA=""
+ACCEPTED_PRIVATE_INPUT_COMMITMENT=""
 
 if [[ "${1:-}" == "--resolve-lock-for-review" ]]; then
   REVIEW_ONLY=1
   shift
 elif [[ "${1:-}" == "--field-repo-root" ]]; then
   FIELD_MODE=1
-  [[ "$#" == "6" && "${3:-}" == "--field-source-sha" && "${5:-}" == "--field-provenance-helper-base64" ]] || {
+  [[ "$#" == "8" && "${3:-}" == "--field-source-sha" && "${5:-}" == "--field-provenance-helper-base64" && "${7:-}" == "--field-private-input-commitment" ]] || {
     echo "ERROR: internal field bootstrap arguments are malformed." >&2
     exit 2
   }
   REPO_ROOT="${2:-}"
   EXPECTED_FIELD_SOURCE_SHA="${4:-}"
   PROVENANCE_HELPER_SOURCE_B64="${6:-}"
-  shift 6
+  ACCEPTED_PRIVATE_INPUT_COMMITMENT="${8:-}"
+  shift 8
 fi
 
 if [[ "$FIELD_MODE" == "1" ]]; then
@@ -49,6 +51,10 @@ if [[ "$FIELD_MODE" == "1" ]]; then
     exit 2
   }
   EXPECTED_FIELD_SOURCE_SHA="$(printf '%s' "$EXPECTED_FIELD_SOURCE_SHA" | tr '[:upper:]' '[:lower:]')"
+  [[ "$ACCEPTED_PRIVATE_INPUT_COMMITMENT" =~ ^[0-9a-f]{64}$ ]] || {
+    echo "ERROR: internal field bootstrap requires one canonical externally accepted private-input commitment." >&2
+    exit 2
+  }
   CURRENT_FIELD_SOURCE_SHA="$(GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null | tr '[:upper:]' '[:lower:]')" || {
     echo "ERROR: internal field bootstrap could not resolve checkout HEAD." >&2
     exit 2
@@ -99,6 +105,7 @@ fi
 TUYA_PRIVATE_SDK="$REPO_ROOT/LocalSecrets/TuyaSDK"
 TUYA_PRIVATE_IDENTITY="$REPO_ROOT/LocalSecrets/TuyaRuntime"
 DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.txt"
+PRIVATE_REVIEW_KEY="$TUYA_PRIVATE_IDENTITY/PrivateInputReviewKey.bin"
 
 cd "$REPO_ROOT"
 umask 077
@@ -159,6 +166,7 @@ fi
 
 run_private_input_provenance() {
   local operation="$1"
+  shift
   if [[ "$FIELD_MODE" == "1" ]]; then
     /usr/bin/python3 -I -B - "$PROVENANCE_HELPER_SOURCE_B64" "$operation" \
       --lockfile "$REPO_ROOT/Podfile.lock" \
@@ -166,7 +174,8 @@ run_private_input_provenance() {
       --security-build "$TUYA_PRIVATE_SDK/Build" \
       --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
       --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
-      --record "$DEPENDENCY_PROVENANCE" <<'PY'
+      --record "$DEPENDENCY_PROVENANCE" \
+      "$@" <<'PY'
 import base64
 import sys
 
@@ -185,15 +194,17 @@ PY
       --security-build "$TUYA_PRIVATE_SDK/Build" \
       --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
       --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
-      --record "$DEPENDENCY_PROVENANCE"
+      --record "$DEPENDENCY_PROVENANCE" \
+      "$@"
   fi
 }
 
 if [[ "$REVIEW_ONLY" == "1" ]]; then
   printf '%s\n' 'Resolving a candidate official Tuya SDK graph for review…'
   # This is the only mode allowed to refresh public spec metadata or create a
-  # new lock. Its output is non-authorizing until the operator reviews and
-  # separately accepts the exact resulting Podfile.lock digest.
+  # new lock/private review generation. Its output is non-authorizing until the
+  # resulting lock digest and opaque private-input commitment are independently
+  # accepted into the exact field source.
   pod install --repo-update
 else
   [[ -f Podfile.lock && ! -L Podfile.lock ]] || {
@@ -201,11 +212,19 @@ else
     exit 8
   }
   [[ -f "$DEPENDENCY_PROVENANCE" && ! -L "$DEPENDENCY_PROVENANCE" ]] || {
-    echo "ERROR: accepted-lock mode requires the pre-existing reviewed private-input provenance record. Run --resolve-lock-for-review separately first; field mode will not create or replace this witness." >&2
+    echo "ERROR: accepted-lock mode requires the pre-existing reviewed private-input provenance record. Field mode will not create or replace this witness." >&2
+    exit 8
+  }
+  [[ -f "$PRIVATE_REVIEW_KEY" && ! -L "$PRIVATE_REVIEW_KEY" ]] || {
+    echo "ERROR: accepted-lock mode requires the private review key created by the separate review phase. Field mode will not create or replace it." >&2
     exit 8
   }
   [[ "$(stat -f '%Lp' "$DEPENDENCY_PROVENANCE" 2>/dev/null || true)" == "600" ]] || {
     echo "ERROR: pre-existing private Tuya dependency provenance record is not mode 0600." >&2
+    exit 8
+  }
+  [[ "$(stat -f '%Lp' "$PRIVATE_REVIEW_KEY" 2>/dev/null || true)" == "600" ]] || {
+    echo "ERROR: private Tuya review key is not mode 0600." >&2
     exit 8
   }
 
@@ -219,18 +238,18 @@ else
     exit 8
   }
 
-  # Field mode must never self-authorize whatever private generation happens to
-  # exist now. Verify it against the witness produced during the separate review
-  # phase *before* CocoaPods can interpret a private podspec, then verify again
-  # after dependency installation to catch drift across that boundary.
-  if ! run_private_input_provenance verify; then
-    echo "ERROR: current private Tuya build inputs do not match the pre-existing review witness. No dependency command was run." >&2
+  # The local witness and key are not authority by themselves. Field mode must
+  # rebind the current private generation to the opaque commitment already
+  # accepted by the exact source *before* CocoaPods can interpret a private
+  # podspec, then repeat the same proof after dependency installation.
+  if ! run_private_input_provenance verify-review \
+      --review-key "$PRIVATE_REVIEW_KEY" \
+      --accepted-commitment "$ACCEPTED_PRIVATE_INPUT_COMMITMENT"; then
+    echo "ERROR: current private Tuya build inputs do not match the externally accepted review commitment. No dependency command was run." >&2
     exit 11
   fi
 
   printf '%s\n' 'Installing only the preauthenticated official Tuya SDK graph…'
-  # Accepted mode is deployment-only: do not refresh specs, update the repo,
-  # or permit CocoaPods to rewrite the reviewed lock.
   pod install --deployment --no-repo-update
 fi
 
@@ -253,14 +272,21 @@ do
   }
 done
 
+REVIEW_COMMITMENT=""
 if [[ "$REVIEW_ONLY" == "1" ]]; then
-  if ! run_private_input_provenance snapshot; then
-    echo "ERROR: exact private Tuya build-input provenance could not be snapshotted for review." >&2
+  if ! REVIEW_COMMITMENT="$(run_private_input_provenance review --review-key "$PRIVATE_REVIEW_KEY")"; then
+    echo "ERROR: exact private Tuya build-input review commitment could not be created." >&2
     exit 11
   fi
+  [[ "$REVIEW_COMMITMENT" =~ ^[0-9a-f]{64}$ ]] || {
+    echo "ERROR: private Tuya review produced a malformed opaque commitment." >&2
+    exit 11
+  }
 else
-  if ! run_private_input_provenance verify; then
-    echo "ERROR: private Tuya build inputs changed across dependency installation. The reviewed witness was not replaced." >&2
+  if ! run_private_input_provenance verify-review \
+      --review-key "$PRIVATE_REVIEW_KEY" \
+      --accepted-commitment "$ACCEPTED_PRIVATE_INPUT_COMMITMENT"; then
+    echo "ERROR: private Tuya build inputs changed across dependency installation or no longer match the accepted review commitment." >&2
     exit 11
   fi
 fi
@@ -278,18 +304,28 @@ LOCK_SHA256="$(shasum -a 256 Podfile.lock | awk '{print $1}' | tr '[:upper:]' '[
   echo "ERROR: private Tuya dependency provenance record is not mode 0600." >&2
   exit 13
 }
+[[ -f "$PRIVATE_REVIEW_KEY" && "$(stat -f '%Lp' "$PRIVATE_REVIEW_KEY" 2>/dev/null || true)" == "600" ]] || {
+  echo "ERROR: private Tuya review key is unavailable or not mode 0600." >&2
+  exit 13
+}
 
 if [[ "$REVIEW_ONLY" == "1" ]]; then
   cat <<EOF
 
-LOCK CANDIDATE ONLY — NO BUILD, INSTALL, BLUETOOTH, OR PHYSICAL AUTHORITY
+REVIEW CANDIDATE ONLY — NO BUILD, INSTALL, BLUETOOTH, OR PHYSICAL AUTHORITY
   Podfile.lock SHA-256: $LOCK_SHA256
+  Opaque private-input review commitment: $REVIEW_COMMITMENT
   Local private-input fingerprint record: $DEPENDENCY_PROVENANCE
+  Local private review key: $PRIVATE_REVIEW_KEY
 
-Review the lock and preserve this exact private-input witness, then rerun the field
-installer with the exact lock digest in NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256.
-Field mode verifies the witness before CocoaPods and again before returning; it
-never snapshots a replacement generation.
+The review key and fingerprint record stay private. The 64-hex commitment is safe
+to carry into the public acceptance plane because it is HMAC-bound to a random
+local key rather than being a direct credential-derived hash.
+
+After reviewing this candidate, record the exact opaque commitment in the tracked
+field-authority source for a later accepted source SHA. Field mode will verify the
+current private generation against that exact accepted commitment before CocoaPods
+and again before returning. It will never snapshot a replacement generation.
 EOF
   exit 0
 fi
@@ -306,4 +342,5 @@ unset ACCEPTED_LOCK_SHA256 PREINSTALL_LOCK_SHA256 NEMBRA_CAPTURE_ACCEPTED_TUYA_L
 unset PROVENANCE_HELPER_SOURCE_B64 EXPECTED_FIELD_SOURCE_SHA PROVENANCE_HELPER_BLOB || true
 
 printf 'Preaccepted Tuya dependency lock matched: %s\n' "$LOCK_SHA256"
-printf '%s\n' 'Private Tuya inputs matched the pre-existing review witness. Use NembraCapture.xcworkspace for the field build.'
+printf 'Externally accepted private-input commitment matched: %s\n' "$ACCEPTED_PRIVATE_INPUT_COMMITMENT"
+printf '%s\n' 'Private Tuya inputs matched the externally accepted review generation. Use NembraCapture.xcworkspace for the field build.'
