@@ -36,17 +36,19 @@ struct TuyaFieldSDKDependencyProvenanceSourceTests {
         #expect(acceptedInstall.lowerBound < postauthentication.lowerBound)
     }
 
-    @Test("review may snapshot private inputs but field mode only verifies the pre-existing witness")
-    func bootstrapPreservesReviewedPrivateInputWitness() throws {
+    @Test("review creates opaque private authority while field mode only verifies the externally accepted generation")
+    func bootstrapPreservesExternallyReviewedPrivateInputAuthority() throws {
         let script = try readRepositoryFile("Scripts/bootstrap_capture_tuya_sdk.sh")
         let helper = try readRepositoryFile("Scripts/capture_tuya_private_input_provenance.py")
 
         #expect(script.contains("run_private_input_provenance()"))
         #expect(script.contains("/usr/bin/python3 -I \"$PROVENANCE_HELPER\" \"$operation\""))
-        #expect(script.contains("if ! run_private_input_provenance snapshot; then"))
-        #expect(script.contains("if ! run_private_input_provenance verify; then"))
-        #expect(script.contains("field mode will not create or replace this witness"))
-        #expect(script.contains("The reviewed witness was not replaced"))
+        #expect(script.contains("run_private_input_provenance review --review-key \"$PRIVATE_REVIEW_KEY\""))
+        #expect(script.contains("run_private_input_provenance verify-review"))
+        #expect(script.contains("field mode will not create or replace it"))
+        #expect(script.contains("externally accepted review commitment"))
+        #expect(script.contains("--field-private-input-commitment"))
+        #expect(script.contains("--accepted-commitment \"$ACCEPTED_PRIVATE_INPUT_COMMITMENT\""))
         #expect(script.contains("--lockfile \"$REPO_ROOT/Podfile.lock\""))
         #expect(script.contains("--security-podspec \"$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec\""))
         #expect(script.contains("--security-build \"$TUYA_PRIVATE_SDK/Build\""))
@@ -55,24 +57,26 @@ struct TuyaFieldSDKDependencyProvenanceSourceTests {
         #expect(script.contains("--record \"$DEPENDENCY_PROVENANCE\""))
         #expect(script.contains("shasum -a 256 Podfile.lock"))
         #expect(script.contains("ResolvedTuyaDependencyProvenance.txt"))
-        #expect(script.contains("stat -f '%Lp' \"$DEPENDENCY_PROVENANCE\""))
+        #expect(script.contains("PrivateInputReviewKey.bin"))
 
-        let preverify = try #require(script.range(of: "if ! run_private_input_provenance verify; then"))
+        let preverify = try #require(script.range(of: "if ! run_private_input_provenance verify-review"))
         let acceptedInstall = try #require(script.range(of: "pod install --deployment --no-repo-update"))
-        let reviewSnapshot = try #require(script.range(of: "if ! run_private_input_provenance snapshot; then"))
+        let review = try #require(script.range(of: "REVIEW_COMMITMENT=\"$(run_private_input_provenance review"))
         let secondVerify = try #require(
             script.range(
-                of: "private Tuya build inputs changed across dependency installation. The reviewed witness was not replaced."
+                of: "private Tuya build inputs changed across dependency installation or no longer match the accepted review commitment"
             )
         )
         #expect(preverify.lowerBound < acceptedInstall.lowerBound)
-        #expect(acceptedInstall.lowerBound < reviewSnapshot.lowerBound)
-        #expect(reviewSnapshot.lowerBound < secondVerify.lowerBound)
+        #expect(acceptedInstall.lowerBound < review.lowerBound)
+        #expect(review.lowerBound < secondVerify.lowerBound)
 
         #expect(helper.contains("SCHEMA = \"nembra-capture-tuya-dependencies-v2\""))
-        #expect(helper.contains("\"podfile_lock_sha256\": _read_stable_regular_file_sha256(lockfile)[1]"))
-        #expect(helper.contains("os.chmod(path, 0o600)"))
+        #expect(helper.contains("PRIVATE_REVIEW_DOMAIN"))
+        #expect(helper.contains("PRIVATE_REVIEW_KEY_BYTES = 32"))
+        #expect(helper.contains("hmac.new(key, PRIVATE_REVIEW_DOMAIN + _record_bytes(record), hashlib.sha256)"))
         #expect(helper.contains("private_identity_sources_tree_sha256"))
+        #expect(helper.contains("private review key custody is not mode 0600/current-user"))
 
         #expect(!script.contains("AppSecret=$"))
         #expect(!script.contains("AppKey=$"))
