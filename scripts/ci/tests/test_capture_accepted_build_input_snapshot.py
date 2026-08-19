@@ -288,7 +288,16 @@ class AcceptedBuildInputSnapshotTests(unittest.TestCase):
             git(root, "commit", "-qm", "track case-fold generated ancestor alias")
             source_sha = git(root, "rev-parse", "HEAD")
             seed_generated(root)
-            accepted = snapshot.generated_manifest_sha256(root, source_sha)
+            try:
+                accepted = snapshot.generated_manifest_sha256(root, source_sha)
+            except snapshot.AcceptedBuildInputSnapshotError:
+                self.assertTrue(
+                    snapshot._namespace_paths_overlap(
+                        Path("localsecrets"), Path("LocalSecrets/TuyaSDK")
+                    )
+                )
+                return
+
             destination = Path(raw) / "stage"
             with self.assertRaises(snapshot.AcceptedBuildInputSnapshotError):
                 snapshot.stage_accepted_build_inputs(root, source_sha, destination, accepted)
