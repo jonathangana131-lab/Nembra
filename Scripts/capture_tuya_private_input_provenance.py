@@ -1,9 +1,18 @@
 #!/usr/bin/env python3
-"""Fingerprint the ignored inputs used by the one-time Capture field build.
+"""Fingerprint and privately review the ignored inputs used by Capture field builds.
 
-The record contains cryptographic fingerprints and public dependency versions.
-It never serializes AppKey/AppSecret, SDK bytes, device identifiers, or tokens.
-This is drift detection for a trusted developer Mac, not physical scooter proof.
+The provenance record contains cryptographic fingerprints and public dependency
+versions. It never serializes AppKey/AppSecret, SDK bytes, device identifiers,
+or tokens.
+
+A review may additionally create a random local mode-0600 HMAC key and print an
+opaque 64-hex commitment over the canonical provenance record. The key remains
+private. Publishing only that HMAC commitment therefore does not create a public
+credential-guessing oracle, while a later field admission can prove that its
+current private generation is the one that produced an externally accepted
+commitment.
+
+This is build-input authority plumbing, not physical scooter proof.
 """
 
 from __future__ import annotations
@@ -20,6 +29,8 @@ from pathlib import Path
 SCHEMA = "nembra-capture-tuya-dependencies-v2"
 HOME_KIT_VERSION = "7.8.0"
 BUSINESS_EXTENSION_VERSION = "7.8.0"
+PRIVATE_REVIEW_DOMAIN = b"nembra-capture-private-input-review-v1\x00"
+PRIVATE_REVIEW_KEY_BYTES = 32
 _HEX = frozenset("0123456789abcdef")
 
 
@@ -253,15 +264,124 @@ def verify_record(path: Path, current: dict[str, str]) -> None:
             raise ProvenanceError("private Tuya build inputs changed after bootstrap")
 
 
+def _require_private_review_parent(path: Path) -> None:
+    try:
+        metadata = path.parent.lstat()
+    except OSError as error:
+        raise ProvenanceError("private review directory is unavailable") from error
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        raise ProvenanceError("private review directory must be one real directory")
+    if metadata.st_uid != os.geteuid():
+        raise ProvenanceError("private review directory is not owned by the current user")
+    if stat.S_IMODE(metadata.st_mode) & 0o022:
+        raise ProvenanceError("private review directory is group/world writable")
+
+
+def _read_private_review_key(path: Path) -> bytes:
+    _require_private_review_parent(path)
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise ProvenanceError("private review key is unavailable or unsafe") from error
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+            raise ProvenanceError("private review key is not a single-link regular file")
+        if before.st_uid != os.geteuid() or stat.S_IMODE(before.st_mode) != 0o600:
+            raise ProvenanceError("private review key custody is not mode 0600/current-user")
+        if before.st_size != PRIVATE_REVIEW_KEY_BYTES:
+            raise ProvenanceError("private review key has an invalid length")
+        key = b""
+        while len(key) < PRIVATE_REVIEW_KEY_BYTES:
+            chunk = os.read(descriptor, PRIVATE_REVIEW_KEY_BYTES - len(key))
+            if not chunk:
+                break
+            key += chunk
+        if os.read(descriptor, 1):
+            raise ProvenanceError("private review key has trailing bytes")
+        after = os.fstat(descriptor)
+    finally:
+        os.close(descriptor)
+    if len(key) != PRIVATE_REVIEW_KEY_BYTES or _identity(before) != _identity(after):
+        raise ProvenanceError("private review key changed while it was read")
+    try:
+        final_path = path.lstat()
+    except OSError as error:
+        raise ProvenanceError("private review key disappeared during custody") from error
+    if _identity(after) != _identity(final_path):
+        raise ProvenanceError("private review key pathname changed during custody")
+    return key
+
+
+def _write_new_private_review_key(path: Path) -> bytes:
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    _require_private_review_parent(path)
+    key = os.urandom(PRIVATE_REVIEW_KEY_BYTES)
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary_path = Path(temporary)
+    try:
+        os.fchmod(descriptor, 0o600)
+        offset = 0
+        while offset < len(key):
+            offset += os.write(descriptor, key[offset:])
+        os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = -1
+        os.replace(temporary_path, path)
+        os.chmod(path, 0o600)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        try:
+            temporary_path.unlink()
+        except FileNotFoundError:
+            pass
+    return _read_private_review_key(path)
+
+
+def private_review_commitment(record: dict[str, str], key: bytes) -> str:
+    if len(key) != PRIVATE_REVIEW_KEY_BYTES:
+        raise ProvenanceError("private review key has an invalid length")
+    return hmac.new(key, PRIVATE_REVIEW_DOMAIN + _record_bytes(record), hashlib.sha256).hexdigest()
+
+
+def create_private_review(*, record_path: Path, key_path: Path, current: dict[str, str]) -> str:
+    if record_path.parent != key_path.parent:
+        raise ProvenanceError("private review record and key must share one protected directory")
+    write_record(record_path, current)
+    key = _write_new_private_review_key(key_path)
+    verify_record(record_path, current)
+    return private_review_commitment(current, key)
+
+
+def verify_private_review(
+    *,
+    record_path: Path,
+    key_path: Path,
+    current: dict[str, str],
+    accepted_commitment: str,
+) -> None:
+    if len(accepted_commitment) != 64 or any(character not in _HEX for character in accepted_commitment):
+        raise ProvenanceError("accepted private-input commitment must be canonical lowercase SHA-256")
+    verify_record(record_path, current)
+    key = _read_private_review_key(key_path)
+    observed = private_review_commitment(current, key)
+    if not hmac.compare_digest(observed, accepted_commitment):
+        raise ProvenanceError("private Tuya build inputs do not match the externally accepted review commitment")
+
+
 def _arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("operation", choices=("snapshot", "verify"))
+    parser.add_argument("operation", choices=("snapshot", "verify", "review", "verify-review"))
     parser.add_argument("--lockfile", required=True, type=Path)
     parser.add_argument("--security-podspec", required=True, type=Path)
     parser.add_argument("--security-build", required=True, type=Path)
     parser.add_argument("--identity-podspec", required=True, type=Path)
     parser.add_argument("--identity-sources", required=True, type=Path)
     parser.add_argument("--record", required=True, type=Path)
+    parser.add_argument("--review-key", type=Path)
+    parser.add_argument("--accepted-commitment")
     return parser.parse_args()
 
 
@@ -276,9 +396,30 @@ def main() -> int:
             identity_sources=arguments.identity_sources,
         )
         if arguments.operation == "snapshot":
+            if arguments.review_key is not None or arguments.accepted_commitment is not None:
+                raise ProvenanceError("snapshot mode does not accept review authority")
             write_record(arguments.record, current)
-        else:
+        elif arguments.operation == "verify":
+            if arguments.review_key is not None or arguments.accepted_commitment is not None:
+                raise ProvenanceError("verify mode does not accept review authority")
             verify_record(arguments.record, current)
+        elif arguments.operation == "review":
+            if arguments.review_key is None or arguments.accepted_commitment is not None:
+                raise ProvenanceError("review mode requires --review-key and no preexisting commitment")
+            print(create_private_review(
+                record_path=arguments.record,
+                key_path=arguments.review_key,
+                current=current,
+            ))
+        else:
+            if arguments.review_key is None or arguments.accepted_commitment is None:
+                raise ProvenanceError("verify-review mode requires --review-key and --accepted-commitment")
+            verify_private_review(
+                record_path=arguments.record,
+                key_path=arguments.review_key,
+                current=current,
+                accepted_commitment=arguments.accepted_commitment,
+            )
     except (OSError, ProvenanceError) as error:
         print(f"ERROR: {error}", file=os.sys.stderr)
         return 1
