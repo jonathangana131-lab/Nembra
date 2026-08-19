@@ -183,8 +183,13 @@ private struct DashboardDriveSnapshot: Equatable {
     ) {
         let vehicleState = vehicle.state
         let isSimulatorQA = vehicle.profile == .simulatorQA
-        let adaptiveRangeDisplay = NembraCore.AdaptiveBatteryRangePrimaryPresentationPolicy()
+        let adaptiveRangeDecision = NembraCore.AdaptiveBatteryRangePrimaryPresentationPolicy()
             .resolve(liveEstimate: adaptiveRangeEstimate)
+        let adaptiveRangeDisplay: NembraCore.BatteryEstimatedRangeDisplay = switch adaptiveRangeDecision {
+        case let .valueMeters(meters): .valueMeters(meters)
+        case .learning: .learning
+        case .unavailable: .unavailable
+        }
         let odometerKilometers: Double? = if isSimulatorQA,
                                             vehicle.profile.capabilities.supportsOdometer,
                                             let value = vehicleState.odometerKilometers,

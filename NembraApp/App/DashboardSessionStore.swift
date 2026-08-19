@@ -42,7 +42,7 @@ final class DashboardSessionStore {
 
     var presentsDashboard: Bool {
         guard hasCurrentDashboardSceneAuthority else { return false }
-        switch state {
+        return switch state {
         case .active, .closing:
             true
         case let .failure(failure):
@@ -54,7 +54,7 @@ final class DashboardSessionStore {
 
     var canKeepStablePresentationAfterFailure: Bool {
         guard case let .failure(failure) = state else { return false }
-        switch failure.stablePresentation {
+        return switch failure.stablePresentation {
         case .portrait:
             true
         case .dashboard:
