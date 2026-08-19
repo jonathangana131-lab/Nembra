@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.util
 import stat
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -31,7 +32,7 @@ class PrivateInputProvenanceTests(unittest.TestCase):
         self.security_podspec = self.sdk / "ThingSmartCryption.podspec"
         self.identity_podspec = self.identity / "NembraTuyaPrivateConfig.podspec"
         self.record = self.identity / "ResolvedTuyaDependencyProvenance.txt"
-        self.review_key = self.identity / "PrivateInputReviewKey.bin"
+        self.review_key = self.identity / provenance.PRIVATE_REVIEW_KEY_NAME
 
         self.lockfile.write_text(
             "  - ThingSmartHomeKit (7.8.0)\n"
@@ -57,6 +58,27 @@ class PrivateInputProvenanceTests(unittest.TestCase):
             identity_podspec=self.identity_podspec,
             identity_sources=self.identity_sources,
         )
+
+    def git(self, *arguments: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["/usr/bin/git", *arguments],
+            cwd=self.root,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+
+    def initialize_authority_repo(self, commitment: str) -> None:
+        authority = self.root / provenance.PRIVATE_REVIEW_AUTHORITY_PATH
+        authority.write_text(commitment + "\n", encoding="ascii")
+        self.assertEqual(self.git("init", "-q").returncode, 0)
+        self.assertEqual(self.git("config", "user.name", "Nembra Test").returncode, 0)
+        self.assertEqual(self.git("config", "user.email", "nembra@example.invalid").returncode, 0)
+        self.assertEqual(self.git("add", provenance.PRIVATE_REVIEW_AUTHORITY_PATH).returncode, 0)
+        committed = self.git("commit", "-q", "-m", "accept private review")
+        self.assertEqual(committed.returncode, 0, committed.stderr)
 
     def test_snapshot_is_private_fingerprints_only_and_verifies(self) -> None:
         current = self.current()
@@ -89,6 +111,48 @@ class PrivateInputProvenanceTests(unittest.TestCase):
             accepted_commitment=commitment,
         )
 
+    def test_exact_git_object_is_authority_not_mutable_checkout_commitment(self) -> None:
+        accepted = provenance.create_private_review(
+            record_path=self.record,
+            key_path=self.review_key,
+            current=self.current(),
+        )
+        self.initialize_authority_repo(accepted)
+
+        provenance.verify_against_exact_source(
+            record_path=self.record,
+            lockfile=self.lockfile,
+            current=self.current(),
+        )
+
+        # The mutable checkout copy is not authority after the source commit.
+        (self.root / provenance.PRIVATE_REVIEW_AUTHORITY_PATH).write_text("0" * 64 + "\n", encoding="ascii")
+        provenance.verify_against_exact_source(
+            record_path=self.record,
+            lockfile=self.lockfile,
+            current=self.current(),
+        )
+
+        # Replacing private generation + witness + local key still cannot match
+        # the commitment carried by the already accepted Git object.
+        (self.security_build / "ThingSmartCryption.bin").write_bytes(b"replacement-sdk")
+        (self.identity_sources / "NembraTuyaPrivateIdentity.swift").write_text(
+            'private let encodedAppKey = "REPLACEMENT"\n',
+            encoding="utf-8",
+        )
+        replacement = self.current()
+        provenance.create_private_review(
+            record_path=self.record,
+            key_path=self.review_key,
+            current=replacement,
+        )
+        with self.assertRaisesRegex(provenance.ProvenanceError, "externally accepted review commitment"):
+            provenance.verify_against_exact_source(
+                record_path=self.record,
+                lockfile=self.lockfile,
+                current=replacement,
+            )
+
     def test_replacing_private_generation_and_local_witness_cannot_match_accepted_commitment(self) -> None:
         accepted = provenance.create_private_review(
             record_path=self.record,
@@ -96,7 +160,6 @@ class PrivateInputProvenanceTests(unittest.TestCase):
             current=self.current(),
         )
 
-        # Simulate same-user replacement of the entire local private generation.
         (self.security_build / "ThingSmartCryption.bin").write_bytes(b"replacement-sdk")
         (self.identity_sources / "NembraTuyaPrivateIdentity.swift").write_text(
             'private let encodedAppKey = "REPLACEMENT"\n',
@@ -104,7 +167,6 @@ class PrivateInputProvenanceTests(unittest.TestCase):
         )
         replacement = self.current()
 
-        # The attacker can replace the local record and local random key too.
         replacement_commitment = provenance.create_private_review(
             record_path=self.record,
             key_path=self.review_key,
