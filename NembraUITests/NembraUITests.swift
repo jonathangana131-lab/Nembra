@@ -108,6 +108,25 @@ final class NembraUITests: XCTestCase {
         XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
         XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
 
+        let battery = app.buttons["dashboard.battery-range"]
+        XCTAssertTrue(
+            battery.waitForExistence(timeout: 2),
+            "The riding cockpit must preserve glanceable battery state."
+        )
+        XCTAssertEqual(battery.label, "Battery")
+        XCTAssertTrue(
+            waitForValue("68%", element: battery),
+            "The riding cockpit must keep the accepted Simulator battery value glanceable."
+        )
+        XCTAssertFalse(
+            battery.isEnabled,
+            "Battery/range selection must be unavailable while accepted speed proves the scooter is moving."
+        )
+        XCTAssertFalse(
+            app.staticTexts["TAP FOR RANGE"].exists,
+            "The riding cockpit must not invite phone interaction while moving."
+        )
+
         keepScreenshot(named: "Dashboard Riding Landscape")
     }
 
