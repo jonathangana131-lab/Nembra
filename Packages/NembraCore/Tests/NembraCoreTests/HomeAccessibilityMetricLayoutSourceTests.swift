@@ -105,6 +105,7 @@ func homeStatusAndRecoveryReflowAtAccessibilityDynamicType() throws {
     #expect(statusPanel.contains(".fixedSize(horizontal: false, vertical: true)"))
     #expect(statusPanel.contains(".accessibilityIdentifier(\"home.horizon-entry\")"))
     #expect(statusPanel.contains("if let todayEvidenceDetail"))
+    #expect(source.contains(".padding(.top, dynamicTypeSize.isAccessibilitySize ? 14 : 5)"))
     #expect(statusPanel.contains(".accessibilityValue(readinessAccessibilityValue)"))
     #expect(!statusPanel.contains("detail: todayDistanceDetail"))
     #expect(!statusPanel.contains("detail: todayDurationDetail"))

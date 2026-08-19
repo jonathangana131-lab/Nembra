@@ -91,7 +91,7 @@ xcodebuild \
   -resultBundlePath "$RESULT_BUNDLE" \
   -test-timeouts-enabled YES \
   -default-test-execution-time-allowance 120 \
-  -maximum-test-execution-time-allowance 120 \
+  -maximum-test-execution-time-allowance 180 \
   -collect-test-diagnostics never \
   CODE_SIGNING_ALLOWED=NO \
   ONLY_ACTIVE_ARCH=YES \
@@ -100,6 +100,7 @@ xcodebuild \
 TEST_STATUS=${PIPESTATUS[0]}
 set -e
 
+PERFORMANCE_EVIDENCE_STATUS=0
 if [[ -d "$RESULT_BUNDLE" ]]; then
   if xcrun xcresulttool export attachments \
     --path "$RESULT_BUNDLE" \
@@ -124,7 +125,37 @@ if [[ -d "$RESULT_BUNDLE" ]]; then
       xcrun xcresulttool help get test-results metrics || true
     } >> "$ARTIFACTS_DIR/logs/xcresult-performance-metrics.log" 2>&1
     rm -f "$ARTIFACTS_DIR/performance-metrics.json"
+    PERFORMANCE_EVIDENCE_STATUS=1
   fi
+
+  if ! xcrun xcresulttool get test-results test-details \
+    --path "$RESULT_BUNDLE" \
+    --test-id 'NembraUITests/testHorizonV4DriveSustainedRenderIslandHitchEvidence()' \
+    --compact \
+    > "$ARTIFACTS_DIR/dashboard-performance-test-details.json" \
+    2> "$ARTIFACTS_DIR/logs/xcresult-dashboard-performance-details.log"; then
+    echo "Sustained Dashboard performance test-details export failed." \
+      >> "$ARTIFACTS_DIR/logs/xcresult-dashboard-performance-details.log"
+    rm -f "$ARTIFACTS_DIR/dashboard-performance-test-details.json"
+    PERFORMANCE_EVIDENCE_STATUS=1
+  fi
+
+  if [[ "$PERFORMANCE_EVIDENCE_STATUS" -eq 0 ]]; then
+    if ! python3 scripts/ci/validate_xcode27_dashboard_performance.py --self-test \
+      > "$ARTIFACTS_DIR/logs/dashboard-performance-validator-fixtures.log" 2>&1; then
+      PERFORMANCE_EVIDENCE_STATUS=1
+    elif ! python3 scripts/ci/validate_xcode27_dashboard_performance.py \
+      --metrics "$ARTIFACTS_DIR/performance-metrics.json" \
+      --details "$ARTIFACTS_DIR/dashboard-performance-test-details.json" \
+      > "$ARTIFACTS_DIR/dashboard-performance-evidence.txt" \
+      2> "$ARTIFACTS_DIR/logs/dashboard-performance-validation.log"; then
+      PERFORMANCE_EVIDENCE_STATUS=1
+    fi
+  fi
+else
+  echo "The result bundle is absent; sustained Dashboard performance evidence cannot be validated." \
+    > "$ARTIFACTS_DIR/logs/dashboard-performance-validation.log"
+  PERFORMANCE_EVIDENCE_STATUS=1
 fi
 
 if [[ "$TEST_STATUS" -ne 0 ]]; then
@@ -193,3 +224,9 @@ done
 
 printf '%s\n' "Captured screenshots:" > "$ARTIFACTS_DIR/screenshots.txt"
 find "$ARTIFACTS_DIR/screenshots" -type f -name '*.png' -print | sort >> "$ARTIFACTS_DIR/screenshots.txt"
+
+if [[ "$PERFORMANCE_EVIDENCE_STATUS" -ne 0 ]]; then
+  echo "Required sustained Dashboard performance metrics are absent or invalid." >&2
+  cat "$ARTIFACTS_DIR/logs/dashboard-performance-validation.log" >&2 2>/dev/null || true
+  exit 9
+fi

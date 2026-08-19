@@ -376,30 +376,13 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
-    func testPassiveLandscapeLeftAndRightNeverAuthorizeHorizonAndRestorePortraitHome() {
-        defer { XCUIDevice.shared.orientation = .portrait }
+    func testPassiveLandscapeLeftNeverAuthorizesHorizonAndRestoresPortraitHome() {
+        assertPassiveLandscapeNeverAuthorizesHorizonAndRestoresPortraitHome(.landscapeLeft)
+    }
 
-        let app = launch(scenario: "connected-stopped", orientation: .portrait)
-        let homeEntry = app.buttons["home.horizon-entry"]
-        XCTAssertTrue(homeEntry.waitForExistence(timeout: 5))
-
-        for orientation in [UIDeviceOrientation.landscapeLeft, .landscapeRight] {
-            XCUIDevice.shared.orientation = orientation
-
-            XCTAssertTrue(
-                waitForPassivePortraitOwnership(in: app, timeout: 8),
-                "A passive \(orientation) change must return the exact Home scene to portrait without authorizing Horizon."
-            )
-            XCTAssertFalse(
-                app.descendants(matching: .any)["dashboard.cockpit"].exists,
-                "Device orientation is observation only and must never authorize Horizon."
-            )
-            XCTAssertFalse(
-                app.descendants(matching: .any)["home.orientation.failure"].exists,
-                "Home portrait ownership should recover without leaving a failure prompt."
-            )
-            XCTAssertTrue(homeEntry.waitForExistence(timeout: 3))
-        }
+    @MainActor
+    func testPassiveLandscapeRightNeverAuthorizesHorizonAndRestoresPortraitHome() {
+        assertPassiveLandscapeNeverAuthorizesHorizonAndRestoresPortraitHome(.landscapeRight)
     }
 
     @MainActor
@@ -570,18 +553,25 @@ final class NembraUITests: XCTestCase {
 
         let options = XCTMeasureOptions()
         options.iterationCount = 3
-        measure(metrics: [XCTHitchMetric(application: app)], options: options) {
+        options.invocationOptions = .manuallyStop
+        measure(
+            metrics: [
+                XCTClockMetric(),
+                XCTHitchMetric(application: app)
+            ],
+            options: options
+        ) {
             // Keep XCUI accessibility queries outside the measured interval. The
             // app's independently clocked synthetic source continues offering
-            // broad state updates throughout this fixed six-second window.
-            let intervalFinished = XCTestExpectation(description: "Six-second Dashboard render-stress interval")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
-                intervalFinished.fulfill()
-            }
-            XCTAssertEqual(
-                XCTWaiter.wait(for: [intervalFinished], timeout: 7),
-                .completed
-            )
+            // broad state updates throughout this fixed six-second window. A
+            // monotonic clock metric makes the sustained interval independently
+            // identifiable in the xcresult; the app-targeted hitch metric remains
+            // the rendering-quality measurement.
+            let deadline = ProcessInfo.processInfo.systemUptime + 6
+            repeat {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.10))
+            } while ProcessInfo.processInfo.systemUptime < deadline
+            stopMeasuring()
         }
 
         XCTAssertTrue(
@@ -706,6 +696,42 @@ final class NembraUITests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         } while Date() < deadline
         return false
+    }
+
+    @MainActor
+    private func assertPassiveLandscapeNeverAuthorizesHorizonAndRestoresPortraitHome(
+        _ orientation: UIDeviceOrientation
+    ) {
+        // Hosted XCUI may spend close to a minute draining orientation-animation
+        // notifications even after the app has already restored portrait truth.
+        // Keep each direction isolated and give only this exact evidence path a
+        // bounded allowance; terminating first prevents cleanup from waiting on
+        // another app-owned geometry correction.
+        executionTimeAllowance = 180
+
+        let app = launch(scenario: "connected-stopped", orientation: .portrait)
+        defer {
+            app.terminate()
+            XCUIDevice.shared.orientation = .portrait
+        }
+        let homeEntry = app.buttons["home.horizon-entry"]
+        XCTAssertTrue(homeEntry.waitForExistence(timeout: 5))
+
+        XCUIDevice.shared.orientation = orientation
+
+        XCTAssertTrue(
+            waitForPassivePortraitOwnership(in: app, timeout: 8),
+            "A passive \(orientation) change must return the exact Home scene to portrait without authorizing Horizon."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["dashboard.cockpit"].exists,
+            "Device orientation is observation only and must never authorize Horizon."
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)["home.orientation.failure"].exists,
+            "Home portrait ownership should recover without leaving a failure prompt."
+        )
+        XCTAssertTrue(homeEntry.waitForExistence(timeout: 3))
     }
 
     @MainActor

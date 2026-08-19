@@ -463,7 +463,6 @@ private struct DashboardDriveSlowLayer: View, @MainActor Equatable {
         }
         .buttonStyle(.plain)
         .sensoryFeedback(.selection, trigger: snapshot.batteryPresentation.mode)
-        .accessibilityElement(children: .ignore)
         .accessibilityLabel(batteryAccessibilityLabel)
         .accessibilityValue(qualifiedForSimulator(batteryAccessibilityValue))
         .accessibilityHint("Double tap to switch between battery percentage and adaptive range. The fill always represents battery charge.")

@@ -41,7 +41,7 @@ struct HomeView: View {
                 latestRideContinuation
             }
             .padding(.horizontal, 20)
-            .padding(.top, dynamicTypeSize.isAccessibilitySize ? 14 : 8)
+            .padding(.top, dynamicTypeSize.isAccessibilitySize ? 14 : 5)
             .padding(.bottom, 20)
         }
         .scrollIndicators(.hidden)
@@ -1267,7 +1267,17 @@ struct HomeView: View {
     /// partial-evidence qualifier beneath both Today metrics. Each metric keeps
     /// its complete, independent accessibility value below.
     private var todayEvidenceDetail: String? {
-        switch (todayDistanceDetail, todayDurationDetail) {
+        if !dynamicTypeSize.isAccessibilitySize,
+           daily.todayAndCurrent?.today.distanceMeters.availability == .noEvidence,
+           daily.todayAndCurrent?.today.durationSeconds.availability == .noEvidence {
+            // The empty metric values and their independent accessibility
+            // summaries already carry this truth. Omitting the duplicate
+            // standard-size caption keeps the selected first fold clear of
+            // native tab chrome; Accessibility sizes retain the explicit line.
+            return nil
+        }
+
+        return switch (todayDistanceDetail, todayDurationDetail) {
         case (nil, nil):
             nil
         case let (distance?, duration?) where distance == duration:

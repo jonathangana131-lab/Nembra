@@ -1183,19 +1183,18 @@ private struct RideHistoryDetailView: View {
 
     @ViewBuilder
     private func timelineRow(title: String, date: Date) -> some View {
+        // Keep the preferred row intrinsically sized so its semantic fonts can
+        // grow and make ViewThatFits select the stacked alternative.
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 12) {
                 Text(title)
                     .font(.subheadline.weight(.medium))
-                    .fixedSize(horizontal: true, vertical: true)
                 Spacer(minLength: 12)
                 Text(timestamp(date))
                     .font(.subheadline.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.trailing)
-                    .fixedSize(horizontal: true, vertical: true)
             }
-            .fixedSize(horizontal: true, vertical: false)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
