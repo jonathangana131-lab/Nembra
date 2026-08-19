@@ -19,6 +19,7 @@ on:
       - scripts/ci/es80_signed_field_artifact_private_runner.py
       - scripts/ci/tests/test_capture_tuya_private_input_provenance.py
       - scripts/field/install_one_time_capture.command
+      - CAPTURE_HARD_FREEZE_ACTIVE.md
       - CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md
       - docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md
       - docs/CAPTURE_NEXT_TUYA_SECURE_LINK_TEST.md
