@@ -165,6 +165,17 @@ final class NembraUITests: XCTestCase {
         XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
         XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
 
+        let battery = app.buttons["dashboard.battery-range"]
+        XCTAssertTrue(
+            battery.waitForExistence(timeout: 2),
+            "A speed-evidence gap must preserve glanceable battery state."
+        )
+        XCTAssertEqual(battery.label, "Battery")
+        XCTAssertFalse(
+            battery.isEnabled,
+            "Battery/range selection must retire when current stopped-speed authority is unavailable."
+        )
+
         keepScreenshot(named: "Dashboard Retained Speed Landscape")
     }
 
