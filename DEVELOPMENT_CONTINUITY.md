@@ -22,7 +22,7 @@ This repository file is the recovery authority. Chat/task summaries are suppleme
 - PR base: `main`
 - PR state: draft until all exact-current-head acceptance gates below are green and inspected
 - Latest pushed implementation checkpoint recorded here: `a381a30fd9c321120a6fd5998785d6ce2b1acc4b`
-- Latest pushed visual-authority/continuity checkpoint recorded here: `2f3a9e7f04d0bd153666610406cefeb7d561f8ae`
+- Latest pushed visual-authority/continuity checkpoint recorded here: `188a9b260ed12f4fd34867c13984a55ea4a1f7ef`
 - Recovery rule: after cloning, run `git rev-parse HEAD` and `git ls-remote origin refs/heads/product/capture-1-0-main-20260818`; if either is newer than the recorded checkpoints, inspect those commits and update this file before development.
 
 The file cannot self-embed the SHA of the commit containing its own changed bytes. Therefore the SHAs above name the latest pushed implementation and meaningful continuity checkpoints this document has audited; the remote branch HEAD is the authority for any later continuity-only commit.
@@ -76,7 +76,7 @@ Local proportional evidence for `a381a30f…`: all seven changed Swift files par
 
 ## Work in progress
 
-No intentional source change is local-only at this checkpoint. The coherent code candidate is pushed as `a381a30fd9c321120a6fd5998785d6ce2b1acc4b`; this continuity update is the only expected follow-up change.
+No intentional source or documentation change is local-only at this checkpoint. The coherent code candidate is pushed as `a381a30fd9c321120a6fd5998785d6ce2b1acc4b`; continuity commit `188a9b260ed12f4fd34867c13984a55ea4a1f7ef` records it.
 
 Hosted evidence is in progress and is not yet transferable:
 
