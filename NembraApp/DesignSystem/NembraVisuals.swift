@@ -58,7 +58,7 @@ struct NembraGlassButtonStyle: ViewModifier {
             if reduceTransparency {
                 content
                     .background(
-                        Color(uiColor: .secondarySystemBackground),
+                        NembraColor.warmGraphite,
                         in: RoundedRectangle(
                             cornerRadius: NembraMetrics.controlRadius,
                             style: .continuous
@@ -94,7 +94,7 @@ struct NembraGlassButtonStyle: ViewModifier {
                 style: .continuous
             )
             .strokeBorder(
-                Color.primary.opacity(boundaryOpacity),
+                NembraColor.primaryText.opacity(boundaryOpacity),
                 lineWidth: boundaryLineWidth
             )
             .allowsHitTesting(false)

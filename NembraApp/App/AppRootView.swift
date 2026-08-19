@@ -1208,6 +1208,7 @@ private struct RideHistoryDetailView: View {
         .padding(.leading, 20)
         .padding(.trailing, 72)
         .padding(.vertical, 16)
+        .contentShape(.accessibility, Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
         .accessibilityValue(timestamp(date))

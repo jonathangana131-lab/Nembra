@@ -20,6 +20,9 @@ struct HomeAccessibilityControlLayoutSourceTests {
         #expect(source.contains(".frame(minHeight: 96)"))
         #expect(source.contains(".modifier(HomeControlIconGlassModifier())"))
         #expect(source.contains(".glassEffect(.regular.interactive(isEnabled), in: .circle)"))
+        #expect(source.contains("@Environment(\\.colorSchemeContrast) private var colorSchemeContrast"))
+        #expect(source.contains("@Environment(\\.accessibilityShowBorders) private var showBorders"))
+        #expect(source.contains("strongBoundaryRequested"))
         #expect(!source.contains("Text(available ? subtitle : \"Unavailable\")\n                        .font(.caption)\n                        .foregroundStyle(.secondary)\n                        .lineLimit(1)"))
         #expect(!source.contains(".frame(height: 58)\n            .frame(maxWidth: .infinity)"))
 

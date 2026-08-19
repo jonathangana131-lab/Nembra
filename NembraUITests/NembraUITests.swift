@@ -121,6 +121,142 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testConnectedHomePassesProductionAccessibilityAudit() throws {
+        defer {
+            if XCUIDevice.shared.orientation != .portrait {
+                XCUIDevice.shared.orientation = .portrait
+            }
+        }
+
+        let app = launch(scenario: "connected-stopped", orientation: .portrait)
+        XCTAssertTrue(waitForPortraitWindow(in: app, timeout: 5))
+        XCTAssertTrue(
+            app.descendants(matching: .any)["home.latest-ride.empty"]
+                .waitForExistence(timeout: 6),
+            "The standard-size audit must run only after Home settles on its truthful empty-history state."
+        )
+        let vehicleControls = app.buttons["Vehicle controls"]
+        XCTAssertTrue(vehicleControls.waitForExistence(timeout: 3))
+        assertMinimumTouchTarget(vehicleControls, named: "Standard Home vehicle controls")
+
+        try app.performAccessibilityAudit(
+            for: [
+                .sufficientElementDescription,
+                .hitRegion,
+                .contrast,
+                .textClipped,
+                .trait,
+                .dynamicType
+            ]
+        )
+    }
+
+    @MainActor
+    func testConnectedHomeAtAccessibilityXXXLKeepsTruthAndControlsReachable() {
+        defer {
+            if XCUIDevice.shared.orientation != .portrait {
+                XCUIDevice.shared.orientation = .portrait
+            }
+        }
+
+        let app = launch(
+            scenario: "connected-stopped",
+            orientation: .portrait,
+            arguments: [
+                "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+            ]
+        )
+        XCTAssertTrue(waitForPortraitWindow(in: app, timeout: 5))
+
+        let connection = app.descendants(matching: .any)["home.connection-status"]
+        XCTAssertTrue(connection.waitForExistence(timeout: 5))
+        let connectionSemantics = semantics(of: connection)
+        XCTAssertTrue(connectionSemantics.localizedCaseInsensitiveContains("Connected"))
+        XCTAssertTrue(
+            connectionSemantics.localizedCaseInsensitiveContains("SIM, QA only, synthetic evidence"),
+            "Accessibility XXXL evidence must remain explicitly Simulator-only."
+        )
+
+        let vehicleControls = app.buttons["Vehicle controls"]
+        XCTAssertTrue(vehicleControls.waitForExistence(timeout: 3))
+        XCTAssertGreaterThanOrEqual(
+            vehicleControls.frame.minY,
+            connection.frame.maxY,
+            "Accessibility XXXL must activate Home's vertical vehicle-header reflow."
+        )
+        assertMinimumTouchTarget(vehicleControls, named: "Accessibility XXXL vehicle controls")
+        XCTAssertTrue(vehicleControls.isHittable)
+
+        let battery = app.buttons["home.metric.battery"]
+        XCTAssertTrue(battery.waitForExistence(timeout: 3))
+        let batterySemantics = semantics(of: battery)
+        XCTAssertTrue(batterySemantics.localizedCaseInsensitiveContains("92 percent"))
+        XCTAssertTrue(batterySemantics.localizedCaseInsensitiveContains("unavailable"))
+        XCTAssertTrue(batterySemantics.localizedCaseInsensitiveContains("no learned range"))
+        assertMinimumTouchTarget(battery, named: "Accessibility XXXL battery and range")
+        XCTAssertTrue(battery.isHittable)
+
+        let latest = app.descendants(matching: .any)["home.latest-ride.empty"]
+        XCTAssertTrue(
+            latest.waitForExistence(timeout: 6),
+            "The fresh Simulator namespace must settle on the truthful empty latest-ride state."
+        )
+        keepScreenshot(named: "Home Accessibility XXXL Top - Simulator QA Only")
+
+        let readiness = app.buttons["home.horizon-entry"]
+        XCTAssertTrue(
+            swipeUpUntilHittable(readiness, in: app, maximumAttempts: 6),
+            "Accessibility XXXL readiness must remain scroll-reachable."
+        )
+        let readinessSemantics = semantics(of: readiness)
+        XCTAssertTrue(readinessSemantics.localizedCaseInsensitiveContains("Open Horizon Dashboard"))
+        XCTAssertTrue(readinessSemantics.localizedCaseInsensitiveContains("Automatic ride tracking"))
+        XCTAssertTrue(readinessSemantics.localizedCaseInsensitiveContains("Vehicle: Connected"))
+        assertMinimumTouchTarget(readiness, named: "Accessibility XXXL Horizon readiness")
+
+        let light = button(containing: "Light", in: app)
+        XCTAssertTrue(
+            swipeUpUntilHittable(light, in: app, maximumAttempts: 6),
+            "Accessibility XXXL Light must remain scroll-reachable."
+        )
+        XCTAssertTrue(semantics(of: light).localizedCaseInsensitiveContains("Light, Off"))
+        assertMinimumTouchTarget(light, named: "Accessibility XXXL Light")
+
+        let lock = button(containing: "Lock", in: app)
+        XCTAssertTrue(
+            swipeUpUntilHittable(lock, in: app, maximumAttempts: 6),
+            "Accessibility XXXL Lock must remain scroll-reachable."
+        )
+        XCTAssertTrue(semantics(of: lock).localizedCaseInsensitiveContains("Lock, Ready"))
+        assertMinimumTouchTarget(lock, named: "Accessibility XXXL Lock")
+
+        let mode = app.buttons["home.mode.selector"]
+        XCTAssertTrue(
+            swipeUpUntilHittable(mode, in: app, maximumAttempts: 6),
+            "Accessibility XXXL Mode must remain scroll-reachable."
+        )
+        let modeSemantics = semantics(of: mode)
+        XCTAssertTrue(modeSemantics.localizedCaseInsensitiveContains("Mode"))
+        XCTAssertTrue(modeSemantics.localizedCaseInsensitiveContains("Sport"))
+        assertMinimumTouchTarget(mode, named: "Accessibility XXXL Mode")
+
+        XCTAssertTrue(
+            scrollFullyInsideWindowAndAboveTabBar(latest, in: app, maximumAttempts: 8),
+            "Accessibility XXXL latest-ride content must scroll fully clear of native tab chrome."
+        )
+        let latestSemantics = semantics(of: latest)
+        XCTAssertTrue(latestSemantics.localizedCaseInsensitiveContains("No completed rides yet"))
+        XCTAssertTrue(latestSemantics.localizedCaseInsensitiveContains("safely saved"))
+        assertFullyInsideWindowAndAboveTabBar(
+            latest,
+            named: "Accessibility XXXL latest-ride row",
+            in: app
+        )
+        keepScreenshot(named: "Home Accessibility XXXL Bottom - Simulator QA Only")
+    }
+
+    @MainActor
     func testUnavailableScooterCanRecoverWithoutInventingLiveState() {
         let app = launch(scenario: "scooter-unavailable", orientation: .portrait)
 
@@ -147,7 +283,7 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
-    func testRetainedBatteryShowsOriginalFreshnessAndDisablesControls() {
+    func testRetainedBatteryShowsOriginalFreshnessAndDisablesControls() throws {
         let app = launch(
             scenario: "connected-stopped",
             orientation: .portrait,
@@ -178,11 +314,12 @@ final class NembraUITests: XCTestCase {
         let light = button(containing: "Light", in: app)
         XCTAssertTrue(light.waitForExistence(timeout: 2))
         XCTAssertFalse(light.isEnabled)
+        try app.performAccessibilityAudit(for: [.contrast])
         keepScreenshot(named: "Home Retained Battery - Simulator QA Only")
     }
 
     @MainActor
-    func testLowBatteryHasVisibleNonColorWarning() {
+    func testLowBatteryHasVisibleNonColorWarning() throws {
         let app = launch(scenario: "low-battery", orientation: .portrait)
 
         let warning = app.descendants(matching: .any)["home.battery.low-warning"]
@@ -194,6 +331,7 @@ final class NembraUITests: XCTestCase {
         let batterySemantics = semantics(of: battery)
         XCTAssertTrue(batterySemantics.localizedCaseInsensitiveContains("14 percent"))
         XCTAssertTrue(batterySemantics.localizedCaseInsensitiveContains("low battery"))
+        try app.performAccessibilityAudit(for: [.contrast])
         keepScreenshot(named: "Home Low Battery Warning - Simulator QA Only")
     }
 
@@ -593,15 +731,19 @@ final class NembraUITests: XCTestCase {
 
         keepScreenshot(named: "Horizon V4 Drive Render Stress - Simulator QA Only")
 
-        app.buttons["dashboard.control.home"].tap()
-        XCTAssertTrue(waitForPortraitWindow(in: app, timeout: 8))
+        // The stress fixture intentionally keeps publishing source updates, so a
+        // Home tap would wait for XCUI quiescence that can never arrive. Portrait
+        // restoration is covered independently; terminate this isolated fixture
+        // after its post-measurement proof and retained screenshot instead.
+        app.terminate()
     }
 
     @MainActor
     private func launch(
         scenario: String,
         orientation: UIDeviceOrientation,
-        environment: [String: String] = [:]
+        environment: [String: String] = [:],
+        arguments: [String] = []
     ) -> XCUIApplication {
         XCUIDevice.shared.orientation = orientation
         let app = XCUIApplication()
@@ -610,6 +752,7 @@ final class NembraUITests: XCTestCase {
         for (key, value) in environment {
             app.launchEnvironment[key] = value
         }
+        app.launchArguments.append(contentsOf: arguments)
         app.launch()
         return app
     }
@@ -874,6 +1017,33 @@ final class NembraUITests: XCTestCase {
         }
 
         return element.exists && element.isHittable
+    }
+
+    @MainActor
+    private func scrollFullyInsideWindowAndAboveTabBar(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        maximumAttempts: Int
+    ) -> Bool {
+        guard element.waitForExistence(timeout: 2) else { return false }
+        let scrollView = app.scrollViews.firstMatch
+        let window = app.windows.firstMatch
+        let tabBar = app.tabBars.firstMatch
+        guard scrollView.waitForExistence(timeout: 2),
+              window.waitForExistence(timeout: 2),
+              tabBar.waitForExistence(timeout: 2) else {
+            return false
+        }
+
+        for attempt in 0...maximumAttempts {
+            if isFullyInsideWindowAndAboveTabBar(element, window: window, tabBar: tabBar) {
+                return true
+            }
+            guard attempt < maximumAttempts else { break }
+            scrollView.swipeUp()
+        }
+
+        return isFullyInsideWindowAndAboveTabBar(element, window: window, tabBar: tabBar)
     }
 
     @MainActor

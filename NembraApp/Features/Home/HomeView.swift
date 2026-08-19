@@ -17,6 +17,8 @@ struct HomeView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @ScaledMetric(relativeTo: .largeTitle) private var batteryNumericFontSize: CGFloat = 62
+    @ScaledMetric(relativeTo: .title2) private var batteryPercentFontSize: CGFloat = 30
 
     @State private var pendingLockConfirmation: Bool?
     @State private var isModeSelectorPresented = false
@@ -120,6 +122,13 @@ struct HomeView: View {
         dynamicTypeSize.isAccessibilitySize ? NembraMetrics.section : 10
     }
 
+    /// Large non-accessibility categories can outgrow the measured stem
+    /// corridor before `isAccessibilitySize` becomes true. Reflowing early
+    /// keeps the visible copy and the scooter image physically separate.
+    private var usesStackedEnergyHeroLayout: Bool {
+        dynamicTypeSize.isAccessibilitySize || batteryNumericFontSize > 68
+    }
+
     // MARK: - Vehicle identity
 
     private var vehicleHeader: some View {
@@ -143,7 +152,11 @@ struct HomeView: View {
     private var vehicleIdentity: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(displayVehicleName)
-                .font(.title3.weight(.bold))
+                .font(
+                    dynamicTypeSize.isAccessibilitySize
+                        ? .title3.weight(.bold)
+                        : .headline.weight(.semibold)
+                )
                 .tracking(0.2)
                 .foregroundStyle(NembraColor.primaryText)
                 .fixedSize(horizontal: false, vertical: true)
@@ -188,10 +201,15 @@ struct HomeView: View {
             Image(systemName: "slider.horizontal.3")
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(NembraColor.primaryText)
-                .frame(width: 44, height: 44)
+                .frame(
+                    width: dynamicTypeSize.isAccessibilitySize ? 44 : 36,
+                    height: dynamicTypeSize.isAccessibilitySize ? 44 : 36
+                )
         }
         .buttonStyle(.glass)
         .tint(NembraColor.warmGraphite)
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(Rectangle())
         .accessibilityLabel("Vehicle controls")
         .accessibilityHint("Opens detailed vehicle controls and verified settings.")
     }
@@ -245,7 +263,7 @@ struct HomeView: View {
                 }
             } label: {
                 Group {
-                    if dynamicTypeSize.isAccessibilitySize {
+                    if usesStackedEnergyHeroLayout {
                         accessibilityEnergyHero
                     } else {
                         standardEnergyHero
@@ -267,20 +285,22 @@ struct HomeView: View {
 
     private var standardEnergyHero: some View {
         GeometryReader { proxy in
-            let scooterSize = min(proxy.size.width * 0.98, 320)
+            let scooterSize = min(
+                proxy.size.width * HomeHeroLayout.scooterWidthFraction,
+                HomeHeroLayout.scooterMaximumSize
+            )
 
             ZStack(alignment: .topLeading) {
                 batteryReadout
                     .padding(.top, 2)
 
                 batteryBody
-                    .frame(height: 82)
-                    .padding(.trailing, 11)
-                    .offset(y: 98)
+                    .frame(height: HomeHeroLayout.batteryHeight)
+                    .offset(y: HomeHeroLayout.batteryTop)
 
-                groundedShadow
-                    .frame(width: proxy.size.width * 0.78, height: 34)
-                    .position(x: proxy.size.width * 0.54, y: 300)
+                HomeHeroGroundingScene(layout: .standard)
+                    .equatable()
+                    .frame(width: proxy.size.width, height: HomeHeroLayout.standardHeight)
 
                 Image("ES80Side")
                     .resizable()
@@ -288,12 +308,15 @@ struct HomeView: View {
                     .frame(width: scooterSize, height: scooterSize)
                     .shadow(color: .black.opacity(0.75), radius: 22, y: 16)
                     .shadow(color: NembraColor.gold.opacity(0.13), radius: 20, y: 18)
-                    .position(x: proxy.size.width * 0.54, y: 168)
+                    .position(
+                        x: proxy.size.width * HomeHeroLayout.scooterCenterXFraction,
+                        y: HomeHeroLayout.scooterCenterY
+                    )
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
         }
-        .frame(height: 328)
+        .frame(height: HomeHeroLayout.standardHeight)
         .clipped()
     }
 
@@ -303,8 +326,9 @@ struct HomeView: View {
             batteryBody
                 .frame(height: 94)
             ZStack(alignment: .bottom) {
-                groundedShadow
-                    .frame(height: 36)
+                HomeHeroGroundingScene(layout: .accessibility)
+                    .equatable()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 Image("ES80Side")
                     .resizable()
                     .scaledToFit()
@@ -321,7 +345,7 @@ struct HomeView: View {
     private var batteryReadout: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(batteryNumericText)
-                .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 54 : 72, weight: .light, design: .rounded))
+                .font(.system(size: batteryNumericFontSize, weight: .light, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(
                     batteryReadoutMode == .percentage
@@ -332,7 +356,7 @@ struct HomeView: View {
 
             if batteryPercent != nil {
                 Text("%")
-                    .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 27 : 34, weight: .light, design: .rounded))
+                    .font(.system(size: batteryPercentFontSize, weight: .light, design: .rounded))
                     .foregroundStyle(
                         batteryReadoutMode == .percentage
                             ? batteryValueColor
@@ -340,75 +364,67 @@ struct HomeView: View {
                     )
             }
         }
+        .frame(
+            maxWidth: usesStackedEnergyHeroLayout
+                ? .infinity
+                : HomeHeroLayout.batteryNumericSafeWidth,
+            alignment: .leading
+        )
+        .lineLimit(1)
+        .minimumScaleFactor(0.82)
         .accessibilityHidden(true)
     }
 
     private var batteryBody: some View {
-        GeometryReader { proxy in
-            let terminalWidth: CGFloat = 12
-            let bodyWidth = max(0, proxy.size.width - terminalWidth)
-            let fillWidth = bodyWidth * batteryFillFraction
+        ZStack(alignment: .leading) {
+            HomeBatteryMaterial(
+                fillFraction: CGFloat(batteryFillFraction),
+                isLowBattery: isBatteryLow,
+                reduceTransparency: reduceTransparency
+            )
+            .animation(
+                reduceMotion ? nil : .snappy(duration: 0.28),
+                value: batteryFillFraction
+            )
 
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 23, style: .continuous)
-                    .fill(Color.white.opacity(reduceTransparency ? 0.075 : 0.045))
-                    .frame(width: bodyWidth)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 23, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
-                    }
-
-                if batteryPercent != nil {
-                    RoundedRectangle(cornerRadius: 23, style: .continuous)
-                        .fill(isBatteryLow ? Color.red : NembraColor.gold)
-                        .frame(width: fillWidth)
-                        .clipShape(RoundedRectangle(cornerRadius: 23, style: .continuous))
-                        .animation(reduceMotion ? nil : .snappy(duration: 0.28), value: batteryFillFraction)
-                }
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(adaptiveRangeText)
-                        .font(
-                            .title3.weight(
-                                batteryReadoutMode == .estimatedRange ? .bold : .semibold
-                            )
-                        )
-                        .monospacedDigit()
-                        .contentTransition(reduceMotion ? .identity : .numericText())
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
-
-                    Text(adaptiveRangeQualifier)
-                        .font(.caption2.weight(.semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
-                }
-                .foregroundStyle(
-                    batteryReadoutMode == .estimatedRange
-                        ? rangeLabelColor
-                        : rangeLabelColor.opacity(0.72)
-                )
-                .padding(.leading, 17)
-                .padding(.trailing, 24)
-                .accessibilityHidden(true)
-
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(Color.white.opacity(0.12))
-                    .frame(width: terminalWidth, height: proxy.size.height * 0.47)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.16))
-                    }
-                    .offset(x: bodyWidth - 1)
-            }
+            batteryRangeCopy(
+                primaryColor: batteryRangePrimaryColor,
+                secondaryColor: batteryRangeSecondaryColor
+            )
+            .accessibilityHidden(true)
         }
     }
 
-    private var groundedShadow: some View {
-        Ellipse()
-            .fill(Color.black.opacity(0.86))
-            .shadow(color: NembraColor.gold.opacity(0.18), radius: 22, y: -2)
-            .accessibilityHidden(true)
+    private func batteryRangeCopy(
+        primaryColor: Color,
+        secondaryColor: Color
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(adaptiveRangeText)
+                .font(.system(.headline, design: .rounded, weight: batteryRangePrimaryWeight))
+                .tracking(0.15)
+                .monospacedDigit()
+                .foregroundStyle(primaryColor)
+                .contentTransition(reduceMotion ? .identity : .numericText())
+                .lineLimit(1)
+                .minimumScaleFactor(0.76)
+
+            Text(adaptiveRangeQualifier)
+                .font(.caption.weight(.regular))
+                .tracking(0.28)
+                .foregroundStyle(secondaryColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.74)
+        }
+        .frame(
+            maxWidth: usesStackedEnergyHeroLayout
+                ? .infinity
+                : HomeHeroLayout.batteryCopySafeWidth,
+            alignment: .leading
+        )
+        .padding(.leading, 16)
+        .padding(.trailing, HomeHeroLayout.batteryTerminalWidth + 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
     // MARK: - Readiness and durable Today
@@ -768,6 +784,7 @@ struct HomeView: View {
                     latestRideLabel(record)
                 }
                 .buttonStyle(.plain)
+                .nembraGlassControl()
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Continue to rides")
                 .accessibilityValue(latestRideAccessibilityValue(record))
@@ -832,11 +849,6 @@ struct HomeView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, minHeight: 70, alignment: .leading)
-        .background(NembraColor.quietSurface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(NembraColor.quietLine)
-        }
         .contentShape(Rectangle())
     }
 
@@ -1160,12 +1172,36 @@ struct HomeView: View {
     }
 
     private var batteryValueColor: Color {
-        isBatteryLow ? .red : NembraColor.primaryText
+        if isBatteryLow { return .red }
+        return batteryIsRetained
+            ? NembraColor.primaryText.opacity(0.78)
+            : NembraColor.primaryText
     }
 
-    private var rangeLabelColor: Color {
-        guard let batteryPercent else { return NembraColor.secondaryText }
-        return batteryPercent >= 27 ? Color.black.opacity(0.74) : NembraColor.secondaryText
+    private var batteryRangePrimaryWeight: Font.Weight {
+        switch adaptiveRangeDisplay {
+        case .valueMeters:
+            batteryReadoutMode == .estimatedRange ? .semibold : .medium
+        case .learning:
+            .medium
+        case .unavailable:
+            .regular
+        }
+    }
+
+    private var batteryRangePrimaryColor: Color {
+        switch adaptiveRangeDisplay {
+        case .valueMeters:
+            NembraColor.primaryText.opacity(batteryIsRetained ? 0.90 : 0.96)
+        case .learning:
+            NembraColor.primaryText.opacity(batteryIsRetained ? 0.88 : 0.92)
+        case .unavailable:
+            NembraColor.primaryText.opacity(batteryIsRetained ? 0.86 : 0.90)
+        }
+    }
+
+    private var batteryRangeSecondaryColor: Color {
+        NembraColor.secondaryText.opacity(batteryIsRetained ? 0.90 : 0.96)
     }
 
     private var adaptiveRangeText: String {
@@ -1509,31 +1545,550 @@ struct HomeView: View {
     }
 }
 
+/// Standard Home protects a left-side copy zone while the real ES80 silhouette
+/// occupies the right-side stage. These names are intentionally semantic so a
+/// later licensed hero asset can be remeasured without scattering pixel values.
+private enum HomeHeroLayout {
+    static let standardHeight: CGFloat = 304
+    static let batteryHeight: CGFloat = 80
+    static let batteryTop: CGFloat = 80
+    static let batteryTerminalWidth: CGFloat = 13
+    static let batteryNumericSafeWidth: CGFloat = 120
+    static let batteryCopySafeWidth: CGFloat = 108
+    static let scooterWidthFraction: CGFloat = 0.80
+    static let scooterMaximumSize: CGFloat = 278
+    static let scooterCenterXFraction: CGFloat = 0.65
+    static let scooterCenterY: CGFloat = 132
+}
+
+/// A small, input-driven Canvas keeps the passive energy material out of the
+/// native-glass control layer. It owns no animation timeline or display-link
+/// source at idle; hosted profiling remains the authority for actual redraws.
+private struct HomeBatteryMaterial: View, @MainActor Animatable {
+    private static let chargeRibSpacing: CGFloat = 4
+
+    var fillFraction: CGFloat
+    let isLowBattery: Bool
+    let reduceTransparency: Bool
+
+    var animatableData: CGFloat {
+        get { fillFraction }
+        set { fillFraction = newValue }
+    }
+
+    var body: some View {
+        Canvas(opaque: false, rendersAsynchronously: false) { context, size in
+            drawBattery(context: &context, size: size)
+        }
+        .shadow(color: .black.opacity(0.74), radius: 8, y: 7)
+        .shadow(
+            color: energyColor.opacity(energyGlowOpacity),
+            radius: 12,
+            x: -3,
+            y: 3
+        )
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private var energyColor: Color {
+        isLowBattery ? .red : NembraColor.gold
+    }
+
+    private var energyGlowOpacity: Double {
+        guard fillFraction > 0 else { return 0 }
+        return reduceTransparency ? 0.07 : 0.14
+    }
+
+    private var chargeGradient: Gradient {
+        if isLowBattery {
+            return Gradient(stops: [
+                .init(color: Color(red: 0.42, green: 0.02, blue: 0.03), location: 0),
+                .init(color: Color(red: 0.78, green: 0.06, blue: 0.07), location: 0.42),
+                .init(color: Color(red: 0.98, green: 0.19, blue: 0.16), location: 0.82),
+                .init(color: Color(red: 1.00, green: 0.36, blue: 0.27), location: 1)
+            ])
+        }
+
+        return Gradient(stops: [
+            .init(color: NembraColor.deepGold.opacity(0.88), location: 0),
+            .init(color: NembraColor.activeGold, location: 0.36),
+            .init(color: NembraColor.gold, location: 0.74),
+            .init(color: Color(red: 1.00, green: 0.82, blue: 0.38), location: 1)
+        ])
+    }
+
+    private func drawBattery(context: inout GraphicsContext, size: CGSize) {
+        guard size.width > HomeHeroLayout.batteryTerminalWidth + 12,
+              size.height > 16 else { return }
+
+        let terminalWidth = min(HomeHeroLayout.batteryTerminalWidth, size.width * 0.12)
+        let bodyWidth = size.width - terminalWidth - 1
+        let outerRect = CGRect(x: 0, y: 1, width: bodyWidth, height: size.height - 2)
+        let outerRadius = min(22, outerRect.height * 0.28)
+        let outerPath = RoundedRectangle(cornerRadius: outerRadius, style: .continuous)
+            .path(in: outerRect)
+        let shellGradient = Gradient(stops: [
+            .init(color: Color.white.opacity(reduceTransparency ? 0.28 : 0.19), location: 0),
+            .init(color: Color(red: 0.19, green: 0.21, blue: 0.24), location: 0.22),
+            .init(color: Color(red: 0.075, green: 0.083, blue: 0.095), location: 0.58),
+            .init(color: Color.black.opacity(0.92), location: 1)
+        ])
+        let shellStart = CGPoint(x: outerRect.minX, y: outerRect.minY)
+        let shellEnd = CGPoint(x: outerRect.maxX, y: outerRect.maxY)
+
+        let terminalRect = CGRect(
+            x: outerRect.maxX - 2,
+            y: size.height * 0.31,
+            width: terminalWidth + 2,
+            height: size.height * 0.38
+        )
+        let terminalPath = RoundedRectangle(
+            cornerRadius: min(5, terminalRect.height * 0.24),
+            style: .continuous
+        ).path(in: terminalRect)
+        context.fill(
+            terminalPath,
+            with: .linearGradient(shellGradient, startPoint: shellStart, endPoint: shellEnd)
+        )
+        context.stroke(
+            terminalPath,
+            with: .color(Color.white.opacity(reduceTransparency ? 0.34 : 0.23)),
+            style: StrokeStyle(lineWidth: 1)
+        )
+
+        context.fill(
+            outerPath,
+            with: .linearGradient(shellGradient, startPoint: shellStart, endPoint: shellEnd)
+        )
+
+        let innerRect = outerRect.insetBy(dx: 2.5, dy: 2.5)
+        let innerPath = RoundedRectangle(
+            cornerRadius: max(8, outerRadius - 2.5),
+            style: .continuous
+        ).path(in: innerRect)
+        context.fill(
+            innerPath,
+            with: .linearGradient(
+                Gradient(stops: [
+                    .init(color: Color.white.opacity(0.09), location: 0),
+                    .init(color: Color(red: 0.045, green: 0.052, blue: 0.061), location: 0.22),
+                    .init(color: Color(red: 0.010, green: 0.013, blue: 0.017), location: 1)
+                ]),
+                startPoint: CGPoint(x: innerRect.midX, y: innerRect.minY),
+                endPoint: CGPoint(x: innerRect.midX, y: innerRect.maxY)
+            )
+        )
+
+        let reservoirRect = innerRect.insetBy(dx: 3, dy: 3.5)
+        let reservoirRadius = max(7, outerRadius - 5.5)
+        let reservoirPath = RoundedRectangle(
+            cornerRadius: reservoirRadius,
+            style: .continuous
+        ).path(in: reservoirRect)
+        context.fill(
+            reservoirPath,
+            with: .linearGradient(
+                Gradient(stops: [
+                    .init(color: Color(red: 0.050, green: 0.057, blue: 0.067), location: 0),
+                    .init(color: Color(red: 0.016, green: 0.019, blue: 0.024), location: 0.48),
+                    .init(color: Color.black.opacity(0.98), location: 1)
+                ]),
+                startPoint: CGPoint(x: reservoirRect.midX, y: reservoirRect.minY),
+                endPoint: CGPoint(x: reservoirRect.midX, y: reservoirRect.maxY)
+            )
+        )
+
+        drawCharge(
+            context: &context,
+            reservoirRect: reservoirRect,
+            reservoirPath: reservoirPath
+        )
+
+        context.stroke(
+            reservoirPath,
+            with: .linearGradient(
+                Gradient(stops: [
+                    .init(color: Color.white.opacity(0.25), location: 0),
+                    .init(color: Color.white.opacity(0.07), location: 0.45),
+                    .init(color: Color.black.opacity(0.65), location: 1)
+                ]),
+                startPoint: CGPoint(x: reservoirRect.midX, y: reservoirRect.minY),
+                endPoint: CGPoint(x: reservoirRect.midX, y: reservoirRect.maxY)
+            ),
+            style: StrokeStyle(lineWidth: 0.8)
+        )
+        context.stroke(
+            outerPath,
+            with: .linearGradient(
+                Gradient(stops: [
+                    .init(color: Color.white.opacity(reduceTransparency ? 0.55 : 0.34), location: 0),
+                    .init(color: Color.white.opacity(0.11), location: 0.42),
+                    .init(color: Color.black.opacity(0.72), location: 1)
+                ]),
+                startPoint: CGPoint(x: outerRect.midX, y: outerRect.minY),
+                endPoint: CGPoint(x: outerRect.midX, y: outerRect.maxY)
+            ),
+            style: StrokeStyle(lineWidth: 1)
+        )
+
+        let terminalInnerRect = terminalRect.insetBy(dx: 2.25, dy: 2.25)
+        let terminalInnerPath = RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+            .path(in: terminalInnerRect)
+        context.fill(
+            terminalInnerPath,
+            with: .linearGradient(
+                Gradient(colors: [
+                    Color(red: 0.11, green: 0.12, blue: 0.14),
+                    Color.black.opacity(0.94)
+                ]),
+                startPoint: CGPoint(x: terminalInnerRect.midX, y: terminalInnerRect.minY),
+                endPoint: CGPoint(x: terminalInnerRect.midX, y: terminalInnerRect.maxY)
+            )
+        )
+
+        // The overlapping shoulder removes the detached-terminal seam while
+        // retaining the engineered outer body and proportional terminal.
+        let shoulderRect = CGRect(
+            x: outerRect.maxX - 3.5,
+            y: terminalRect.minY + 2,
+            width: 7,
+            height: terminalRect.height - 4
+        )
+        var shoulderPath = Path()
+        shoulderPath.addRect(shoulderRect)
+        context.fill(
+            shoulderPath,
+            with: .linearGradient(shellGradient, startPoint: shellStart, endPoint: shellEnd)
+        )
+    }
+
+    private func drawCharge(
+        context: inout GraphicsContext,
+        reservoirRect: CGRect,
+        reservoirPath: Path
+    ) {
+        let clampedFill = min(max(fillFraction, 0), 1)
+        let fillWidth = reservoirRect.width * clampedFill
+        guard fillWidth > 0.5 else { return }
+
+        let fillRect = CGRect(
+            x: reservoirRect.minX,
+            y: reservoirRect.minY,
+            width: fillWidth,
+            height: reservoirRect.height
+        )
+        let fillRadius = min(reservoirRect.height * 0.34, max(3, fillWidth * 0.5))
+        let fillPath = RoundedRectangle(cornerRadius: fillRadius, style: .continuous)
+            .path(in: fillRect)
+
+        var chargeContext = context
+        chargeContext.clip(to: reservoirPath)
+        chargeContext.fill(
+            fillPath,
+            with: .linearGradient(
+                chargeGradient,
+                startPoint: CGPoint(x: fillRect.minX, y: fillRect.midY),
+                endPoint: CGPoint(x: fillRect.maxX, y: fillRect.midY)
+            )
+        )
+
+        chargeContext.clip(to: fillPath)
+        var chargeOverlay = Path()
+        chargeOverlay.addRect(fillRect)
+        chargeContext.fill(
+            chargeOverlay,
+            with: .linearGradient(
+                Gradient(stops: [
+                    .init(color: Color.white.opacity(0.24), location: 0),
+                    .init(color: Color.white.opacity(0.055), location: 0.36),
+                    .init(color: Color.clear, location: 0.62),
+                    .init(color: Color.black.opacity(0.14), location: 1)
+                ]),
+                startPoint: CGPoint(x: fillRect.midX, y: fillRect.minY),
+                endPoint: CGPoint(x: fillRect.midX, y: fillRect.maxY)
+            )
+        )
+
+        // The selected instrument keeps its copy in a graphite energy well.
+        // Clip the well to accepted SOC so the charge shape remains truthful,
+        // while warm-white copy stays legible across both charged and empty
+        // regions without changing color mid-animation.
+        let fullCopyWellWidth = HomeHeroLayout.batteryCopySafeWidth + 34
+        let copyWellWidth = min(fillRect.width, fullCopyWellWidth)
+        if copyWellWidth > 0.5 {
+            let copyWellRect = CGRect(
+                x: fillRect.minX,
+                y: fillRect.minY,
+                width: copyWellWidth,
+                height: fillRect.height
+            )
+            var copyWellPath = Path()
+            copyWellPath.addRect(copyWellRect)
+            chargeContext.fill(
+                copyWellPath,
+                with: .linearGradient(
+                    Gradient(stops: [
+                        .init(color: Color.black.opacity(0.76), location: 0),
+                        .init(color: Color.black.opacity(0.68), location: 0.84),
+                        .init(color: Color.black.opacity(0.08), location: 1)
+                    ]),
+                    startPoint: CGPoint(x: copyWellRect.minX, y: copyWellRect.midY),
+                    endPoint: CGPoint(
+                        x: copyWellRect.minX + fullCopyWellWidth,
+                        y: copyWellRect.midY
+                    )
+                )
+            )
+        }
+
+        var ribs = Path()
+        for x in stride(
+            from: fillRect.minX + 2,
+            through: fillRect.maxX - 1,
+            by: Self.chargeRibSpacing
+        ) {
+            ribs.move(to: CGPoint(x: x, y: fillRect.minY + 2.5))
+            ribs.addLine(to: CGPoint(x: x, y: fillRect.maxY - 2.5))
+        }
+        chargeContext.stroke(
+            ribs,
+            with: .linearGradient(
+                Gradient(stops: [
+                    .init(color: Color.white.opacity(0.22), location: 0),
+                    .init(color: Color.white.opacity(0.085), location: 0.46),
+                    .init(color: Color.black.opacity(0.17), location: 1)
+                ]),
+                startPoint: CGPoint(x: fillRect.midX, y: fillRect.minY),
+                endPoint: CGPoint(x: fillRect.midX, y: fillRect.maxY)
+            ),
+            style: StrokeStyle(lineWidth: 0.55)
+        )
+    }
+}
+
+/// Static scene lighting gives the supplied cutout physical contact with the
+/// floor without baking presentation pixels into the image asset. Tire, deck,
+/// ambient, and energy-light layers stay passive and accessibility-hidden.
+private struct HomeHeroGroundingScene: View, @MainActor Equatable {
+    enum Layout: Equatable {
+        case standard
+        case accessibility
+    }
+
+    let layout: Layout
+
+    var body: some View {
+        Canvas(opaque: false, rendersAsynchronously: false) { context, size in
+            guard size.width > 0, size.height > 0 else { return }
+            let geometry = groundingGeometry(in: size)
+            drawFloor(context: &context, geometry: geometry, size: size)
+            drawSoftEllipse(
+                context: &context,
+                rect: geometry.ambientShadow,
+                color: .black,
+                coreOpacity: 0.76
+            )
+            drawSoftEllipse(
+                context: &context,
+                rect: geometry.goldPool,
+                color: NembraColor.gold,
+                coreOpacity: 0.13
+            )
+            drawSoftEllipse(
+                context: &context,
+                rect: geometry.deckShadow,
+                color: .black,
+                coreOpacity: 0.92
+            )
+            drawSoftEllipse(
+                context: &context,
+                rect: geometry.frontTireContact,
+                color: .black,
+                coreOpacity: 1
+            )
+            drawSoftEllipse(
+                context: &context,
+                rect: geometry.rearTireContact,
+                color: .black,
+                coreOpacity: 1
+            )
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private struct GroundingGeometry {
+        let floorTop: CGFloat
+        let ambientShadow: CGRect
+        let deckShadow: CGRect
+        let frontTireContact: CGRect
+        let rearTireContact: CGRect
+        let goldPool: CGRect
+    }
+
+    private func groundingGeometry(in size: CGSize) -> GroundingGeometry {
+        switch layout {
+        case .standard:
+            GroundingGeometry(
+                floorTop: size.height * 0.68,
+                ambientShadow: CGRect(
+                    x: size.width * 0.27,
+                    y: size.height * 0.76,
+                    width: size.width * 0.71,
+                    height: size.height * 0.11
+                ),
+                deckShadow: CGRect(
+                    x: size.width * 0.37,
+                    y: size.height * 0.78,
+                    width: size.width * 0.55,
+                    height: size.height * 0.064
+                ),
+                frontTireContact: CGRect(
+                    x: size.width * 0.32,
+                    y: size.height * 0.805,
+                    width: size.width * 0.16,
+                    height: size.height * 0.036
+                ),
+                rearTireContact: CGRect(
+                    x: size.width * 0.81,
+                    y: size.height * 0.805,
+                    width: size.width * 0.17,
+                    height: size.height * 0.036
+                ),
+                goldPool: CGRect(
+                    x: size.width * 0.37,
+                    y: size.height * 0.765,
+                    width: size.width * 0.52,
+                    height: size.height * 0.15
+                )
+            )
+        case .accessibility:
+            GroundingGeometry(
+                floorTop: size.height * 0.70,
+                ambientShadow: CGRect(
+                    x: size.width * 0.17,
+                    y: size.height * 0.82,
+                    width: size.width * 0.66,
+                    height: size.height * 0.11
+                ),
+                deckShadow: CGRect(
+                    x: size.width * 0.29,
+                    y: size.height * 0.84,
+                    width: size.width * 0.44,
+                    height: size.height * 0.064
+                ),
+                frontTireContact: CGRect(
+                    x: size.width * 0.24,
+                    y: size.height * 0.87,
+                    width: size.width * 0.15,
+                    height: size.height * 0.038
+                ),
+                rearTireContact: CGRect(
+                    x: size.width * 0.63,
+                    y: size.height * 0.87,
+                    width: size.width * 0.15,
+                    height: size.height * 0.038
+                ),
+                goldPool: CGRect(
+                    x: size.width * 0.28,
+                    y: size.height * 0.82,
+                    width: size.width * 0.46,
+                    height: size.height * 0.15
+                )
+            )
+        }
+    }
+
+    private func drawFloor(
+        context: inout GraphicsContext,
+        geometry: GroundingGeometry,
+        size: CGSize
+    ) {
+        let floorRect = CGRect(
+            x: 0,
+            y: geometry.floorTop,
+            width: size.width,
+            height: max(0, size.height - geometry.floorTop)
+        )
+        var floorPath = Path()
+        floorPath.addRect(floorRect)
+        context.fill(
+            floorPath,
+            with: .linearGradient(
+                Gradient(stops: [
+                    .init(color: Color.clear, location: 0),
+                    .init(color: Color.white.opacity(0.018), location: 0.26),
+                    .init(color: NembraColor.gold.opacity(0.024), location: 0.64),
+                    .init(color: Color.clear, location: 1)
+                ]),
+                startPoint: CGPoint(x: floorRect.midX, y: floorRect.minY),
+                endPoint: CGPoint(x: floorRect.midX, y: floorRect.maxY)
+            )
+        )
+    }
+
+    private func drawSoftEllipse(
+        context: inout GraphicsContext,
+        rect: CGRect,
+        color: Color,
+        coreOpacity: Double
+    ) {
+        var softContext = context
+        softContext.addFilter(.blur(radius: max(1.5, rect.height * 0.42)))
+        softContext.fill(
+            Path(ellipseIn: rect),
+            with: .color(color.opacity(coreOpacity * 0.52))
+        )
+
+        let contactRect = rect.insetBy(dx: rect.width * 0.10, dy: rect.height * 0.24)
+        context.fill(
+            Path(ellipseIn: contactRect),
+            with: .color(color.opacity(coreOpacity * 0.18))
+        )
+    }
+}
+
 /// Liquid Glass belongs to the functional icon controls, not the telemetry
 /// labels or the entire control rail. The parent `GlassEffectContainer` renders
 /// these three shapes as one efficient group while each full button retains its
 /// 44-point-or-larger hit region.
 private struct HomeControlIconGlassModifier: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    @Environment(\.accessibilityShowBorders) private var showBorders
     @Environment(\.isEnabled) private var isEnabled
+
+    private var shouldShowBoundary: Bool {
+        reduceTransparency || showBorders
+    }
+
+    private var strongBoundaryRequested: Bool {
+        showBorders || (reduceTransparency && colorSchemeContrast == .increased)
+    }
 
     func body(content: Content) -> some View {
         Group {
             if reduceTransparency {
                 content
                     .background(NembraColor.warmGraphite, in: Circle())
-                    .overlay {
-                        Circle()
-                            .strokeBorder(NembraColor.primaryText.opacity(0.24))
-                            .allowsHitTesting(false)
-                            .accessibilityHidden(true)
-                    }
             } else if #available(iOS 26.0, *) {
                 content
                     .glassEffect(.regular.interactive(isEnabled), in: .circle)
             } else {
                 content
                     .background(.thinMaterial, in: Circle())
+            }
+        }
+        .overlay {
+            if shouldShowBoundary {
+                Circle()
+                    .strokeBorder(
+                        NembraColor.primaryText.opacity(strongBoundaryRequested ? 0.42 : 0.24),
+                        lineWidth: strongBoundaryRequested ? 1.5 : 1
+                    )
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             }
         }
     }
