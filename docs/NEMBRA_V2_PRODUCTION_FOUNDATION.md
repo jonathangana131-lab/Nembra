@@ -197,15 +197,30 @@ storage interruption, route gaps, midnight/time-zone/DST, and urban map-matching
 traces. Release performance evidence must cover sustained hitches/CPU, thermal,
 battery, memory, database growth, map overlay scale, and idle animation shutdown.
 
-## Selected Horizon production visual target
+## Horizon production visual authority after V4 rejection
 
-The selected Dashboard/Cockpit visual target is now Horizon V4 at
-`docs/design-reference/horizon-v4-final/`. Its production contract is
-`NEMBRA_HORIZON_V4_PRODUCTION_HANDOFF.md` in that directory.
+Horizon V4 at `docs/design-reference/horizon-v4-final/` is no longer a selected
+pixel-level visual target. On 2026-08-19 the user rejected its Drive,
+Navigation, and Explore execution as incomplete and below the required Nembra
+1.0 quality. Its PNGs remain historical rejection evidence only.
 
-All Horizon V2 and V3 cockpit images are rejected historical evidence. They must
-not be used as implementation foundations. The V4 handoff controls visual
-hierarchy, safe-area geometry, Drive/Navigation/Explore transformation, motion,
-and acceptance criteria while this foundation remains authoritative for product
-truth, protocol evidence, automatic-capture limits, persistence, and road-network
-evidence.
+`NEMBRA_HORIZON_V4_PRODUCTION_HANDOFF.md` retains requirements authority for
+speed priority, truthful propulsion, automatic recording, durable Today,
+Drive/Navigation/Explore behavior, motion, accessibility, and performance. It
+does not authorize the V4 geometry, typography, map/card treatment, battery
+pill, control layout, or material styling.
+
+All Horizon V2, V3, and V4 cockpit images are rejected historical evidence and
+must not be used as implementation foundations. The next production visual
+direction must be developed through several internal real-size iPhone 12
+landscape studies from the retained requirements plus the selected portrait
+Home language, then refined against GitHub-hosted Xcode 27 screenshots. No
+first runnable layout is a completion claim.
+
+The cockpit battery is one unified tappable instrument: percentage is the
+default sole value, one tap replaces it with accepted adaptive range inside the
+same battery, and another tap returns to percentage. SOC fill always means
+charge. A detached or simultaneous range readout is forbidden. The compact
+landscape battery derives its engineered graphite/gold shell, inner depth,
+SOC-clipped micro-lines, gradient, highlight, and terminal from the selected
+Home battery rather than the rejected generic V4 pill.

@@ -82,6 +82,20 @@ The Home reference is the governing composition:
 
 Never fabricate range precision, connection freshness, lock state, or mode confirmation. Last-known values must be labeled as such.
 
+### Home hero visual correction — mandatory before acceptance
+
+The current functional Xcode 27 Home capture is not the 1.0 visual-acceptance image. Preserve its telemetry, SOC/range truth, accessibility, native controls, and durable ride behavior while correcting the hero against `selected-home-gold-glass.png`:
+
+- The battery must read as a premium engineered energy instrument rather than a flat yellow slab: deep graphite empty region, dimensional gold gradient/highlight, fine vertical ribs/micro-lines clipped strictly to SOC fill, thin metallic shell/rim, inner depth, coherent terminal, controlled bloom, and efficient static rendering when SOC is not animating.
+- Battery/range typography uses refined SF optical weight, scale, tracking, baseline, and two-line hierarchy. Learned range, unavailable, low-battery, reconnecting, and retained/last-known states each need state-appropriate warm-white/cool-grey/dark contrast rather than one fixed heavy dark color across every background.
+- The production scooter image must be a high-resolution, provenance-documented, truthful AOVOPRO ES80 side render. It should retain real geometry/material details while receiving the selected darker graphite/studio-light character. Do not ship an unrelated/counterfeit scooter or silently recolor physically required details.
+- No scooter pixel may obscure the battery percentage, range/unavailable copy, status copy, or accessibility content. Preserve clean percentage space above/left, range copy at the battery's left, a deliberately empty central stem corridor, and the deck below the battery. Verify low battery, reconnecting, unavailable range, riding, resumed ride, retained/stale, and large text.
+- Ground the scooter with separate tire contact shadows, a longer soft deck shadow, ambient occlusion, a restrained warm under-deck pool, and a subtle floor reflection/gradient. Avoid a shallow pasted-on oval, floating scooter, or giant decorative glow.
+- Carry restrained gold energy light into the scooter, floor, contact shadows, and nearby interactive-glass edges so the hero reads as one scene. Primary information stays crisp white, secondary information cool grey, healthy connection green, and energy/active state gold.
+- Native Liquid Glass depth/specular response belongs on actual controls and actions: the top vehicle-control button, three vehicle controls, actionable continuation surface, and the system floating tab bar. Do not replace system glass with blur stacks or glass-coat passive telemetry/content. The native tab bar remains system-owned.
+
+Home is visually accepted only after a fresh exact-head GitHub Xcode 27 iPhone 12 screenshot is placed beside the selected reference at the same logical viewport and visibly proves battery detail, typography, approved scooter quality, zero copy occlusion, integrated grounding/light, and premium native-control glass together. Source-string tests and a functional screenshot alone are not visual acceptance.
+
 ## Rides
 
 Use the refined archive reference exactly as the structure:
