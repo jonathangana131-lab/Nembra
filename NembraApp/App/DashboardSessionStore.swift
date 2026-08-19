@@ -86,7 +86,7 @@ final class DashboardSessionStore {
 
     var isRestoringInactivePortrait: Bool {
         guard case .inactive = state else { return false }
-        switch inactivePortraitOwnership {
+        return switch inactivePortraitOwnership {
         case .awaitingScene, .restoring:
             true
         case .ready, .failed:
