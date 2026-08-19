@@ -36,12 +36,17 @@ struct TuyaFieldSDKDependencyProvenanceSourceTests {
         #expect(acceptedInstall.lowerBound < postauthentication.lowerBound)
     }
 
-    @Test("bootstrap delegates exact private-input fingerprinting to the hardened provenance helper")
-    func bootstrapRecordsLockFingerprint() throws {
+    @Test("review may snapshot private inputs but field mode only verifies the pre-existing witness")
+    func bootstrapPreservesReviewedPrivateInputWitness() throws {
         let script = try readRepositoryFile("Scripts/bootstrap_capture_tuya_sdk.sh")
         let helper = try readRepositoryFile("Scripts/capture_tuya_private_input_provenance.py")
 
-        #expect(script.contains("/usr/bin/python3 -I \"$PROVENANCE_HELPER\" snapshot"))
+        #expect(script.contains("run_private_input_provenance()"))
+        #expect(script.contains("/usr/bin/python3 -I \"$PROVENANCE_HELPER\" \"$operation\""))
+        #expect(script.contains("if ! run_private_input_provenance snapshot; then"))
+        #expect(script.contains("if ! run_private_input_provenance verify; then"))
+        #expect(script.contains("field mode will not create or replace this witness"))
+        #expect(script.contains("The reviewed witness was not replaced"))
         #expect(script.contains("--lockfile \"$REPO_ROOT/Podfile.lock\""))
         #expect(script.contains("--security-podspec \"$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec\""))
         #expect(script.contains("--security-build \"$TUYA_PRIVATE_SDK/Build\""))
@@ -51,6 +56,18 @@ struct TuyaFieldSDKDependencyProvenanceSourceTests {
         #expect(script.contains("shasum -a 256 Podfile.lock"))
         #expect(script.contains("ResolvedTuyaDependencyProvenance.txt"))
         #expect(script.contains("stat -f '%Lp' \"$DEPENDENCY_PROVENANCE\""))
+
+        let preverify = try #require(script.range(of: "if ! run_private_input_provenance verify; then"))
+        let acceptedInstall = try #require(script.range(of: "pod install --deployment --no-repo-update"))
+        let reviewSnapshot = try #require(script.range(of: "if ! run_private_input_provenance snapshot; then"))
+        let secondVerify = try #require(
+            script.range(
+                of: "private Tuya build inputs changed across dependency installation. The reviewed witness was not replaced."
+            )
+        )
+        #expect(preverify.lowerBound < acceptedInstall.lowerBound)
+        #expect(acceptedInstall.lowerBound < reviewSnapshot.lowerBound)
+        #expect(reviewSnapshot.lowerBound < secondVerify.lowerBound)
 
         #expect(helper.contains("SCHEMA = \"nembra-capture-tuya-dependencies-v2\""))
         #expect(helper.contains("\"podfile_lock_sha256\": _read_stable_regular_file_sha256(lockfile)[1]"))
