@@ -95,6 +95,11 @@ struct DashboardView: View {
         .preferredColorScheme(.dark)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("dashboard.cockpit")
+        .onChange(of: batteryRangeInteractionIsAvailable) { _, isAvailable in
+            if !isAvailable {
+                batteryReadout = .charge
+            }
+        }
         .confirmationDialog(
             vehicle.state.isLocked == true ? "Unlock scooter?" : "Lock scooter?",
             isPresented: $showLockConfirmation,
