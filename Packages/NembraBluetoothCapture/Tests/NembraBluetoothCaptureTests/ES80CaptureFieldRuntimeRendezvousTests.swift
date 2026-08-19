@@ -52,7 +52,7 @@ struct ES80CaptureFieldRuntimeRendezvousTests {
         #expect(source.contains("\"I confirm — begin at OFF1\""))
     }
 
-    @Test("field rendezvous consumes compiled build identity without minting replacement authority in the view")
+    @Test("field rendezvous consumes the centralized build-authorization gate without minting replacement authority in the view")
     func rendezvousConsumesCurrentBuildIdentityOnly() throws {
         let source = try Self.fieldEntrypointSource()
 
@@ -80,8 +80,8 @@ struct ES80CaptureFieldRuntimeRendezvousTests {
         #expect(source.contains("field_build_identity_unavailable"))
     }
 
-    @Test("non-authoritative build remains mechanically locked before OFF 1")
-    func nonAuthoritativeBuildCannotReachOFF1() throws {
+    @Test("well-formed caller-constructible metadata remains mechanically locked before OFF 1")
+    func callerConstructibleMetadataCannotMintPhysicalAuthority() throws {
         let source = try Self.fieldEntrypointSource()
         let identity = try Self.buildIdentitySource()
 
@@ -99,11 +99,17 @@ struct ES80CaptureFieldRuntimeRendezvousTests {
         #expect(ready.contains("test.sdkDeviceMembershipVerified"))
         #expect(ready.contains("test.accountIdentityLeaseIsAuthorized"))
 
+        // The tuple is still validated and retained as useful provenance.
+        #expect(identity.contains("var hasCompleteFieldBuildMetadata: Bool"))
         #expect(identity.contains("static let requiredFieldProcedureIdentifier = \"ES80-AUTHENTICATED-STATIONARY-v1\""))
         #expect(identity.contains("guard sourceCommitSHA.count == 40"))
         #expect(identity.contains("tuyaDependencyLockSHA256.count == 64"))
         #expect(identity.contains("procedureIdentifier == Self.requiredFieldProcedureIdentifier"))
         #expect(identity.contains("let expectedIdentifier = \"capture-v14-\\(sourceCommitSHA.prefix(12))\""))
         #expect(identity.contains("return buildIdentifier == expectedIdentifier"))
+
+        // But self-described plist/build-setting metadata is not an independent trust anchor.
+        #expect(identity.contains("var isAuthoritativeFieldBuild: Bool {\n        false\n    }"))
+        #expect(identity.contains("independent physical-build authorization is not available yet"))
     }
 }
