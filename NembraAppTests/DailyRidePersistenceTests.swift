@@ -471,6 +471,7 @@ final class DailyRidePersistenceTests: XCTestCase {
         )
     }
 
+    @MainActor
     private func commitCheckpointPair(
         sessionID: UUID,
         distanceMeters: Double,
