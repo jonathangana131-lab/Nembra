@@ -12,6 +12,12 @@ credential-guessing oracle, while a later field admission can prove that its
 current private generation is the one that produced an externally accepted
 commitment.
 
+CLI `verify` is intentionally stronger than the low-level `verify_record`: it
+reads the accepted opaque commitment from the exact current Git object and binds
+the current private generation to that source authority. This lets the already
+pinned field installer re-check authority immediately before and after xcodebuild
+without trusting a mutable checkout copy of the commitment.
+
 This is build-input authority plumbing, not physical scooter proof.
 """
 
@@ -22,6 +28,7 @@ import hashlib
 import hmac
 import os
 import stat
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -31,6 +38,8 @@ HOME_KIT_VERSION = "7.8.0"
 BUSINESS_EXTENSION_VERSION = "7.8.0"
 PRIVATE_REVIEW_DOMAIN = b"nembra-capture-private-input-review-v1\x00"
 PRIVATE_REVIEW_KEY_BYTES = 32
+PRIVATE_REVIEW_KEY_NAME = "PrivateInputReviewKey.bin"
+PRIVATE_REVIEW_AUTHORITY_PATH = "CAPTURE_TUYA_PRIVATE_INPUT_REVIEW_COMMITMENT.txt"
 _HEX = frozenset("0123456789abcdef")
 
 
@@ -371,6 +380,65 @@ def verify_private_review(
         raise ProvenanceError("private Tuya build inputs do not match the externally accepted review commitment")
 
 
+def _git_output(repo_root: Path, *arguments: str) -> bytes:
+    environment = {
+        "PATH": "/usr/bin:/bin",
+        "LC_ALL": "C",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+    }
+    try:
+        completed = subprocess.run(
+            ["/usr/bin/git", "-C", str(repo_root), *arguments],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+            check=False,
+        )
+    except OSError as error:
+        raise ProvenanceError("system Git is unavailable for exact-source review authority") from error
+    if completed.returncode != 0:
+        raise ProvenanceError("exact-source private review authority could not be resolved")
+    return completed.stdout
+
+
+def exact_source_private_review_commitment(lockfile: Path) -> str:
+    try:
+        repo_root = lockfile.parent.resolve(strict=True)
+    except OSError as error:
+        raise ProvenanceError("accepted repository root is unavailable") from error
+    head = _git_output(repo_root, "rev-parse", "HEAD").decode("ascii", errors="strict").strip().lower()
+    if len(head) != 40 or any(character not in _HEX for character in head):
+        raise ProvenanceError("accepted repository HEAD is malformed")
+    object_id = _git_output(
+        repo_root,
+        "rev-parse",
+        f"{head}:{PRIVATE_REVIEW_AUTHORITY_PATH}",
+    ).decode("ascii", errors="strict").strip().lower()
+    if len(object_id) != 40 or any(character not in _HEX for character in object_id):
+        raise ProvenanceError("private review authority Git object is malformed")
+    payload = _git_output(repo_root, "cat-file", "blob", object_id)
+    try:
+        text = payload.decode("ascii")
+    except UnicodeDecodeError as error:
+        raise ProvenanceError("private review authority is not canonical ASCII") from error
+    if text.endswith("\n"):
+        text = text[:-1]
+    if "\n" in text or "\r" in text or len(text) != 64 or any(character not in _HEX for character in text):
+        raise ProvenanceError("exact accepted source has no canonical 64-hex private-input review commitment")
+    return text
+
+
+def verify_against_exact_source(*, record_path: Path, lockfile: Path, current: dict[str, str]) -> None:
+    accepted = exact_source_private_review_commitment(lockfile)
+    verify_private_review(
+        record_path=record_path,
+        key_path=record_path.parent / PRIVATE_REVIEW_KEY_NAME,
+        current=current,
+        accepted_commitment=accepted,
+    )
+
+
 def _arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("operation", choices=("snapshot", "verify", "review", "verify-review"))
@@ -401,8 +469,12 @@ def main() -> int:
             write_record(arguments.record, current)
         elif arguments.operation == "verify":
             if arguments.review_key is not None or arguments.accepted_commitment is not None:
-                raise ProvenanceError("verify mode does not accept review authority")
-            verify_record(arguments.record, current)
+                raise ProvenanceError("verify mode resolves review authority from exact Git source and accepts no override")
+            verify_against_exact_source(
+                record_path=arguments.record,
+                lockfile=arguments.lockfile,
+                current=current,
+            )
         elif arguments.operation == "review":
             if arguments.review_key is None or arguments.accepted_commitment is not None:
                 raise ProvenanceError("review mode requires --review-key and no preexisting commitment")
@@ -420,7 +492,7 @@ def main() -> int:
                 current=current,
                 accepted_commitment=arguments.accepted_commitment,
             )
-    except (OSError, ProvenanceError) as error:
+    except (OSError, UnicodeError, ProvenanceError) as error:
         print(f"ERROR: {error}", file=os.sys.stderr)
         return 1
     return 0
