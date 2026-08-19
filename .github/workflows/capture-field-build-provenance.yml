@@ -22,6 +22,7 @@ on:
       - scripts/field/install_one_time_capture.command
       - CAPTURE_HARD_FREEZE_ACTIVE.md
       - CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md
+      - CAPTURE_TUYA_PRIVATE_INPUT_REVIEW_COMMITMENT.txt
       - docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md
       - docs/CAPTURE_NEXT_TUYA_SECURE_LINK_TEST.md
       - docs/CAPTURE_TUYA_OFFICIAL_SDK_PROVISIONING.md
@@ -68,6 +69,18 @@ jobs:
           procedure='ES80-AUTHENTICATED-STATIONARY-v1'
           grep -Fq "PROCEDURE_ID=\"$procedure\"" scripts/field/install_one_time_capture.command
           grep -Fq "requiredFieldProcedureIdentifier = \"$procedure\"" NembraApp/App/NembraCaptureBuildIdentity.swift
+
+          private_review_authority="$(tr -d '\r\n' < CAPTURE_TUYA_PRIVATE_INPUT_REVIEW_COMMITMENT.txt)"
+          if [[ "$private_review_authority" != "UNSET" && ! "$private_review_authority" =~ ^[0-9a-f]{64}$ ]]; then
+            printf '%s\n' 'ERROR: private-input review authority must be UNSET or one canonical 64-hex opaque commitment.' >&2
+            exit 1
+          fi
+          grep -Fq 'PRIVATE_REVIEW_AUTHORITY_PATH="CAPTURE_TUYA_PRIVATE_INPUT_REVIEW_COMMITMENT.txt"' Scripts/bootstrap_capture_tuya_sdk.sh
+          grep -Fq 'rev-parse "$EXPECTED_FIELD_SOURCE_SHA:$PRIVATE_REVIEW_AUTHORITY_PATH"' Scripts/bootstrap_capture_tuya_sdk.sh
+          grep -Fq 'cat-file blob "$PRIVATE_REVIEW_AUTHORITY_BLOB"' Scripts/bootstrap_capture_tuya_sdk.sh
+          if [[ "$private_review_authority" == "UNSET" ]]; then
+            printf '%s\n' 'Private-input review authority is intentionally UNSET; physical field bootstrap must remain fail-closed.'
+          fi
 
       - name: Validate public handoff code without secrets or devices
         run: |
