@@ -657,6 +657,7 @@ final class RideApplicationTests: XCTestCase {
             scope: .simulation(scenario: .riding, namespace: "recovery-test"),
             baseDirectoryURL: directory
         )
+        let dailyRideStore = try XCTUnwrap(persistence.dailyRideStore)
         let configuration = try RideApplicationConfiguration.simulatorQA()
 
         let firstState = SimulatedScooterService.state(for: .connectedStopped)
@@ -667,8 +668,9 @@ final class RideApplicationTests: XCTestCase {
             configuration: configuration,
             checkpointStore: persistence.checkpointStore,
             historyStore: persistence.historyStore,
-            dailyRideStore: persistence.dailyRideStore
+            dailyRideStore: dailyRideStore
         )
+        defer { firstStore?.stop() }
         await firstStore?.start()
 
         await firstService.simulateRide(speedKilometersPerHour: 12, elapsedSeconds: 1)
@@ -685,6 +687,11 @@ final class RideApplicationTests: XCTestCase {
             return XCTFail("An active automatic ride must have durable recovery evidence.")
         }
         XCTAssertEqual(checkpoint.sessionID, sessionID)
+        let preRecoveryAccumulatorValue = try await dailyRideStore.accumulator(
+            sessionID: sessionID
+        )
+        let preRecoveryAccumulator = try XCTUnwrap(preRecoveryAccumulatorValue)
+        let preRecoveryReceiptCount = preRecoveryAccumulator.acknowledgedCheckpointCount
 
         let recoveredState = SimulatedScooterService.state(for: .reconnecting)
         let recoveredService = SimulatedScooterService(initialState: recoveredState)
@@ -694,13 +701,23 @@ final class RideApplicationTests: XCTestCase {
             configuration: configuration,
             checkpointStore: persistence.checkpointStore,
             historyStore: persistence.historyStore,
-            dailyRideStore: persistence.dailyRideStore
+            dailyRideStore: dailyRideStore
         )
+        defer { recoveredStore.stop() }
         await recoveredStore.start()
 
         XCTAssertEqual(recoveredStore.activeSessionID, sessionID)
         XCTAssertEqual(recoveredStore.continuity, .recoveredCheckpoint)
         XCTAssertEqual(recoveredStore.status, .temporarilyDisconnected)
+        let restoredAccumulatorValue = try await dailyRideStore.accumulator(
+            sessionID: sessionID
+        )
+        let restoredAccumulator = try XCTUnwrap(restoredAccumulatorValue)
+        XCTAssertEqual(
+            restoredAccumulator.acknowledgedCheckpointCount,
+            preRecoveryReceiptCount,
+            "Process recovery alone is not fresh ride evidence and must not mint a daily receipt."
+        )
 
         await recoveredService.simulateReconnected()
         await recoveredService.simulateRide(speedKilometersPerHour: 12, elapsedSeconds: 0)
@@ -721,9 +738,104 @@ final class RideApplicationTests: XCTestCase {
 
         let clearedCheckpoint = try await persistence.checkpointStore.load()
         let committedRecord = try await persistence.historyStore.record(sessionID: sessionID)
+        let completedAccumulatorValue = try await dailyRideStore.accumulator(
+            sessionID: sessionID
+        )
+        let completedAccumulator = try XCTUnwrap(completedAccumulatorValue)
         XCTAssertNil(clearedCheckpoint)
         XCTAssertEqual(committedRecord?.sessionID, sessionID)
-        recoveredStore.stop()
+        XCTAssertEqual(
+            completedAccumulator.lastAcknowledgedCheckpoint?.cumulativeDurationSeconds.disposition,
+            .knownPartial,
+            "A recovered ride must preserve observed duration without filling the process gap."
+        )
+    }
+
+    @MainActor
+    func testConcurrentReconnectAndSpeedResumeUseOneApplicationTransactionFIFO() async throws {
+        let directory = temporaryDirectory(name: "reconnect-transaction-fifo")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let persistence = try RidePersistenceFactory.make(
+            scope: .simulation(
+                scenario: .reconnecting,
+                namespace: "reconnect-transaction-fifo"
+            ),
+            baseDirectoryURL: directory
+        )
+        let dailyRideStore = try XCTUnwrap(persistence.dailyRideStore)
+        let sessionID = UUID()
+        let checkpointDate = Date.now.addingTimeInterval(-2)
+        let checkpoint = try RideRecoveryCheckpoint(
+            sessionID: sessionID,
+            beganAtDate: checkpointDate.addingTimeInterval(-30),
+            confirmedAtDate: checkpointDate.addingTimeInterval(-29),
+            persistedPhase: .active,
+            phaseBeganAtDate: nil,
+            lastObservedAtDate: checkpointDate,
+            checkpointedAtDate: checkpointDate,
+            startingOdometerKilometers: 231.4,
+            latestOdometerKilometers: 231.4,
+            accumulatedGPSDistanceMeters: 0
+        )
+        let checkpointStore = BlockingFirstSaveRideCheckpointStore(
+            initial: .inProgress(checkpoint)
+        )
+        defer {
+            Task { await checkpointStore.releaseFirstSave() }
+        }
+
+        let reconnectingState = SimulatedScooterService.state(for: .reconnecting)
+        let service = ControlledScooterService(initialState: reconnectingState)
+        let store = RideApplicationStore(
+            service: service,
+            initialState: reconnectingState,
+            configuration: try RideApplicationConfiguration.simulatorQA(),
+            checkpointStore: checkpointStore,
+            historyStore: persistence.historyStore,
+            dailyRideStore: dailyRideStore
+        )
+        defer { store.stop() }
+        await store.start()
+        XCTAssertEqual(store.status, .temporarilyDisconnected)
+
+        var connectedState = reconnectingState
+        connectedState.connection = .connected
+        connectedState.connectionIssue = nil
+        connectedState.lastUpdated = .now
+        await service.emitState(connectedState)
+        await checkpointStore.waitUntilFirstSaveEntered()
+
+        // The speed packet arrives from the independent stream while the
+        // reconnect transition is suspended inside durable checkpoint I/O.
+        try await service.emitSpeed(kilometersPerHour: 12)
+        try await waitUntil("The speed transaction should queue behind reconnect persistence.") {
+            store.queuedObservationTransactionCount == 1
+        }
+        let saveCountWhileBlocked = await checkpointStore.saveCallCount()
+        XCTAssertEqual(
+            saveCountWhileBlocked,
+            1,
+            "A later stream callback must not enter persistence before the full reconnect transaction finishes."
+        )
+
+        await checkpointStore.releaseFirstSave()
+        try await waitUntil("Fresh speed should resume the recovered ride after FIFO handoff.") {
+            store.status == .active
+        }
+
+        XCTAssertEqual(store.activeSessionID, sessionID)
+        XCTAssertEqual(store.continuity, .recoveredCheckpoint)
+        XCTAssertNil(store.lastErrorMessage)
+        XCTAssertEqual(store.queuedObservationTransactionCount, 0)
+
+        let accumulatorValue = try await dailyRideStore.accumulator(sessionID: sessionID)
+        let accumulator = try XCTUnwrap(accumulatorValue)
+        XCTAssertGreaterThanOrEqual(
+            accumulator.acknowledgedCheckpointCount,
+            2,
+            "Reconnect and resume should reach the daily ledger in FIFO order without a conflicting replay."
+        )
     }
 
     @MainActor
@@ -856,4 +968,62 @@ private actor ControlledScooterService: ScooterService {
     func setRideMode(_ mode: RideMode) async throws {}
     func setStartMode(_ mode: StartMode) async throws {}
     func setSpeedLimit(kilometersPerHour: Int, slot: SpeedLimitSlot) async throws {}
+}
+
+private actor BlockingFirstSaveRideCheckpointStore: RideCheckpointStore {
+    private var durableCheckpoint: RideDurableCheckpoint?
+    private var saveCount = 0
+    private var firstSaveReleased = false
+    private var firstSaveContinuation: CheckedContinuation<Void, Never>?
+    private var firstSaveEntryWaiters: [CheckedContinuation<Void, Never>] = []
+
+    init(initial: RideDurableCheckpoint?) {
+        durableCheckpoint = initial
+    }
+
+    func save(_ checkpoint: RideDurableCheckpoint) async throws {
+        saveCount += 1
+        if saveCount == 1 {
+            let waiters = firstSaveEntryWaiters
+            firstSaveEntryWaiters.removeAll()
+            for waiter in waiters { waiter.resume() }
+
+            if !firstSaveReleased {
+                await withCheckedContinuation { continuation in
+                    if firstSaveReleased {
+                        continuation.resume()
+                    } else {
+                        firstSaveContinuation = continuation
+                    }
+                }
+            }
+        }
+        durableCheckpoint = checkpoint
+    }
+
+    func load() async throws -> RideDurableCheckpoint? {
+        durableCheckpoint
+    }
+
+    func clear() async throws {
+        durableCheckpoint = nil
+    }
+
+    func waitUntilFirstSaveEntered() async {
+        guard saveCount == 0 else { return }
+        await withCheckedContinuation { continuation in
+            firstSaveEntryWaiters.append(continuation)
+        }
+    }
+
+    func releaseFirstSave() {
+        guard !firstSaveReleased else { return }
+        firstSaveReleased = true
+        firstSaveContinuation?.resume()
+        firstSaveContinuation = nil
+    }
+
+    func saveCallCount() -> Int {
+        saveCount
+    }
 }

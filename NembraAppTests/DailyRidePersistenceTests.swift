@@ -385,7 +385,7 @@ final class DailyRidePersistenceTests: XCTestCase {
         let sourceURL = repositoryRoot.appendingPathComponent("NembraApp/Features/Home/HomeView.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
-        guard let metricStart = source.range(of: "private var tripDistanceText"),
+        guard let metricStart = source.range(of: "private var todayDistanceText"),
               let nextMetric = source.range(
                 of: "private var todayDistanceAccessibilityValue",
                 range: metricStart.upperBound..<source.endIndex

@@ -55,9 +55,14 @@ final class RideUITests: XCTestCase {
         XCTAssertTrue(ridesTab.waitForExistence(timeout: 5))
         ridesTab.tap()
 
-        let row = app.descendants(matching: .any)["rides.completed-row"]
         XCTAssertTrue(
-            row.waitForExistence(timeout: 8),
+            app.otherElements["rides.activity.daily-chart"].waitForExistence(timeout: 5),
+            "The mileage destination marker must not overwrite the accepted-mileage chart identifier."
+        )
+
+        let row = app.buttons["rides.completed-row"]
+        XCTAssertTrue(
+            scrollCompletedRideRowIntoView(row, in: app, timeout: 8),
             "The explicit QA auto-completion must flow through RideEngine, durable history commit, and the real Rides surface."
         )
 
@@ -77,7 +82,7 @@ final class RideUITests: XCTestCase {
         keepScreenshot(named: "Completed Ride History")
 
         row.tap()
-        let detail = app.descendants(matching: .any)["rides.detail"]
+        let detail = app.scrollViews["rides.detail"]
         XCTAssertTrue(detail.waitForExistence(timeout: 3))
 
         let odometer = app.descendants(matching: .any)["rides.evidence.odometer"]
@@ -94,7 +99,7 @@ final class RideUITests: XCTestCase {
 
         let routeMap = app.descendants(matching: .any)["rides.route-map"]
         if !routeMap.waitForExistence(timeout: 3) {
-            app.swipeUp()
+            detail.swipeUp()
         }
         XCTAssertTrue(
             routeMap.waitForExistence(timeout: 3),
@@ -221,17 +226,17 @@ final class RideUITests: XCTestCase {
         XCTAssertTrue(ridesTab.waitForExistence(timeout: 3))
         ridesTab.tap()
 
-        let completedRows = app.descendants(matching: .any).matching(
-            NSPredicate(format: "identifier == %@", "rides.completed-row")
-        )
+        let completedRows = app.buttons.matching(identifier: "rides.completed-row")
         XCTAssertTrue(
-            completedRows.firstMatch.waitForExistence(timeout: 6),
+            scrollCompletedRideRowIntoView(completedRows.firstMatch, in: app, timeout: 6),
             "The restored completed ride must remain available on Rides."
         )
-        XCTAssertEqual(
-            completedRows.count,
-            1,
-            "Relaunch without Simulator auto-completion must not duplicate the accepted completed ride."
+        let savedRideSummary = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label == %@", "1 saved ride")
+        ).firstMatch
+        XCTAssertTrue(
+            savedRideSummary.waitForExistence(timeout: 3),
+            "The durable archive summary must still report exactly one saved ride after relaunch."
         )
     }
 
@@ -256,16 +261,16 @@ final class RideUITests: XCTestCase {
         XCTAssertTrue(ridesTab.waitForExistence(timeout: 5))
         ridesTab.tap()
 
-        let row = app.descendants(matching: .any)["rides.completed-row"]
-        XCTAssertTrue(row.waitForExistence(timeout: 8))
+        let row = app.buttons["rides.completed-row"]
+        XCTAssertTrue(scrollCompletedRideRowIntoView(row, in: app, timeout: 8))
         row.tap()
 
-        let detail = app.descendants(matching: .any)["rides.detail"]
+        let detail = app.scrollViews["rides.detail"]
         XCTAssertTrue(detail.waitForExistence(timeout: 3))
 
         let routeMap = app.descendants(matching: .any)["rides.route-map"]
         if !routeMap.waitForExistence(timeout: 3) {
-            app.swipeUp()
+            detail.swipeUp()
         }
         XCTAssertTrue(routeMap.waitForExistence(timeout: 3))
         XCTAssertEqual(routeMap.label, "Recorded ride route")
@@ -276,14 +281,9 @@ final class RideUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["rides.route-unavailable"].exists)
         keepScreenshot(named: "Completed Ride Details Dark")
 
-        let recordingDetails = app.descendants(matching: .any).matching(
-            NSPredicate(format: "label == %@", "Recording details")
-        ).firstMatch
-        if !recordingDetails.waitForExistence(timeout: 2) || !recordingDetails.isHittable {
-            app.swipeUp()
-        }
+        let recordingDetails = app.buttons["rides.recording-details"]
         XCTAssertTrue(
-            recordingDetails.waitForExistence(timeout: 3),
+            scrollToHittable(recordingDetails, in: detail, maximumGestures: 4),
             "The final Ride Details control must remain reachable in dark appearance."
         )
         XCTAssertTrue(
@@ -315,12 +315,15 @@ final class RideUITests: XCTestCase {
         XCTAssertTrue(ridesTab.waitForExistence(timeout: 5))
         ridesTab.tap()
 
-        let row = app.descendants(matching: .any)["rides.completed-row"]
+        let row = app.buttons["rides.completed-row"]
         XCTAssertTrue(
-            row.waitForExistence(timeout: 15),
+            scrollCompletedRideRowIntoView(row, in: app, timeout: 15),
             "The bounded 5,000-point QA route must still complete through the real recorder/history pipeline."
         )
         row.tap()
+
+        let detail = app.scrollViews["rides.detail"]
+        XCTAssertTrue(detail.waitForExistence(timeout: 3))
 
         let routeMap = app.descendants(matching: .any)["rides.route-map"]
         XCTAssertTrue(
@@ -335,14 +338,9 @@ final class RideUITests: XCTestCase {
         XCTAssertTrue(routeSemantics.localizedCaseInsensitiveContains("Route coverage partial"))
         keepScreenshot(named: "Completed Ride Details Long Route")
 
-        let recordingDetails = app.descendants(matching: .any).matching(
-            NSPredicate(format: "label == %@", "Recording details")
-        ).firstMatch
-        for _ in 0..<3 where !recordingDetails.isHittable {
-            app.swipeUp()
-        }
+        let recordingDetails = app.buttons["rides.recording-details"]
         XCTAssertTrue(
-            recordingDetails.waitForExistence(timeout: 3) && recordingDetails.isHittable,
+            scrollToHittable(recordingDetails, in: detail, maximumGestures: 4),
             "The long MapKit route must not make the final detail disclosure unreachable."
         )
         recordingDetails.tap()
@@ -392,6 +390,46 @@ final class RideUITests: XCTestCase {
         )
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private func scrollCompletedRideRowIntoView(
+        _ row: XCUIElement,
+        in app: XCUIApplication,
+        timeout: TimeInterval
+    ) -> Bool {
+        let history = app.collectionViews["rides.history"]
+        guard history.waitForExistence(timeout: min(timeout, 3)) else { return false }
+
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if row.exists, row.isHittable {
+                return true
+            }
+
+            history.swipeUp()
+        } while Date() < deadline
+
+        return row.exists && row.isHittable
+    }
+
+    @MainActor
+    private func scrollToHittable(
+        _ element: XCUIElement,
+        in scrollView: XCUIElement,
+        maximumGestures: Int
+    ) -> Bool {
+        guard scrollView.waitForExistence(timeout: 3) else { return false }
+
+        for gesture in 0...maximumGestures {
+            if element.exists, element.isHittable {
+                return true
+            }
+            guard gesture < maximumGestures else { break }
+            scrollView.swipeUp()
+        }
+
+        return element.exists && element.isHittable
     }
 
     @MainActor

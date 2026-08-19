@@ -12,9 +12,22 @@ struct HomeAccessibilityControlLayoutSourceTests {
         #expect(source.contains("ForEach(supportedModes, id: \\.self)"))
         #expect(source.contains("home.mode.selector"))
         #expect(source.contains("Open Horizon Dashboard"))
+        #expect(!source.contains(".accessibilityIdentifier(\"home.controls\")"))
         #expect(source.contains(".frame(minHeight: dynamicTypeSize.isAccessibilitySize ? 96 : 100)"))
         #expect(!source.contains("Text(available ? subtitle : \"Unavailable\")\n                        .font(.caption)\n                        .foregroundStyle(.secondary)\n                        .lineLimit(1)"))
         #expect(!source.contains(".frame(height: 58)\n            .frame(maxWidth: .infinity)"))
+
+        let controlButtonStart = try #require(source.range(of: "private func controlButton("))
+        let unavailableControlStart = try #require(
+            source.range(
+                of: "private func unavailableControl(",
+                range: controlButtonStart.upperBound..<source.endIndex
+            )
+        )
+        let controlButton = String(source[controlButtonStart.lowerBound..<unavailableControlStart.lowerBound])
+        #expect(controlButton.contains("return Button(action: action)"))
+        #expect(controlButton.contains(".accessibilityValue(pending ? \"Requesting confirmation\" : \"\")"))
+        #expect(!controlButton.contains(".accessibilityElement(children: .ignore)"))
     }
 
     @Test("Home command semantics remain confirmation-backed and fail closed")

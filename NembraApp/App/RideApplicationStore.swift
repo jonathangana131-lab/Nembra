@@ -53,6 +53,16 @@ enum RideApplicationStatus: Equatable, Sendable {
 @MainActor
 @Observable
 final class RideApplicationStore {
+    private enum ObservationTransactionPermitOutcome: Sendable {
+        case admitted
+        case cancelled
+    }
+
+    private struct ObservationTransactionWaiter {
+        let id: UUID
+        let continuation: CheckedContinuation<ObservationTransactionPermitOutcome, Never>
+    }
+
     private let service: any ScooterService
     private let configuration: RideApplicationConfiguration?
     private let checkpointStore: (any RideCheckpointStore)?
@@ -78,11 +88,14 @@ final class RideApplicationStore {
     @ObservationIgnored private var lastObservationUptimeNanoseconds: UInt64?
     @ObservationIgnored private var dailyAccumulator: NembraCore.DailyRideSegmentAccumulator?
     @ObservationIgnored private var durationOwner = NembraCore.RideDurationObservationOwner()
+    @ObservationIgnored private var durationObservationHasGap = false
     @ObservationIgnored private var durationBaseSeconds: Double?
     @ObservationIgnored private var durationBaseIsPartial = false
     @ObservationIgnored private var pendingCandidateHasGPSEvidence = false
     @ObservationIgnored private var sessionsWithGPSEvidence: Set<UUID> = []
     @ObservationIgnored private var dailyPersistenceFailClosed = false
+    @ObservationIgnored private var observationTransactionInFlight = false
+    @ObservationIgnored private var observationTransactionWaiters: [ObservationTransactionWaiter] = []
 
     init(
         service: any ScooterService,
@@ -123,6 +136,13 @@ final class RideApplicationStore {
              .endingCandidate, .saving, .persistenceUnavailable, .failed:
             true
         }
+    }
+
+    /// Internal deterministic evidence that a later stream callback is queued
+    /// behind the one application-level ride transaction currently in flight.
+    /// Production presentation never reads this diagnostic.
+    var queuedObservationTransactionCount: Int {
+        observationTransactionWaiters.count
     }
 
     var statusText: String {
@@ -193,11 +213,7 @@ final class RideApplicationStore {
             }
 
             let restoredPhase = await restored.currentPhase()
-            try await restoreDailyWriterIfNeeded(
-                for: restoredPhase,
-                recoveredAtUptimeNanoseconds: recoveredAtUptimeNanoseconds,
-                recoveredAtDate: recoveredAtDate
-            )
+            try await restoreDailyWriterIfNeeded(for: restoredPhase)
             updatePublishedState(from: restoredPhase)
             await refreshDailyPresentation(
                 now: recoveredAtDate,
@@ -230,7 +246,8 @@ final class RideApplicationStore {
             speedSample: nil,
             qualityScreenedGPSDistanceDeltaMeters: meters,
             minimumUptimeNanoseconds: receivedAtUptimeNanoseconds,
-            sourceReceivedAtDate: receivedAtDate
+            sourceReceivedAtDate: receivedAtDate,
+            requiredActiveSessionID: nil
         )
     }
 
@@ -245,10 +262,12 @@ final class RideApplicationStore {
         for sessionID: UUID
     ) async {
         guard activeSessionID == sessionID else { return }
-        await ingestQualityScreenedGPSDistanceDelta(
-            meters,
-            receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
-            receivedAtDate: receivedAtDate
+        await ingestObservation(
+            speedSample: nil,
+            qualityScreenedGPSDistanceDeltaMeters: meters,
+            minimumUptimeNanoseconds: receivedAtUptimeNanoseconds,
+            sourceReceivedAtDate: receivedAtDate,
+            requiredActiveSessionID: sessionID
         )
     }
 
@@ -333,16 +352,70 @@ final class RideApplicationStore {
         speedSample: SpeedTelemetrySample?,
         qualityScreenedGPSDistanceDeltaMeters: Double? = nil,
         minimumUptimeNanoseconds: UInt64 = 0,
-        sourceReceivedAtDate: Date? = nil
+        sourceReceivedAtDate: Date? = nil,
+        requiredActiveSessionID: UUID? = nil
+    ) async {
+        // Bind this receipt to the vehicle truth visible when its stream callback
+        // entered the application bridge. A later queued state publication must
+        // not rewrite its connection or odometer chronology while it waits.
+        let vehicleStateSnapshot = latestVehicleState
+        let bridgeReceivedAtUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
+        let bridgeReceivedAtDate = Date.now
+
+        do {
+            try await acquireObservationTransactionPermit()
+        } catch is CancellationError {
+            return
+        } catch {
+            return
+        }
+        defer { releaseObservationTransactionPermit() }
+
+        // Stream-task cancellation may remove an observation while it is still
+        // queued, but once admitted the durable transaction must finish as one
+        // unit. An unstructured MainActor task does not inherit the caller's
+        // cancellation and therefore cannot strand coordinator/daily/history
+        // state at an intermediate await boundary.
+        let transaction = Task { @MainActor [self] in
+            await performObservationTransaction(
+                speedSample: speedSample,
+                qualityScreenedGPSDistanceDeltaMeters: qualityScreenedGPSDistanceDeltaMeters,
+                minimumUptimeNanoseconds: minimumUptimeNanoseconds,
+                sourceReceivedAtDate: sourceReceivedAtDate,
+                vehicleStateSnapshot: vehicleStateSnapshot,
+                bridgeReceivedAtUptimeNanoseconds: bridgeReceivedAtUptimeNanoseconds,
+                bridgeReceivedAtDate: bridgeReceivedAtDate,
+                requiredActiveSessionID: requiredActiveSessionID
+            )
+        }
+        await transaction.value
+    }
+
+    private func performObservationTransaction(
+        speedSample: SpeedTelemetrySample?,
+        qualityScreenedGPSDistanceDeltaMeters: Double?,
+        minimumUptimeNanoseconds: UInt64,
+        sourceReceivedAtDate: Date?,
+        vehicleStateSnapshot: VehicleState,
+        bridgeReceivedAtUptimeNanoseconds: UInt64,
+        bridgeReceivedAtDate: Date,
+        requiredActiveSessionID: UUID?
     ) async {
         guard let coordinator,
               let historyStore,
               configuration != nil,
               !dailyPersistenceFailClosed else { return }
+        if let requiredActiveSessionID,
+           activeSessionID != requiredActiveSessionID {
+            return
+        }
 
         let minimumUptime = max(
-            speedSample?.receivedAtUptimeNanoseconds ?? 0,
-            minimumUptimeNanoseconds
+            max(
+                speedSample?.receivedAtUptimeNanoseconds ?? 0,
+                minimumUptimeNanoseconds
+            ),
+            bridgeReceivedAtUptimeNanoseconds
         )
         guard let observationUptime = nextObservationUptime(minimum: minimumUptime) else {
             fail(RideEngineError.nonMonotonicObservation, persistence: false)
@@ -356,18 +429,17 @@ final class RideApplicationStore {
             // source receipt and therefore use their processing boundary.
             let receiptWallDate = speedSample?.receivedAtDate
                 ?? sourceReceivedAtDate
-                ?? Date.now
+                ?? bridgeReceivedAtDate
             let observation = try RideObservation(
                 receivedAtUptimeNanoseconds: observationUptime,
                 receivedAtDate: receiptWallDate,
-                connection: latestVehicleState.connection,
+                connection: vehicleStateSnapshot.connection,
                 speedSample: speedSample,
-                odometerKilometers: latestVehicleState.odometerKilometers,
+                odometerKilometers: vehicleStateSnapshot.odometerKilometers,
                 qualityScreenedGPSDistanceDeltaMeters: qualityScreenedGPSDistanceDeltaMeters,
                 motionIndicatesMovement: false
             )
             let update = try await coordinator.ingest(observation)
-            updatePublishedState(from: update.phase)
 
             do {
                 try await acceptDailyCheckpoint(
@@ -378,6 +450,12 @@ final class RideApplicationStore {
                 failDailyPersistence(error)
                 return
             }
+
+            // Publish engine phase only after the corresponding accepted-day
+            // transaction has completed. In particular, callers must never be
+            // able to observe `.active` and tear down the store while its daily
+            // receipt is still suspended in persistence.
+            updatePublishedState(from: update.phase)
 
             if update.events.contains(where: { event in
                 if case .rideEnded = event { return true }
@@ -411,6 +489,71 @@ final class RideApplicationStore {
         } catch {
             fail(error, persistence: false)
         }
+    }
+
+    /// One FIFO permit spans coordinator mutation, accepted-day persistence,
+    /// and completion/history acknowledgement. MainActor isolation alone is not
+    /// sufficient because each external persistence `await` is reentrant.
+    private func acquireObservationTransactionPermit() async throws {
+        try Task.checkCancellation()
+
+        guard observationTransactionInFlight else {
+            observationTransactionInFlight = true
+            return
+        }
+
+        let waiterID = UUID()
+        let outcome: ObservationTransactionPermitOutcome = await withTaskCancellationHandler {
+            await withCheckedContinuation {
+                (continuation: CheckedContinuation<ObservationTransactionPermitOutcome, Never>) in
+                if Task.isCancelled {
+                    continuation.resume(returning: .cancelled)
+                    return
+                }
+                observationTransactionWaiters.append(
+                    ObservationTransactionWaiter(
+                        id: waiterID,
+                        continuation: continuation
+                    )
+                )
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.cancelObservationTransactionWaiter(id: waiterID)
+            }
+        }
+
+        switch outcome {
+        case .cancelled:
+            throw CancellationError()
+        case .admitted:
+            do {
+                try Task.checkCancellation()
+            } catch {
+                // Ownership was already transferred to this waiter. Return the
+                // permit before propagating a cancellation racing with handoff.
+                releaseObservationTransactionPermit()
+                throw error
+            }
+        }
+    }
+
+    private func cancelObservationTransactionWaiter(id: UUID) {
+        guard let index = observationTransactionWaiters.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        let waiter = observationTransactionWaiters.remove(at: index)
+        waiter.continuation.resume(returning: .cancelled)
+    }
+
+    private func releaseObservationTransactionPermit() {
+        guard observationTransactionInFlight else { return }
+        guard !observationTransactionWaiters.isEmpty else {
+            observationTransactionInFlight = false
+            return
+        }
+        let next = observationTransactionWaiters.removeFirst()
+        next.continuation.resume(returning: .admitted)
     }
 
     private struct DailySessionEvidence {
@@ -470,6 +613,7 @@ final class RideApplicationStore {
         if completed {
             sessionsWithGPSEvidence.remove(evidence.sessionID)
             durationOwner = NembraCore.RideDurationObservationOwner()
+            durationObservationHasGap = false
             durationBaseSeconds = nil
             durationBaseIsPartial = false
         }
@@ -563,8 +707,35 @@ final class RideApplicationStore {
         sessionID: UUID
     ) throws -> NembraCore.RideSessionDurationEvidenceSnapshot? {
         var candidate = durationOwner
+        var candidateObservationHasGap = durationObservationHasGap
         var handledLifecycleBoundary = false
         var finalizedSnapshot: NembraCore.RideSessionDurationEvidenceSnapshot?
+
+        func continueObservation(
+            sessionID: UUID,
+            beginsAfterUnobservedInterval: Bool
+        ) throws {
+            if candidate.activeSessionID == nil {
+                try candidate.begin(
+                    sessionID: sessionID,
+                    processGenerationID: processGenerationID,
+                    atUptimeNanoseconds: observation.receivedAtUptimeNanoseconds,
+                    beginsAfterUnobservedInterval: beginsAfterUnobservedInterval
+                )
+            } else if candidateObservationHasGap {
+                try candidate.resumeObservation(
+                    sessionID: sessionID,
+                    processGenerationID: processGenerationID,
+                    atUptimeNanoseconds: observation.receivedAtUptimeNanoseconds
+                )
+            } else {
+                try candidate.observe(
+                    sessionID: sessionID,
+                    atUptimeNanoseconds: observation.receivedAtUptimeNanoseconds
+                )
+            }
+            candidateObservationHasGap = false
+        }
 
         for event in update.events {
             switch event {
@@ -577,6 +748,7 @@ final class RideApplicationStore {
                     atUptimeNanoseconds: observation.receivedAtUptimeNanoseconds,
                     beginsAfterUnobservedInterval: candidateIntervalWasUnobserved
                 )
+                candidateObservationHasGap = false
                 handledLifecycleBoundary = true
 
             case let .rideTemporarilyDisconnected(disconnectedSessionID):
@@ -584,13 +756,13 @@ final class RideApplicationStore {
                     sessionID: disconnectedSessionID,
                     atUptimeNanoseconds: observation.receivedAtUptimeNanoseconds
                 )
+                candidateObservationHasGap = true
                 handledLifecycleBoundary = true
 
             case let .rideResumed(resumedSessionID):
-                try candidate.resumeObservation(
+                try continueObservation(
                     sessionID: resumedSessionID,
-                    processGenerationID: processGenerationID,
-                    atUptimeNanoseconds: observation.receivedAtUptimeNanoseconds
+                    beginsAfterUnobservedInterval: true
                 )
                 handledLifecycleBoundary = true
 
@@ -599,6 +771,7 @@ final class RideApplicationStore {
                     sessionID: completed.sessionID,
                     atUptimeNanoseconds: observation.receivedAtUptimeNanoseconds
                 )
+                candidateObservationHasGap = false
                 handledLifecycleBoundary = true
 
             case .candidateStarted, .candidateCancelled, .endingCandidateStarted:
@@ -609,25 +782,19 @@ final class RideApplicationStore {
         if !handledLifecycleBoundary {
             switch update.phase {
             case .active, .endingCandidate:
-                if candidate.activeSessionID == nil {
-                    try candidate.begin(
-                        sessionID: sessionID,
-                        processGenerationID: processGenerationID,
-                        atUptimeNanoseconds: observation.receivedAtUptimeNanoseconds,
-                        beginsAfterUnobservedInterval: true
-                    )
-                } else {
-                    try candidate.observe(
-                        sessionID: sessionID,
-                        atUptimeNanoseconds: observation.receivedAtUptimeNanoseconds
-                    )
-                }
+                try continueObservation(
+                    sessionID: sessionID,
+                    // Missing process-local observation ownership is itself a
+                    // gap; never infer completeness from an absent owner.
+                    beginsAfterUnobservedInterval: true
+                )
             case .temporarilyDisconnected, .idle, .candidate:
                 break
             }
         }
 
         durationOwner = candidate
+        durationObservationHasGap = candidateObservationHasGap
         return finalizedSnapshot ?? candidate.snapshot
     }
 
@@ -759,35 +926,18 @@ final class RideApplicationStore {
         )
     }
 
-    private func restoreDailyWriterIfNeeded(
-        for phase: RideEnginePhase,
-        recoveredAtUptimeNanoseconds: UInt64,
-        recoveredAtDate: Date
-    ) async throws {
+    private func restoreDailyWriterIfNeeded(for phase: RideEnginePhase) async throws {
         guard let evidence = dailySessionEvidence(for: phase) else { return }
         try await attachDailyAccumulator(sessionID: evidence.sessionID)
         if evidence.cumulativeGPSDistanceMeters > 0 {
             sessionsWithGPSEvidence.insert(evidence.sessionID)
         }
 
-        var restoredOwner = NembraCore.RideDurationObservationOwner()
-        try restoredOwner.begin(
-            sessionID: evidence.sessionID,
-            processGenerationID: processGenerationID,
-            atUptimeNanoseconds: recoveredAtUptimeNanoseconds,
-            beginsAfterUnobservedInterval: true
-        )
-        durationOwner = restoredOwner
-        let duration = try cumulativeDurationMetric(snapshot: restoredOwner.snapshot)
-        let calendar = dailyCalendarProvider()
-        try await persistDailyReceipt(
-            evidence: evidence,
-            duration: duration,
-            wallDate: recoveredAtDate,
-            uptimeNanoseconds: recoveredAtUptimeNanoseconds,
-            calendar: calendar,
-            currentRideSessionID: evidence.sessionID
-        )
+        // Recovery is not a scooter or location observation. Keep duration in
+        // an explicit gap until fresh evidence arrives instead of extending a
+        // process-local monotonic segment across time Nembra did not observe.
+        durationOwner = NembraCore.RideDurationObservationOwner()
+        durationObservationHasGap = true
     }
 
     private func persistRecoveredCompletionIfNeeded(
@@ -948,7 +1098,10 @@ final class RideApplicationStore {
     }
 
     private func nextObservationUptime(minimum: UInt64) -> UInt64? {
-        var candidate = max(DispatchTime.now().uptimeNanoseconds, minimum)
+        // `minimum` is the bridge/source receipt captured before any FIFO wait.
+        // Mutate the chronology only after admission without charging durable-I/O
+        // queue latency as if it were observed ride duration.
+        var candidate = minimum
         if let lastObservationUptimeNanoseconds,
            candidate <= lastObservationUptimeNanoseconds {
             guard lastObservationUptimeNanoseconds < UInt64.max else { return nil }

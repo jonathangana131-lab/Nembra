@@ -15,7 +15,7 @@ final class NembraUITests: XCTestCase {
     func testConnectedHomeControlsConfirmStateAndNavigate() {
         let app = launch(scenario: "connected-stopped", orientation: .portrait)
 
-        XCTAssertTrue(app.staticTexts["Nembra Simulator"].waitForExistence(timeout: 3))
+        XCTAssertTrue(staticText(containing: "Nembra Simulator", in: app).waitForExistence(timeout: 3))
 
         let modeSelector = app.buttons["home.mode.selector"]
         XCTAssertTrue(modeSelector.waitForExistence(timeout: 3))
@@ -102,7 +102,7 @@ final class NembraUITests: XCTestCase {
             environment: ["NEMBRA_SIMULATION_HOME_STATE_FIXTURE": "retain-after-live"]
         )
 
-        XCTAssertTrue(app.staticTexts["Reconnecting"].waitForExistence(timeout: 5))
+        XCTAssertTrue(staticText(containing: "Reconnecting", in: app).waitForExistence(timeout: 5))
         let freshness = app.descendants(matching: .any)["home.battery.retained-freshness"]
         XCTAssertTrue(freshness.waitForExistence(timeout: 3))
         XCTAssertTrue(freshness.label.localizedCaseInsensitiveContains("Last confirmed"))
@@ -236,8 +236,8 @@ final class NembraUITests: XCTestCase {
         XCUIDevice.shared.appearance = .dark
         let app = launch(scenario: "connected-stopped", orientation: .portrait)
 
-        XCTAssertTrue(app.descendants(matching: .any)["home.energy-hero"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Nembra Simulator"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["home.metric.battery"].waitForExistence(timeout: 5))
+        XCTAssertTrue(staticText(containing: "Nembra Simulator", in: app).waitForExistence(timeout: 3))
 
         let battery = app.buttons["home.metric.battery"]
         assertMinimumTouchTarget(battery, named: "Home battery and range")
@@ -767,6 +767,11 @@ final class NembraUITests: XCTestCase {
     @MainActor
     private func button(containing fragment: String, in app: XCUIApplication) -> XCUIElement {
         app.buttons.matching(NSPredicate(format: "label CONTAINS %@", fragment)).firstMatch
+    }
+
+    @MainActor
+    private func staticText(containing fragment: String, in app: XCUIApplication) -> XCUIElement {
+        app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", fragment)).firstMatch
     }
 
     @MainActor

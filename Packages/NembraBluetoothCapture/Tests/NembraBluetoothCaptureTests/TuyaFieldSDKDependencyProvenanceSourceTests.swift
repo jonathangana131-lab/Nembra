@@ -45,7 +45,7 @@ struct TuyaFieldSDKDependencyProvenanceSourceTests {
         #expect(script.contains("/usr/bin/python3 -I \"$PROVENANCE_HELPER\" \"$operation\""))
         #expect(script.contains("run_private_input_provenance review --review-key \"$PRIVATE_REVIEW_KEY\""))
         #expect(script.contains("run_private_input_provenance verify-review"))
-        #expect(script.contains("field mode will not create or replace it"))
+        #expect(script.contains("Field mode will not create or replace it"))
         #expect(script.contains("externally accepted review commitment"))
         #expect(script.contains("PRIVATE_REVIEW_AUTHORITY_PATH=\"CAPTURE_TUYA_PRIVATE_INPUT_REVIEW_COMMITMENT.txt\""))
         #expect(script.contains("rev-parse \"$EXPECTED_FIELD_SOURCE_SHA:$PRIVATE_REVIEW_AUTHORITY_PATH\""))

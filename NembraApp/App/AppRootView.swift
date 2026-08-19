@@ -574,7 +574,6 @@ private struct RideHistoryView: View {
                 }
             }
         }
-        .accessibilityIdentifier("rides.archive-header")
     }
 
     private var vehicleIdentity: some View {
@@ -1176,6 +1175,7 @@ private struct RideHistoryDetailView: View {
             Color(uiColor: .secondarySystemGroupedBackground),
             in: RoundedRectangle(cornerRadius: NembraMetrics.controlRadius, style: .continuous)
         )
+        .accessibilityIdentifier("rides.recording-details")
     }
 
     @ViewBuilder

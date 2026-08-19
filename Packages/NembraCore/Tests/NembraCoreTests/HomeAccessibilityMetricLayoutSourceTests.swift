@@ -25,8 +25,11 @@ func homeStatusAndRecoveryReflowAtAccessibilityDynamicType() throws {
     #expect(source.contains(".formatted(date: .complete, time: .shortened)"))
     #expect(source.contains("home.battery.low-warning"))
     #expect(source.contains("Label(\"Low battery\", systemImage: \"exclamationmark.triangle.fill\")"))
+    #expect(source.contains(".accessibilityLabel(\"Low battery\")"))
     #expect(source.contains("batteryAccessibilityValue"))
     #expect(source.contains("parts.append(\"low battery\")"))
+    #expect(!source.contains(".accessibilityIdentifier(\"home.energy-hero\")"))
+    #expect(!source.contains(".accessibilityIdentifier(\"home.controls\")"))
 
     // Home keeps the selected simultaneous percentage + range composition, but
     // the whole energy instrument is one native control whose emphasis follows
@@ -43,6 +46,13 @@ func homeStatusAndRecoveryReflowAtAccessibilityDynamicType() throws {
     #expect(!source.contains("advertised"))
 
     let standardHeroStart = try #require(source.range(of: "private var standardEnergyHero: some View"))
+    let energyHeroStart = try #require(source.range(of: "private var energyHero: some View"))
+    let energyHero = String(source[energyHeroStart.lowerBound..<standardHeroStart.lowerBound])
+    let batteryControlStart = try #require(energyHero.range(of: "Button {"))
+    let batteryControl = String(energyHero[batteryControlStart.lowerBound...])
+    #expect(batteryControl.contains(".accessibilityIdentifier(\"home.metric.battery\")"))
+    #expect(!batteryControl.contains(".accessibilityElement(children: .ignore)"))
+
     let accessibilityHeroStart = try #require(
         source.range(
             of: "private var accessibilityEnergyHero: some View",
@@ -72,6 +82,15 @@ func homeStatusAndRecoveryReflowAtAccessibilityDynamicType() throws {
     #expect(statusPanel.contains("Divider()"))
     #expect(statusPanel.contains(".fixedSize(horizontal: false, vertical: true)"))
     #expect(statusPanel.contains(".accessibilityIdentifier(\"home.horizon-entry\")"))
+    let readinessStart = try #require(statusPanel.range(of: "private var readinessRow: some View"))
+    let todayMetricStart = try #require(
+        statusPanel.range(
+            of: "private func todayMetric(",
+            range: readinessStart.upperBound..<statusPanel.endIndex
+        )
+    )
+    let readiness = String(statusPanel[readinessStart.lowerBound..<todayMetricStart.lowerBound])
+    #expect(!readiness.contains(".accessibilityElement(children: .ignore)"))
 
     let headerStart = try #require(source.range(of: "private var vehicleHeader: some View"))
     let panelStart = try #require(source.range(of: "private var energyHero: some View", range: headerStart.upperBound..<source.endIndex))

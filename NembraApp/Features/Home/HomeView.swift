@@ -231,6 +231,8 @@ struct HomeView: View {
                 Label("Low battery", systemImage: "exclamationmark.triangle.fill")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Color.red)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Low battery")
                     .accessibilityIdentifier("home.battery.low-warning")
             }
 
@@ -253,13 +255,11 @@ struct HomeView: View {
             .sensoryFeedback(.selection, trigger: batteryReadoutMode) { _, _ in
                 hapticsEnabled
             }
-            .accessibilityElement(children: .ignore)
             .accessibilityLabel(batteryInstrumentAccessibilityLabel)
             .accessibilityValue(batteryInstrumentAccessibilityValue)
             .accessibilityHint(batteryInstrumentAccessibilityHint)
             .accessibilityIdentifier("home.metric.battery")
         }
-        .accessibilityIdentifier("home.energy-hero")
     }
 
     private var standardEnergyHero: some View {
@@ -498,7 +498,6 @@ struct HomeView: View {
         }
         .buttonStyle(.plain)
         .frame(minHeight: 56)
-        .accessibilityElement(children: .ignore)
         .accessibilityLabel("Open Horizon Dashboard")
         .accessibilityValue("\(readinessTitle), \(modeAccessibilityValue)")
         .accessibilityHint("Requests landscape and opens the riding cockpit.")
@@ -574,7 +573,6 @@ struct HomeView: View {
             RoundedRectangle(cornerRadius: 25, style: .continuous)
                 .strokeBorder(NembraColor.quietLine)
         }
-        .accessibilityIdentifier("home.controls")
     }
 
     @ViewBuilder
@@ -694,7 +692,6 @@ struct HomeView: View {
             !available ||
             !enabled
         )
-        .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title), \(displayedState)")
         .accessibilityValue(pending ? "Requesting confirmation" : "")
     }

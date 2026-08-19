@@ -33,7 +33,6 @@ struct DailyMileageActivityView: View {
         .task(id: daily.recentDays.count) {
             chooseInitialDayIfNeeded()
         }
-        .accessibilityIdentifier("rides.mileage-activity")
     }
 
     // MARK: - Archive summary
@@ -78,7 +77,6 @@ struct DailyMileageActivityView: View {
             RoundedRectangle(cornerRadius: NembraMetrics.controlRadius, style: .continuous)
                 .strokeBorder(NembraColor.quietLine)
         }
-        .accessibilityIdentifier("rides.activity.summary")
     }
 
     private func summaryMetric(
@@ -201,6 +199,11 @@ struct DailyMileageActivityView: View {
         Text("Mileage activity")
             .font(.title2.weight(.bold))
             .foregroundStyle(NembraColor.primaryText)
+            // Keep the tab-destination marker on one concrete accessibility
+            // element. Applying it to the enclosing VStack makes SwiftUI
+            // inherit the same identifier into unrelated chart and summary
+            // descendants, masking their own identifiers in UI automation.
+            .accessibilityIdentifier("rides.mileage-activity")
     }
 
     private var modeTabs: some View {
@@ -416,7 +419,6 @@ struct DailyMileageActivityView: View {
                 selectedDayAction(item)
             }
             .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("rides.activity.selected-day")
         }
     }
 
