@@ -129,6 +129,54 @@ final class NembraAppTests: XCTestCase {
         XCTAssertEqual(scenario, .bluetoothOff)
     }
 
+    func testDashboardRenderStressAuthorizationFailsClosed() {
+        let key = AppBootstrap.simulationDashboardRenderStressEnvironmentKey
+
+        XCTAssertFalse(AppBootstrap.simulatorDashboardRenderStressIsAuthorized(
+            scenario: .riding,
+            hasExactSimulatorService: true,
+            environment: [:]
+        ))
+        XCTAssertFalse(AppBootstrap.simulatorDashboardRenderStressIsAuthorized(
+            scenario: .riding,
+            hasExactSimulatorService: true,
+            environment: [key: "true"]
+        ))
+        XCTAssertFalse(AppBootstrap.simulatorDashboardRenderStressIsAuthorized(
+            scenario: .riding,
+            hasExactSimulatorService: true,
+            environment: [key: "0"]
+        ))
+        XCTAssertFalse(AppBootstrap.simulatorDashboardRenderStressIsAuthorized(
+            scenario: .connectedStopped,
+            hasExactSimulatorService: true,
+            environment: [key: "1"]
+        ))
+        XCTAssertFalse(AppBootstrap.simulatorDashboardRenderStressIsAuthorized(
+            scenario: .riding,
+            hasExactSimulatorService: false,
+            environment: [key: "1"]
+        ))
+        XCTAssertFalse(AppBootstrap.simulatorDashboardRenderStressIsAuthorized(
+            scenario: .riding,
+            hasExactSimulatorService: true,
+            environment: [
+                key: "1",
+                AppBootstrap.simulationAutoCompleteRideEnvironmentKey: "1"
+            ]
+        ))
+    }
+
+#if targetEnvironment(simulator)
+    func testDashboardRenderStressAuthorizationRequiresExactRidingSimulatorOptIn() {
+        XCTAssertTrue(AppBootstrap.simulatorDashboardRenderStressIsAuthorized(
+            scenario: .riding,
+            hasExactSimulatorService: true,
+            environment: [AppBootstrap.simulationDashboardRenderStressEnvironmentKey: "1"]
+        ))
+    }
+#endif
+
     @MainActor
     func testOrdinaryLaunchDoesNotSilentlyEnterSimulation() async {
         let store = AppBootstrap.makeVehicleStore(arguments: ["Nembra"], environment: [:])

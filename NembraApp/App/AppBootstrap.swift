@@ -24,10 +24,12 @@ final class AppRuntime {
     private let simulationScenario: ScooterSimulationScenario?
     private let simulatorAutoCompletesRide: Bool
     private let simulatorStartsWithSpeedEvidenceGap: Bool
+    private let simulatorDashboardRenderStressIsAuthorized: Bool
     private let simulatorRoutePointCount: Int
     private let simulatorRouteRecorder: RideRouteRecorder?
     private var didStart = false
     private var simulatorRideDriverTask: Task<Void, Never>?
+    private var simulatorDashboardRenderStressTask: Task<Void, Never>?
 
     init(
         vehicleStore: VehicleStore,
@@ -40,6 +42,7 @@ final class AppRuntime {
         simulationScenario: ScooterSimulationScenario?,
         simulatorAutoCompletesRide: Bool,
         simulatorStartsWithSpeedEvidenceGap: Bool,
+        simulatorDashboardRenderStressIsAuthorized: Bool,
         simulatorRoutePointCount: Int,
         simulatorRouteRecorder: RideRouteRecorder?
     ) {
@@ -53,12 +56,14 @@ final class AppRuntime {
         self.simulationScenario = simulationScenario
         self.simulatorAutoCompletesRide = simulatorAutoCompletesRide
         self.simulatorStartsWithSpeedEvidenceGap = simulatorStartsWithSpeedEvidenceGap
+        self.simulatorDashboardRenderStressIsAuthorized = simulatorDashboardRenderStressIsAuthorized
         self.simulatorRoutePointCount = simulatorRoutePointCount
         self.simulatorRouteRecorder = simulatorRouteRecorder
     }
 
     deinit {
         simulatorRideDriverTask?.cancel()
+        simulatorDashboardRenderStressTask?.cancel()
     }
 
     func start() async {
@@ -84,6 +89,40 @@ final class AppRuntime {
 
         guard simulationScenario == .riding,
               let simulatorService else { return }
+
+#if targetEnvironment(simulator)
+        if simulatorDashboardRenderStressIsAuthorized {
+            // Explicit Simulator-only offered load. This independent clock keeps
+            // producing broad synthetic source updates even when rendering hitches;
+            // it is stress cadence, never a claim about BLE packet frequency.
+            let stressSpeedsKilometersPerHour: [Double] = [
+                11.2, 14.8, 18.4, 22.0, 25.6, 29.2, 26.8, 23.2, 19.6, 16.0, 12.4
+            ]
+            simulatorDashboardRenderStressTask = Task.detached(priority: .userInitiated) {
+                let clock = ContinuousClock()
+                var sampleIndex = 0
+
+                while !Task.isCancelled {
+                    await simulatorService.simulateRide(
+                        speedKilometersPerHour: stressSpeedsKilometersPerHour[
+                            sampleIndex % stressSpeedsKilometersPerHour.count
+                        ],
+                        elapsedSeconds: 0
+                    )
+                    sampleIndex &+= 1
+
+                    do {
+                        try await clock.sleep(
+                            for: .milliseconds(67),
+                            tolerance: .milliseconds(3)
+                        )
+                    } catch {
+                        return
+                    }
+                }
+            }
+        }
+#endif
 
         simulatorRideDriverTask = Task {
             try? await Task.sleep(nanoseconds: 350_000_000)
@@ -215,6 +254,7 @@ enum AppBootstrap {
     static let simulationAutoCompleteRideEnvironmentKey = "NEMBRA_SIMULATION_AUTOCOMPLETE_RIDE"
     static let simulationSpeedEvidenceGapEnvironmentKey = "NEMBRA_SIMULATION_SPEED_EVIDENCE_GAP"
     static let simulationRoutePointCountEnvironmentKey = "NEMBRA_SIMULATION_ROUTE_POINT_COUNT"
+    static let simulationDashboardRenderStressEnvironmentKey = "NEMBRA_SIMULATION_DASHBOARD_RENDER_STRESS"
 
     private struct VehicleBootstrap {
         let service: any ScooterService
@@ -352,6 +392,11 @@ enum AppBootstrap {
             && environment[simulationAutoCompleteRideEnvironmentKey] == "1"
         let simulatorStartsWithSpeedEvidenceGap = bootstrap.scenario == .connectedStopped
             && environment[simulationSpeedEvidenceGapEnvironmentKey] == "1"
+        let simulatorDashboardRenderStressIsAuthorized = simulatorDashboardRenderStressIsAuthorized(
+            scenario: bootstrap.scenario,
+            hasExactSimulatorService: bootstrap.simulatorService != nil,
+            environment: environment
+        )
         let simulatorRoutePointCount = simulatorAutoCompletesRide
             ? simulationRoutePointCount(environment: environment)
             : 4
@@ -384,6 +429,7 @@ enum AppBootstrap {
             simulationScenario: bootstrap.scenario,
             simulatorAutoCompletesRide: simulatorAutoCompletesRide,
             simulatorStartsWithSpeedEvidenceGap: simulatorStartsWithSpeedEvidenceGap,
+            simulatorDashboardRenderStressIsAuthorized: simulatorDashboardRenderStressIsAuthorized,
             simulatorRoutePointCount: simulatorRoutePointCount,
             simulatorRouteRecorder: simulatorRouteRecorder
         )
@@ -402,6 +448,21 @@ enum AppBootstrap {
         case .disabled, .invalid:
             return nil
         }
+    }
+
+    static func simulatorDashboardRenderStressIsAuthorized(
+        scenario: ScooterSimulationScenario?,
+        hasExactSimulatorService: Bool,
+        environment: [String: String]
+    ) -> Bool {
+#if targetEnvironment(simulator)
+        scenario == .riding
+            && hasExactSimulatorService
+            && environment[simulationDashboardRenderStressEnvironmentKey] == "1"
+            && environment[simulationAutoCompleteRideEnvironmentKey] != "1"
+#else
+        false
+#endif
     }
 
     private static func simulationRoutePointCount(environment: [String: String]) -> Int {

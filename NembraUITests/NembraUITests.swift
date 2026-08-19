@@ -281,6 +281,68 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testHorizonV4DriveSustainedRenderIslandHitchEvidence() {
+        let previousAppearance = XCUIDevice.shared.appearance
+        defer {
+            XCUIDevice.shared.orientation = .portrait
+            XCUIDevice.shared.appearance = previousAppearance
+        }
+
+        XCUIDevice.shared.appearance = .dark
+        let app = launch(
+            scenario: "riding",
+            orientation: .portrait,
+            environment: ["NEMBRA_SIMULATION_DASHBOARD_RENDER_STRESS": "1"]
+        )
+        enterHorizon(in: app)
+
+        XCTAssertTrue(app.descendants(matching: .any)["dashboard.cockpit"].waitForExistence(timeout: 8))
+        XCTAssertTrue(waitForLandscapeWindow(in: app, timeout: 8))
+
+        let qaDisclosure = app.descendants(matching: .any)["dashboard.qa-disclosure"]
+        XCTAssertTrue(qaDisclosure.waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            (qaDisclosure.value as? String ?? "").localizedCaseInsensitiveContains("synthetic evidence"),
+            "The performance fixture must remain visibly and semantically Simulator-only."
+        )
+
+        let speed = app.descendants(matching: .any)["dashboard.speed"]
+        let power = app.descendants(matching: .any)["dashboard.energy-rail"]
+        XCTAssertTrue(speed.waitForExistence(timeout: 3))
+        XCTAssertTrue(power.waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            waitForSustainedDashboardUpdates(speed: speed, power: power, requiredChanges: 3),
+            "The Simulator stress fixture must prove both source-backed render islands are advancing before measurement."
+        )
+
+        let options = XCTMeasureOptions()
+        options.iterationCount = 3
+        measure(metrics: [XCTHitchMetric(application: app)], options: options) {
+            // Keep XCUI accessibility queries outside the measured interval. The
+            // app's independently clocked synthetic source continues offering
+            // broad state updates throughout this fixed six-second window.
+            let intervalFinished = XCTestExpectation(description: "Six-second Dashboard render-stress interval")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+                intervalFinished.fulfill()
+            }
+            XCTAssertEqual(
+                XCTWaiter.wait(for: [intervalFinished], timeout: 7),
+                .completed
+            )
+        }
+
+        XCTAssertTrue(
+            waitForSustainedDashboardUpdates(speed: speed, power: power, requiredChanges: 3),
+            "Synthetic speed and accepted-power source updates must still advance after all measured intervals."
+        )
+
+        keepScreenshot(named: "Horizon V4 Drive Render Stress - Simulator QA Only")
+
+        app.buttons["dashboard.control.home"].tap()
+        XCTAssertTrue(waitForPortraitWindow(in: app, timeout: 8))
+    }
+
+    @MainActor
     private func launch(
         scenario: String,
         orientation: UIDeviceOrientation,
@@ -414,6 +476,44 @@ final class NembraUITests: XCTestCase {
     @MainActor
     private func semantics(of element: XCUIElement) -> String {
         "\(element.label)|\(element.value as? String ?? "")"
+    }
+
+    @MainActor
+    private func waitForSustainedDashboardUpdates(
+        speed: XCUIElement,
+        power: XCUIElement,
+        requiredChanges: Int,
+        timeout: TimeInterval = 3
+    ) -> Bool {
+        guard requiredChanges > 0, speed.exists, power.exists else { return false }
+
+        let deadline = Date().addingTimeInterval(timeout)
+        var previousSpeed = semantics(of: speed)
+        var previousPower = semantics(of: power)
+        var speedChanges = 0
+        var powerChanges = 0
+
+        repeat {
+            let currentSpeed = semantics(of: speed)
+            if currentSpeed != previousSpeed {
+                previousSpeed = currentSpeed
+                speedChanges += 1
+            }
+
+            let currentPower = semantics(of: power)
+            if currentPower != previousPower {
+                previousPower = currentPower
+                powerChanges += 1
+            }
+
+            if speedChanges >= requiredChanges, powerChanges >= requiredChanges {
+                return true
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        } while Date() < deadline
+
+        return false
     }
 
     @MainActor

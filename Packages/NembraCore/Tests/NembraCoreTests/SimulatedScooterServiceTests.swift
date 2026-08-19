@@ -388,4 +388,32 @@ struct SimulatedScooterServiceTests {
         #expect((after.tripKilometers ?? 0) > (before.tripKilometers ?? 0))
         #expect((after.odometerKilometers ?? 0) > (before.odometerKilometers ?? 0))
     }
+
+    @Test("zero-elapsed render stress varies receipts without inventing distance or battery use")
+    func zeroElapsedRenderStressPreservesDistanceAndBattery() async throws {
+        let service = SimulatedScooterService(
+            initialState: SimulatedScooterService.state(for: .riding),
+            commandLatencyNanoseconds: 0
+        )
+        let before = await service.snapshot()
+
+        await service.simulateRide(speedKilometersPerHour: 11.2, elapsedSeconds: 0)
+        let first = await service.snapshot()
+        let firstPowerAvailability = await service.simulatorPowerEvidenceSnapshot()
+        let firstPower = try #require(firstPowerAvailability.observation)
+
+        await service.simulateRide(speedKilometersPerHour: 29.2, elapsedSeconds: 0)
+        let second = await service.snapshot()
+        let secondPowerAvailability = await service.simulatorPowerEvidenceSnapshot()
+        let secondPower = try #require(secondPowerAvailability.observation)
+
+        #expect(first.speedKilometersPerHour == 11.2)
+        #expect(second.speedKilometersPerHour == 29.2)
+        #expect(first.powerWatts != second.powerWatts)
+        #expect(secondPower.receiptSequenceNumber > firstPower.receiptSequenceNumber)
+        #expect(secondPower.receivedAtUptimeNanoseconds > firstPower.receivedAtUptimeNanoseconds)
+        #expect(second.tripKilometers == before.tripKilometers)
+        #expect(second.odometerKilometers == before.odometerKilometers)
+        #expect(second.batteryPercent == before.batteryPercent)
+    }
 }
