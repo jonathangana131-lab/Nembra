@@ -16,8 +16,12 @@ struct TuyaStationaryFailureCopySourceTests {
         #expect(!controller.contains("ride capture"))
         #expect(!controller.contains("outdoor ride"))
 
-        let recovery = "Export diagnostics; relaunch Capture before any new stationary read-only attempt."
-        #expect(controller.components(separatedBy: recovery).count - 1 == 2)
+        #expect(controller.contains("Relaunch Capture before a new stationary read-only attempt"))
+        #expect(controller.contains("before the bounded observation deadline"))
+        #expect(controller.contains("canonical acceptance was sealing"))
+        #expect(controller.contains("local-BLE authority became unavailable after canonical acceptance sealed"))
+        #expect(controller.contains("immutable accepted artifact is unavailable"))
+        #expect(controller.contains("operatorSafetyAttestationIsCurrent"))
     }
 
     @Test("official Tuya handoff makes bare OFF1 restart copy invalid")

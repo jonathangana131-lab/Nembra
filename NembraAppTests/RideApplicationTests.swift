@@ -1,4 +1,7 @@
 import Dispatch
+import struct NembraCore.AcceptedDailyRideCheckpoint
+import struct NembraCore.DailyRideMetricEvidence
+import struct NembraCore.RideLocalDay
 import SwiftData
 import XCTest
 @testable import Nembra
@@ -484,7 +487,8 @@ final class RideApplicationTests: XCTestCase {
             initialState: initialState,
             configuration: configuration,
             checkpointStore: persistence.checkpointStore,
-            historyStore: persistence.historyStore
+            historyStore: persistence.historyStore,
+            dailyRideStore: persistence.dailyRideStore
         )
         await store.start()
 
@@ -529,7 +533,8 @@ final class RideApplicationTests: XCTestCase {
             initialState: reconnectingState,
             configuration: configuration,
             checkpointStore: persistence.checkpointStore,
-            historyStore: persistence.historyStore
+            historyStore: persistence.historyStore,
+            dailyRideStore: persistence.dailyRideStore
         )
         await store.start()
         XCTAssertEqual(store.status, .idle)
@@ -556,6 +561,94 @@ final class RideApplicationTests: XCTestCase {
     }
 
     @MainActor
+    func testDailyCheckpointUsesSpeedReceiptDateInsteadOfActorDeliveryDate() async throws {
+        let directory = temporaryDirectory(name: "daily-source-date")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let persistence = try RidePersistenceFactory.make(
+            scope: .simulation(scenario: .connectedStopped, namespace: "daily-source-date"),
+            baseDirectoryURL: directory
+        )
+        let dailyStore = try XCTUnwrap(persistence.dailyRideStore)
+        let initialState = SimulatedScooterService.state(for: .connectedStopped)
+        let service = ControlledScooterService(initialState: initialState)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let frozenCalendar = calendar
+        let store = RideApplicationStore(
+            service: service,
+            initialState: initialState,
+            configuration: try RideApplicationConfiguration.simulatorQA(),
+            checkpointStore: persistence.checkpointStore,
+            historyStore: persistence.historyStore,
+            dailyRideStore: dailyStore,
+            dailyCalendarProvider: { frozenCalendar }
+        )
+        await store.start()
+
+        // Processing occurs on the current day, but this authoritative packet
+        // was received immediately before the preceding UTC midnight. Its
+        // source receipt—not actor scheduling—owns the checkpoint's local day.
+        let sourceReceiptDate = ISO8601DateFormatter().date(
+            from: "2026-08-17T23:59:59Z"
+        )!
+        try await service.emitSpeed(
+            kilometersPerHour: 12,
+            receivedAtDate: sourceReceiptDate
+        )
+        try await waitUntil("Authoritative movement should create the daily anchor.") {
+            store.status == .active
+        }
+
+        let sessionID = try XCTUnwrap(store.activeSessionID)
+        let persistedValue = try await dailyStore.accumulator(sessionID: sessionID)
+        let persisted = try XCTUnwrap(persistedValue)
+        let receipt = try XCTUnwrap(persisted.lastAcknowledgedCheckpoint)
+        XCTAssertEqual(receipt.wallDate, sourceReceiptDate)
+        XCTAssertEqual(
+            receipt.localDay,
+            try RideLocalDay(
+                containing: sourceReceiptDate,
+                calendar: frozenCalendar
+            )
+        )
+        store.stop()
+    }
+
+    func testRecoveredCompletionPreservesNumericDurationAsPartialFloor() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let wallDate = ISO8601DateFormatter().date(from: "2026-08-18T18:00:00Z")!
+        let sessionID = UUID()
+        let checkpoint = try AcceptedDailyRideCheckpoint(
+            sessionID: sessionID,
+            sequence: 7,
+            uptimeNanoseconds: 700,
+            wallDate: wallDate,
+            localDay: try RideLocalDay(
+                containing: wallDate,
+                calendar: calendar
+            ),
+            cumulativeDistanceMeters: try DailyRideMetricEvidence(
+                value: nil,
+                disposition: .unavailable
+            ),
+            cumulativeDurationSeconds: try DailyRideMetricEvidence(
+                value: 42,
+                disposition: .complete
+            ),
+            distanceSource: nil,
+            continuity: .recoveredCheckpoint
+        )
+
+        let recovered = try RideApplicationStore.recoveredCompletionDuration(
+            after: checkpoint
+        )
+        XCTAssertEqual(recovered.value, 42)
+        XCTAssertEqual(recovered.disposition, .knownPartial)
+    }
+
+    @MainActor
     func testRideApplicationRestoresSameSessionAndCommitsHistory() async throws {
         let directory = temporaryDirectory(name: "recovery")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -573,7 +666,8 @@ final class RideApplicationTests: XCTestCase {
             initialState: firstState,
             configuration: configuration,
             checkpointStore: persistence.checkpointStore,
-            historyStore: persistence.historyStore
+            historyStore: persistence.historyStore,
+            dailyRideStore: persistence.dailyRideStore
         )
         await firstStore?.start()
 
@@ -599,7 +693,8 @@ final class RideApplicationTests: XCTestCase {
             initialState: recoveredState,
             configuration: configuration,
             checkpointStore: persistence.checkpointStore,
-            historyStore: persistence.historyStore
+            historyStore: persistence.historyStore,
+            dailyRideStore: persistence.dailyRideStore
         )
         await recoveredStore.start()
 
@@ -724,13 +819,16 @@ private actor ControlledScooterService: ScooterService {
         stateContinuation?.yield(newState)
     }
 
-    func emitSpeed(kilometersPerHour: Double) throws {
+    func emitSpeed(
+        kilometersPerHour: Double,
+        receivedAtDate: Date = .now
+    ) throws {
         let sample = try SpeedTelemetrySample(
             source: .scooterBluetooth,
             provenance: .absoluteMeasurement,
             metersPerSecond: kilometersPerHour / 3.6,
             receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
-            receivedAtDate: .now,
+            receivedAtDate: receivedAtDate,
             measurementDate: nil,
             speedAccuracyMetersPerSecond: nil
         )

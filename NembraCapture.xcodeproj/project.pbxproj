@@ -6,21 +6,32 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A10000000000000000000002 /* ES80CaptureShellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* ES80CaptureShellView.swift */; };
 		A10000000000000000000004 /* NembraCaptureEntrypoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000004 /* NembraCaptureEntrypoint.swift */; };
-		A10000000000000000000005 /* TuyaAccountBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000005 /* TuyaAccountBridge.swift */; };
 		A10000000000000000000006 /* NembraBluetoothCapture in Frameworks */ = {isa = PBXBuildFile; productRef = 600100000000000000000001 /* NembraBluetoothCapture */; };
 		A10000000000000000000007 /* NembraCaptureBuildIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000007 /* NembraCaptureBuildIdentity.swift */; };
 		A10000000000000000000008 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000008 /* Localizable.strings */; };
+		A10000000000000000000009 /* NembraCaptureUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000009 /* NembraCaptureUITests.swift */; };
+		A1000000000000000000000A /* NembraCaptureSimulatorQAHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000B /* NembraCaptureSimulatorQAHarness.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		X10000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = P10000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = T10000000000000000000001;
+			remoteInfo = "Nembra Capture";
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
-		B10000000000000000000002 /* ES80CaptureShellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ES80CaptureShellView.swift; path = NembraApp/Features/Research/ES80CaptureShellView.swift; sourceTree = SOURCE_ROOT; };
 		B10000000000000000000003 /* Nembra Capture.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Nembra Capture.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B10000000000000000000004 /* NembraCaptureEntrypoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NembraCaptureEntrypoint.swift; path = NembraApp/App/NembraCaptureEntrypoint.swift; sourceTree = SOURCE_ROOT; };
-		B10000000000000000000005 /* TuyaAccountBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TuyaAccountBridge.swift; path = NembraApp/Features/Research/TuyaAccountBridge.swift; sourceTree = SOURCE_ROOT; };
 		B10000000000000000000007 /* NembraCaptureBuildIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NembraCaptureBuildIdentity.swift; path = NembraApp/App/NembraCaptureBuildIdentity.swift; sourceTree = SOURCE_ROOT; };
 		B10000000000000000000008 /* Localizable.strings */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = Localizable.strings; path = NembraApp/Resources/Localizable.strings; sourceTree = SOURCE_ROOT; };
+		B10000000000000000000009 /* NembraCaptureUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NembraCaptureUITests.swift; sourceTree = "<group>"; };
+		B1000000000000000000000A /* Nembra Capture UI Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Nembra Capture UI Tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		B1000000000000000000000B /* NembraCaptureSimulatorQAHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NembraCaptureSimulatorQAHarness.swift; path = NembraApp/App/NembraCaptureSimulatorQAHarness.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -32,6 +43,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F10000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -39,6 +57,7 @@
 			isa = PBXGroup;
 			children = (
 				G10000000000000000000002 /* Capture Sources */,
+				G10000000000000000000004 /* Capture UI Tests */,
 				G10000000000000000000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -47,9 +66,8 @@
 			isa = PBXGroup;
 			children = (
 				B10000000000000000000004 /* NembraCaptureEntrypoint.swift */,
+				B1000000000000000000000B /* NembraCaptureSimulatorQAHarness.swift */,
 				B10000000000000000000007 /* NembraCaptureBuildIdentity.swift */,
-				B10000000000000000000005 /* TuyaAccountBridge.swift */,
-				B10000000000000000000002 /* ES80CaptureShellView.swift */,
 				B10000000000000000000008 /* Localizable.strings */,
 			);
 			name = "Capture Sources";
@@ -59,8 +77,17 @@
 			isa = PBXGroup;
 			children = (
 				B10000000000000000000003 /* Nembra Capture.app */,
+				B1000000000000000000000A /* Nembra Capture UI Tests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		G10000000000000000000004 /* Capture UI Tests */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000009 /* NembraCaptureUITests.swift */,
+			);
+			path = NembraCaptureUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -84,6 +111,23 @@
 			productReference = B10000000000000000000003 /* Nembra Capture.app */;
 			productType = "com.apple.product-type.application";
 		};
+		T10000000000000000000002 /* Nembra Capture UI Tests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C10000000000000000000003 /* Build configuration list for PBXNativeTarget "Nembra Capture UI Tests" */;
+			buildPhases = (
+				S10000000000000000000002 /* Sources */,
+				F10000000000000000000002 /* Frameworks */,
+				R10000000000000000000002 /* Resources */,
+			);
+			buildRules = ();
+			dependencies = (
+				Y10000000000000000000001 /* PBXTargetDependency */,
+			);
+			name = "Nembra Capture UI Tests";
+			productName = "Nembra Capture UI Tests";
+			productReference = B1000000000000000000000A /* Nembra Capture UI Tests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -96,6 +140,10 @@
 				TargetAttributes = {
 					T10000000000000000000001 = {
 						CreatedOnToolsVersion = 26.0;
+					};
+					T10000000000000000000002 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = T10000000000000000000001;
 					};
 				};
 			};
@@ -113,6 +161,7 @@
 			projectRoot = "";
 			targets = (
 				T10000000000000000000001 /* Nembra Capture */,
+				T10000000000000000000002 /* Nembra Capture UI Tests */,
 			);
 		};
 /* End PBXProject section */
@@ -126,6 +175,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		R10000000000000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -134,9 +190,16 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000004 /* NembraCaptureEntrypoint.swift in Sources */,
+				A1000000000000000000000A /* NembraCaptureSimulatorQAHarness.swift in Sources */,
 				A10000000000000000000007 /* NembraCaptureBuildIdentity.swift in Sources */,
-				A10000000000000000000005 /* TuyaAccountBridge.swift in Sources */,
-				A10000000000000000000002 /* ES80CaptureShellView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		S10000000000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000009 /* NembraCaptureUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -190,9 +253,8 @@
 				INFOPLIST_KEY_NembraCaptureSourceCommitSHA = "$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)";
 				INFOPLIST_KEY_NembraCaptureTuyaDependencyLockSHA256 = "$(NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256)";
 				INFOPLIST_KEY_NembraCaptureProcedureIdentifier = "$(NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER)";
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Nembra Capture uses Bluetooth to learn this scooter's advertised and GATT data during a guided calibration.";
-				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "Nembra Capture uses Bluetooth to learn this scooter's advertised and GATT data during a guided calibration.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Nembra Capture can use iPhone location speed as a reference while learning which Bluetooth values represent scooter speed.";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Nembra Capture uses Bluetooth for the guided stationary, read-only scooter evidence procedure.";
+				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "Nembra Capture uses Bluetooth for the guided stationary, read-only scooter evidence procedure.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -222,9 +284,8 @@
 				INFOPLIST_KEY_NembraCaptureSourceCommitSHA = "$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)";
 				INFOPLIST_KEY_NembraCaptureTuyaDependencyLockSHA256 = "$(NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256)";
 				INFOPLIST_KEY_NembraCaptureProcedureIdentifier = "$(NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER)";
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Nembra Capture uses Bluetooth to learn this scooter's advertised and GATT data during a guided calibration.";
-				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "Nembra Capture uses Bluetooth to learn this scooter's advertised and GATT data during a guided calibration.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Nembra Capture can use iPhone location speed as a reference while learning which Bluetooth values represent scooter speed.";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Nembra Capture uses Bluetooth for the guided stationary, read-only scooter evidence procedure.";
+				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "Nembra Capture uses Bluetooth for the guided stationary, read-only scooter evidence procedure.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -236,6 +297,38 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		D10000000000000000000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jonathangana131.nembra.capturelearnUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = "Nembra Capture";
+			};
+			name = Debug;
+		};
+		D10000000000000000000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jonathangana131.nembra.capturelearnUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = "Nembra Capture";
 			};
 			name = Release;
 		};
@@ -260,7 +353,24 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		C10000000000000000000003 /* Build configuration list for PBXNativeTarget "Nembra Capture UI Tests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D10000000000000000000005 /* Debug */,
+				D10000000000000000000006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
+
+/* Begin PBXTargetDependency section */
+		Y10000000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = T10000000000000000000001 /* Nembra Capture */;
+			targetProxy = X10000000000000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCLocalSwiftPackageReference section */
 		500100000000000000000001 /* XCLocalSwiftPackageReference "Packages/NembraBluetoothCapture" */ = {

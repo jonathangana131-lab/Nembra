@@ -26,6 +26,9 @@ At this file's update, the live P0 software-acceptance subject is PR #2178:
 The canonical current physical procedure is:
 `docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md`
 
+The only current private field installer is:
+`scripts/field/install_one_time_capture.command`
+
 Supporting C7D09A22 documents are historical/supporting material. If they conflict with the canonical current procedure, the canonical current procedure wins.
 
 ## Current product direction

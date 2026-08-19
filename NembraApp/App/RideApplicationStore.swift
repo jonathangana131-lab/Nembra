@@ -1,5 +1,6 @@
 import Dispatch
 import Foundation
+import NembraCore
 import Observation
 
 struct RideApplicationConfiguration: Sendable {
@@ -56,7 +57,11 @@ final class RideApplicationStore {
     private let configuration: RideApplicationConfiguration?
     private let checkpointStore: (any RideCheckpointStore)?
     private let historyStore: (any RideHistoryStore)?
+    private let dailyRideStore: SwiftDataDailyRideSegmentStore?
+    private let dailyRidePresentationStore: DailyRidePresentationStore?
     private let startupPersistenceError: String?
+    private let dailyCalendarProvider: @Sendable () -> Calendar
+    private let processGenerationID: UUID
 
     private(set) var status: RideApplicationStatus
     private(set) var activeSessionID: UUID?
@@ -71,6 +76,13 @@ final class RideApplicationStore {
     @ObservationIgnored private var latestVehicleState: VehicleState
     @ObservationIgnored private var pendingAuthoritativeSpeedSample: SpeedTelemetrySample?
     @ObservationIgnored private var lastObservationUptimeNanoseconds: UInt64?
+    @ObservationIgnored private var dailyAccumulator: NembraCore.DailyRideSegmentAccumulator?
+    @ObservationIgnored private var durationOwner = NembraCore.RideDurationObservationOwner()
+    @ObservationIgnored private var durationBaseSeconds: Double?
+    @ObservationIgnored private var durationBaseIsPartial = false
+    @ObservationIgnored private var pendingCandidateHasGPSEvidence = false
+    @ObservationIgnored private var sessionsWithGPSEvidence: Set<UUID> = []
+    @ObservationIgnored private var dailyPersistenceFailClosed = false
 
     init(
         service: any ScooterService,
@@ -78,12 +90,20 @@ final class RideApplicationStore {
         configuration: RideApplicationConfiguration?,
         checkpointStore: (any RideCheckpointStore)?,
         historyStore: (any RideHistoryStore)?,
+        dailyRideStore: SwiftDataDailyRideSegmentStore?,
+        dailyRidePresentationStore: DailyRidePresentationStore? = nil,
+        dailyCalendarProvider: @escaping @Sendable () -> Calendar = { Calendar.current },
+        processGenerationID: UUID = UUID(),
         startupPersistenceError: String? = nil
     ) {
         self.service = service
         self.configuration = configuration
         self.checkpointStore = checkpointStore
         self.historyStore = historyStore
+        self.dailyRideStore = dailyRideStore
+        self.dailyRidePresentationStore = dailyRidePresentationStore
+        self.dailyCalendarProvider = dailyCalendarProvider
+        self.processGenerationID = processGenerationID
         self.startupPersistenceError = startupPersistenceError
         self.latestVehicleState = initialState
         self.status = configuration == nil ? .disabled : .restoring
@@ -140,7 +160,8 @@ final class RideApplicationStore {
         }
         guard startupPersistenceError == nil,
               let checkpointStore,
-              let historyStore else {
+              let historyStore,
+              dailyRideStore != nil else {
             setStatus(.persistenceUnavailable)
             if lastErrorMessage == nil {
                 lastErrorMessage = "Local ride recovery storage could not be opened."
@@ -163,14 +184,29 @@ final class RideApplicationStore {
             coordinator = restored
             lastObservationUptimeNanoseconds = recoveredAtUptimeNanoseconds
 
-            if await restored.pendingCompletedRideEvidence() != nil {
+            if let pendingCompletion = await restored.pendingCompletedRideEvidence() {
+                try await persistRecoveredCompletionIfNeeded(
+                    pendingCompletion,
+                    recoveredAtUptimeNanoseconds: recoveredAtUptimeNanoseconds
+                )
                 try await commitPendingRide(using: restored, historyStore: historyStore)
             }
 
-            updatePublishedState(from: await restored.currentPhase())
+            let restoredPhase = await restored.currentPhase()
+            try await restoreDailyWriterIfNeeded(
+                for: restoredPhase,
+                recoveredAtUptimeNanoseconds: recoveredAtUptimeNanoseconds,
+                recoveredAtDate: recoveredAtDate
+            )
+            updatePublishedState(from: restoredPhase)
+            await refreshDailyPresentation(
+                now: recoveredAtDate,
+                calendar: dailyCalendarProvider(),
+                currentRideSessionID: activeSessionID
+            )
             await subscribeToEvidenceStreams()
         } catch {
-            fail(error, persistence: true)
+            failDailyPersistence(error)
         }
     }
 
@@ -187,12 +223,14 @@ final class RideApplicationStore {
     /// unscoped delayed delta could otherwise be assigned to a later ride.
     func ingestQualityScreenedGPSDistanceDelta(
         _ meters: Double,
-        receivedAtUptimeNanoseconds: UInt64
+        receivedAtUptimeNanoseconds: UInt64,
+        receivedAtDate: Date
     ) async {
         await ingestObservation(
             speedSample: nil,
             qualityScreenedGPSDistanceDeltaMeters: meters,
-            minimumUptimeNanoseconds: receivedAtUptimeNanoseconds
+            minimumUptimeNanoseconds: receivedAtUptimeNanoseconds,
+            sourceReceivedAtDate: receivedAtDate
         )
     }
 
@@ -203,12 +241,14 @@ final class RideApplicationStore {
     func ingestQualityScreenedGPSDistanceDelta(
         _ meters: Double,
         receivedAtUptimeNanoseconds: UInt64,
+        receivedAtDate: Date,
         for sessionID: UUID
     ) async {
         guard activeSessionID == sessionID else { return }
         await ingestQualityScreenedGPSDistanceDelta(
             meters,
-            receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds
+            receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
+            receivedAtDate: receivedAtDate
         )
     }
 
@@ -292,11 +332,13 @@ final class RideApplicationStore {
     private func ingestObservation(
         speedSample: SpeedTelemetrySample?,
         qualityScreenedGPSDistanceDeltaMeters: Double? = nil,
-        minimumUptimeNanoseconds: UInt64 = 0
+        minimumUptimeNanoseconds: UInt64 = 0,
+        sourceReceivedAtDate: Date? = nil
     ) async {
         guard let coordinator,
               let historyStore,
-              configuration != nil else { return }
+              configuration != nil,
+              !dailyPersistenceFailClosed else { return }
 
         let minimumUptime = max(
             speedSample?.receivedAtUptimeNanoseconds ?? 0,
@@ -308,9 +350,16 @@ final class RideApplicationStore {
         }
 
         do {
+            // Source receipt time owns local-day attribution. MainActor delivery
+            // latency is processing metadata and must not move accepted evidence
+            // across midnight. Transport-only state transitions have no separate
+            // source receipt and therefore use their processing boundary.
+            let receiptWallDate = speedSample?.receivedAtDate
+                ?? sourceReceivedAtDate
+                ?? Date.now
             let observation = try RideObservation(
                 receivedAtUptimeNanoseconds: observationUptime,
-                receivedAtDate: .now,
+                receivedAtDate: receiptWallDate,
                 connection: latestVehicleState.connection,
                 speedSample: speedSample,
                 odometerKilometers: latestVehicleState.odometerKilometers,
@@ -319,6 +368,16 @@ final class RideApplicationStore {
             )
             let update = try await coordinator.ingest(observation)
             updatePublishedState(from: update.phase)
+
+            do {
+                try await acceptDailyCheckpoint(
+                    for: update,
+                    observation: observation
+                )
+            } catch {
+                failDailyPersistence(error)
+                return
+            }
 
             if update.events.contains(where: { event in
                 if case .rideEnded = event { return true }
@@ -337,15 +396,488 @@ final class RideApplicationStore {
             }
         } catch RideCheckpointCoordinatorError.completedRideAwaitingCommit(_) {
             do {
+                if let pending = await coordinator.pendingCompletedRideEvidence() {
+                    try await persistRecoveredCompletionIfNeeded(
+                        pending,
+                        recoveredAtUptimeNanoseconds: observationUptime
+                    )
+                }
                 setStatus(.saving)
                 try await commitPendingRide(using: coordinator, historyStore: historyStore)
                 updatePublishedState(from: await coordinator.currentPhase())
             } catch {
-                fail(error, persistence: true)
+                failDailyPersistence(error)
             }
         } catch {
             fail(error, persistence: false)
         }
+    }
+
+    private struct DailySessionEvidence {
+        let sessionID: UUID
+        let cumulativeGPSDistanceMeters: Double
+        let continuity: RideSessionContinuity
+    }
+
+    /// The only live writer into the accepted daily ledger. It consumes the
+    /// exact `RideEngineUpdate` produced for this observation and monotonic
+    /// duration evidence owned here; display state and wall-clock subtraction
+    /// never participate.
+    private func acceptDailyCheckpoint(
+        for update: RideEngineUpdate,
+        observation: RideObservation
+    ) async throws {
+        updateGPSEvidenceOwnership(update: update, observation: observation)
+
+        guard let evidence = dailySessionEvidence(for: update) else {
+            if case .idle = update.phase {
+                pendingCandidateHasGPSEvidence = false
+            }
+            return
+        }
+        try await attachDailyAccumulator(sessionID: evidence.sessionID)
+        let durationSnapshot = try advanceDurationOwner(
+            update: update,
+            observation: observation,
+            sessionID: evidence.sessionID
+        )
+
+        let calendar = dailyCalendarProvider()
+        let localDay = try NembraCore.RideLocalDay(
+            containing: observation.receivedAtDate,
+            calendar: calendar
+        )
+        guard shouldPersistDailyCheckpoint(
+            update: update,
+            observation: observation,
+            localDay: localDay
+        ) else { return }
+
+        let duration = try cumulativeDurationMetric(snapshot: durationSnapshot)
+        let completed = update.events.contains { event in
+            if case .rideEnded = event { return true }
+            return false
+        }
+        try await persistDailyReceipt(
+            evidence: evidence,
+            duration: duration,
+            wallDate: observation.receivedAtDate,
+            uptimeNanoseconds: observation.receivedAtUptimeNanoseconds,
+            calendar: calendar,
+            currentRideSessionID: completed ? nil : evidence.sessionID
+        )
+
+        if completed {
+            sessionsWithGPSEvidence.remove(evidence.sessionID)
+            durationOwner = NembraCore.RideDurationObservationOwner()
+            durationBaseSeconds = nil
+            durationBaseIsPartial = false
+        }
+    }
+
+    private func dailySessionEvidence(for update: RideEngineUpdate) -> DailySessionEvidence? {
+        for event in update.events {
+            if case let .rideEnded(completed) = event {
+                return DailySessionEvidence(
+                    sessionID: completed.sessionID,
+                    cumulativeGPSDistanceMeters: completed.qualityScreenedGPSDistanceMeters,
+                    continuity: completed.continuity
+                )
+            }
+        }
+        return dailySessionEvidence(for: update.phase)
+    }
+
+    private func dailySessionEvidence(for phase: RideEnginePhase) -> DailySessionEvidence? {
+        let session: ActiveRideSession
+        switch phase {
+        case .idle, .candidate:
+            return nil
+        case let .active(active):
+            session = active
+        case let .temporarilyDisconnected(disconnected):
+            session = disconnected.session
+        case let .endingCandidate(ending):
+            session = ending.session
+        }
+        return DailySessionEvidence(
+            sessionID: session.id,
+            cumulativeGPSDistanceMeters: session.accumulatedGPSDistanceMeters,
+            continuity: session.continuity
+        )
+    }
+
+    private func updateGPSEvidenceOwnership(
+        update: RideEngineUpdate,
+        observation: RideObservation
+    ) {
+        if case .candidate = update.phase,
+           observation.qualityScreenedGPSDistanceDeltaMeters != nil {
+            pendingCandidateHasGPSEvidence = true
+        }
+
+        if let evidence = dailySessionEvidence(for: update),
+           observation.qualityScreenedGPSDistanceDeltaMeters != nil
+                || pendingCandidateHasGPSEvidence
+                || evidence.cumulativeGPSDistanceMeters > 0 {
+            sessionsWithGPSEvidence.insert(evidence.sessionID)
+            pendingCandidateHasGPSEvidence = false
+        }
+
+        if update.events.contains(where: { event in
+            if case .candidateCancelled = event { return true }
+            return false
+        }) {
+            pendingCandidateHasGPSEvidence = false
+        }
+    }
+
+    private func attachDailyAccumulator(sessionID: UUID) async throws {
+        guard dailyAccumulator?.sessionID != sessionID else { return }
+        guard let dailyRideStore else {
+            throw DailyRidePersistenceError.accumulatorConflict(sessionID)
+        }
+        let restored = try await dailyRideStore.accumulator(sessionID: sessionID)
+        dailyAccumulator = restored
+            ?? NembraCore.DailyRideSegmentAccumulator(sessionID: sessionID)
+
+        if restored?.lastAcknowledgedCheckpoint?.distanceSource == .gpsRoute {
+            // An explicitly accepted zero-distance GPS anchor is still GPS
+            // evidence. Reconstruct its ownership after relaunch instead of
+            // relying on a positive numeric delta as a proxy for provenance.
+            sessionsWithGPSEvidence.insert(sessionID)
+        }
+
+        if let duration = restored?.lastAcknowledgedCheckpoint?.cumulativeDurationSeconds {
+            durationBaseSeconds = duration.value
+            durationBaseIsPartial = duration.disposition != .complete
+        } else {
+            durationBaseSeconds = 0
+            durationBaseIsPartial = false
+        }
+    }
+
+    private func advanceDurationOwner(
+        update: RideEngineUpdate,
+        observation: RideObservation,
+        sessionID: UUID
+    ) throws -> NembraCore.RideSessionDurationEvidenceSnapshot? {
+        var candidate = durationOwner
+        var handledLifecycleBoundary = false
+        var finalizedSnapshot: NembraCore.RideSessionDurationEvidenceSnapshot?
+
+        for event in update.events {
+            switch event {
+            case let .rideStarted(session):
+                let candidateIntervalWasUnobserved = session.beganAtUptimeNanoseconds
+                    != observation.receivedAtUptimeNanoseconds
+                try candidate.begin(
+                    sessionID: session.id,
+                    processGenerationID: processGenerationID,
+                    atUptimeNanoseconds: observation.receivedAtUptimeNanoseconds,
+                    beginsAfterUnobservedInterval: candidateIntervalWasUnobserved
+                )
+                handledLifecycleBoundary = true
+
+            case let .rideTemporarilyDisconnected(disconnectedSessionID):
+                try candidate.markObservationGap(
+                    sessionID: disconnectedSessionID,
+                    atUptimeNanoseconds: observation.receivedAtUptimeNanoseconds
+                )
+                handledLifecycleBoundary = true
+
+            case let .rideResumed(resumedSessionID):
+                try candidate.resumeObservation(
+                    sessionID: resumedSessionID,
+                    processGenerationID: processGenerationID,
+                    atUptimeNanoseconds: observation.receivedAtUptimeNanoseconds
+                )
+                handledLifecycleBoundary = true
+
+            case let .rideEnded(completed):
+                finalizedSnapshot = try candidate.end(
+                    sessionID: completed.sessionID,
+                    atUptimeNanoseconds: observation.receivedAtUptimeNanoseconds
+                )
+                handledLifecycleBoundary = true
+
+            case .candidateStarted, .candidateCancelled, .endingCandidateStarted:
+                break
+            }
+        }
+
+        if !handledLifecycleBoundary {
+            switch update.phase {
+            case .active, .endingCandidate:
+                if candidate.activeSessionID == nil {
+                    try candidate.begin(
+                        sessionID: sessionID,
+                        processGenerationID: processGenerationID,
+                        atUptimeNanoseconds: observation.receivedAtUptimeNanoseconds,
+                        beginsAfterUnobservedInterval: true
+                    )
+                } else {
+                    try candidate.observe(
+                        sessionID: sessionID,
+                        atUptimeNanoseconds: observation.receivedAtUptimeNanoseconds
+                    )
+                }
+            case .temporarilyDisconnected, .idle, .candidate:
+                break
+            }
+        }
+
+        durationOwner = candidate
+        return finalizedSnapshot ?? candidate.snapshot
+    }
+
+    private func shouldPersistDailyCheckpoint(
+        update: RideEngineUpdate,
+        observation: RideObservation,
+        localDay: NembraCore.RideLocalDay
+    ) -> Bool {
+        guard let last = dailyAccumulator?.lastAcknowledgedCheckpoint else { return true }
+        if last.localDay != localDay { return true }
+        if observation.receivedAtDate <= last.wallDate { return true }
+        if update.events.contains(where: { event in
+            switch event {
+            case .rideStarted, .rideTemporarilyDisconnected, .rideResumed,
+                 .endingCandidateStarted, .rideEnded:
+                return true
+            case .candidateStarted, .candidateCancelled:
+                return false
+            }
+        }) {
+            return true
+        }
+        guard observation.receivedAtUptimeNanoseconds > last.uptimeNanoseconds,
+              let configuration else {
+            return true
+        }
+        return observation.receivedAtUptimeNanoseconds - last.uptimeNanoseconds
+            >= configuration.checkpointCadence.minimumIntervalNanoseconds
+    }
+
+    private func cumulativeDurationMetric(
+        snapshot: NembraCore.RideSessionDurationEvidenceSnapshot?
+    ) throws -> NembraCore.DailyRideMetricEvidence {
+        guard let durationBaseSeconds,
+              let snapshot,
+              let observedNanoseconds = snapshot.observedDurationNanoseconds else {
+            return try NembraCore.DailyRideMetricEvidence(
+                value: nil,
+                disposition: .unavailable
+            )
+        }
+        let observedSeconds = Double(observedNanoseconds) / 1_000_000_000
+        let cumulative = durationBaseSeconds + observedSeconds
+        guard cumulative.isFinite else {
+            throw DailyRidePersistenceError.accumulatorConflict(snapshot.sessionID)
+        }
+        let disposition: NembraCore.DailyRideMetricDisposition
+        switch snapshot.coverage {
+        case .complete where !durationBaseIsPartial:
+            disposition = .complete
+        case .complete, .partial:
+            disposition = .knownPartial
+        case .unknown:
+            return try NembraCore.DailyRideMetricEvidence(
+                value: nil,
+                disposition: .unavailable
+            )
+        }
+        return try NembraCore.DailyRideMetricEvidence(
+            value: cumulative,
+            disposition: disposition
+        )
+    }
+
+    private func persistDailyReceipt(
+        evidence: DailySessionEvidence,
+        duration: NembraCore.DailyRideMetricEvidence,
+        wallDate: Date,
+        uptimeNanoseconds: UInt64,
+        calendar: Calendar,
+        currentRideSessionID: UUID?
+    ) async throws {
+        guard let dailyRideStore,
+              let accumulator = dailyAccumulator,
+              accumulator.sessionID == evidence.sessionID else {
+            throw DailyRidePersistenceError.accumulatorConflict(evidence.sessionID)
+        }
+
+        let distance: NembraCore.DailyRideMetricEvidence
+        let distanceSource: NembraCore.RideDistanceSource?
+        if sessionsWithGPSEvidence.contains(evidence.sessionID) {
+            distance = try NembraCore.DailyRideMetricEvidence(
+                value: evidence.cumulativeGPSDistanceMeters,
+                disposition: .knownPartial
+            )
+            distanceSource = .gpsRoute
+        } else {
+            distance = try NembraCore.DailyRideMetricEvidence(
+                value: nil,
+                disposition: .unavailable
+            )
+            distanceSource = nil
+        }
+
+        let sequence: UInt64
+        if let previous = accumulator.lastAcknowledgedCheckpoint {
+            guard previous.sequence < UInt64.max else {
+                throw DailyRidePersistenceError.accumulatorConflict(evidence.sessionID)
+            }
+            sequence = previous.sequence + 1
+        } else {
+            sequence = 0
+        }
+        guard let packageContinuity = NembraCore.RideSessionContinuity(
+            rawValue: evidence.continuity.rawValue
+        ) else {
+            throw DailyRidePersistenceError.accumulatorConflict(evidence.sessionID)
+        }
+        let checkpoint = try NembraCore.AcceptedDailyRideCheckpoint(
+            sessionID: evidence.sessionID,
+            sequence: sequence,
+            uptimeNanoseconds: uptimeNanoseconds,
+            wallDate: wallDate,
+            localDay: NembraCore.RideLocalDay(containing: wallDate, calendar: calendar),
+            cumulativeDistanceMeters: distance,
+            cumulativeDurationSeconds: duration,
+            distanceSource: distanceSource,
+            continuity: packageContinuity
+        )
+        let proposal = try accumulator.prepare(checkpoint)
+        _ = try await dailyRideStore.commit(proposal)
+        dailyAccumulator = proposal.accumulatorAfterPersistence
+        await refreshDailyPresentation(
+            // The receipt's source date owns ledger placement, while Today is
+            // always the user's actual current local day at presentation time.
+            now: .now,
+            calendar: dailyCalendarProvider(),
+            currentRideSessionID: currentRideSessionID
+        )
+    }
+
+    private func restoreDailyWriterIfNeeded(
+        for phase: RideEnginePhase,
+        recoveredAtUptimeNanoseconds: UInt64,
+        recoveredAtDate: Date
+    ) async throws {
+        guard let evidence = dailySessionEvidence(for: phase) else { return }
+        try await attachDailyAccumulator(sessionID: evidence.sessionID)
+        if evidence.cumulativeGPSDistanceMeters > 0 {
+            sessionsWithGPSEvidence.insert(evidence.sessionID)
+        }
+
+        var restoredOwner = NembraCore.RideDurationObservationOwner()
+        try restoredOwner.begin(
+            sessionID: evidence.sessionID,
+            processGenerationID: processGenerationID,
+            atUptimeNanoseconds: recoveredAtUptimeNanoseconds,
+            beginsAfterUnobservedInterval: true
+        )
+        durationOwner = restoredOwner
+        let duration = try cumulativeDurationMetric(snapshot: restoredOwner.snapshot)
+        let calendar = dailyCalendarProvider()
+        try await persistDailyReceipt(
+            evidence: evidence,
+            duration: duration,
+            wallDate: recoveredAtDate,
+            uptimeNanoseconds: recoveredAtUptimeNanoseconds,
+            calendar: calendar,
+            currentRideSessionID: evidence.sessionID
+        )
+    }
+
+    private func persistRecoveredCompletionIfNeeded(
+        _ completed: CompletedRideEvidence,
+        recoveredAtUptimeNanoseconds: UInt64
+    ) async throws {
+        let evidence = DailySessionEvidence(
+            sessionID: completed.sessionID,
+            cumulativeGPSDistanceMeters: completed.qualityScreenedGPSDistanceMeters,
+            continuity: completed.continuity
+        )
+        try await attachDailyAccumulator(sessionID: completed.sessionID)
+        if completed.qualityScreenedGPSDistanceMeters > 0 {
+            sessionsWithGPSEvidence.insert(completed.sessionID)
+        }
+
+        let expectedDistance: NembraCore.DailyRideMetricEvidence
+        if sessionsWithGPSEvidence.contains(completed.sessionID) {
+            expectedDistance = try NembraCore.DailyRideMetricEvidence(
+                value: completed.qualityScreenedGPSDistanceMeters,
+                disposition: .knownPartial
+            )
+        } else {
+            expectedDistance = try NembraCore.DailyRideMetricEvidence(
+                value: nil,
+                disposition: .unavailable
+            )
+        }
+        if let last = dailyAccumulator?.lastAcknowledgedCheckpoint,
+           last.wallDate == completed.endedAtDate,
+           last.cumulativeDistanceMeters == expectedDistance {
+            return
+        }
+
+        let duration = try Self.recoveredCompletionDuration(
+            after: dailyAccumulator?.lastAcknowledgedCheckpoint
+        )
+        try await persistDailyReceipt(
+            evidence: evidence,
+            duration: duration,
+            wallDate: completed.endedAtDate,
+            uptimeNanoseconds: recoveredAtUptimeNanoseconds,
+            calendar: dailyCalendarProvider(),
+            currentRideSessionID: nil
+        )
+    }
+
+    /// A recovered pending completion cannot reconstruct time outside an
+    /// observed monotonic segment. Preserve the exact accepted numeric floor and
+    /// qualify it partial; never replace a durable numeric cumulative duration
+    /// with `.unavailable`, which would discard known evidence.
+    nonisolated static func recoveredCompletionDuration(
+        after checkpoint: NembraCore.AcceptedDailyRideCheckpoint?
+    ) throws -> NembraCore.DailyRideMetricEvidence {
+        guard let prior = checkpoint?.cumulativeDurationSeconds else {
+            return try NembraCore.DailyRideMetricEvidence(
+                value: nil,
+                disposition: .unavailable
+            )
+        }
+        if let value = prior.value {
+            return try NembraCore.DailyRideMetricEvidence(
+                value: value,
+                disposition: .knownPartial
+            )
+        }
+        return try NembraCore.DailyRideMetricEvidence(
+            value: nil,
+            disposition: prior.disposition == .conflicting
+                ? .conflicting
+                : .unavailable
+        )
+    }
+
+    private func refreshDailyPresentation(
+        now: Date,
+        calendar: Calendar,
+        currentRideSessionID: UUID?
+    ) async {
+        await dailyRidePresentationStore?.refresh(
+            now: now,
+            calendar: calendar,
+            currentRideSessionID: currentRideSessionID
+        )
+    }
+
+    private func failDailyPersistence(_ error: Error) {
+        dailyPersistenceFailClosed = true
+        dailyRidePresentationStore?.markPersistenceFailure()
+        fail(error, persistence: true)
     }
 
     private func commitPendingRide(

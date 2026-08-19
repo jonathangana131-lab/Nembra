@@ -27,7 +27,7 @@ struct TuyaFieldDependencyProvenanceSourceTests {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         #expect(app.contains("let tuyaDependencyLockSHA256: String"))
         #expect(app.contains("tuyaDependencyLockSHA256: buildIdentity.tuyaDependencyLockSHA256"))
-        #expect(app.contains("schemaVersion: 10"))
+        #expect(app.contains("schemaVersion: 13"))
         #expect(!app.contains("schemaVersion: 9"))
         #expect(!app.contains("let appSecret: String"))
         #expect(!app.contains("let localKey: String"))
@@ -39,8 +39,6 @@ struct TuyaFieldDependencyProvenanceSourceTests {
         for path in [
             "NembraApp/App/NembraCaptureBuildIdentity.swift",
             "NembraApp/App/NembraCaptureEntrypoint.swift",
-            "NembraApp/Features/Research/TuyaAccountBridge.swift",
-            "NembraApp/Features/Research/ES80CaptureShellView.swift",
             "NembraCapture.xcodeproj/project.pbxproj",
             "NembraCapture.xcodeproj/xcshareddata/xcschemes/Nembra Capture.xcscheme",
             "NembraCapture-Info.plist",

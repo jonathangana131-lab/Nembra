@@ -11,19 +11,16 @@ struct VehicleControlsVisualClosureSourceTests {
         #expect(source.contains("GridItem(.flexible(), spacing: 10)"))
     }
 
-    @Test("Vehicle Controls reserves persistent Navigation from the visible viewport")
-    func viewportClearsPersistentNavigation() throws {
+    @Test("Vehicle Controls uses native navigation and safe-area-aware tab clearance")
+    func usesNativeNavigationAndTabClearance() throws {
         let source = try vehicleControlsSection()
 
-        #expect(source.contains("persistentNavigationViewportClearance"))
-        #expect(source.contains("dynamicTypeSize.isAccessibilitySize ? 220 : 164"))
-        #expect(source.contains(".padding(.bottom, persistentNavigationViewportClearance)"))
-
-        guard let scrollEnd = source.range(of: "\n        }\n        .padding(.bottom, persistentNavigationViewportClearance)") else {
-            Issue.record("Vehicle Controls viewport-clearance modifier is missing outside ScrollView content")
-            throw SourceContractError.sectionMissing
-        }
-        #expect(scrollEnd.lowerBound > source.startIndex)
+        #expect(source.contains("ScrollView"))
+        #expect(source.contains("LazyVStack(alignment: .leading"))
+        #expect(source.contains(".safeAreaPadding(.bottom, tabBarClearance)"))
+        #expect(source.contains("dynamicTypeSize.isAccessibilitySize ? 104 : 80"))
+        #expect(source.contains(".navigationTitle(\"Vehicle\")"))
+        #expect(!source.contains("persistentNavigationViewportClearance"))
     }
 
     @Test("Truth and interaction geometry remain preserved")
@@ -34,6 +31,8 @@ struct VehicleControlsVisualClosureSourceTests {
         #expect(source.contains("capabilities.hasUserFacingSpeedLimitMapping"))
         #expect(source.contains("Last confirmed settings shown below"))
         #expect(source.contains("Last confirmed selection"))
+        #expect(source.contains("vehicle.batteryDisplayPercent"))
+        #expect(source.contains("Estimated range unavailable, not calibrated."))
         #expect(source.contains("minHeight: 58"))
         #expect(source.contains("minHeight: 44"))
     }

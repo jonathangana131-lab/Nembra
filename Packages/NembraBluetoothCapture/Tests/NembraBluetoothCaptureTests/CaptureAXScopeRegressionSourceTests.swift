@@ -19,38 +19,54 @@ struct CaptureAXScopeRegressionSourceTests {
         #expect(secureLink.contains(".accessibilityLabel(\"Engineering details\")"))
     }
 
-    @Test("AX user-code field keeps persistent sighted identity without duplicate VoiceOver")
-    func accessibilityUserCodeFieldKeepsPersistentIdentity() throws {
+    @Test("root exposes one system Apple action and disclosed private recovery fields")
+    func accessibilityAccountActionsRemainScopedAndPrivate() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let account = String(try section(
+        let root = String(try section(
             in: app,
+            from: "@MainActor\nprivate struct CaptureP0Root: View",
+            to: "@MainActor\nprivate final class SecureLinkController:"
+        ))
+        let account = String(try section(
+            in: root,
             from: "private var accountSetupPanel: some View",
-            to: "private var statusText: some View"
+            to: "private var scooterChooserPanel: some View"
         ))
 
-        let visibleLabel = try #require(account.range(of: "Text(isAccessibilityLayout ? \"Tuya user code\" : \"Tuya Smart user code\")"))
-        let hiddenDuplicate = try #require(account.range(
-            of: ".accessibilityHidden(true)",
-            range: visibleLabel.upperBound..<account.endIndex
+        let apple = try #require(account.range(of: "SignInWithAppleButton(.signIn)"))
+        let identifier = try #require(account.range(
+            of: ".accessibilityIdentifier(\"nembra.capture.root.account-link-action\")",
+            range: apple.upperBound..<account.endIndex
         ))
-        let field = try #require(account.range(
-            of: "TextField(isAccessibilityLayout ? \"Tuya user code\" : \"Paste user code\"",
-            range: hiddenDuplicate.upperBound..<account.endIndex
+        let recovery = try #require(account.range(
+            of: "DisclosureGroup(\"Use email or phone instead\"",
+            range: identifier.upperBound..<account.endIndex
         ))
-        let semanticLabel = try #require(account.range(
-            of: ".accessibilityLabel(\"Tuya Smart user code\")",
-            range: field.upperBound..<account.endIndex
+        let accountField = try #require(account.range(
+            of: "TextField(sdkAccount.method == .email ? \"Tuya account email\" : \"Tuya account phone number\"",
+            range: recovery.upperBound..<account.endIndex
         ))
-        let action = try #require(account.range(
-            of: "Label(isAccessibilityLayout ? \"Create QR\" : \"Create approval QR\"",
-            range: semanticLabel.upperBound..<account.endIndex
+        let privateAccount = try #require(account.range(
+            of: ".privacySensitive()",
+            range: accountField.upperBound..<account.endIndex
+        ))
+        let codeField = try #require(account.range(
+            of: "SecureField(\"Verification code\"",
+            range: privateAccount.upperBound..<account.endIndex
+        ))
+        let privateCode = try #require(account.range(
+            of: ".privacySensitive()",
+            range: codeField.upperBound..<account.endIndex
         ))
 
-        #expect(!account.contains(".dynamicTypeSize(...DynamicTypeSize.accessibility1)"))
-        #expect(visibleLabel.lowerBound < hiddenDuplicate.lowerBound)
-        #expect(hiddenDuplicate.lowerBound < field.lowerBound)
-        #expect(field.lowerBound < semanticLabel.lowerBound)
-        #expect(semanticLabel.lowerBound < action.lowerBound)
+        #expect(apple.lowerBound < identifier.lowerBound)
+        #expect(identifier.lowerBound < recovery.lowerBound)
+        #expect(recovery.lowerBound < accountField.lowerBound)
+        #expect(accountField.lowerBound < privateAccount.lowerBound)
+        #expect(privateAccount.lowerBound < codeField.lowerBound)
+        #expect(codeField.lowerBound < privateCode.lowerBound)
+        #expect(!account.contains("Paste user code"))
+        #expect(!account.contains("approval QR"))
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {

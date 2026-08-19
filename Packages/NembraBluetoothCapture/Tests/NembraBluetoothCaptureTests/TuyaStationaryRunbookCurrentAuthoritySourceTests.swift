@@ -19,6 +19,8 @@ struct TuyaStationaryRunbookCurrentAuthoritySourceTests {
         #expect(runbook.contains("rawFD50BytesCaptured=false"))
         #expect(runbook.contains("dpQueriesSent=false"))
         #expect(runbook.contains("dpCommandsSent=false"))
+        #expect(runbook.contains("initially powered **OFF**"))
+        #expect(runbook.contains("foreground remains an enforced procedure instruction, not an operator truth claim"))
 
         #expect(!runbook.contains("use the best accepted evidence"))
         #expect(!runbook.contains("known first-capture peripheral, FD50 advertisement evidence"))

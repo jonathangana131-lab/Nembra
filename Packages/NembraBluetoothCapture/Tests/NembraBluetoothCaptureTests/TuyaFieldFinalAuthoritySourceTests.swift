@@ -22,11 +22,13 @@ struct TuyaFieldFinalAuthoritySourceTests {
     @Test("OFF1 correlation is mechanically downstream of exact build, current SDK account, membership, and identity lease authority")
     func correlationCannotStartFromUIStateAlone() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let start = try section(in: source, from: "func startBaseline()", to: "private func beginCorrelationSeries()")
+        let start = try section(in: source, from: "private func beginBaselineAfterCurrentOperatorAttestation()", to: "private func beginCorrelationSeries()")
         let begin = try section(in: source, from: "private func beginCorrelationSeries()", to: "func startNextCorrelationWindow()")
 
         #expect(start.contains("buildIdentity.isAuthoritativeFieldBuild"))
         #expect(start.contains("guard privateConfig, sdkAccountLoggedIn"))
+        #expect(start.contains("operatorSafetyAttestationIsCurrent"))
+        #expect(!start.contains("StationaryCaptureOperatorAttestation("))
         #expect(start.contains("verifySDKMembership"))
         #expect(start.contains("TuyaSDKAccountIdentityLeaseGate.verdict"))
         #expect(start.contains("beginCorrelationSeries()"))
@@ -79,7 +81,9 @@ struct TuyaFieldFinalAuthoritySourceTests {
     func terminalAPIsAreConsumedByTheFieldController() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         #expect(source.contains("sessionLedger.markObservationContinuityInvalidated(for: token)"))
-        #expect(source.contains("sessionLedger.markApplicationObservationTimedOut(for: token)"))
+        #expect(source.contains("MutationError.incompleteObservationHorizonReached"))
+        #expect(source.contains("mirrorAlreadyTerminalIncompleteObservationHorizon("))
+        #expect(!source.contains("sessionLedger.markApplicationObservationTimedOut(for: token)"))
         #expect(source.contains("sessionLedger.sealAcceptedObservation(for: token)"))
         #expect(source.contains("sessionLedger.endConnection(for: token)"))
         #expect(source.contains("recordObservedTransportLoss(token: token)"))
@@ -89,7 +93,10 @@ struct TuyaFieldFinalAuthoritySourceTests {
     @Test("SDK application observations are structured truth, not fabricated raw transport bytes")
     func applicationEvidenceDoesNotPretendToBeFD50Bytes() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        #expect(source.contains("recordApplicationUpdate(isNonEmpty:"))
+        #expect(source.contains("sessionLedger.captureApplicationDelivery("))
+        #expect(source.contains("sessionLedger.recordApplicationUpdate("))
+        #expect(source.contains("receipt: receipt"))
+        #expect(source.contains("!update.isEmpty"))
         #expect(!source.contains("recordApplicationPayload("))
         #expect(source.contains("rawFD50BytesCaptured: false"))
         #expect(source.contains("dpQueriesSent: false"))

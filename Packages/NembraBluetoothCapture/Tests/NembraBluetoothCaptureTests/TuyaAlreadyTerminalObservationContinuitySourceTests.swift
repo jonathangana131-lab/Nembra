@@ -41,10 +41,11 @@ struct TuyaAlreadyTerminalObservationContinuitySourceTests {
         let watchdog = try section(in: app, from: "private func startWatchdog", to: "private func recordObservedTransportLoss")
         let body = try catchBody(
             in: String(watchdog),
-            functionStart: "sessionLedger.observeCurrentConnection(for: token)",
+            functionStart: "sessionLedger.observeCurrentConnection(",
             errorCase: "MutationError.observationContinuityInvalidated"
         )
 
+        #expect(watchdog.contains("receipt: livenessReceipt"))
         #expect(body.contains("mirrorAlreadyTerminalObservationContinuity"))
         #expect(!body.contains("invalidateObservationContinuity"))
         #expect(!body.contains("markInternalLifecycleFailure"))

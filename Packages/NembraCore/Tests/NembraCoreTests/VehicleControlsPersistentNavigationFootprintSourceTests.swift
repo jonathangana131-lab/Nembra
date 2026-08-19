@@ -1,42 +1,37 @@
 import Foundation
 import Testing
 
-@Suite("Vehicle Controls persistent Navigation footprint")
+@Suite("Vehicle Controls native navigation footprint")
 struct VehicleControlsPersistentNavigationFootprintSourceTests {
-    @Test("Vehicle Controls reserves the full portrait launcher footprint from the visible viewport")
-    func viewportClearsLauncherFootprint() throws {
+    @Test("Vehicle Controls clears the native floating tab bar with safe-area content geometry")
+    func contentClearsNativeTabBar() throws {
         let source = try readRepositoryFile("NembraApp/Features/Home/VehicleControlsView.swift")
         let view = try vehicleControlsSection(in: source)
 
-        #expect(view.contains("persistentNavigationViewportClearance"))
-        #expect(view.contains("dynamicTypeSize.isAccessibilitySize"))
-        #expect(view.contains("? 220 : 164"))
-        #expect(view.contains(".padding(.bottom, persistentNavigationViewportClearance)"))
+        #expect(view.contains(".safeAreaPadding(.bottom, tabBarClearance)"))
+        #expect(view.contains("dynamicTypeSize.isAccessibilitySize ? 104 : 80"))
+        #expect(!view.contains("persistentNavigationViewportClearance"))
+        #expect(!view.contains("launcher"))
     }
 
-    @Test("Launcher clearance stays outside ScrollView content")
-    func clearanceIsViewportGeometry() throws {
-        let source = try readRepositoryFile("NembraApp/Features/Home/VehicleControlsView.swift")
-        let view = try vehicleControlsSection(in: source)
+    @Test("Vehicle remains a native TabView destination with its own NavigationStack")
+    func vehicleUsesNativeTabAndNavigationStack() throws {
+        let source = try readRepositoryFile("NembraApp/App/AppRootView.swift")
 
-        guard let contentTail = view.range(of: ".padding(.bottom, 40)"),
-              let viewportModifier = view.range(
-                of: "\n        }\n        .padding(.bottom, persistentNavigationViewportClearance)"
-              ) else {
-            Issue.record("Vehicle Controls viewport-clearance boundary was not found")
-            throw SourceContractError.sectionMissing
-        }
-
-        #expect(contentTail.upperBound <= viewportModifier.lowerBound)
+        #expect(source.contains("TabView(selection: $selectedTab)"))
+        #expect(source.contains("NavigationStack {\n                VehicleControlsView()"))
+        #expect(source.contains("Label(\"Vehicle\", systemImage: \"scooter\")"))
+        #expect(source.contains(".tag(NembraPrimaryTab.vehicle)"))
     }
 
-    @Test("The global Navigation launcher remains untouched")
-    func doesNotSolveLocalOverlapByChangingGlobalLauncher() throws {
+    @Test("Navigation uses a native sheet instead of a floating global launcher")
+    func navigationUsesNativeSheetPresentation() throws {
         let navigationSource = try readRepositoryFile("NembraApp/App/NembraApp.swift")
 
-        #expect(navigationSource.contains(".frame(minWidth: 54, minHeight: 54)"))
-        #expect(navigationSource.contains(".padding(.trailing, verticalSizeClass == .compact ? 0 : 18)"))
-        #expect(navigationSource.contains(".padding(.bottom, verticalSizeClass == .compact ? 0 : 92)"))
+        #expect(navigationSource.contains(".sheet(isPresented: $isNavigationPresented)"))
+        #expect(navigationSource.contains("NavigationStack {\n                NembraNavigationView()"))
+        #expect(!navigationSource.contains(".frame(minWidth: 54, minHeight: 54)"))
+        #expect(!navigationSource.contains("persistentNavigationViewportClearance"))
     }
 
     private func vehicleControlsSection(in source: String) throws -> Substring {

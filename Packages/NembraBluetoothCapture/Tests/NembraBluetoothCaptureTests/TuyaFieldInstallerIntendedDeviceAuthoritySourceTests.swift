@@ -48,7 +48,17 @@ struct TuyaFieldInstallerIntendedDeviceAuthoritySourceTests {
         #expect(helper.contains("metadata.st_mode & 0o077"))
         #expect(helper.contains("metadata.st_uid != os.geteuid()"))
         #expect(helper.contains("metadata.st_nlink != 1"))
+        #expect(helper.contains("metadata.st_size"))
+        #expect(helper.contains("metadata.st_mtime_ns"))
+        #expect(helper.contains("metadata.st_ctime_ns"))
         #expect(helper.contains("_stable_file_identity(final_metadata) != _stable_file_identity(metadata)"))
+        #expect(helper.contains("_open_directory_chain(parent, repository_identity)"))
+        #expect(helper.contains("private intended-device ancestor failed no-follow validation"))
+        #expect(helper.contains("private intended-device path resolves inside the Nembra repository"))
+        #expect(helper.contains("[0-9A-Fa-f]{40}|[0-9A-Fa-f]{8}-[0-9A-Fa-f]{16}"))
+        #expect(helper.contains("accepted a symlink ancestor"))
+        #expect(helper.contains("accepted a resolved in-repo target"))
+        #expect(helper.contains("accepted mutation during read"))
         #expect(helper.contains("value != value.strip()"))
         #expect(helper.contains("value in os.fspath(path)"))
     }
@@ -112,6 +122,33 @@ struct TuyaFieldInstallerIntendedDeviceAuthoritySourceTests {
         #expect(!installer.contains("devicectl device install app --device \"$DEVICE_UDID\""))
         #expect(!installer.contains("--device \"$DEVICE_UDID\""))
         #expect(installer.contains("not placed in devicectl argv"))
+    }
+
+    @Test("final development profile must include the exact intended iPhone before install")
+    func signedProfileCannotTargetAnUnrelatedDevice() throws {
+        let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
+
+        #expect(installer.contains("ProvisionedDevices"))
+        #expect(installer.contains("ProvisionsAllDevices"))
+        #expect(installer.contains("hmac.compare_digest(candidate.lower(), intended.lower())"))
+        #expect(installer.contains("len(matches) != 1"))
+        #expect(installer.contains("Embedded development profile does not include the exact intended iPhone"))
+        #expect(installer.contains("-destination \"generic/platform=iOS\""))
+        #expect(!installer.contains("-allowProvisioningDeviceRegistration"))
+        #expect(installer.contains("keeps the private UDID out of xcodebuild argv and logs"))
+
+        let profileAdmission = try #require(installer.range(of: "PROFILE_DEVICE_ADMISSION="))
+        let install = try #require(installer.range(of: "say \"Installing SDK-integrated Capture on the intended iPhone\""))
+        #expect(profileAdmission.lowerBound < install.lowerBound)
+    }
+
+    @Test("base64 transport is never described as secret protection")
+    func helperEncodingCannotMasqueradeAsCredentialProtection() throws {
+        let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
+
+        #expect(installer.contains("Base64 is only a transport encoding"))
+        #expect(installer.contains("It is not encryption"))
+        #expect(installer.contains("must never be treated as secret"))
     }
 
     @Test("private workspace and build cannot silently change the accepted source")

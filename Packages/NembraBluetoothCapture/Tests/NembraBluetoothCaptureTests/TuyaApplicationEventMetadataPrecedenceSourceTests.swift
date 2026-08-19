@@ -11,7 +11,9 @@ struct TuyaApplicationEventMetadataPrecedenceSourceTests {
         let redaction = try #require(receiver.range(of: "let custodySafeUpdate = redactedApplicationEventDetails(update, accountUID: leasedAccountUID)"))
         let custody = try #require(receiver.range(of: "var eventDetails = custodySafeUpdate"))
         let generation = try #require(receiver.range(of: "eventDetails[\"generation\"] = String(token.diagnosticGeneration)"))
-        let log = try #require(receiver.range(of: "log(\"tuya_application_update\", eventDetails)"))
+        let log = try #require(receiver.range(
+            of: "log(\n                \"tuya_application_update\",\n                eventDetails,\n                sourceReceivedAtUptimeNanoseconds: sourceReceivedAtUptimeNanoseconds\n            )"
+        ))
         #expect(redaction.lowerBound < custody.lowerBound)
         #expect(custody.lowerBound < generation.lowerBound)
         #expect(generation.lowerBound < log.lowerBound)

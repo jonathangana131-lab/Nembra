@@ -56,11 +56,11 @@ struct TuyaNavigationBLELeaseRetirementSourceTests {
         let verification = String(try section(
             in: controller,
             from: "func verifySDKMembership(completion:",
-            to: "func retry()"
+            to: "func authenticate()"
         ))
         let startBaseline = String(try section(
             in: controller,
-            from: "func startBaseline()",
+            from: "private func beginBaselineAfterCurrentOperatorAttestation()",
             to: "private func beginCorrelationSeries()"
         ))
         let authenticate = String(try section(

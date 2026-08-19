@@ -3,113 +3,92 @@ import Testing
 
 @Suite("Capture P0 root visual acceptance")
 struct CaptureP0RootVisualAcceptanceTests {
-    @Test("public root visibly fails closed while preserving metadata-only setup")
-    func publicRootShowsBuildAuthorityBeforeAccountSetup() throws {
-        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let root = try section(
-            in: source,
-            from: "private struct CaptureP0Root: View",
-            to: "private final class SecureLinkController:"
-        )
-        let body = String(root)
-
-        #expect(body.contains("@Environment(\\.dynamicTypeSize) private var dynamicTypeSize"))
-        #expect(body.contains("private let buildIdentity = NembraCaptureBuildIdentity.current"))
-        #expect(body.contains("buildIdentity.isAuthoritativeFieldBuild"))
-        #expect(body.contains("isAccessibilityLayout ? \"Capture locked\" : \"Physical capture locked\""))
-        #expect(body.contains(".accessibilityLabel(fieldBuildIsAuthoritative ? \"Build provenance ready\" : \"Physical capture locked\")"))
-        #expect(body.contains("This public build can prepare account metadata only. Bluetooth and physical evidence collection are locked."))
-        #expect(body.contains("Account setup is available. Bluetooth scanning, connection, and physical evidence stay locked until the reviewed field build is installed."))
-        #expect(body.contains("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings."))
-        #expect(body.contains("NavigationLink(fieldBuildIsAuthoritative ? \"Continue to preflight\" : \"View locked preflight\")"))
-
-        let heroUse = try #require(body.range(of: "rootHero\n                        buildAuthorityStatus\n                        accountSetupPanel"))
-        #expect(heroUse.lowerBound < body.endIndex)
-    }
-
-    @Test("Accessibility XXXL exposes the metadata action before support copy")
-    func accessibilityRootRecomposesForTheFirstFold() throws {
+    @Test("public root explains its lock and cannot start SDK authorization")
+    func publicRootIsExplanatoryAndFailClosed() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let root = String(try section(
             in: source,
-            from: "private struct CaptureP0Root: View",
-            to: "private final class SecureLinkController:"
+            from: "@MainActor\nprivate struct CaptureP0Root: View",
+            to: "@MainActor\nprivate final class SecureLinkController:"
         ))
 
-        #expect(root.contains("private var isAccessibilityLayout: Bool"))
-        #expect(root.contains("private var rootHero: some View"))
-        #expect(root.contains("if !isAccessibilityLayout"))
-        #expect(root.contains("isAccessibilityLayout ? \"Capture locked\" : \"Physical capture locked\""))
-        #expect(root.contains(".font(isAccessibilityLayout ? .body.weight(.semibold) : .headline)"))
-        #expect(root.contains(".dynamicTypeSize(...DynamicTypeSize.accessibility1)"))
-        #expect(root.contains("isAccessibilityLayout ? \"Account setup\" : \"Prepare account metadata\""))
-        #expect(root.contains("TextField(isAccessibilityLayout ? \"Tuya user code\" : \"Paste user code\""))
-        #expect(root.contains("Label(isAccessibilityLayout ? \"Create QR\" : \"Create approval QR\""))
-        #expect(root.contains(".accessibilityLabel(\"Create approval QR\")"))
+        #expect(root.contains("private let buildIdentity = NembraCaptureBuildIdentity.current"))
+        #expect(root.contains("private var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }"))
+        #expect(root.contains(".onAppear { synchronizeSDKSession() }"))
+        #expect(root.contains("guard fieldBuildIsAuthoritative else { return }\n        sdkAccount.bootstrap()"))
+        #expect(root.contains("if !fieldBuildIsAuthoritative {"))
+        #expect(root.contains("Label(\"Review field requirements\", systemImage: \"lock.shield\")"))
+        #expect(root.contains("Shows why this public build cannot start account or Bluetooth authorization."))
+        #expect(root.contains("Bluetooth stays locked until the reviewed field build is installed."))
+        #expect(root.contains("This public build cannot authorize Bluetooth or collect physical evidence."))
+        #expect(root.contains(".accessibilityLabel(fieldBuildIsAuthoritative ? \"Field build ready\" : \"Physical capture locked\")"))
         #expect(root.contains(".accessibilityIdentifier(\"nembra.capture.root.account-link-action\")"))
-        #expect(root.contains(".accessibilityIdentifier(\"capture.p0-root\")"))
-        #expect(root.contains("private func rootSection"))
-        #expect(!root.contains("private func rootPanel"))
 
-        let panel = String(try section(
-            in: root,
-            from: "private var accountSetupPanel: some View",
-            to: "private var statusText: some View"
+        let publicBranch = try #require(root.range(of: "if !fieldBuildIsAuthoritative {"))
+        let loggedInBranch = try #require(root.range(
+            of: "} else if sdkAccount.loggedIn {",
+            range: publicBranch.upperBound..<root.endIndex
         ))
-        let field = try #require(panel.range(of: "TextField(isAccessibilityLayout ? \"Tuya user code\" : \"Paste user code\""))
-        let action = try #require(panel.range(of: "Label(isAccessibilityLayout ? \"Create QR\" : \"Create approval QR\""))
-        let accessibilitySupport = try #require(
-            panel.range(
-                of: "if isAccessibilityLayout, tuya.phase != .needsUserCode",
-                range: action.upperBound..<panel.endIndex
-            )
-        )
-        #expect(field.lowerBound < action.lowerBound)
-        #expect(action.lowerBound < accessibilitySupport.lowerBound)
-        #expect(!panel.contains("Account setup only in this public build."))
-
-        let authority = String(try section(
-            in: root,
-            from: "private var buildAuthorityStatus: some View",
-            to: "private var accountSetupPanel: some View"
+        let appleAction = try #require(root.range(
+            of: "SignInWithAppleButton(.signIn)",
+            range: loggedInBranch.upperBound..<root.endIndex
         ))
-        #expect(authority.contains("if !isAccessibilityLayout"))
-        #expect(authority.contains(".accessibilityLabel(fieldBuildIsAuthoritative ? \"Build provenance ready\" : \"Physical capture locked\")"))
-        #expect(authority.contains("This public build can prepare account metadata only. Bluetooth and physical evidence collection are locked."))
+        #expect(publicBranch.lowerBound < loggedInBranch.lowerBound)
+        #expect(loggedInBranch.lowerBound < appleAction.lowerBound)
     }
 
-    @Test("Accessibility action remains full-width and precedes verbose status")
-    func accessibilityActionRemainsFullWidthAndBeforeVerboseStatus() throws {
+    @Test("field root uses one official SDK Apple action with disclosed email or phone recovery")
+    func officialSDKLoginIsSingleAndRecoverable() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let panel = String(try section(
+        let root = String(try section(
             in: source,
-            from: "private var accountSetupPanel: some View",
-            to: "private var statusText: some View"
+            from: "@MainActor\nprivate struct CaptureP0Root: View",
+            to: "@MainActor\nprivate final class SecureLinkController:"
         ))
 
-        let standardSupport = try #require(panel.range(of: "This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings."))
-        let field = try #require(panel.range(of: "TextField(isAccessibilityLayout ? \"Tuya user code\" : \"Paste user code\""))
-        let action = try #require(panel.range(of: "Label(isAccessibilityLayout ? \"Create QR\" : \"Create approval QR\""))
-        let standardStatus = try #require(panel.range(
-            of: "statusText",
-            range: standardSupport.upperBound..<field.lowerBound
-        ))
-        let accessibilityBranch = try #require(panel.range(
-            of: "if isAccessibilityLayout, tuya.phase != .needsUserCode",
-            range: action.upperBound..<panel.endIndex
-        ))
-        let accessibilityStatus = try #require(panel.range(
-            of: "statusText",
-            range: accessibilityBranch.upperBound..<panel.endIndex
+        #expect(root.occurrenceCount(of: "SignInWithAppleButton(.signIn)") == 1)
+        #expect(root.contains("request.requestedScopes = [.fullName, .email]"))
+        #expect(root.contains("sdkAccount.loginWithApple(credential: credential)"))
+        #expect(root.contains("DisclosureGroup(\"Use email or phone instead\", isExpanded: $showAlternativeLogin)"))
+        #expect(root.contains("ForEach(OfficialTuyaAccountAuthorizer.LoginMethod.allCases)"))
+        #expect(root.contains("TextField(sdkAccount.method == .email ? \"Tuya account email\" : \"Tuya account phone number\""))
+        #expect(root.contains("Button(sdkAccount.busy ? \"Contacting Tuya…\" : \"Send verification code\") { sdkAccount.sendCode() }"))
+        #expect(root.contains("SecureField(\"Verification code\", text: $sdkAccount.verificationCode)"))
+        #expect(root.contains("Button(\"Continue\") { sdkAccount.login() }"))
+        #expect(root.contains(".privacySensitive()"))
+        #expect(root.contains("SecureLinkView(device: selected, sdkAccount: sdkAccount)"))
+        #expect(!root.contains("TuyaAccountBridge"))
+        #expect(!root.contains("Create approval QR"))
+        #expect(!root.contains("Paste user code"))
+    }
+
+    @Test("large type keeps lock authority and the only safe public action in the first fold")
+    func accessibilityRootKeepsSafeActionAheadOfDetails() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let root = String(try section(
+            in: source,
+            from: "@MainActor\nprivate struct CaptureP0Root: View",
+            to: "@MainActor\nprivate final class SecureLinkController:"
         ))
 
-        #expect(standardStatus.lowerBound < field.lowerBound)
-        #expect(field.lowerBound < action.lowerBound)
-        #expect(action.lowerBound < accessibilityBranch.lowerBound)
-        #expect(accessibilityBranch.lowerBound < accessibilityStatus.lowerBound)
-        #expect(panel.contains(".frame(maxWidth: .infinity, minHeight: 50)"))
-        #expect(panel.contains(".tint(.cyan)"))
-        #expect(panel.contains(".accessibilityLabel(\"Create approval QR\")"))
+        #expect(root.contains("@Environment(\\.dynamicTypeSize) private var dynamicTypeSize"))
+        #expect(root.contains("private var isAccessibilityLayout: Bool { dynamicTypeSize.isAccessibilitySize }"))
+        #expect(root.contains("if !isAccessibilityLayout"))
+        #expect(root.contains(".dynamicTypeSize(...DynamicTypeSize.accessibility1)"))
+        #expect(root.contains(".accessibilitySortPriority(isAccessibilityLayout ? 100 : 0)"))
+        #expect(root.contains(".frame(maxWidth: .infinity, minHeight: 52)"))
+        #expect(root.contains(".accessibilityIdentifier(\"capture.p0-root\")"))
+
+        let body = String(try section(
+            in: root,
+            from: "var body: some View",
+            to: "@ViewBuilder\n    private var rootHero"
+        ))
+        let authority = try #require(body.range(of: "buildAuthorityStatus"))
+        let account = try #require(body.range(of: "accountSetupPanel", range: authority.upperBound..<body.endIndex))
+        let details = try #require(body.range(of: "engineeringDisclosure", range: account.upperBound..<body.endIndex))
+        #expect(authority.lowerBound < account.lowerBound)
+        #expect(account.lowerBound < details.lowerBound)
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
@@ -133,5 +112,18 @@ struct CaptureP0RootVisualAcceptanceTests {
 
     private enum SourceContractError: Error {
         case sectionMissing
+    }
+}
+
+private extension String {
+    func occurrenceCount(of needle: String) -> Int {
+        var count = 0
+        var searchStart = startIndex
+        while searchStart < endIndex,
+              let match = range(of: needle, range: searchStart..<endIndex) {
+            count += 1
+            searchStart = match.upperBound
+        }
+        return count
     }
 }

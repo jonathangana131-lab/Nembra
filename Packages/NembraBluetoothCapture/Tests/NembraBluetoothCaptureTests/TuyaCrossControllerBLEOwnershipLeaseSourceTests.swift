@@ -81,7 +81,7 @@ struct TuyaCrossControllerBLEOwnershipLeaseSourceTests {
         let failure = try section(
             in: source,
             from: "private func failLocally(_ text: String, _ kind: String)",
-            to: "private func log(_ kind: String"
+            to: "private func log("
         )
         #expect(failure.contains("if processCorrelationLease != nil || phase == .baseline"))
         #expect(failure.contains("abandonPackageCorrelation()"))

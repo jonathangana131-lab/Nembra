@@ -1,28 +1,204 @@
 import MapKit
+import NembraCore
 import SwiftUI
 import UIKit
 
+enum NembraPrimaryTab: String, Hashable {
+    case home
+    case rides
+    case vehicle
+    case settings
+}
+
+@MainActor
 struct AppRootView: View {
-    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @AppStorage(NembraPreferenceKey.appearance) private var appearanceRaw = NembraAppearancePreference.nembraDark.rawValue
+    @State private var selectedTab: NembraPrimaryTab = .home
+    @State private var dashboardSession = DashboardSessionStore()
+    @State private var horizonCockpit = HorizonCockpitStore()
+    var onOpenNavigation: () -> Void = {}
 
     var body: some View {
-        Group {
-            if verticalSizeClass == .compact {
-                DashboardView()
+        ZStack {
+            if dashboardSession.presentsDashboard {
+                DashboardView(
+                    cockpit: horizonCockpit,
+                    onHome: closeDashboard,
+                    onNavigate: onOpenNavigation
+                )
+                .transition(.opacity)
+            } else if dashboardSession.canPresentPortraitContent {
+                PortraitRootView(
+                    selectedTab: $selectedTab,
+                    onOpenNavigation: onOpenNavigation,
+                    onOpenDashboard: openDashboard
+                )
+                .disabled(dashboardSession.isOpening)
+                .transition(.opacity)
             } else {
-                PortraitRootView()
+                // Never lay portrait controls out in an observed landscape scene.
+                // Passive rotation owns no Dashboard authority, so the only safe
+                // presentation while Home restores its geometry is opaque.
+                Color.black
+                    .ignoresSafeArea()
+                    .accessibilityHidden(true)
+            }
+
+            DashboardWindowSceneReader { scene in
+                dashboardSession.attach(windowScene: scene)
+            }
+            .frame(width: 1, height: 1)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+
+            if dashboardSession.isOpening || dashboardSession.isClosing {
+                DashboardGeometryProgressOverlay(isClosing: dashboardSession.isClosing)
+            }
+
+            if let failure = dashboardSession.failure {
+                DashboardGeometryRecoveryOverlay(
+                    failure: failure,
+                    message: dashboardSession.failureMessage(failure),
+                    allowsKeepingStablePresentation: dashboardSession.canKeepStablePresentationAfterFailure,
+                    onRetry: {
+                        dashboardSession.recover(using: .retryGeometryRequest)
+                    },
+                    onKeepStablePresentation: {
+                        switch failure.stablePresentation {
+                        case .portrait:
+                            dashboardSession.recover(using: .stayInPortrait)
+                        case .dashboard:
+                            dashboardSession.recover(using: .continueDashboard)
+                        }
+                    }
+                )
+            }
+
+            if dashboardSession.isRestoringInactivePortrait {
+                InactivePortraitRestorationOverlay()
+            }
+
+            if let message = dashboardSession.inactivePortraitFailureMessage {
+                InactivePortraitRecoveryOverlay(
+                    message: message,
+                    onRetry: dashboardSession.retryInactivePortraitRestoration
+                )
             }
         }
+        .preferredColorScheme(appearancePreference.preferredColorScheme)
+        .onChange(of: dashboardSession.restoredPortraitToken) { _, token in
+            guard token != nil else { return }
+            dashboardSession.consumeRestoredPortraitToken()
+        }
+    }
+
+    private var appearancePreference: NembraAppearancePreference {
+        NembraAppearancePreference(rawValue: appearanceRaw) ?? .nembraDark
+    }
+
+    private func openDashboard() {
+        horizonCockpit.prepareForDashboardEntry()
+        dashboardSession.beginEntry(preserving: DashboardPortraitRestorationToken())
+    }
+
+    private func closeDashboard() {
+        dashboardSession.beginExit()
+    }
+}
+
+private struct InactivePortraitRestorationOverlay: View {
+    var body: some View {
+        ZStack {
+            Color.black
+                .ignoresSafeArea()
+
+            HStack(spacing: 12) {
+                ProgressView()
+                    .tint(NembraColor.gold)
+                Text("Returning Home to portrait…")
+                    .font(.headline)
+                    .foregroundStyle(NembraColor.primaryText)
+            }
+            .padding(.horizontal, 22)
+            .frame(minHeight: 58)
+            .background(
+                NembraColor.warmGraphite,
+                in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .strokeBorder(NembraColor.quietLine)
+            }
+            .padding(24)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Returning Home to portrait")
+        .accessibilityIdentifier("home.orientation.progress")
+    }
+}
+
+private struct InactivePortraitRecoveryOverlay: View {
+    let message: String
+    let onRetry: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black
+                .ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 18) {
+                Label("Home needs portrait", systemImage: "rectangle.portrait.rotate")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(NembraColor.primaryText)
+
+                Text(message)
+                    .font(.body)
+                    .foregroundStyle(NembraColor.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button("Try Again", action: onRetry)
+                    .font(.headline)
+                    .foregroundStyle(NembraColor.baseBlack)
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .background(
+                        NembraColor.gold,
+                        in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    )
+                    .accessibilityHint("Requests portrait orientation again.")
+                    .accessibilityIdentifier("home.orientation.retry")
+            }
+            .padding(24)
+            .frame(maxWidth: 420)
+            .background(
+                NembraColor.warmGraphite,
+                in: RoundedRectangle(cornerRadius: 28, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .strokeBorder(NembraColor.quietLine)
+            }
+            .padding(24)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("home.orientation.failure")
     }
 }
 
 private struct PortraitRootView: View {
     @Environment(RideApplicationStore.self) private var rides
+    @Binding var selectedTab: NembraPrimaryTab
+    let onOpenNavigation: () -> Void
+    let onOpenDashboard: () -> Void
 
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             NavigationStack {
-                HomeView()
+                HomeView(
+                    onOpenRides: {
+                        selectedTab = .rides
+                    },
+                    onOpenDashboard: onOpenDashboard
+                )
                     // iOS 27's floating tab bar intentionally overlays the tab
                     // content. Give the Home scroll view extra safe-area room so
                     // its final vehicle row can scroll clear of that glass bar
@@ -35,8 +211,9 @@ private struct PortraitRootView: View {
                     }
             }
             .tabItem {
-                Label("Home", systemImage: "scooter")
+                Label("Home", systemImage: "house")
             }
+            .tag(NembraPrimaryTab.home)
 
             NavigationStack {
                 RideHistoryView()
@@ -44,10 +221,144 @@ private struct PortraitRootView: View {
                     // tab chrome. History rows remain reachable at the scroll end
                     // instead of terminating under navigation controls.
                     .safeAreaPadding(.bottom, 72)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button(action: onOpenNavigation) {
+                                Label("Plan a ride", systemImage: "map")
+                            }
+                            .accessibilityHint("Search for a destination and preview it with Apple Maps.")
+                            .accessibilityIdentifier("rides.plan-route")
+                        }
+                    }
             }
             .tabItem {
                 Label("Rides", systemImage: "clock.arrow.circlepath")
             }
+            .tag(NembraPrimaryTab.rides)
+
+            NavigationStack {
+                VehicleControlsView()
+            }
+            .tabItem {
+                Label("Vehicle", systemImage: "scooter")
+            }
+            .tag(NembraPrimaryTab.vehicle)
+
+            NavigationStack {
+                NembraSettingsView()
+            }
+            .tabItem {
+                Label("Settings", systemImage: "gearshape")
+            }
+            .tag(NembraPrimaryTab.settings)
+        }
+        .tint(NembraColor.gold)
+    }
+}
+
+private struct DashboardGeometryProgressOverlay: View {
+    let isClosing: Bool
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.52)
+                .ignoresSafeArea()
+
+            HStack(spacing: 12) {
+                ProgressView()
+                    .tint(NembraColor.gold)
+                Text(isClosing ? "Returning to Home…" : "Opening Horizon…")
+                    .font(.headline)
+                    .foregroundStyle(NembraColor.primaryText)
+            }
+            .padding(.horizontal, 22)
+            .frame(minHeight: 58)
+            .background(
+                NembraColor.warmGraphite,
+                in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .strokeBorder(NembraColor.quietLine)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("dashboard.orientation.progress")
+    }
+}
+
+private struct DashboardGeometryRecoveryOverlay: View {
+    let failure: DashboardSessionFailure
+    let message: String
+    let allowsKeepingStablePresentation: Bool
+    let onRetry: () -> Void
+    let onKeepStablePresentation: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.72)
+                .ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 18) {
+                Label(recoveryTitle, systemImage: "rectangle.landscape.rotate")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(NembraColor.primaryText)
+
+                Text(message)
+                    .font(.body)
+                    .foregroundStyle(NembraColor.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                GlassEffectContainer(spacing: 10) {
+                    VStack(spacing: 10) {
+                        Button("Try Again", action: onRetry)
+                            .font(.headline)
+                            .foregroundStyle(NembraColor.baseBlack)
+                            .frame(maxWidth: .infinity, minHeight: 48)
+                            .background(
+                                NembraColor.gold,
+                                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            )
+                            .accessibilityIdentifier("dashboard.orientation.retry")
+
+                        if allowsKeepingStablePresentation {
+                            Button(stableActionTitle, action: onKeepStablePresentation)
+                                .font(.headline)
+                                .foregroundStyle(NembraColor.primaryText)
+                                .frame(maxWidth: .infinity, minHeight: 48)
+                                .nembraGlassControl()
+                                .accessibilityIdentifier("dashboard.orientation.cancel")
+                        }
+                    }
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: 420)
+            .background(
+                NembraColor.warmGraphite,
+                in: RoundedRectangle(cornerRadius: 28, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .strokeBorder(NembraColor.quietLine)
+            }
+            .padding(24)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("dashboard.orientation.failure")
+    }
+
+    private var recoveryTitle: String {
+        switch failure.stablePresentation {
+        case .portrait: "Horizon needs landscape"
+        case .dashboard: "Home needs portrait"
+        }
+    }
+
+    private var stableActionTitle: String {
+        switch failure.stablePresentation {
+        case .portrait: "Stay on Home"
+        case .dashboard: "Continue Dashboard"
         }
     }
 }
@@ -120,22 +431,22 @@ private struct RideStatusStrip: View {
 private struct RideHistoryView: View {
     @Environment(RideHistoryPresentationStore.self) private var history
     @Environment(RideApplicationStore.self) private var rides
+    @Environment(DailyRidePresentationStore.self) private var daily
+    @Environment(VehicleStore.self) private var vehicle
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var revealedDay: RideLocalDay?
 
     var body: some View {
-        Group {
-            if history.records.isEmpty {
-                emptyOrLoadingState
-            } else {
-                historyList
-            }
-        }
+        historyList
         .navigationTitle("Rides")
         .navigationBarTitleDisplayMode(.large)
         .task(id: rides.lastCompletedSessionID) {
             await history.refresh()
+            await daily.refresh(currentRideSessionID: rides.activeSessionID)
         }
         .refreshable {
             await history.refresh()
+            await daily.refresh(currentRideSessionID: rides.activeSessionID)
         }
     }
 
@@ -164,6 +475,22 @@ private struct RideHistoryView: View {
 
     private var historyList: some View {
         List {
+            Section {
+                archiveHeader
+                    .listRowInsets(.init(top: 8, leading: 20, bottom: 14, trailing: 20))
+            }
+            .listRowBackground(NembraColor.baseBlack)
+            .listRowSeparator(.hidden)
+
+            Section {
+                DailyMileageActivityView { day in
+                    revealedDay = day
+                }
+                    .listRowInsets(.init(top: 0, leading: 20, bottom: 12, trailing: 20))
+            }
+            .listRowBackground(NembraColor.baseBlack)
+            .listRowSeparator(.hidden)
+
             if history.status == .failed || history.status == .unavailable {
                 Section {
                     Label(
@@ -175,27 +502,46 @@ private struct RideHistoryView: View {
                 }
             }
 
-            Section {
-                ForEach(history.records, id: \.sessionID) { record in
-                    NavigationLink {
-                        RideHistoryDetailView(record: record)
-                    } label: {
-                        RideHistoryRowView(record: record)
+            if history.records.isEmpty {
+                Section {
+                    emptyOrLoadingState
+                        .frame(maxWidth: .infinity, minHeight: 190)
+                        .listRowBackground(NembraColor.baseBlack)
+                }
+            } else if displayedRecords.isEmpty, let revealedDay {
+                Section {
+                    ContentUnavailableView(
+                        "No completed ride record yet",
+                        systemImage: "clock.badge.questionmark",
+                        description: Text(
+                            "Accepted day totals can include a ride that is still active or waiting to finish saving."
+                        )
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 150)
+                } header: {
+                    rideSectionHeader(for: revealedDay, count: 0)
+                }
+                .listRowBackground(NembraColor.baseBlack)
+            } else {
+                Section {
+                    ForEach(displayedRecords, id: \.sessionID) { record in
+                        NavigationLink {
+                            RideHistoryDetailView(record: record)
+                        } label: {
+                            RideHistoryRowView(record: record)
+                        }
+                        .accessibilityIdentifier("rides.completed-row")
+                        .listRowBackground(NembraColor.quietSurface)
+                        .listRowSeparatorTint(NembraColor.quietLine)
                     }
-                    .accessibilityIdentifier("rides.completed-row")
+                } header: {
+                    rideSectionHeader(for: revealedDay, count: displayedRecords.count)
                 }
-            } header: {
-                HStack {
-                    Text("Saved rides")
-                    Spacer()
-                    Text("\(history.records.count)")
-                        .monospacedDigit()
-                }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(savedRidesAccessibilityLabel)
             }
         }
         .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(NembraColor.baseBlack)
         .accessibilityIdentifier("rides.history")
     }
 
@@ -203,6 +549,178 @@ private struct RideHistoryView: View {
         history.records.count == 1
             ? "1 saved ride"
             : "\(history.records.count) saved rides"
+    }
+
+    private var archiveHeader: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 16) {
+                    vehicleIdentity
+                    monthSummary
+                }
+            } else {
+                HStack(spacing: 14) {
+                    vehicleIdentity
+                    Spacer(minLength: 12)
+                    monthSummary
+                }
+            }
+        }
+        .accessibilityIdentifier("rides.archive-header")
+    }
+
+    private var vehicleIdentity: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(NembraColor.deepGold.opacity(0.18))
+                Circle()
+                    .strokeBorder(NembraColor.gold.opacity(0.28), lineWidth: 1)
+                Image(systemName: "scooter")
+                    .font(.system(size: 22, weight: .medium))
+                    .foregroundStyle(NembraColor.primaryText)
+            }
+            .frame(width: 58, height: 58)
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(displayVehicleName)
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(NembraColor.primaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 7) {
+                    Circle()
+                        .fill(archiveStatusColor)
+                        .frame(width: 7, height: 7)
+                        .accessibilityHidden(true)
+                    Text(archiveStatusText)
+                        .font(.subheadline)
+                        .foregroundStyle(NembraColor.secondaryText)
+                }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(displayVehicleName)
+        .accessibilityValue(archiveStatusText)
+    }
+
+    private var monthSummary: some View {
+        VStack(alignment: dynamicTypeSize.isAccessibilitySize ? .leading : .trailing, spacing: 3) {
+            Text(monthDistanceText)
+                .font(.title2.weight(.bold).monospacedDigit())
+                .foregroundStyle(NembraColor.primaryText)
+            Text(monthSummarySubtitle)
+                .font(.caption)
+                .foregroundStyle(NembraColor.secondaryText)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(currentMonthName) accepted distance")
+        .accessibilityValue(monthSummaryAccessibilityValue)
+    }
+
+    private func rideSectionHeader(for day: RideLocalDay?, count: Int) -> some View {
+        HStack(spacing: 12) {
+            Text(day.map { "Rides for \(shortDay($0))" } ?? "Saved rides")
+            Spacer(minLength: 8)
+            if day != nil {
+                Button("All rides") {
+                    revealedDay = nil
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(NembraColor.gold)
+                .frame(minHeight: 44)
+            } else {
+                Text("\(count)")
+                    .monospacedDigit()
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(
+            day == nil
+                ? savedRidesAccessibilityLabel
+                : "\(count) saved rides overlap \(day.map(shortDay) ?? "selected day")"
+        )
+    }
+
+    private var displayedRecords: [RideHistoryRecord] {
+        guard let revealedDay else { return history.records }
+        return history.records.filter { record in
+            record.evidence.beganAtDate < revealedDay.endDate
+                && record.evidence.endedAtDate > revealedDay.startDate
+        }
+    }
+
+    private var displayVehicleName: String {
+        vehicle.profile == .simulatorQA
+            ? VehicleProfile.aovoproES80.identity.displayName
+            : vehicle.profile.identity.displayName
+    }
+
+    private var archiveStatusText: String {
+        switch (history.status, daily.status) {
+        case (.ready, .ready): "Ride history is current"
+        case (.failed, _), (.unavailable, _), (_, .failed), (_, .unavailable):
+            "Ride history needs attention"
+        default: "Refreshing accepted history"
+        }
+    }
+
+    private var archiveStatusColor: Color {
+        switch (history.status, daily.status) {
+        case (.ready, .ready): .green
+        case (.failed, _), (.unavailable, _), (_, .failed), (_, .unavailable): .orange
+        default: NembraColor.gold
+        }
+    }
+
+    private var currentMonthInterval: DateInterval? {
+        Calendar.current.dateInterval(of: .month, for: .now)
+    }
+
+    private var currentMonthSummaries: [DailyRideSummary] {
+        guard let interval = currentMonthInterval else { return [] }
+        return daily.recentDays.filter {
+            $0.localDay.startDate < interval.end && $0.localDay.endDate > interval.start
+        }
+    }
+
+    private var monthDistanceMeters: Double? {
+        let values = currentMonthSummaries.compactMap { $0.distanceMeters.value }
+        return values.isEmpty ? nil : values.reduce(0, +)
+    }
+
+    private var monthDistanceIsPartial: Bool {
+        currentMonthSummaries.contains {
+            $0.rideCount > 0 && $0.distanceMeters.availability != .complete
+        }
+    }
+
+    private var monthDistanceText: String {
+        monthDistanceMeters.map {
+            VehicleDisplayFormatting.distance(kilometers: $0 / 1_000)
+        } ?? "—"
+    }
+
+    private var currentMonthName: String {
+        Date.now.formatted(.dateTime.month(.wide))
+    }
+
+    private var monthSummarySubtitle: String {
+        monthDistanceIsPartial ? "\(currentMonthName) · known" : currentMonthName
+    }
+
+    private var monthSummaryAccessibilityValue: String {
+        guard monthDistanceMeters != nil else { return "No accepted distance evidence" }
+        return monthDistanceIsPartial ? "\(monthDistanceText), known partial total" : monthDistanceText
+    }
+
+    private func shortDay(_ day: RideLocalDay) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = .current
+        formatter.timeZone = TimeZone(identifier: day.timeZoneIdentifier)
+        formatter.setLocalizedDateFormatFromTemplate("MMMd")
+        return formatter.string(from: day.startDate)
     }
 }
 
@@ -245,7 +763,7 @@ private struct RideHistoryRowView: View {
                 if isRecovered {
                     Label("Recovered", systemImage: "arrow.triangle.2.circlepath")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(NembraColor.gold)
                 }
             }
         }
@@ -254,20 +772,13 @@ private struct RideHistoryRowView: View {
     @ViewBuilder
     private func distanceBlock(alignment: HorizontalAlignment) -> some View {
         VStack(alignment: alignment, spacing: 4) {
-            if let odometerDeltaKilometers {
-                distanceLine(
-                    label: "Scooter",
-                    value: VehicleDisplayFormatting.distance(kilometers: odometerDeltaKilometers)
-                )
-            }
-
-            if record.evidence.qualityScreenedGPSDistanceMeters > 0 {
-                distanceLine(
-                    label: "GPS",
-                    value: VehicleDisplayFormatting.distance(
-                        kilometers: record.evidence.qualityScreenedGPSDistanceMeters / 1_000
-                    )
-                )
+            if let primaryDistance {
+                Text(primaryDistance.value)
+                    .font(.headline.weight(.bold).monospacedDigit())
+                    .foregroundStyle(NembraColor.primaryText)
+                Text(primaryDistance.source)
+                    .font(.caption)
+                    .foregroundStyle(NembraColor.secondaryText)
             }
 
             if !hasDistanceEvidence {
@@ -278,15 +789,20 @@ private struct RideHistoryRowView: View {
         }
     }
 
-    private func distanceLine(label: String, value: String) -> some View {
-        HStack(spacing: 8) {
-            Text(label)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.subheadline.weight(.semibold).monospacedDigit())
-                .foregroundStyle(.primary)
+    private var primaryDistance: (source: String, value: String)? {
+        if let odometerDeltaKilometers {
+            return (
+                "Scooter distance",
+                VehicleDisplayFormatting.distance(kilometers: odometerDeltaKilometers)
+            )
         }
+        guard record.evidence.qualityScreenedGPSDistanceMeters > 0 else { return nil }
+        return (
+            "GPS distance",
+            VehicleDisplayFormatting.distance(
+                kilometers: record.evidence.qualityScreenedGPSDistanceMeters / 1_000
+            )
+        )
     }
 
     private var rowAccessibilityLabel: String {

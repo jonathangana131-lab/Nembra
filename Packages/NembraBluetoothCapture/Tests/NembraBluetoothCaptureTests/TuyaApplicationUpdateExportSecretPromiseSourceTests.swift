@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Tuya application-update export secret promise")
 struct TuyaApplicationUpdateExportSecretPromiseSourceTests {
-    @Test("application sanitizer covers every credential key explicitly promised absent from export")
+    @Test("application sanitizer and exact-value scan support the deliberately narrow known-secret claim")
     func applicationSanitizerMatchesExportSecretPromise() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let driver = String(try section(
@@ -23,10 +23,15 @@ struct TuyaApplicationUpdateExportSecretPromiseSourceTests {
             to: "func prepareExport()"
         ))
 
-        #expect(makeExport.contains("secretsRedacted: true"))
-        #expect(prepareExport.contains("No account UID, AppKey/AppSecret, password, account token, local_key, session key"))
+        #expect(makeExport.contains("knownSecretsRedacted: true"))
+        #expect(prepareExport.contains("Known credential fields are redacted"))
+        #expect(prepareExport.contains("exact AppKey/AppSecret/current account UID values are absent"))
+        #expect(prepareExport.contains("exactKnownSecretsForbiddenFromExport"))
 
         for fragment in [
+            "authorization",
+            "credential",
+            "token",
             "localkey",
             "sessionkey",
             "appkey",

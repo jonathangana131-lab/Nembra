@@ -1,11 +1,6 @@
-/*
- Standalone Capture sighted-copy compaction.
+/* Standalone Capture English product copy. */
 
- These keys keep the source strings stable while the standalone Capture target
- renders a tighter English first fold. The compact hero's accessibility label
- remains explicit in NembraCaptureEntrypoint.swift.
-*/
-
-"Prepare the scooter link" = "Link this scooter";
-"Link the Tuya Smart account that owns this scooter. Bluetooth and physical evidence stay locked until the reviewed field build and fresh scooter authority are verified." = "Link the Tuya Smart account that owns this scooter.";
-"This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings." = "Account metadata only. This step does not start Bluetooth or change scooter settings.";
+"Link your scooter" = "Link your scooter";
+"Link scooter account" = "Link scooter account";
+"Account link only · no Bluetooth or scooter changes" = "Account link only · no Bluetooth or scooter changes";
+"Details" = "Details";

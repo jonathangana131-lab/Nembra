@@ -45,8 +45,11 @@ struct ES80CaptureFieldRuntimeRendezvousTests {
         #expect(source.contains("LabeledContent(\"Procedure\", value: test.fieldProcedureIdentifier)"))
         #expect(source.contains("requirementRow(\"Capture build\", ready: test.fieldBuildIsAuthoritative)"))
         #expect(source.contains("if authorityReady {"))
-        #expect(source.contains("test.startBaseline()"))
-        #expect(source.contains("Label(\"Start with scooter OFF\", systemImage: \"power\")"))
+        #expect(source.contains("stationarySafetyLaunch = .begin"))
+        #expect(source.contains("StationarySafetyConfirmationSheet(launch: launch)"))
+        #expect(source.contains("test.recordFreshOperatorAttestationAndBegin()"))
+        #expect(source.contains("Label(\"Review safety and begin\", systemImage: \"checkmark.shield.fill\")"))
+        #expect(source.contains("\"I confirm — begin at OFF1\""))
     }
 
     @Test("field rendezvous consumes compiled build identity without minting replacement authority in the view")
@@ -59,7 +62,7 @@ struct ES80CaptureFieldRuntimeRendezvousTests {
         #expect(!source.contains("permitsPhysicalProcedure = true"))
         #expect(!source.contains("UserDefaults"))
 
-        let start = try #require(source.range(of: "func startBaseline()"))
+        let start = try #require(source.range(of: "private func beginBaselineAfterCurrentOperatorAttestation()"))
         let guardRange = try #require(
             source.range(
                 of: "guard buildIdentity.isAuthoritativeFieldBuild else",

@@ -115,9 +115,10 @@ struct TuyaAppChronologyIntegrityTerminalSourceTests {
             to: "private func recordObservedTransportLoss"
         ))
 
-        #expect(watchdog.contains("sessionLedger.observeCurrentConnection(for: token)"))
+        #expect(watchdog.contains("sessionLedger.captureLivenessReceipt(for: token)"))
+        #expect(watchdog.contains("sessionLedger.observeCurrentConnection("))
+        #expect(watchdog.contains("receipt: livenessReceipt"))
         #expect(watchdog.contains("sessionLedger.sealAcceptedObservation(for: token)"))
-        #expect(watchdog.contains("sessionLedger.markApplicationObservationTimedOut(for: token)"))
         #expect(watchdog.components(separatedBy: "MutationError.monotonicClockRegressed").count - 1 >= 3)
         #expect(watchdog.components(separatedBy: "invalidateInternalLifecycle").count - 1 >= 4)
     }

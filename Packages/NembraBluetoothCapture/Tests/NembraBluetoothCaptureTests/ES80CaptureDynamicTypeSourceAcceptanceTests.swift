@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@Suite("ES80 Capture Dynamic Type source acceptance")
+@Suite("Capture Dynamic Type source acceptance")
 struct ES80CaptureDynamicTypeSourceAcceptanceTests {
     private static func repositoryRoot() -> URL {
         URL(fileURLWithPath: #filePath)
@@ -12,22 +12,21 @@ struct ES80CaptureDynamicTypeSourceAcceptanceTests {
             .deletingLastPathComponent()
     }
 
-    private static func shellSource() throws -> String {
+    private static func entrypointSource() throws -> String {
         try String(
             contentsOf: repositoryRoot()
                 .appendingPathComponent("NembraApp")
-                .appendingPathComponent("Features")
-                .appendingPathComponent("Research")
-                .appendingPathComponent("ES80CaptureShellView.swift"),
+                .appendingPathComponent("App")
+                .appendingPathComponent("NembraCaptureEntrypoint.swift"),
             encoding: .utf8
         )
     }
 
-    private static func researchUITestSource() throws -> String {
+    private static func captureUITestSource() throws -> String {
         try String(
             contentsOf: repositoryRoot()
-                .appendingPathComponent("NembraUITests")
-                .appendingPathComponent("ES80ResearchCaptureUITests.swift"),
+                .appendingPathComponent("NembraCaptureUITests")
+                .appendingPathComponent("NembraCaptureUITests.swift"),
             encoding: .utf8
         )
     }
@@ -47,109 +46,85 @@ struct ES80CaptureDynamicTypeSourceAcceptanceTests {
         return source[start.lowerBound..<end.lowerBound]
     }
 
-    private static func hasIntentionalAdaptiveLayout(_ section: Substring) -> Bool {
-        section.contains("dynamicTypeSize.isAccessibilitySize")
-            || section.contains("ViewThatFits")
-            || section.contains("AnyLayout")
+    @Test("active Capture root deliberately adapts and remains scrollable at accessibility sizes")
+    func activeCaptureRootAdaptsForDynamicType() throws {
+        let source = try Self.entrypointSource()
+        let root = try Self.section(
+            source,
+            from: "private struct CaptureP0Root: View",
+            to: "private final class SecureLinkController"
+        )
+
+        #expect(root.contains("@Environment(\\.dynamicTypeSize) private var dynamicTypeSize"))
+        #expect(root.contains("dynamicTypeSize.isAccessibilitySize"))
+        #expect(root.contains("ScrollView"))
+        #expect(root.contains("spacing: isAccessibilityLayout ? 16 : 22"))
+        #expect(root.contains("nembra.capture.root.account-link-action"))
+        #expect(root.contains(".frame(maxWidth: .infinity, minHeight: 52)"))
     }
 
-    @Test("Capture explicitly observes Dynamic Type for product recomposition")
-    func captureObservesDynamicType() throws {
-        let source = try Self.shellSource()
+    @Test("active secure-link flow recomposes dense progress and observation content")
+    func secureLinkFlowRecomposesForDynamicType() throws {
+        let source = try Self.entrypointSource()
+        let secureLink = try Self.section(
+            source,
+            from: "private struct SecureLinkView: View",
+            to: "struct CaptureCorrelationSuccessPresentation: View"
+        )
 
-        #expect(
-            source.contains("@Environment(\\.dynamicTypeSize)"),
-            "Capture must observe system Dynamic Type rather than relying on fixed horizontal layouts to compress implicitly."
-        )
-        #expect(
-            source.contains("dynamicTypeSize.isAccessibilitySize"),
-            "Accessibility text sizes require an intentional Capture recomposition path."
-        )
+        #expect(secureLink.contains("@Environment(\\.dynamicTypeSize) private var dynamicTypeSize"))
+        #expect(secureLink.contains("ScrollView"))
+        #expect(secureLink.contains("if dynamicTypeSize.isAccessibilitySize"))
+        #expect(secureLink.contains("VStack(alignment: .leading, spacing: 8)"))
+        #expect(secureLink.contains("nembra.capture.observation.surface"))
+        #expect(secureLink.contains(".fixedSize(horizontal: false, vertical: true)"))
     }
 
-    @Test("hero status stops competing horizontally at accessibility sizes")
-    func heroStatusRecomposes() throws {
-        let source = try Self.shellSource()
-        let hero = try Self.section(source, from: "private func hero(for phase:", to: "#if DEBUG && targetEnvironment(simulator)")
-
-        #expect(hero.contains("PASSIVE / READ ONLY"))
-        #expect(
-            Self.hasIntentionalAdaptiveLayout(hero),
-            "Hero state + PASSIVE / READ ONLY must deliberately recompose instead of squeezing at accessibility text sizes."
-        )
-    }
-
-    @Test("six-stage capture rail has an accessibility-size composition")
-    func progressRailRecomposes() throws {
-        let source = try Self.shellSource()
-        let rail = try Self.section(source, from: "private func progressRail(", to: "@ViewBuilder")
-
-        #expect(rail.contains("CAPTURE PROGRESS"))
-        for label in ["OFF 1", "ON 1", "OFF 2", "ON 2", "READY", "SEAL"] {
-            #expect(rail.contains(label))
-        }
-        #expect(
-            Self.hasIntentionalAdaptiveLayout(rail),
-            "The six fixed horizontal stage labels must not depend on compression to survive accessibility text sizes."
-        )
-    }
-
-    @Test("capture health stops forcing three metrics into one row at accessibility sizes")
-    func captureHealthRecomposes() throws {
-        let source = try Self.shellSource()
-        let health = try Self.section(source, from: "private func observationHealthStrip(", to: "private var completionPanel")
-
-        #expect(
-            health.contains("SIGNAL"),
-            "The Dynamic Type contract must follow the accepted rider-facing SIGNAL label rather than reviving the superseded TARGET implementation term."
-        )
-        #expect(health.contains("DISCOVERY"))
-        #expect(health.contains("SEAL"))
-        #expect(
-            !health.contains("healthItem(\"TARGET\""),
-            "Accessibility acceptance must not regress the rider-facing health strip back to TARGET vocabulary."
-        )
-        #expect(
-            Self.hasIntentionalAdaptiveLayout(health),
-            "Signal / discovery / seal health must deliberately stack or otherwise adapt for accessibility text sizes."
-        )
-    }
-
-    @Test("horizon-ready Capture retains Accessibility XXXL visual evidence")
-    func horizonReadyAccessibilityXXXLVisualEvidenceIsRequired() throws {
-        let source = try Self.researchUITestSource()
+    @Test("public-build Accessibility XXXL UI evidence keeps its only action usable")
+    func publicBuildAccessibilityXXXLActionEvidenceIsRequired() throws {
+        let source = try Self.captureUITestSource()
         let block = try Self.section(
             source,
-            from: "func testV14SimulatorQAHorizonReadyRemainsActionableAtAccessibilityExtraExtraExtraLarge()",
-            to: "func testV14SimulatorQAHorizonReadyLandscapeKeepsFinishAndTruthVisible()"
+            from: "func testAccessibilityXXXLKeepsTheOnlyPublicActionUsable()",
+            to: "func testUnknownSyntheticScenarioBlocksInsteadOfOpeningLiveCapture()"
         )
 
-        #expect(block.contains("--es80-capture-qa-scenario=observationHorizonReady"))
         #expect(block.contains("-UIPreferredContentSizeCategoryName"))
-        #expect(block.contains("UICTContentSizeCategoryAccessibilityXXXL"))
-        #expect(!block.contains("UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"))
-        #expect(block.contains("es80.capture-shell"))
-        #expect(block.contains("es80.capture.simulator-qa"))
-        #expect(block.contains("es80.capture.experiment-progress"))
-        #expect(block.contains("es80.capture.finish"))
-        #expect(block.contains("Capture can be sealed"))
-        #expect(block.contains("Horizon Ready — Accessibility XXXL — Progress"))
-        #expect(block.contains("Horizon Ready — Accessibility XXXL — Health"))
-        #expect(block.contains("Horizon Ready — Accessibility XXXL — Status"))
-        #expect(block.contains("Horizon Ready — Accessibility XXXL — Seal"))
+        #expect(block.contains("UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"))
+        #expect(block.contains("capture.p0-root"))
+        #expect(block.contains("Physical capture locked"))
+        #expect(block.contains("nembra.capture.root.account-link-action"))
+        #expect(block.contains("XCTAssertTrue(accountLink.isEnabled)"))
+        #expect(block.contains("XCTAssertTrue(accountLink.isHittable)"))
     }
 
-    @Test("existing Accessibility XXXL product evidence is not regressed")
-    func existingAccessibilityXXXLProductEvidenceRemains() throws {
-        let source = try Self.researchUITestSource()
-
-        #expect(source.contains("UICTContentSizeCategoryAccessibilityXXXL"))
-        #expect(!source.contains("UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"))
-        #expect(source.contains("Rider NO-GO — Accessibility XXXL"))
-        #expect(source.contains("Capture Complete — Accessibility XXXL"))
-        #expect(
-            source.contains("--es80-capture-qa-scenario=captureComplete"),
-            "Capture Complete Accessibility XXXL remains valuable positive-state evidence while horizon/progress/health evidence is added."
+    @Test("synthetic safety-sheet Accessibility XXXL evidence keeps confirmation reachable")
+    func syntheticSafetySheetAccessibilityXXXLEvidenceIsRequired() throws {
+        let source = try Self.captureUITestSource()
+        let block = try Self.section(
+            source,
+            from: "func testSyntheticSafetySheetAtAccessibilityXXXLKeepsDisclosureAndConfirmationReachable()",
+            to: "func testSyntheticCorrelationWithNoRepeatableTargetStopsWithoutConfirmation()"
         )
+
+        #expect(block.contains("scenario: \"safety\""))
+        #expect(block.contains("-UIPreferredContentSizeCategoryName"))
+        #expect(block.contains("UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"))
+        #expect(block.contains("nembra.capture.qa.synthetic-sheet-disclosure"))
+        #expect(block.contains("nembra.capture.stationary-safety-confirm"))
+        let reveal = try #require(block.range(of: "reveal(confirm, in: app)"))
+        let screenshot = try #require(block.range(of: "keepSyntheticScreenshot(named: \"SAFETY-SHEET-AX-XXXL\")"))
+        #expect(reveal.lowerBound < screenshot.lowerBound)
+        #expect(block.contains("XCTAssertTrue(confirm.isEnabled)"))
+    }
+
+    @Test("all retained Capture QA screenshots stay explicitly synthetic")
+    func screenshotsCannotMasqueradeAsPhysicalEvidence() throws {
+        let source = try Self.captureUITestSource()
+
+        #expect(source.contains("XCTAttachment(screenshot: XCUIScreen.main.screenshot())"))
+        #expect(source.contains("screenshot.name = \"SYNTHETIC-QA-\\(name)\""))
+        #expect(source.contains("SYNTHETIC UI STATE · NO CAPTURE ARTIFACT"))
+        #expect(source.contains("assertNoCompleteOrShare(in: app)"))
     }
 }

@@ -29,7 +29,7 @@ struct TuyaFieldGoPrerequisiteSourceTests {
         #expect(app.contains("ThingSmartUser.sharedInstance()?.uid"))
         #expect(app.contains("PassiveBluetoothPowerCycleObservationSession(minimumWindowDuration: 10)"))
 
-        guard let baseline = app.range(of: "func startBaseline()"),
+        guard let baseline = app.range(of: "private func beginBaselineAfterCurrentOperatorAttestation()"),
               let correlationStart = app.range(of: "self.beginCorrelationSeries()", range: baseline.upperBound..<app.endIndex),
               let baselineLease = app.range(of: "TuyaSDKAccountIdentityLeaseGate.verdict", range: baseline.upperBound..<correlationStart.lowerBound) else {
             Issue.record("OFF1 correlation must revalidate the account-bound membership lease before the package-owned correlation series starts.")

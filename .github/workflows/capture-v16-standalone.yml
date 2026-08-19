@@ -7,6 +7,7 @@ on:
       - 'NembraCapture.xcodeproj/**'
       - 'NembraCapture-Info.plist'
       - 'NembraCapture.entitlements'
+      - 'NembraCaptureUITests/**'
       - 'NembraApp/App/NembraCapture*.swift'
       - 'NembraApp/Features/Research/**'
       - 'NembraApp/Resources/Localizable.strings'
@@ -25,8 +26,9 @@ concurrency:
 jobs:
   standalone:
     name: Test package and build standalone Capture
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: xcode-27
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout immutable PR head
@@ -34,10 +36,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
 
       - name: Checkout dispatched ref
         if: github.event_name != 'pull_request'
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Verify immutable PR head
         if: github.event_name == 'pull_request'
@@ -52,8 +57,12 @@ jobs:
       - name: Record toolchain
         run: |
           set -euo pipefail
-          xcodebuild -version
-          swift --version
+          artifacts="${RUNNER_TEMP}/NembraCaptureSyntheticUIArtifacts"
+          mkdir -p "$artifacts"
+          xcodebuild -version | tee "$artifacts/xcode-version.txt"
+          swift --version | tee "$artifacts/swift-version.txt"
+          grep -Eq '^Xcode 27([.]|$)' "$artifacts/xcode-version.txt"
+          git rev-parse --verify HEAD^{commit} > "$artifacts/exact-head-sha.txt"
 
       - name: Validate standalone project inputs
         run: |
@@ -88,15 +97,23 @@ jobs:
           swift test --filter TuyaApplicationTimeoutPresentationRaceSourceTests
           swift test --filter TuyaAuthenticatedReadOnlyCommandFenceSourceTests
           swift test --filter CaptureFirstFoldCopySourceTests
+          swift test --filter CaptureSimulatorQAHarnessSourceTests
 
-      - name: Preserve deferred field-contract boundary
+      - name: Validate one-time field handoff without private inputs
         run: |
           set -euo pipefail
-          contract='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerProcedureSourceTests.swift'
-          test -f "$contract"
-          grep -Fq 'scripts/field/install_one_time_capture.command' "$contract"
-          test ! -e scripts/field/install_one_time_capture.command
-          printf '%s\n' 'Field-installer contract remains present but belongs to a later Capture objective; this standalone gate does not silently skip or recreate its authority input.'
+          bash -n Scripts/provision_capture_tuya_identity.sh
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          bash -n scripts/field/install_one_time_capture.command
+          /usr/bin/python3 -m py_compile \
+            Scripts/capture_tuya_private_input_provenance.py \
+            scripts/ci/es80_signed_field_artifact_private_runner.py
+          /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          test ! -e LocalSecrets
+          test ! -e Pods
+          test ! -e NembraCapture.xcworkspace
+          printf '%s\n' 'Validated public handoff code only; CI did not provision secrets, build a private workspace, install an app, or authorize a physical run.'
 
       - name: Build standalone Capture for Simulator
         run: |
@@ -136,3 +153,141 @@ jobs:
           done
 
           printf 'Verified software-only standalone product: %s; no field-authority provenance is populated.\n' "$bundle_id"
+
+      - name: Create exact iPhone 12 / iOS 27 UI-test simulator
+        id: capture_ui_simulator
+        run: |
+          set -euo pipefail
+          artifacts="${RUNNER_TEMP}/NembraCaptureSyntheticUIArtifacts"
+          mkdir -p "$artifacts/logs"
+
+          xcrun simctl list runtimes -j > "$artifacts/simulator-runtimes.json"
+          xcrun simctl list devicetypes -j > "$artifacts/simulator-device-types.json"
+
+          runtime_id="$(/usr/bin/python3 - "$artifacts/simulator-runtimes.json" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              runtimes = json.load(handle).get("runtimes", [])
+
+          candidates = [
+              runtime
+              for runtime in runtimes
+              if runtime.get("isAvailable")
+              and str(runtime.get("version", "")).split(".", 1)[0] == "27"
+              and str(runtime.get("identifier", "")).startswith(
+                  "com.apple.CoreSimulator.SimRuntime.iOS-27"
+              )
+          ]
+          if not candidates:
+              raise SystemExit("No available iOS 27 Simulator runtime was found")
+
+          def version(runtime):
+              return tuple(int(part) for part in str(runtime["version"]).split("."))
+
+          print(max(candidates, key=version)["identifier"])
+          PY
+          )"
+
+          device_type="$(/usr/bin/python3 - "$artifacts/simulator-device-types.json" <<'PY'
+          import json
+          import sys
+
+          expected = "com.apple.CoreSimulator.SimDeviceType.iPhone-12"
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              device_types = json.load(handle).get("devicetypes", [])
+          if not any(item.get("identifier") == expected for item in device_types):
+              raise SystemExit(f"Required Simulator device type is unavailable: {expected}")
+          print(expected)
+          PY
+          )"
+
+          simulator_name="Nembra Capture Synthetic UI ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          udid="$(xcrun simctl create "$simulator_name" "$device_type" "$runtime_id")"
+          {
+            printf 'udid=%s\n' "$udid"
+            printf 'runtime_id=%s\n' "$runtime_id"
+          } >> "$GITHUB_OUTPUT"
+          {
+            printf 'exact_head=%s\n' "$(git rev-parse --verify HEAD^{commit})"
+            printf 'runtime=%s\n' "$runtime_id"
+            printf 'device_type=%s\n' "$device_type"
+            printf 'simulator_udid=%s\n' "$udid"
+          } > "$artifacts/simulator-selection.txt"
+
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl list devices -j > "$artifacts/simulator-devices-after-boot.json"
+
+      - name: Run public and synthetic Capture UI tests
+        env:
+          SIMULATOR_UDID: ${{ steps.capture_ui_simulator.outputs.udid }}
+        run: |
+          set -euo pipefail
+          artifacts="${RUNNER_TEMP}/NembraCaptureSyntheticUIArtifacts"
+          derived_data="${RUNNER_TEMP}/NembraCaptureV16UITestDerivedData"
+          RESULT_BUNDLE="${RUNNER_TEMP}/NembraCaptureSyntheticUITests.xcresult"
+          attachments="$artifacts/screenshots"
+          mkdir -p "$artifacts/logs" "$attachments"
+          rm -rf "$derived_data" "$RESULT_BUNDLE"
+
+          set +e
+          set -o pipefail
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
+            -derivedDataPath "$derived_data" \
+            -resultBundlePath "$RESULT_BUNDLE" \
+            -only-testing:'Nembra Capture UI Tests' \
+            -parallel-testing-enabled NO \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 180 \
+            -maximum-test-execution-time-allowance 180 \
+            NEMBRA_CAPTURE_BUILD_IDENTIFIER= \
+            NEMBRA_CAPTURE_BUILD_COMMIT_SHA= \
+            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256= \
+            NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER= \
+            ONLY_ACTIVE_ARCH=YES \
+            test 2>&1 | tee "$artifacts/logs/xcodebuild-ui-tests.log"
+          test_status=${PIPESTATUS[0]}
+          set -e
+
+          if [[ -d "$RESULT_BUNDLE" ]]; then
+            if xcrun xcresulttool export attachments \
+              --path "$RESULT_BUNDLE" \
+              --output-path "$attachments" \
+              > "$artifacts/logs/xcresult-attachments.log" 2>&1; then
+              find "$attachments" -maxdepth 2 -type f -print | sort \
+                > "$artifacts/screenshot-attachments.txt"
+            else
+              {
+                printf '%s\n' 'Attachment export failed; the complete xcresult remains preserved.'
+                xcrun xcresulttool help export attachments || true
+              } >> "$artifacts/logs/xcresult-attachments.log" 2>&1
+            fi
+          fi
+
+          exit "$test_status"
+
+      - name: Upload synthetic Capture UI-test evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: nembra-capture-synthetic-ui-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/NembraCaptureSyntheticUITests.xcresult
+            ${{ runner.temp }}/NembraCaptureSyntheticUIArtifacts
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Delete disposable Capture UI-test simulator
+        if: always() && steps.capture_ui_simulator.outputs.udid != ''
+        env:
+          SIMULATOR_UDID: ${{ steps.capture_ui_simulator.outputs.udid }}
+        run: |
+          set -euo pipefail
+          xcrun simctl shutdown "$SIMULATOR_UDID" || true
+          xcrun simctl delete "$SIMULATOR_UDID" || true

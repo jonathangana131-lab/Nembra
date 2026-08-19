@@ -4,59 +4,67 @@ import Testing
 
 @Suite("Capture root large-type hierarchy")
 struct CaptureRootLargeTypeHierarchySourceTests {
-    // Keep the AX-first-viewport composition mechanically reviewable as the UI evolves.
-    // Rendered AX5 pixels remain the acceptance authority; these markers only prevent
-    // accidental reintroduction of the rejected three-hero source hierarchy.
-    @Test("large type keeps the recovery action ahead of redundant lock branding")
+    @Test("large type keeps authority and the shortest safe action ahead of recovery details")
     func largeTypeHierarchy() throws {
         let app = try read("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let root = String(try section(
+            in: app,
+            from: "@MainActor\nprivate struct CaptureP0Root: View",
+            to: "@MainActor\nprivate final class SecureLinkController:"
+        ))
 
-        let heroStart = try #require(app.range(of: "private var rootHero"))
+        let heroStart = try #require(root.range(of: "private var rootHero"))
         let authorityStart = try #require(
-            app.range(of: "private var buildAuthorityStatus", range: heroStart.upperBound..<app.endIndex)
+            root.range(of: "private var buildAuthorityStatus", range: heroStart.upperBound..<root.endIndex)
         )
         let accountStart = try #require(
-            app.range(of: "private var accountSetupPanel", range: authorityStart.upperBound..<app.endIndex)
+            root.range(of: "private var accountSetupPanel", range: authorityStart.upperBound..<root.endIndex)
         )
-        let statusStart = try #require(
-            app.range(of: "private var statusText", range: accountStart.upperBound..<app.endIndex)
+        let chooserStart = try #require(
+            root.range(of: "private var scooterChooserPanel", range: accountStart.upperBound..<root.endIndex)
         )
 
-        let hero = String(app[heroStart.lowerBound..<authorityStart.lowerBound])
-        let authority = String(app[authorityStart.lowerBound..<accountStart.lowerBound])
-        let account = String(app[accountStart.lowerBound..<statusStart.lowerBound])
+        let hero = String(root[heroStart.lowerBound..<authorityStart.lowerBound])
+        let authority = String(root[authorityStart.lowerBound..<accountStart.lowerBound])
+        let account = String(root[accountStart.lowerBound..<chooserStart.lowerBound])
 
         #expect(hero.contains("if !isAccessibilityLayout"))
-        #expect(hero.contains("Prepare the scooter link"))
-        #expect(!hero.contains("Prepare scooter link"))
+        #expect(hero.contains("Link your scooter"))
         #expect(!hero.contains("Capture locked"))
         #expect(!hero.contains("NEMBRA CAPTURE"))
 
-        #expect(authority.contains("isAccessibilityLayout ? \"Capture locked\" : \"Physical capture locked\""))
+        #expect(authority.contains("Text(fieldBuildIsAuthoritative ? \"Field build ready\" : \"Capture locked\")"))
         #expect(authority.contains(".font(isAccessibilityLayout ? .body.weight(.semibold) : .headline)"))
         #expect(authority.contains(".dynamicTypeSize(...DynamicTypeSize.accessibility1)"))
-        #expect(authority.contains(".padding(.vertical, isAccessibilityLayout ? 2 : 10)"))
-        #expect(authority.contains(".accessibilityLabel(fieldBuildIsAuthoritative ? \"Build provenance ready\" : \"Physical capture locked\")"))
-        #expect(authority.contains("Bluetooth and physical evidence collection are locked."))
+        #expect(authority.contains(".padding(isAccessibilityLayout ? 12 : 14)"))
+        #expect(authority.contains(".accessibilityLabel(fieldBuildIsAuthoritative ? \"Field build ready\" : \"Physical capture locked\")"))
+        #expect(authority.contains("This public build cannot authorize Bluetooth or collect physical evidence."))
 
-        #expect(account.contains("isAccessibilityLayout ? \"Account setup\" : \"Prepare account metadata\""))
-        #expect(account.contains("if !isAccessibilityLayout"))
-        #expect(account.contains("TextField(isAccessibilityLayout ? \"Tuya user code\" : \"Paste user code\""))
-        #expect(account.contains("Label(isAccessibilityLayout ? \"Create QR\" : \"Create approval QR\""))
-        #expect(account.contains(".accessibilityLabel(\"Create approval QR\")"))
+        #expect(account.contains("Text(sdkAccount.loggedIn ? \"Scooter account linked\" : \"Link scooter account\")"))
+        #expect(account.contains("if !fieldBuildIsAuthoritative"))
+        #expect(account.contains("Review field requirements"))
         #expect(account.contains("nembra.capture.root.account-link-action"))
-        #expect(account.contains("It does not start Bluetooth or physical Capture."))
-        #expect(account.contains("if isAccessibilityLayout, tuya.phase != .needsUserCode"))
-        #expect(!account.contains("Account setup only in this public build."))
+        #expect(account.contains("SignInWithAppleButton(.signIn)"))
+        #expect(account.contains("Use email or phone instead"))
+        #expect(!account.contains("Tuya user code"))
+        #expect(!account.contains("Create approval QR"))
 
-        let field = try #require(account.range(of: "TextField(isAccessibilityLayout ? \"Tuya user code\" : \"Paste user code\""))
-        let action = try #require(account.range(of: "Label(isAccessibilityLayout ? \"Create QR\" : \"Create approval QR\""))
-        let support = try #require(account.range(
-            of: "if isAccessibilityLayout, tuya.phase != .needsUserCode",
-            range: action.upperBound..<account.endIndex
-        ))
-        #expect(field.lowerBound < action.lowerBound)
-        #expect(action.lowerBound < support.lowerBound)
+        let publicAction = try #require(account.range(of: "Label(\"Review field requirements\""))
+        let loggedIn = try #require(account.range(of: "} else if sdkAccount.loggedIn {", range: publicAction.upperBound..<account.endIndex))
+        let apple = try #require(account.range(of: "SignInWithAppleButton(.signIn)", range: loggedIn.upperBound..<account.endIndex))
+        let alternative = try #require(account.range(of: "DisclosureGroup(\"Use email or phone instead\"", range: apple.upperBound..<account.endIndex))
+        #expect(publicAction.lowerBound < loggedIn.lowerBound)
+        #expect(loggedIn.lowerBound < apple.lowerBound)
+        #expect(apple.lowerBound < alternative.lowerBound)
+    }
+
+    private func section(in source: String, from start: String, to end: String) throws -> Substring {
+        guard let startRange = source.range(of: start),
+              let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
+            Issue.record("Expected source section missing: \(start) ... \(end)")
+            throw SourceContractError.sectionMissing
+        }
+        return source[startRange.lowerBound..<endRange.lowerBound]
     }
 
     private func read(_ path: String) throws -> String {
@@ -67,5 +75,9 @@ struct CaptureRootLargeTypeHierarchySourceTests {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         return try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+    }
+
+    private enum SourceContractError: Error {
+        case sectionMissing
     }
 }

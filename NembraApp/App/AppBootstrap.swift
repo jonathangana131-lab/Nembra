@@ -17,6 +17,8 @@ final class AppRuntime {
     let rideStore: RideApplicationStore
     let rideHistoryStore: RideHistoryPresentationStore
     let rideRouteStore: RideRoutePresentationStore
+    let dailyRideStore: DailyRidePresentationStore
+    let automaticCaptureReadiness: AutomaticCaptureReadinessStore
 
     private let simulatorService: SimulatedScooterService?
     private let simulationScenario: ScooterSimulationScenario?
@@ -32,6 +34,8 @@ final class AppRuntime {
         rideStore: RideApplicationStore,
         rideHistoryStore: RideHistoryPresentationStore,
         rideRouteStore: RideRoutePresentationStore,
+        dailyRideStore: DailyRidePresentationStore,
+        automaticCaptureReadiness: AutomaticCaptureReadinessStore,
         simulatorService: SimulatedScooterService?,
         simulationScenario: ScooterSimulationScenario?,
         simulatorAutoCompletesRide: Bool,
@@ -43,6 +47,8 @@ final class AppRuntime {
         self.rideStore = rideStore
         self.rideHistoryStore = rideHistoryStore
         self.rideRouteStore = rideRouteStore
+        self.dailyRideStore = dailyRideStore
+        self.automaticCaptureReadiness = automaticCaptureReadiness
         self.simulatorService = simulatorService
         self.simulationScenario = simulationScenario
         self.simulatorAutoCompletesRide = simulatorAutoCompletesRide
@@ -58,6 +64,8 @@ final class AppRuntime {
     func start() async {
         guard !didStart else { return }
         didStart = true
+
+        automaticCaptureReadiness.refresh()
 
         // Ride evidence subscribes first so explicit QA telemetry emitted after
         // launch cannot race past the automatic ride application layer.
@@ -162,6 +170,7 @@ final class AppRuntime {
                 speedKilometersPerHour: 0,
                 elapsedSeconds: 0
             )
+
         }
     }
 
@@ -278,6 +287,12 @@ enum AppBootstrap {
             routeStore: persistence?.routeStore,
             startupPersistenceError: persistenceError
         )
+        let dailyRideStore = DailyRidePresentationStore(
+            store: persistence?.dailyRideStore,
+            startupError: persistence?.dailyRideStore == nil
+                ? (persistenceError ?? "Daily ride storage could not be opened.")
+                : nil
+        )
 
         let rideStore: RideApplicationStore
         if bootstrap.scenario != nil {
@@ -289,7 +304,9 @@ enum AppBootstrap {
                         initialState: bootstrap.initialState,
                         configuration: configuration,
                         checkpointStore: persistence.checkpointStore,
-                        historyStore: persistence.historyStore
+                        historyStore: persistence.historyStore,
+                        dailyRideStore: persistence.dailyRideStore,
+                        dailyRidePresentationStore: dailyRideStore
                     )
                 } catch {
                     rideStore = RideApplicationStore(
@@ -298,6 +315,8 @@ enum AppBootstrap {
                         configuration: nil,
                         checkpointStore: nil,
                         historyStore: nil,
+                        dailyRideStore: nil,
+                        dailyRidePresentationStore: dailyRideStore,
                         startupPersistenceError: "Simulator ride tracking could not be configured."
                     )
                 }
@@ -308,6 +327,8 @@ enum AppBootstrap {
                     configuration: try? RideApplicationConfiguration.simulatorQA(),
                     checkpointStore: nil,
                     historyStore: nil,
+                    dailyRideStore: nil,
+                    dailyRidePresentationStore: dailyRideStore,
                     startupPersistenceError: persistenceError ?? "Local ride recovery storage could not be opened."
                 )
             }
@@ -321,7 +342,9 @@ enum AppBootstrap {
                 initialState: bootstrap.initialState,
                 configuration: nil,
                 checkpointStore: nil,
-                historyStore: nil
+                historyStore: nil,
+                dailyRideStore: persistence?.dailyRideStore,
+                dailyRidePresentationStore: dailyRideStore
             )
         }
 
@@ -351,6 +374,12 @@ enum AppBootstrap {
             rideStore: rideStore,
             rideHistoryStore: rideHistoryStore,
             rideRouteStore: rideRouteStore,
+            dailyRideStore: dailyRideStore,
+            automaticCaptureReadiness: AutomaticCaptureReadinessStore(
+                factsProvider: SystemAutomaticCapturePlatformFactsProvider(
+                    startupStorageUnavailable: persistence == nil
+                )
+            ),
             simulatorService: bootstrap.simulatorService,
             simulationScenario: bootstrap.scenario,
             simulatorAutoCompletesRide: simulatorAutoCompletesRide,

@@ -1,3 +1,9 @@
+# RETIRED / DO NOT USE — historical ES80 TODAY signed-candidate handoff
+
+> This entire document is historical evidence only. Do not execute commands or follow operator links below. The only current operator routes are `docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md` and `scripts/field/install_one_time_capture.command`. Physical Capture remains NO-GO unless that canonical procedure explicitly says otherwise.
+
+---
+
 # ES80 TODAY Signed Research Field Candidate Production — V14
 
 Status: **PRIVATE PRODUCTION HANDOFF ONLY — PHYSICAL EXPERIMENT ONE REMAINS NO-GO.**

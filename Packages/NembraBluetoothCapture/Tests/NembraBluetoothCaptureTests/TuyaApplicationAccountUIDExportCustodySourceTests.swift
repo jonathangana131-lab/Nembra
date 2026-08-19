@@ -28,7 +28,11 @@ struct TuyaApplicationAccountUIDExportCustodySourceTests {
         let postAwaitToken = try requiredOffset("guard currentConnectionToken == token,", in: receiver, after: refresh)
         let postAwaitUID = try requiredOffset("membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines) == leasedAccountUID", in: receiver, after: postAwaitToken)
         let custody = try requiredOffset("var eventDetails = custodySafeUpdate", in: receiver, after: postAwaitUID)
-        let log = try requiredOffset("log(\"tuya_application_update\"", in: receiver, after: custody)
+        let log = try requiredOffset(
+            "log(\n                \"tuya_application_update\",\n                eventDetails,\n                sourceReceivedAtUptimeNanoseconds: sourceReceivedAtUptimeNanoseconds\n            )",
+            in: receiver,
+            after: custody
+        )
 
         #expect(snapshot < ledger)
         #expect(ledger < refresh)

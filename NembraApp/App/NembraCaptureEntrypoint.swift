@@ -16,47 +16,286 @@ import NembraTuyaPrivateConfig
 @main @MainActor
 struct NembraCaptureApp: App {
     var body: some Scene {
-        WindowGroup { CaptureP0Root().preferredColorScheme(.dark) }
+        WindowGroup {
+            captureRoot
+                .preferredColorScheme(.dark)
+        }
+    }
+
+    @ViewBuilder
+    private var captureRoot: some View {
+#if DEBUG && targetEnvironment(simulator)
+        switch CaptureSimulatorQALaunch.selection(arguments: ProcessInfo.processInfo.arguments) {
+        case .publicRoot:
+            CaptureP0Root()
+        case let .scenario(scenario):
+            CaptureSimulatorQAHarness(scenario: scenario)
+        case let .invalid(rawValue):
+            CaptureSimulatorQAInvalidScenarioView(rawValue: rawValue)
+        }
+#else
+        CaptureP0Root()
+#endif
     }
 }
 
+typealias CaptureTargetDevice = TuyaSDKDeviceLocator
+
+@MainActor
+private final class OfficialTuyaDeviceCatalog: ObservableObject {
+    @Published private(set) var devices: [CaptureTargetDevice] = []
+    @Published private(set) var selectedDeviceID: String?
+    @Published private(set) var status = "Log in to load scooters from the official Tuya SDK account."
+    @Published private(set) var busy = false
+
+    private var requestID = UUID()
+    private var sourceAccountUID: String?
+#if canImport(ThingSmartHomeKit)
+    private var probe: OfficialTuyaDeviceCatalogProbe?
+#endif
+
+    var selectedDevice: CaptureTargetDevice? {
+        guard isCurrentAccountCatalog else { return nil }
+        return devices.first { $0.id == selectedDeviceID }
+    }
+
+    var isCurrentAccountCatalog: Bool {
+        guard let sourceAccountUID else { return false }
+        return OfficialTuyaFactory.accountLoggedIn
+            && OfficialTuyaFactory.currentAccountUID == sourceAccountUID
+    }
+
+    func select(_ device: CaptureTargetDevice) {
+        guard isCurrentAccountCatalog,
+              device.hasCompleteLocator,
+              devices.contains(device) else {
+            invalidate()
+            return
+        }
+        selectedDeviceID = device.id
+        status = "Scooter selected. Capture will freshly verify this exact device in the same SDK account before Bluetooth starts."
+    }
+
+    func invalidate() {
+        requestID = UUID()
+        busy = false
+        devices = []
+        selectedDeviceID = nil
+        sourceAccountUID = nil
+        status = "Log in to load scooters from the official Tuya SDK account."
+#if canImport(ThingSmartHomeKit)
+        probe = nil
+#endif
+    }
+
+    func refresh() {
+        let request = UUID()
+        requestID = request
+        devices = []
+        selectedDeviceID = nil
+        sourceAccountUID = nil
+
+        guard OfficialTuyaFactory.configured,
+              OfficialTuyaFactory.accountLoggedIn,
+              let accountUID = OfficialTuyaFactory.currentAccountUID else {
+            busy = false
+            status = "The official Tuya SDK account is not current. Sign in before choosing a scooter."
+            return
+        }
+
+#if canImport(ThingSmartHomeKit)
+        busy = true
+        status = "Loading scooters from every home in the current SDK account…"
+        let probe = OfficialTuyaDeviceCatalogProbe(accountUID: accountUID) { [weak self] result in
+            Task { @MainActor in
+                guard let self, self.requestID == request else { return }
+                guard OfficialTuyaFactory.accountLoggedIn,
+                      OfficialTuyaFactory.currentAccountUID == accountUID else {
+                    self.invalidate()
+                    return
+                }
+                self.probe = nil
+                self.busy = false
+                switch result {
+                case let .success(snapshot):
+                    self.sourceAccountUID = accountUID
+                    self.devices = snapshot.devices
+                    if snapshot.devices.isEmpty {
+                        self.status = snapshot.incompleteDeviceCount > 0
+                            ? "Tuya returned device records without the Bluetooth locator fields required for safe Capture. Stop and verify the private SDK package."
+                            : "No account devices with safe Bluetooth locator data were found."
+                    } else if snapshot.devices.count == 1, snapshot.incompleteDeviceCount == 0 {
+                        self.status = "One account device was found. Confirm that it is the intended scooter before continuing."
+                    } else if snapshot.incompleteDeviceCount > 0 {
+                        self.status = "Choose the intended scooter. Some SDK device records lacked safe Bluetooth locator fields and are unavailable."
+                    } else {
+                        self.status = "Choose the intended scooter."
+                    }
+                case let .failure(error):
+                    self.devices = []
+                    self.selectedDeviceID = nil
+                    self.status = error.localizedDescription
+                }
+            }
+        }
+        self.probe = probe
+        probe.start()
+#else
+        busy = false
+        status = "The official Tuya SmartLife SDK is not compiled into this build."
+#endif
+    }
+}
+
+#if canImport(ThingSmartHomeKit)
+@MainActor
+private final class OfficialTuyaDeviceCatalogProbe {
+    enum ProbeError: LocalizedError {
+        case accountChanged
+        case homeListUnavailable
+
+        var errorDescription: String? {
+            switch self {
+            case .accountChanged:
+                return "The Tuya SDK account changed while scooters were loading. Sign in again."
+            case .homeListUnavailable:
+                return "Tuya could not load the current account's homes. Try again before starting Capture."
+            }
+        }
+    }
+
+    private let accountUID: String
+    private let completion: (Result<TuyaSDKDeviceCatalogSnapshot, Error>) -> Void
+    private let homeManager = ThingSmartHomeManager()
+    private var homes: [ThingSmartHomeModel] = []
+    private var index = 0
+    private var loadedHomeCount = 0
+    private var homeLoadFailureCount = 0
+    private var accumulator = TuyaSDKDeviceCatalogAccumulator()
+    private var activeHome: ThingSmartHome?
+    private var didFinish = false
+
+    init(accountUID: String, completion: @escaping (Result<TuyaSDKDeviceCatalogSnapshot, Error>) -> Void) {
+        self.accountUID = accountUID
+        self.completion = completion
+    }
+
+    func start() {
+        guard accountIsCurrent else {
+            finish(.failure(ProbeError.accountChanged))
+            return
+        }
+        homeManager.getHomeList(success: { [weak self] homes in
+            Task { @MainActor in
+                guard let self else { return }
+                guard self.accountIsCurrent else {
+                    self.finish(.failure(ProbeError.accountChanged))
+                    return
+                }
+                self.homes = homes ?? []
+                self.loadNextHome()
+            }
+        }, failure: { [weak self] _ in
+            Task { @MainActor in self?.finish(.failure(ProbeError.homeListUnavailable)) }
+        })
+    }
+
+    private var accountIsCurrent: Bool {
+        OfficialTuyaFactory.accountLoggedIn && OfficialTuyaFactory.currentAccountUID == accountUID
+    }
+
+    private func loadNextHome() {
+        guard accountIsCurrent else {
+            finish(.failure(ProbeError.accountChanged))
+            return
+        }
+        guard index < homes.count else {
+            do {
+                finish(.success(try accumulator.finish(
+                    expectedHomeCount: homes.count,
+                    loadedHomeCount: loadedHomeCount,
+                    homeLoadFailureCount: homeLoadFailureCount
+                )))
+            } catch {
+                finish(.failure(error))
+            }
+            return
+        }
+
+        let model = homes[index]
+        index += 1
+        guard let home = ThingSmartHome(homeId: model.homeId) else {
+            homeLoadFailureCount += 1
+            loadNextHome()
+            return
+        }
+        activeHome = home
+        home.getDataWithSuccess({ [weak self, weak home] _ in
+            Task { @MainActor in
+                guard let self, let home else { return }
+                guard self.accountIsCurrent else {
+                    self.finish(.failure(ProbeError.accountChanged))
+                    return
+                }
+                self.loadedHomeCount += 1
+                for device in home.deviceList ?? [] { self.admit(device) }
+                for device in home.sharedDeviceList ?? [] { self.admit(device) }
+                self.activeHome = nil
+                self.loadNextHome()
+            }
+        }, failure: { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.homeLoadFailureCount += 1
+                self.activeHome = nil
+                self.loadNextHome()
+            }
+        })
+    }
+
+    private func admit(_ device: ThingSmartDeviceModel) {
+        accumulator.admit(
+            id: device.devId,
+            name: device.name,
+            productID: device.productId,
+            uuid: device.uuid
+        )
+    }
+
+    private func finish(_ result: Result<TuyaSDKDeviceCatalogSnapshot, Error>) {
+        guard !didFinish else { return }
+        didFinish = true
+        activeHome = nil
+        completion(result)
+    }
+}
+#endif
+
 @MainActor
 private struct CaptureP0Root: View {
-    @StateObject private var tuya = TuyaAccountBridge()
+    @StateObject private var sdkAccount = OfficialTuyaAccountAuthorizer()
+    @StateObject private var deviceCatalog = OfficialTuyaDeviceCatalog()
+    @State private var showAlternativeLogin = false
     @State private var showEngineeringDetails = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private let buildIdentity = NembraCaptureBuildIdentity.current
 
-    private var fieldBuildIsAuthoritative: Bool {
-        buildIdentity.isAuthoritativeFieldBuild
-    }
-
-    private var isAccessibilityLayout: Bool {
-        dynamicTypeSize.isAccessibilitySize
-    }
+    private var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }
+    private var isAccessibilityLayout: Bool { dynamicTypeSize.isAccessibilitySize }
 
     var body: some View {
         NavigationStack {
             ZStack {
                 Color.black.ignoresSafeArea()
-                LinearGradient(
-                    colors: [Color.cyan.opacity(0.10), Color.clear, Color.black.opacity(0.35)],
-                    startPoint: .topTrailing,
-                    endPoint: .center
-                )
-                .ignoresSafeArea()
-
                 ScrollView {
                     VStack(alignment: .leading, spacing: isAccessibilityLayout ? 16 : 22) {
                         rootHero
                         buildAuthorityStatus
                         accountSetupPanel
-
-                        if tuya.isLinked {
+                        if fieldBuildIsAuthoritative && sdkAccount.loggedIn {
                             scooterChooserPanel
                         }
-
                         engineeringDisclosure
                     }
                     .frame(maxWidth: 680)
@@ -72,6 +311,10 @@ private struct CaptureP0Root: View {
             .navigationTitle("Nembra Capture")
             .navigationBarTitleDisplayMode(.inline)
         }
+        .onAppear { synchronizeSDKSession() }
+        .onChange(of: sdkAccount.loggedIn) { _, loggedIn in
+            if loggedIn { deviceCatalog.refresh() } else { deviceCatalog.invalidate() }
+        }
         .accessibilityIdentifier("capture.p0-root")
     }
 
@@ -79,16 +322,13 @@ private struct CaptureP0Root: View {
     private var rootHero: some View {
         if !isAccessibilityLayout {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Prepare the scooter link")
+                Text("Link your scooter")
                     .font(.largeTitle.bold())
-                    .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
-
-                Text("Link the Tuya Smart account that owns this scooter. Bluetooth and physical evidence stay locked until the reviewed field build and fresh scooter authority are verified.")
+                Text("Sign in once, choose the intended scooter, then follow one instruction at a time.")
                     .font(.body)
                     .foregroundStyle(Color.white.opacity(0.78))
                     .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityLabel(Text(verbatim: "Link the Tuya Smart account that owns this scooter. Bluetooth and physical evidence stay locked until the reviewed field build and fresh scooter authority are verified."))
             }
         }
     }
@@ -100,270 +340,187 @@ private struct CaptureP0Root: View {
                 .dynamicTypeSize(...DynamicTypeSize.accessibility1)
                 .foregroundStyle(fieldBuildIsAuthoritative ? Color.green : Color.orange)
                 .accessibilityHidden(true)
-
             VStack(alignment: .leading, spacing: 4) {
-                Text(
-                    fieldBuildIsAuthoritative
-                        ? (isAccessibilityLayout ? "Build ready" : "Build provenance ready")
-                        : (isAccessibilityLayout ? "Capture locked" : "Physical capture locked")
-                )
-                .font(isAccessibilityLayout ? .body.weight(.semibold) : .headline)
-                .foregroundStyle(fieldBuildIsAuthoritative ? Color.green : Color.orange)
-                .fixedSize(horizontal: false, vertical: true)
-
+                Text(fieldBuildIsAuthoritative ? "Field build ready" : "Capture locked")
+                    .font(isAccessibilityLayout ? .body.weight(.semibold) : .headline)
+                    .foregroundStyle(fieldBuildIsAuthoritative ? Color.green : Color.orange)
                 if !isAccessibilityLayout {
-                    Text(
-                        fieldBuildIsAuthoritative
-                            ? "The reviewed build is ready. Account and scooter authority must still be verified before Bluetooth starts."
-                            : "Account setup is available. Bluetooth scanning, connection, and physical evidence stay locked until the reviewed field build is installed."
-                    )
-                    .font(.subheadline)
-                    .foregroundStyle(Color.white.opacity(0.76))
-                    .fixedSize(horizontal: false, vertical: true)
+                    Text(fieldBuildIsAuthoritative
+                         ? "Account and scooter checks are still required before Bluetooth can start."
+                         : "Bluetooth stays locked until the reviewed field build is installed.")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.white.opacity(0.76))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
-        .padding(.vertical, isAccessibilityLayout ? 2 : 10)
+        .padding(isAccessibilityLayout ? 12 : 14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(Color.white.opacity(0.14))
-                .frame(height: 1)
-        }
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Color.white.opacity(0.10))
-                .frame(height: 1)
+        .background(Color.orange.opacity(fieldBuildIsAuthoritative ? 0 : 0.09), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke((fieldBuildIsAuthoritative ? Color.green : Color.orange).opacity(0.28), lineWidth: 1)
         }
         .accessibilityElement(children: .combine)
         .accessibilitySortPriority(isAccessibilityLayout ? 100 : 0)
-        .accessibilityLabel(fieldBuildIsAuthoritative ? "Build provenance ready" : "Physical capture locked")
-        .accessibilityValue(
-            fieldBuildIsAuthoritative
-                ? "Build provenance is ready. Account and scooter authority are still required before Bluetooth starts."
-                : "This public build can prepare account metadata only. Bluetooth and physical evidence collection are locked."
-        )
+        .accessibilityLabel(fieldBuildIsAuthoritative ? "Field build ready" : "Physical capture locked")
+        .accessibilityValue(fieldBuildIsAuthoritative
+                            ? "Account and scooter checks are still required before Bluetooth starts."
+                            : "This public build cannot authorize Bluetooth or collect physical evidence.")
     }
 
     private var accountSetupPanel: some View {
         rootSection {
-            VStack(alignment: .leading, spacing: isAccessibilityLayout ? 12 : 14) {
-                HStack(alignment: .top, spacing: 12) {
-                    if !isAccessibilityLayout {
-                        Image(systemName: tuya.isLinked ? "checkmark.circle.fill" : "person.crop.circle.badge.checkmark")
-                            .font(.title2.weight(.semibold))
-                            .foregroundStyle(tuya.isLinked ? Color.green : Color.cyan)
-                            .frame(width: 36, height: 36)
-                            .background(Color.white.opacity(0.06), in: Circle())
-                            .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 14) {
+                Text(sdkAccount.loggedIn ? "Scooter account linked" : "Link scooter account")
+                    .font(isAccessibilityLayout ? .headline : .title3.bold())
+                    .foregroundStyle(sdkAccount.loggedIn ? Color.green : Color.primary)
+                    .accessibilityAddTraits(.isHeader)
+                Text("Account link only · no Bluetooth or scooter changes")
+                    .font(.footnote)
+                    .foregroundStyle(Color.white.opacity(0.72))
+
+                if !fieldBuildIsAuthoritative {
+                    Button {
+                        showEngineeringDetails = true
+                    } label: {
+                        Label("Review field requirements", systemImage: "lock.shield")
+                            .frame(maxWidth: .infinity, minHeight: 52)
                     }
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(
-                            tuya.isLinked
-                                ? "Account metadata ready"
-                                : (isAccessibilityLayout ? "Account setup" : "Prepare account metadata")
-                        )
-                        .font(isAccessibilityLayout ? .headline : .title3.bold())
-                        .accessibilityAddTraits(.isHeader)
-                        .foregroundStyle(tuya.isLinked ? Color.green : Color.primary)
-
-                        if !isAccessibilityLayout || tuya.isLinked {
-                            Text(
-                                tuya.isLinked
-                                    ? "Account context is ready for scooter selection."
-                                    : "Use the Tuya Smart user code for the account that owns this scooter."
-                            )
-                            .font(.subheadline)
-                            .foregroundStyle(Color.white.opacity(0.74))
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .accessibilityIdentifier("nembra.capture.root.account-link-action")
+                    .accessibilityHint("Shows why this public build cannot start account or Bluetooth authorization.")
+                } else if sdkAccount.loggedIn {
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        Text(sdkAccount.status)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        Button("Sign out") { sdkAccount.signOut() }
+                            .buttonStyle(.bordered)
+                            .disabled(sdkAccount.busy)
+                    }
+                } else {
+                    TextField("Country code", text: $sdkAccount.countryCode)
+                        .keyboardType(.numberPad)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .inputSurface()
+                    SignInWithAppleButton(.signIn) { request in
+                        request.requestedScopes = [.fullName, .email]
+                    } onCompletion: { result in
+                        Task { @MainActor in
+                            switch result {
+                            case let .success(authorization):
+                                guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else {
+                                    sdkAccount.handleAppleAuthorizationFailure(AppleAccountAuthorizationError.unexpectedCredential)
+                                    return
+                                }
+                                sdkAccount.loginWithApple(credential: credential)
+                            case let .failure(error):
+                                sdkAccount.handleAppleAuthorizationFailure(error)
+                            }
                         }
                     }
-                }
-
-                if tuya.isLinked {
-                    statusText
-                } else {
-                    if !isAccessibilityLayout {
-                        Text("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings.")
-                            .font(.footnote)
-                            .foregroundStyle(Color.white.opacity(0.72))
-                            .fixedSize(horizontal: false, vertical: true)
-                        statusText
-                    }
-
-                    VStack(alignment: .leading, spacing: 7) {
-                        Text(isAccessibilityLayout ? "Tuya user code" : "Tuya Smart user code")
-                            .font(.subheadline.weight(.semibold))
-                            .accessibilityHidden(true)
-                        TextField(isAccessibilityLayout ? "Tuya user code" : "Paste user code", text: $tuya.userCode)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .padding(.horizontal, 14)
-                            .frame(minHeight: 52)
-                            .background(Color.white.opacity(0.085), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .stroke(Color.white.opacity(0.18), lineWidth: 1)
-                            }
-                            .accessibilityLabel("Tuya Smart user code")
-                            .accessibilityHint("Used only to create the Tuya account approval QR for metadata setup.")
-                    }
-
-                    Button {
-                        tuya.requestApproval()
-                    } label: {
-                        Label(isAccessibilityLayout ? "Create QR" : "Create approval QR", systemImage: "qrcode")
-                            .font(isAccessibilityLayout ? .body.bold() : .headline)
-                            .frame(maxWidth: .infinity, minHeight: 50)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.cyan)
-                    .foregroundStyle(.black)
+                    .signInWithAppleButtonStyle(.white)
+                    .frame(height: 50)
+                    .disabled(sdkAccount.busy)
                     .accessibilityIdentifier("nembra.capture.root.account-link-action")
-                    .accessibilityLabel("Create approval QR")
-                    .accessibilityHint("Creates the account-metadata approval QR. It does not start Bluetooth or physical Capture.")
 
-                    if isAccessibilityLayout, tuya.phase != .needsUserCode {
-                        statusText
+                    DisclosureGroup("Use email or phone instead", isExpanded: $showAlternativeLogin) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Picker("Login method", selection: $sdkAccount.method) {
+                                ForEach(OfficialTuyaAccountAuthorizer.LoginMethod.allCases) { Text($0.rawValue).tag($0) }
+                            }
+                            .pickerStyle(.segmented)
+                            TextField(sdkAccount.method == .email ? "Tuya account email" : "Tuya account phone number", text: $sdkAccount.account)
+                                .keyboardType(sdkAccount.method == .email ? .emailAddress : .phonePad)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .privacySensitive()
+                                .inputSurface()
+                            Button(sdkAccount.busy ? "Contacting Tuya…" : "Send verification code") { sdkAccount.sendCode() }
+                                .buttonStyle(.bordered)
+                                .controlSize(.large)
+                                .disabled(sdkAccount.busy)
+                            if sdkAccount.codeSent {
+                                SecureField("Verification code", text: $sdkAccount.verificationCode)
+                                    .keyboardType(.numberPad)
+                                    .privacySensitive()
+                                    .inputSurface()
+                                Button("Continue") { sdkAccount.login() }
+                                    .buttonStyle(.borderedProminent)
+                                    .controlSize(.large)
+                                    .disabled(sdkAccount.busy || sdkAccount.verificationCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            }
+                        }
+                        .padding(.top, 10)
                     }
-                }
+                    .tint(.secondary)
 
-                if let data = tuya.qrPNGData,
-                   let image = UIImage(data: data),
-                   !tuya.isLinked {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Image(uiImage: image)
-                            .interpolation(.none)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxWidth: 230)
-                            .padding(10)
-                            .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            .accessibilityLabel("Tuya account approval QR code")
-
-                        Button("I approved it · check now") { tuya.checkApprovalNow() }
-                            .buttonStyle(.bordered)
-                            .controlSize(.large)
-                            .frame(maxWidth: isAccessibilityLayout ? .infinity : nil, alignment: .leading)
-                    }
-                }
-
-                if tuya.phase == .failed {
-                    Button("Reset account link") { tuya.resetLink() }
-                        .buttonStyle(.bordered)
-                        .controlSize(.large)
+                    Text(sdkAccount.status)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
-    }
-
-    private var statusText: some View {
-        Text(tuya.statusMessage)
-            .font(.footnote)
-            .foregroundStyle(Color.white.opacity(0.72))
-            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var scooterChooserPanel: some View {
         rootSection {
             VStack(alignment: .leading, spacing: 14) {
-                if isAccessibilityLayout {
-                    VStack(alignment: .leading, spacing: 10) {
-                        scooterSectionHeading
-                        if tuya.devices.isEmpty {
-                            Button("Refresh scooters") { tuya.refreshDevices() }
-                                .buttonStyle(.bordered)
-                                .controlSize(.large)
-                        }
-                    }
-                } else {
-                    HStack(alignment: .top, spacing: 12) {
-                        scooterSectionHeading
-                        Spacer(minLength: 8)
-                        if tuya.devices.isEmpty {
-                            Button("Refresh") { tuya.refreshDevices() }
-                                .buttonStyle(.bordered)
-                        }
-                    }
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Choose this scooter")
+                        .font(.title3.bold())
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer()
+                    Button("Refresh") { deviceCatalog.refresh() }
+                        .buttonStyle(.bordered)
+                        .disabled(deviceCatalog.busy)
+                }
+                Text(deviceCatalog.status)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if deviceCatalog.busy {
+                    ProgressView("Loading scooters…")
                 }
 
-                ForEach(tuya.devices) { device in
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(alignment: .firstTextBaseline) {
+                ForEach(deviceCatalog.devices) { device in
+                    Button {
+                        deviceCatalog.select(device)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: deviceCatalog.selectedDeviceID == device.id ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(deviceCatalog.selectedDeviceID == device.id ? Color.green : Color.secondary)
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(device.name.isEmpty ? "Unnamed Tuya device" : device.name)
-                                    .font(.headline)
-                                let detail = [device.productName, device.category].filter { !$0.isEmpty }.joined(separator: " · ")
-                                if !detail.isEmpty {
-                                    Text(detail)
-                                        .font(.caption)
-                                        .foregroundStyle(Color.white.opacity(0.70))
-                                }
+                                Text(device.displayName).font(.headline)
+                                Text(device.hasCompleteLocator ? "Available for fresh verification" : "Unavailable")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
                             Spacer()
-                            if tuya.selectedDeviceID == device.id {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(.green)
-                                    .accessibilityLabel("Selected")
-                            }
                         }
+                        .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!device.hasCompleteLocator)
+                }
 
-                        if isAccessibilityLayout {
-                            VStack(alignment: .leading, spacing: 10) {
-                                scooterSelectionButton(for: device)
-                                continueButton(for: device)
-                            }
-                        } else {
-                            HStack(spacing: 10) {
-                                scooterSelectionButton(for: device)
-                                continueButton(for: device)
-                            }
-                        }
+                if let selected = deviceCatalog.selectedDevice, selected.hasCompleteLocator {
+                    NavigationLink("Continue to preflight") {
+                        SecureLinkView(device: selected, sdkAccount: sdkAccount)
                     }
-                    .padding(.vertical, 10)
-                    .overlay(alignment: .bottom) {
-                        Rectangle()
-                            .fill(Color.white.opacity(0.10))
-                            .frame(height: 1)
-                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-        }
-    }
-
-    private var scooterSectionHeading: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text("Choose this scooter")
-                .font(.title3.bold())
-                .accessibilityAddTraits(.isHeader)
-            Text("Nembra verifies the selected device again inside the official SDK before Bluetooth discovery.")
-                .font(.footnote)
-                .foregroundStyle(Color.white.opacity(0.72))
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    @ViewBuilder
-    private func scooterSelectionButton(for device: TuyaAccountBridge.LinkedDevice) -> some View {
-        Button(tuya.selectedDeviceID == device.id ? "Refresh metadata" : "Use this scooter") {
-            tuya.selectDevice(device)
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.large)
-    }
-
-    @ViewBuilder
-    private func continueButton(for device: TuyaAccountBridge.LinkedDevice) -> some View {
-        if tuya.selectedDeviceID == device.id,
-           tuya.phase == .ready,
-           !device.productID.isEmpty,
-           !device.uuid.isEmpty {
-            NavigationLink(fieldBuildIsAuthoritative ? "Continue to preflight" : "View locked preflight") {
-                SecureLinkView(device: device)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
         }
     }
 
@@ -371,20 +528,19 @@ private struct CaptureP0Root: View {
         DisclosureGroup(isExpanded: $showEngineeringDetails) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(fieldBuildIsAuthoritative ? "Build provenance: ready" : "Build provenance: locked")
-                Text("Account approval and device metadata only establish setup context. Capture independently verifies the current official SDK session and exact scooter membership before discovery.")
-                Text("No scooter commands are sent by this setup flow.")
+                Text("The official SDK account lists candidate scooters for selection only. Capture performs a fresh, complete same-account membership check immediately before Bluetooth discovery.")
+                Text("No scooter command, DP query, or second Bluetooth ownership path is authorized here.")
             }
             .font(.caption)
             .foregroundStyle(Color.white.opacity(0.70))
             .fixedSize(horizontal: false, vertical: true)
             .padding(.top, 8)
         } label: {
-            Label(isAccessibilityLayout ? "Details" : "Engineering details", systemImage: "wrench.and.screwdriver")
+            Label("Details", systemImage: "info.circle")
                 .font(.subheadline.weight(.semibold))
                 .accessibilityLabel("Engineering details")
         }
         .tint(Color.white.opacity(0.76))
-        .padding(.top, isAccessibilityLayout ? 2 : 4)
     }
 
     @ViewBuilder
@@ -393,12 +549,21 @@ private struct CaptureP0Root: View {
             .padding(.vertical, isAccessibilityLayout ? 12 : 18)
             .frame(maxWidth: .infinity, alignment: .leading)
             .overlay(alignment: .top) {
-                Rectangle()
-                    .fill(Color.white.opacity(0.14))
-                    .frame(height: 1)
+                Rectangle().fill(Color.white.opacity(0.14)).frame(height: 1)
             }
     }
+
+    private func synchronizeSDKSession() {
+        guard fieldBuildIsAuthoritative else { return }
+        sdkAccount.bootstrap()
+        if sdkAccount.loggedIn {
+            if !deviceCatalog.isCurrentAccountCatalog { deviceCatalog.refresh() }
+        } else {
+            deviceCatalog.invalidate()
+        }
+    }
 }
+
 @MainActor
 private final class SecureLinkController: NSObject, ObservableObject {
     struct Candidate: Identifiable, Codable, Equatable {
@@ -435,6 +600,20 @@ private final class SecureLinkController: NSObject, ObservableObject {
         case notProven = "not-proven"
     }
 
+    enum CaptureArtifactPreparationError: LocalizedError {
+        case integrityVerificationFailed
+        case acceptedEnvelopeInvariantFailed(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .integrityVerificationFailed:
+                return "The exact accepted artifact bytes did not pass integrity verification."
+            case let .acceptedEnvelopeInvariantFailed(reason):
+                return "The accepted artifact did not pass its strict schema checks: \(reason)"
+            }
+        }
+    }
+
     struct Export: Codable {
         let schemaVersion: Int
         let purpose: String
@@ -451,6 +630,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         let targetCorrelationWindowCount: Int?
         let targetCorrelationOperatorConfirmed: Bool
         let targetCorrelationProvenance: CorrelationProvenance?
+        let operatorSafetyAttestation: StationaryCaptureOperatorAttestation?
         let phase: Phase
         let privateConfigPresent: Bool
         let sdkAccountLoggedIn: Bool
@@ -460,11 +640,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
         let sdkLocalBLEEvidenceState: LocalBLEEvidenceState
         let applicationUpdateCount: Int
         let connectionGeneration: UInt64
+        let connectionStartedAtUptimeNanoseconds: UInt64?
+        let authenticatedAtUptimeNanoseconds: UInt64?
+        let latestApplicationPayloadUptimeNanoseconds: UInt64?
+        let latestObservedUptimeNanoseconds: UInt64?
+        let monotonicClockDomain: String
         let authenticationMethod: String?
         let preflightVerdict: String
         let applicationValueRepresentation: String
         let rawFD50BytesCaptured: Bool
-        let secretsRedacted: Bool
+        let knownSecretsRedacted: Bool
         let dpQueriesSent: Bool
         let dpCommandsSent: Bool
         let candidates: [Candidate]
@@ -472,7 +657,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     struct Event: Codable {
+        let ordinal: Int
         let at: Date
+        let sourceReceivedAtUptimeNanoseconds: UInt64?
         let kind: String
         let details: [String: String]
     }
@@ -560,7 +747,17 @@ private final class SecureLinkController: NSObject, ObservableObject {
     static let historicalCapturePeripheral = UUID(uuidString: "6815A5F5-4D1E-E004-BAE8-6DF924123907")!
     private static let maximumObservationPollGapNanoseconds = TuyaAuthenticatedReadOnlySessionLedger.maximumContinuousObservationGapNanoseconds
 
-    @Published private(set) var phase: Phase = .idle
+    @Published private(set) var phase: Phase = .idle {
+        didSet {
+            // A stopped attempt can never carry declaration authority into a later OFF1 series.
+            // Retain the receipt itself as failed-attempt diagnostic evidence; clearing the live
+            // attempt identity makes the gate fail closed until a new explicit confirmation.
+            if phase == .failed {
+                operatorSafetyAttemptID = nil
+                operatorSafetyAttemptStartedAtUptimeNanoseconds = nil
+            }
+        }
+    }
     @Published private(set) var message = "Log in the official SDK account and verify the exact scooter before Bluetooth discovery."
     @Published private(set) var candidates: [Candidate] = []
     @Published private(set) var selectedID: UUID?
@@ -578,6 +775,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
         connectionGeneration: 0
     )
     @Published private(set) var exportData: Data?
+    @Published private(set) var acceptedArtifactSHA256: String?
+    @Published private(set) var acceptedArtifactByteCount: Int?
     @Published private(set) var diagnosticExportError: String?
     @Published private(set) var exportName = "Nembra-Secure-Link-Diagnostics.json"
 
@@ -594,6 +793,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private var targetCorrelationMethod: String?
     private var targetCorrelationWindowCount: Int?
     private var targetCorrelationOperatorConfirmed = false
+    private var operatorSafetyAttestation: StationaryCaptureOperatorAttestation?
+    private var operatorSafetyAttemptID: UUID?
+    private var operatorSafetyAttemptStartedAtUptimeNanoseconds: UInt64?
     private var driver: OfficialTuyaDriver?
     private var events: [Event] = []
     private var captureAttemptEventStartIndex = 0
@@ -602,6 +804,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private var acceptanceCutIsClosed = false
     private var sealedAcceptedEventPrefix: [Event]?
     private var sealedAcceptedExport: Export?
+    private var sealedAcceptedArtifact: ExactByteArtifactSeal?
+    private var sealedAcceptedForbiddenSecrets: [String]?
     private var watchdog: Task<Void, Never>?
     private let sessionLedger = TuyaAuthenticatedReadOnlySessionLedger()
     private var currentConnectionToken: TuyaReadOnlyConnectionToken?
@@ -616,7 +820,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private var foregroundIntegrityLossHandled = false
     private var officialConnectionRequestID = UUID()
 
-    init(device: TuyaAccountBridge.LinkedDevice) {
+    init(device: CaptureTargetDevice) {
         deviceID = device.id
         deviceName = device.name
         productID = device.productID
@@ -812,6 +1016,22 @@ private final class SecureLinkController: NSObject, ObservableObject {
             && OfficialTuyaFactory.packageCorrelationMayStart
     }
     var canRestartFromFreshOFF1: Bool { failedAttemptCanRestartFromOFF1 }
+    var acceptedArtifactIntegrityVerified: Bool {
+        phase == .accepted
+            && exportData != nil
+            && acceptedArtifactSHA256 != nil
+            && acceptedArtifactByteCount != nil
+    }
+    var operatorSafetyAttestationIsCurrent: Bool {
+        guard let operatorSafetyAttemptID,
+              let operatorSafetyAttemptStartedAtUptimeNanoseconds else { return false }
+        return StationaryCaptureOperatorAttestationGate.verdict(
+            for: operatorSafetyAttestation,
+            currentAttemptID: operatorSafetyAttemptID,
+            attemptStartedAtUptimeNanoseconds: operatorSafetyAttemptStartedAtUptimeNanoseconds,
+            nowUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
+        ) == .readyForOperatorDeclaredStationaryCapture
+    }
 
     func consumeCorrelationAsyncInvalidation() {
         guard phase == .baseline || phase == .scanning else { return }
@@ -894,7 +1114,73 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
     }
 
-    func startBaseline() {
+    /// Called only by the safety sheet's explicit operator-confirm action.
+    ///
+    /// This records human declarations; it does not sense or verify any physical condition.
+    func recordFreshOperatorAttestationAndBegin() {
+        guard phase == .idle else {
+            message = "A fresh safety confirmation can begin only before an attempt starts."
+            log("operator_stationary_safety_begin_rejected", ["phase": phase.rawValue])
+            return
+        }
+        guard recordFreshOperatorAttestationFromExplicitConfirmation() else { return }
+        beginBaselineAfterCurrentOperatorAttestation()
+    }
+
+    /// Called only by the safety sheet's explicit operator-confirm action after a safely retired
+    /// failed attempt. No declaration from the failed attempt is reused.
+    func recordFreshOperatorAttestationAndRetry() {
+        guard phase == .failed, canRestartFromFreshOFF1 else {
+            message = "This failed attempt still retains session authority. Relaunch Capture before another OFF1 attempt."
+            log("in_process_retry_rejected")
+            return
+        }
+        guard recordFreshOperatorAttestationFromExplicitConfirmation() else { return }
+        beginBaselineAfterCurrentOperatorAttestation()
+    }
+
+    private func recordFreshOperatorAttestationFromExplicitConfirmation() -> Bool {
+        let attemptID = UUID()
+        let attemptStartedAtUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
+        let receivedAtUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
+        operatorSafetyAttemptID = attemptID
+        operatorSafetyAttemptStartedAtUptimeNanoseconds = attemptStartedAtUptimeNanoseconds
+        operatorSafetyAttestation = StationaryCaptureOperatorAttestation(
+            attemptID: attemptID,
+            receivedAt: Date(),
+            receivedAtUptimeNanoseconds: receivedAtUptimeNanoseconds,
+            declarations: .init(
+                stationary: true,
+                poweredOff: true,
+                chargerDisconnected: true,
+                noRiding: true,
+                controlsUntouched: true
+            )
+        )
+        guard operatorSafetyAttestationIsCurrent else {
+            failLocally(
+                "The current-attempt stationary safety declaration could not be sealed. Review the setup and begin again.",
+                "operator_stationary_safety_attestation_invalid"
+            )
+            return false
+        }
+
+        log("operator_stationary_safety_attested", [
+            "attemptID": attemptID.uuidString,
+            "authority": "operator-declared-not-sensed",
+            "version": StationaryCaptureOperatorAttestation.Wording.current.version
+        ])
+        return true
+    }
+
+    private func beginBaselineAfterCurrentOperatorAttestation() {
+        guard operatorSafetyAttestationIsCurrent else {
+            failLocally(
+                "Confirm the current stationary, powered-off, charger-disconnected, no-riding setup before OFF1.",
+                "operator_stationary_safety_attestation_missing"
+            )
+            return
+        }
         guard buildIdentity.isAuthoritativeFieldBuild else {
             failLocally(buildIdentity.blocker ?? "Exact field-build provenance is unavailable.", "field_build_identity_unavailable")
             return
@@ -909,7 +1195,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
         // explicit custody boundary before fresh membership/correlation evidence can begin.
         captureAttemptEventStartIndex = events.count
         sealedAcceptedEventPrefix = nil
-
         // Every physical attempt receives a fresh complete current-account membership verdict
         // before the package-owned four-window Bluetooth correlation series may start.
         verifySDKMembership { [weak self] authorized in
@@ -926,6 +1211,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func beginCorrelationSeries() {
+        guard operatorSafetyAttestationIsCurrent else {
+            failLocally(
+                "Confirm the current stationary, charger-disconnected, no-riding setup before OFF1.",
+                "operator_stationary_safety_attestation_missing"
+            )
+            return
+        }
         guard privateConfig,
               sdkAccountLoggedIn,
               sdkDeviceMembershipVerified,
@@ -1302,16 +1594,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
 #endif
     }
 
-    func retry() {
-        guard phase == .failed, canRestartFromFreshOFF1 else {
-            message = "This failed attempt still retains session authority. Relaunch Capture before another OFF1 attempt."
-            log("in_process_retry_rejected")
+    func authenticate() {
+        guard operatorSafetyAttestationIsCurrent else {
+            failLocally(
+                "The current-run stationary safety declaration is no longer valid. Restart from OFF1 and confirm the setup again.",
+                "operator_stationary_safety_attestation_lost"
+            )
             return
         }
-        startBaseline()
-    }
-
-    func authenticate() {
         guard let candidate = selected, candidate.likely else {
             failLocally("A fresh repeated OFF1→ON1→OFF2→ON2 Bluetooth correlation is required before Tuya BLE ownership.", "candidate_not_authoritative")
             return
@@ -1820,7 +2110,19 @@ private final class SecureLinkController: NSObject, ObservableObject {
             }
             var eventDetails = custodySafeUpdate
             eventDetails["generation"] = String(token.diagnosticGeneration)
-            log("tuya_application_update", eventDetails)
+            guard let sourceReceivedAtUptimeNanoseconds = ledgerSnapshot.latestApplicationPayloadUptimeNanoseconds else {
+                await invalidateInternalLifecycle(
+                    token: token,
+                    message: "Accepted scooter data lost its package-owned monotonic receipt. Relaunch Capture and start again from scooter OFF.",
+                    kind: "application_receipt_timestamp_missing"
+                )
+                return
+            }
+            log(
+                "tuya_application_update",
+                eventDetails,
+                sourceReceivedAtUptimeNanoseconds: sourceReceivedAtUptimeNanoseconds
+            )
             message = "Receiving same-generation scooter application data · \(applicationUpdateCount) update(s). Canonical readiness still depends on the sealed observation horizon."
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
             await invalidateInternalLifecycle(
@@ -1837,7 +2139,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {
             await mirrorAlreadyTerminalIncompleteObservationHorizon(
                 token: token,
-                message: "Scooter data did not become sufficient within 60 seconds. Keep the scooter stationary, relaunch Capture, and start again from scooter OFF.",
+                message: "Scooter data did not become sufficient before the bounded observation deadline. Keep the scooter stationary, relaunch Capture, and start again from scooter OFF.",
                 kind: "application_authenticated_incomplete_readiness_horizon_reached"
             )
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection {
@@ -1902,7 +2204,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
                       let driver = self.driver else { return }
 
                 // A callback already delivered by SmartLife owns an opaque package receipt and
-                // must enter the ledger before the watchdog is allowed to cross the 60 s cutoff.
+                // must enter the ledger before the watchdog is allowed to cross the bounded
+                // incomplete-session deadline.
                 // Do not reset `previousPollUptime`: a stalled drain still invalidates continuity.
                 guard self.applicationUpdateAdmissionsInFlight == 0 else {
                     try? await Task.sleep(for: .milliseconds(10))
@@ -2000,7 +2303,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached {
                     await self.mirrorAlreadyTerminalIncompleteObservationHorizon(
                         token: token,
-                        message: "Scooter data did not become sufficient within 60 seconds. Keep the scooter stationary, relaunch Capture, and start again from scooter OFF.",
+                        message: "Scooter data did not become sufficient before the bounded observation deadline. Keep the scooter stationary, relaunch Capture, and start again from scooter OFF.",
                         kind: "session_authenticated_incomplete_readiness_horizon_reached"
                     )
                     return
@@ -2103,14 +2406,30 @@ private final class SecureLinkController: NSObject, ObservableObject {
                             ])
                             return
                         }
+                        guard self.operatorSafetyAttestationIsCurrent else {
+                            self.currentConnectionToken = nil
+                            self.localBLESettlementToken = nil
+                            self.sdkLocalBLEOnline = false
+                            self.driver = nil
+                            self.phase = .failed
+                            self.message = "The current-attempt stationary safety declaration was no longer valid when acceptance sealed. Relaunch Capture before a new attempt; the package chronology remains diagnostic only."
+                            self.log("operator_stationary_safety_attestation_lost_before_acceptance", [
+                                "generation": String(token.diagnosticGeneration)
+                            ])
+                            return
+                        }
                         self.sealedAcceptedEventPrefix = acceptedEventPrefixAtCut
+                        self.sealedAcceptedForbiddenSecrets = self.exactKnownSecretsForbiddenFromExport
                         self.currentConnectionToken = nil
                         self.sealedAcceptedExport = self.makeExport(
                             exportedAt: Date(),
                             phase: .accepted,
                             events: acceptedEventPrefixAtCut
                         )
+                        self.sealedAcceptedArtifact = nil
                         self.exportData = nil
+                        self.acceptedArtifactSHA256 = nil
+                        self.acceptedArtifactByteCount = nil
                         self.phase = .accepted
                         self.prepareExport()
                         self.log("acceptance_sealed", [
@@ -2348,7 +2667,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     private func makeExport(exportedAt: Date, phase: Phase, events: [Event]) -> Export {
         Export(
-            schemaVersion: 11,
+            schemaVersion: 13,
             purpose: "Sanitized Tuya authenticated read-only stationary preflight",
             exportedAt: exportedAt,
             buildIdentifier: buildIdentity.buildIdentifier,
@@ -2363,6 +2682,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             targetCorrelationWindowCount: targetCorrelationWindowCount,
             targetCorrelationOperatorConfirmed: targetCorrelationOperatorConfirmed,
             targetCorrelationProvenance: correlationProvenance,
+            operatorSafetyAttestation: operatorSafetyAttestation,
             phase: phase,
             privateConfigPresent: privateConfig,
             sdkAccountLoggedIn: sdkAccountLoggedIn,
@@ -2372,11 +2692,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
             sdkLocalBLEEvidenceState: sdkLocalBLEOnline ? .observedOnlineAtLatestDirectSample : .notProven,
             applicationUpdateCount: applicationUpdateCount,
             connectionGeneration: ledgerSnapshot.connectionGeneration,
+            connectionStartedAtUptimeNanoseconds: ledgerSnapshot.connectionStartedAtUptimeNanoseconds,
+            authenticatedAtUptimeNanoseconds: ledgerSnapshot.authenticatedAtUptimeNanoseconds,
+            latestApplicationPayloadUptimeNanoseconds: ledgerSnapshot.latestApplicationPayloadUptimeNanoseconds,
+            latestObservedUptimeNanoseconds: ledgerSnapshot.latestObservedUptimeNanoseconds,
+            monotonicClockDomain: "process-uptime-nanoseconds; compare only within this artifact",
             authenticationMethod: ledgerSnapshot.authenticationMethod?.rawValue,
             preflightVerdict: preflightVerdictText,
             applicationValueRepresentation: "ThingSmartDeviceDelegate dpsUpdate values projected with String(describing:); application-level SDK data, not byte-exact or raw FD50 transport",
             rawFD50BytesCaptured: false,
-            secretsRedacted: true,
+            knownSecretsRedacted: true,
             dpQueriesSent: false,
             dpCommandsSent: false,
             candidates: candidates,
@@ -2403,20 +2728,51 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
 
         do {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-            encoder.dateEncodingStrategy = .iso8601
-            exportData = try encoder.encode(envelope)
             if phase == .accepted {
-      exportName = "Nembra-Capture-\(deviceID.prefix(8)).json"
-  } else {
-      exportName = "Nembra-Secure-Link-\(deviceID.prefix(8))-Diagnostics.json"
-  }
+                let artifactSeal: ExactByteArtifactSeal
+                if let sealedAcceptedArtifact {
+                    artifactSeal = sealedAcceptedArtifact
+                } else {
+                    let exactBytes = try encodeExport(envelope)
+                    let newSeal = ExactByteArtifactSeal(sealing: exactBytes)
+                    guard newSeal.verifies(exactBytes) else {
+                        throw CaptureArtifactPreparationError.integrityVerificationFailed
+                    }
+                    let decoded = try newSeal.verifiedCanonicalValue(
+                        strictlyDecoding: decodeExport,
+                        canonicalEncoding: encodeExport
+                    )
+                    try validateAcceptedExport(decoded, exactBytes: exactBytes)
+                    self.sealedAcceptedArtifact = newSeal
+                    artifactSeal = newSeal
+                }
+
+                let exactBytes = try artifactSeal.verifiedBytes()
+                guard artifactSeal.verifies(exactBytes) else {
+                    throw CaptureArtifactPreparationError.integrityVerificationFailed
+                }
+                let decoded = try artifactSeal.verifiedCanonicalValue(
+                    strictlyDecoding: decodeExport,
+                    canonicalEncoding: encodeExport
+                )
+                try validateAcceptedExport(decoded, exactBytes: exactBytes)
+                exportData = exactBytes
+                acceptedArtifactSHA256 = artifactSeal.sha256
+                acceptedArtifactByteCount = artifactSeal.byteCount
+                exportName = "Nembra-Capture-\(deviceID.prefix(8)).json"
+            } else {
+                exportData = try encodeExport(envelope)
+                exportName = "Nembra-Secure-Link-\(deviceID.prefix(8))-Diagnostics.json"
+            }
             if phase != .failed {
-                message = "Sanitized diagnostics ready with exact compiled source + reviewed Tuya dependency-lock provenance. No account UID, AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported."
+                message = "The exact accepted JSON bytes passed strict decode, canonical round-trip, schema, chronology, and SHA-256 checks. Known credential fields are redacted, and exact AppKey/AppSecret/current account UID values are absent. No raw FD50 claim, DP query, or DP command is exported."
             }
         } catch {
             exportData = nil
+            if phase == .accepted {
+                acceptedArtifactSHA256 = nil
+                acceptedArtifactByteCount = nil
+            }
             let exportError = "Diagnostic export failed: \(error.localizedDescription)"
             if phase == .failed {
                 diagnosticExportError = exportError
@@ -2424,6 +2780,183 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 message = exportError
             }
         }
+    }
+
+    private func encodeExport(_ envelope: Export) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        encoder.dateEncodingStrategy = .iso8601
+        return try encoder.encode(envelope)
+    }
+
+    private func decodeExport(_ bytes: Data) throws -> Export {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(Export.self, from: bytes)
+    }
+
+    private func validateAcceptedExport(_ envelope: Export, exactBytes: Data) throws {
+        func require(_ condition: @autoclosure () -> Bool, _ reason: String) throws {
+            guard condition() else {
+                throw CaptureArtifactPreparationError.acceptedEnvelopeInvariantFailed(reason)
+            }
+        }
+
+        try require(envelope.schemaVersion == 13, "unsupported schema")
+        try require(envelope.phase == .accepted, "phase is not accepted")
+        try require(envelope.purpose == "Sanitized Tuya authenticated read-only stationary preflight", "purpose is unsupported")
+        try require(envelope.buildIdentifier == buildIdentity.buildIdentifier, "build identity mismatch")
+        try require(envelope.sourceCommitSHA == buildIdentity.sourceCommitSHA, "source identity mismatch")
+        try require(envelope.tuyaDependencyLockSHA256 == buildIdentity.tuyaDependencyLockSHA256, "dependency identity mismatch")
+        try require(envelope.procedureIdentifier == NembraCaptureBuildIdentity.fieldProcedureIdentifier, "procedure identity mismatch")
+        try require(envelope.privateConfigPresent, "private SDK configuration was not present")
+        try require(envelope.sdkAccountLoggedIn, "SDK account was not current at seal")
+        try require(envelope.sdkDeviceMembershipVerified, "exact scooter membership was not current at seal")
+        try require(envelope.secureSessionEstablished, "secure session was not established")
+        try require(envelope.sdkLocalBLEEvidenceState == .observedOnlineAtLatestDirectSample, "latest direct SDK BLE sample was not online")
+        try require(envelope.authenticationMethod == TuyaReadOnlyAuthenticationMethod.smartLifeAppSDK.rawValue, "unsupported authentication provenance")
+        try require(envelope.preflightVerdict == "ready-for-stationary-mapping", "canonical preflight was not ready")
+        try require(envelope.targetCorrelationOperatorConfirmed, "correlated target was not confirmed")
+        try require(envelope.targetCorrelationWindowCount == 4, "correlation did not retain four windows")
+        guard let correlation = envelope.targetCorrelationProvenance else {
+            throw CaptureArtifactPreparationError.acceptedEnvelopeInvariantFailed("correlation provenance is missing")
+        }
+        try require(correlation.disposition == "singleRepeatableCandidate", "correlation was not uniquely repeatable")
+        try require(correlation.method == envelope.targetCorrelationMethod, "correlation method disagrees with provenance")
+        try require(correlation.windows.count == 4, "correlation provenance does not contain four windows")
+        let expectedWindows: [(phase: String, poweredOn: Bool)] = [
+            ("OFF1", false),
+            ("ON1", true),
+            ("OFF2", false),
+            ("ON2", true),
+        ]
+        for (index, pair) in zip(correlation.windows, expectedWindows).enumerated() {
+            let (window, expected) = pair
+            try require(window.phase == expected.phase, "correlation window order is invalid")
+            try require(window.operatorExpectedPowerOn == expected.poweredOn, "correlation power-state chronology is invalid")
+            try require(window.windowSequence == UInt64(index + 1), "correlation window sequence is invalid")
+            try require(window.startedAtUptimeNanoseconds <= window.endedAtUptimeNanoseconds, "correlation window chronology regressed")
+            if index > 0 {
+                try require(
+                    correlation.windows[index - 1].endedAtUptimeNanoseconds <= window.startedAtUptimeNanoseconds,
+                    "correlation windows overlap or regress"
+                )
+            }
+        }
+        try require(correlation.observationSnapshots.count == 4, "correlation candidate catalogs are incomplete")
+        try require(
+            correlation.observationSnapshots.map(\.windowSequence) == [1, 2, 3, 4],
+            "correlation candidate catalog sequence is invalid"
+        )
+        try require(
+            Set(correlation.observationSnapshots.map(\.observationSeriesID)).count == 1,
+            "correlation candidate catalogs do not share one observation series"
+        )
+        guard let selectedPeripheralID = envelope.selectedPeripheralID else {
+            throw CaptureArtifactPreparationError.acceptedEnvelopeInvariantFailed("selected peripheral is missing")
+        }
+        try require(correlation.repeatableCandidateIDs == [selectedPeripheralID], "selected peripheral disagrees with unique correlation")
+        try require(
+            envelope.candidates.filter { $0.id.uuidString == selectedPeripheralID && $0.freshlyCorrelated }.count == 1,
+            "selected peripheral is not backed by one fresh candidate"
+        )
+        try require(envelope.rawFD50BytesCaptured == false, "raw FD50 bytes were falsely claimed")
+        try require(envelope.knownSecretsRedacted, "known-secret redaction was not asserted")
+        try require(envelope.dpQueriesSent == false, "a DP query was reported")
+        try require(envelope.dpCommandsSent == false, "a DP command was reported")
+        try require(envelope.monotonicClockDomain == "process-uptime-nanoseconds; compare only within this artifact", "monotonic clock domain is unsupported")
+        try require(
+            envelope.applicationValueRepresentation == "ThingSmartDeviceDelegate dpsUpdate values projected with String(describing:); application-level SDK data, not byte-exact or raw FD50 transport",
+            "application evidence representation is unsupported"
+        )
+
+        guard let attestation = envelope.operatorSafetyAttestation else {
+            throw CaptureArtifactPreparationError.acceptedEnvelopeInvariantFailed("operator safety receipt is missing")
+        }
+        try require(attestation.wording == .current, "operator safety wording is stale")
+        try require(attestation.hasCompleteDeclarations, "operator safety receipt is incomplete")
+
+        let minimumAuthenticatedNanoseconds = TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds
+        let minimumPayloadSurvivalNanoseconds = TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
+        guard let connectionStarted = envelope.connectionStartedAtUptimeNanoseconds,
+              let authenticated = envelope.authenticatedAtUptimeNanoseconds,
+              let latestPayload = envelope.latestApplicationPayloadUptimeNanoseconds,
+              let latestObserved = envelope.latestObservedUptimeNanoseconds else {
+            throw CaptureArtifactPreparationError.acceptedEnvelopeInvariantFailed("monotonic chronology is incomplete")
+        }
+        try require(connectionStarted <= authenticated, "authentication predates connection")
+        try require(attestation.receivedAtUptimeNanoseconds <= correlation.windows[0].startedAtUptimeNanoseconds, "operator safety receipt was not recorded before correlation")
+        try require(correlation.windows[3].endedAtUptimeNanoseconds <= connectionStarted, "official connection predates completed correlation")
+        try require(authenticated <= latestPayload, "application evidence predates authentication")
+        try require(latestPayload <= latestObserved, "latest observation predates application evidence")
+        try require(latestObserved - authenticated >= minimumAuthenticatedNanoseconds, "authenticated continuity is too short")
+        try require(latestPayload - authenticated >= minimumPayloadSurvivalNanoseconds, "application evidence did not survive the rejection window")
+        let expectedObservedAge = Double(latestObserved - authenticated) / 1_000_000_000
+        try require(expectedObservedAge.isFinite, "observed age is not finite")
+        try require(envelope.canonicalObservedAgeSeconds == expectedObservedAge, "observed age disagrees with monotonic chronology")
+        try require(
+            envelope.applicationUpdateCount >= TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount,
+            "application evidence was not repeated"
+        )
+        try require(envelope.connectionGeneration > 0, "connection generation is unavailable")
+
+        let applicationEvents = envelope.events.filter { $0.kind == "tuya_application_update" }
+        try require(applicationEvents.count == envelope.applicationUpdateCount, "application event count disagrees with the ledger")
+        let expectedGeneration = String(envelope.connectionGeneration)
+        var previousOrdinal: Int?
+        var previousReceipt: UInt64?
+        for event in envelope.events {
+            if let previousOrdinal {
+                try require(event.ordinal == previousOrdinal + 1, "event ordinals are not contiguous")
+            }
+            previousOrdinal = event.ordinal
+        }
+        for event in applicationEvents {
+            try require(event.details["generation"] == expectedGeneration, "application event generation mismatch")
+            guard let receipt = event.sourceReceivedAtUptimeNanoseconds else {
+                throw CaptureArtifactPreparationError.acceptedEnvelopeInvariantFailed("application event receipt is missing")
+            }
+            try require(receipt >= authenticated && receipt <= latestPayload, "application receipt is outside accepted chronology")
+            if let previousReceipt {
+                try require(receipt >= previousReceipt, "application receipt chronology regressed")
+            }
+            previousReceipt = receipt
+        }
+        try require(
+            applicationEvents.last?.sourceReceivedAtUptimeNanoseconds == latestPayload,
+            "latest application event disagrees with the ledger chronology"
+        )
+
+        let forbiddenSecrets = sealedAcceptedForbiddenSecrets ?? exactKnownSecretsForbiddenFromExport
+        for forbidden in forbiddenSecrets where !forbidden.isEmpty {
+            try require(
+                exactBytes.range(of: Data(forbidden.utf8)) == nil,
+                "an exact known secret value survived redaction"
+            )
+            let secretEncoder = JSONEncoder()
+            secretEncoder.outputFormatting = [.withoutEscapingSlashes]
+            let encoded = try secretEncoder.encode(forbidden)
+            guard encoded.count >= 2 else {
+                throw CaptureArtifactPreparationError.acceptedEnvelopeInvariantFailed("known secret encoding failed")
+            }
+            let escapedContent = encoded.subdata(in: 1..<(encoded.count - 1))
+            try require(
+                escapedContent.isEmpty || exactBytes.range(of: escapedContent) == nil,
+                "an escaped exact known secret value survived redaction"
+            )
+        }
+    }
+
+    private var exactKnownSecretsForbiddenFromExport: [String] {
+        var values = [currentAccountUID, membershipAccountUID]
+#if canImport(NembraTuyaPrivateConfig)
+        values.append(NembraTuyaPrivateIdentity.appKey)
+        values.append(NembraTuyaPrivateIdentity.appSecret)
+#endif
+        return Array(Set(values.compactMap { value in
+            let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return normalized.isEmpty ? nil : normalized
+        }))
     }
 
     private func abandonPackageCorrelation() {
@@ -2444,6 +2977,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
         acceptanceCutIsClosed = false
         sealedAcceptedEventPrefix = nil
         sealedAcceptedExport = nil
+        sealedAcceptedArtifact = nil
+        sealedAcceptedForbiddenSecrets = nil
         abandonPackageCorrelation()
         correlationProvenance = nil
         targetCorrelationMethod = nil
@@ -2459,6 +2994,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
         pendingCorrelatedTargetID = nil
         sdkLocalBLEOnline = false
         exportData = nil
+        acceptedArtifactSHA256 = nil
+        acceptedArtifactByteCount = nil
         diagnosticExportError = nil
         // Active authenticated generations must be terminally retired by their
         // owning outcome path before a new discovery attempt. Generic reset never
@@ -2480,9 +3017,19 @@ private final class SecureLinkController: NSObject, ObservableObject {
         log(kind, ["message": text])
     }
 
-    private func log(_ kind: String, _ details: [String: String] = [:]) {
+    private func log(
+        _ kind: String,
+        _ details: [String: String] = [:],
+        sourceReceivedAtUptimeNanoseconds: UInt64? = nil
+    ) {
         invalidatePreparedMutableExport()
-        events.append(Event(at: Date(), kind: kind, details: details))
+        events.append(Event(
+            ordinal: events.count,
+            at: Date(),
+            sourceReceivedAtUptimeNanoseconds: sourceReceivedAtUptimeNanoseconds,
+            kind: kind,
+            details: details
+        ))
     }
 
 }
@@ -2536,7 +3083,8 @@ private enum OfficialTuyaFactory {
 #if canImport(ThingSmartHomeKit) && canImport(NembraTuyaPrivateConfig)
         guard configured else { return false }
         if didBootstrap { return true }
-        ThingSmartSDK.sharedInstance()?.start(
+        guard let sdk = ThingSmartSDK.sharedInstance() else { return false }
+        sdk.start(
             withAppKey: NembraTuyaPrivateIdentity.appKey,
             secretKey: NembraTuyaPrivateIdentity.appSecret
         )
@@ -2793,6 +3341,9 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
     }
 
     private static let secretKeyFragments = [
+        "authorization",
+        "credential",
+        "token",
         "localkey",
         "sessionkey",
         "appkey",
@@ -2913,13 +3464,16 @@ private final class OfficialTuyaAccountAuthorizer: ObservableObject {
             return
         }
 #if canImport(ThingSmartHomeKit)
+        guard let user = ThingSmartUser.sharedInstance() else {
+            status = "Official Tuya SDK account service is unavailable. Login remains locked."
+            return
+        }
         busy = true
         codeSent = false
         status = "Requesting a Tuya login verification code…"
-        let user = ThingSmartUser.sharedInstance()
         switch method {
         case .email:
-            user?.sendVerifyCode(
+            user.sendVerifyCode(
                 withUserName: identity,
                 countryCode: country,
                 type: 2,
@@ -2938,8 +3492,8 @@ private final class OfficialTuyaAccountAuthorizer: ObservableObject {
                 }
             )
         case .phone:
-            let region = user?.getDefaultRegionWithCountryCode(country) ?? ""
-            user?.sendVerifyCode(
+            let region = user.getDefaultRegionWithCountryCode(country) ?? ""
+            user.sendVerifyCode(
                 withUserName: identity,
                 region: region,
                 countryCode: country,
@@ -3037,11 +3591,15 @@ private final class OfficialTuyaAccountAuthorizer: ObservableObject {
             return
         }
 #if canImport(ThingSmartHomeKit)
+        guard let user = ThingSmartUser.sharedInstance() else {
+            status = "Official Tuya SDK account service is unavailable. Login remains locked."
+            return
+        }
         busy = true
         status = "Logging in the official Tuya SDK account session…"
         switch method {
         case .email:
-            ThingSmartUser.sharedInstance()?.login(
+            user.login(
                 withEmail: identity,
                 countryCode: country,
                 code: code,
@@ -3049,7 +3607,7 @@ private final class OfficialTuyaAccountAuthorizer: ObservableObject {
                 failure: { [weak self] error in Task { @MainActor in self?.finishLoginFailure(error, submittedIdentity: identity, submittedVerificationCode: code) } }
             )
         case .phone:
-            ThingSmartUser.sharedInstance()?.login(
+            user.login(
                 withMobile: identity,
                 countryCode: country,
                 code: code,
@@ -3152,18 +3710,28 @@ private final class OfficialTuyaAccountAuthorizer: ObservableObject {
     }
 }
 
+enum StationarySafetyLaunch: String, Identifiable {
+    case begin
+    case retry
+
+    var id: String { rawValue }
+}
+
 @MainActor
 private struct SecureLinkView: View {
     @StateObject private var test: SecureLinkController
-    @StateObject private var sdkAccount = OfficialTuyaAccountAuthorizer()
+    @ObservedObject private var sdkAccount: OfficialTuyaAccountAuthorizer
     @State private var showEngineeringDetails = false
+    @State private var stationarySafetyLaunch: StationarySafetyLaunch?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dismiss) private var dismiss
 
     private let stageLabels = ["Target", "Secure link", "Observe", "Seal"]
 
-    init(device: TuyaAccountBridge.LinkedDevice) {
+    init(device: CaptureTargetDevice, sdkAccount: OfficialTuyaAccountAuthorizer) {
         _test = StateObject(wrappedValue: SecureLinkController(device: device))
+        self.sdkAccount = sdkAccount
     }
 
     var body: some View {
@@ -3228,6 +3796,16 @@ private struct SecureLinkView: View {
         .onChange(of: sdkAccount.loggedIn) { _, loggedIn in
             if loggedIn { test.verifySDKMembership() }
             else { test.invalidateSDKMembership() }
+        }
+        .sheet(item: $stationarySafetyLaunch) { launch in
+            StationarySafetyConfirmationSheet(launch: launch) {
+                switch launch {
+                case .begin:
+                    test.recordFreshOperatorAttestationAndBegin()
+                case .retry:
+                    test.recordFreshOperatorAttestationAndRetry()
+                }
+            }
         }
     }
 
@@ -3439,15 +4017,26 @@ private struct SecureLinkView: View {
                 }
 
                 if authorityReady {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Stationary safety check", systemImage: "hand.raised.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.cyan)
+                        Text("Before every attempt, confirm the scooter is OFF and stationary, the charger is disconnected, and nobody will ride or touch its controls.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
                     Button {
-                        test.startBaseline()
+                        stationarySafetyLaunch = .begin
                     } label: {
-                        Label("Start with scooter OFF", systemImage: "power")
+                        Label("Review safety and begin", systemImage: "checkmark.shield.fill")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
-                    .accessibilityHint("Starts the first read-only signal check with the scooter powered off.")
+                    .accessibilityIdentifier("nembra.capture.stationary-safety-review")
+                    .accessibilityHint("Opens the required current-attempt stationary and charger-disconnected confirmation before OFF1.")
                 }
             }
         }
@@ -3497,17 +4086,14 @@ private struct SecureLinkView: View {
                 }
 
                 if test.phase == .correlated {
-                    Text("One nearby signal repeated through the full OFF → ON → OFF → ON pattern. Confirm this signal for the current attempt before Nembra opens the secure read-only link.")
-                        .foregroundStyle(.secondary)
-                    Button {
+                    CaptureCorrelationSuccessPresentation(
+                        isConfirmEnabled: test.sdkAccountLoggedIn
+                            && test.sdkDeviceMembershipVerified
+                            && test.accountIdentityLeaseIsAuthorized
+                            && !test.membershipBusy
+                    ) {
                         test.confirmCorrelatedTarget()
-                    } label: {
-                        Label("Confirm this scooter signal", systemImage: "checkmark.circle.fill")
-                            .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .disabled(!test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized || test.membershipBusy)
                 } else if test.phase == .powerOn {
                     Text(test.correlationWindowInstruction)
                         .foregroundStyle(.secondary)
@@ -3549,6 +4135,8 @@ private struct SecureLinkView: View {
                 Text("Only the full OFF → ON → OFF → ON pattern can authorize the nearby signal for this attempt.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                stopConditionNotice
             }
         }
     }
@@ -3583,41 +4171,47 @@ private struct SecureLinkView: View {
                     Text("Tuya owns the secure Bluetooth link now. Capture is waiting for this scooter's current read-only session.")
                         .foregroundStyle(.secondary)
                 } else {
-                    Text("OBSERVE")
-                        .font(.caption2.bold())
-                        .tracking(1.2)
-                        .foregroundStyle(.cyan)
-                    Text("Hold steady")
-                        .font(.title2.bold())
-                    Text("Keep Capture in the foreground and leave the scooter untouched until this read-only observation is complete.")
-                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 18) {
+                        Text("OBSERVE")
+                            .font(.caption2.bold())
+                            .tracking(1.2)
+                            .foregroundStyle(.cyan)
+                        Text("Hold steady")
+                            .font(.title2.bold())
+                        Text("Keep Capture in the foreground and leave the scooter untouched until this read-only observation is complete.")
+                            .foregroundStyle(.secondary)
 
-                    let age = test.canonicalObservedAgeSeconds ?? 0
-                    VStack(alignment: .leading, spacing: 8) {
-                        if dynamicTypeSize.isAccessibilitySize {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Read-only observation")
-                                    .font(.subheadline.weight(.semibold))
-                                Text("\(Int(min(age, 45))) / 45 s")
-                                    .font(.subheadline.monospacedDigit().bold())
+                        let age = test.canonicalObservedAgeSeconds ?? 0
+                        VStack(alignment: .leading, spacing: 8) {
+                            if dynamicTypeSize.isAccessibilitySize {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Read-only observation")
+                                        .font(.subheadline.weight(.semibold))
+                                    Text("\(Int(min(age, 45))) / 45 s")
+                                        .font(.subheadline.monospacedDigit().bold())
+                                }
+                            } else {
+                                HStack {
+                                    Text("Read-only observation")
+                                        .font(.subheadline.weight(.semibold))
+                                    Spacer()
+                                    Text("\(Int(min(age, 45))) / 45 s")
+                                        .font(.subheadline.monospacedDigit().bold())
+                                }
                             }
-                        } else {
-                            HStack {
-                                Text("Read-only observation")
-                                    .font(.subheadline.weight(.semibold))
-                                Spacer()
-                                Text("\(Int(min(age, 45))) / 45 s")
-                                    .font(.subheadline.monospacedDigit().bold())
-                            }
+                            ProgressView(value: min(age / 45, 1))
+                                .accessibilityLabel("Read-only observation progress")
+                                .accessibilityValue("\(Int(min(age, 45))) of 45 seconds")
+                            requirementRow("Secure local link", ready: test.sdkLocalBLEOnline)
+                            requirementRow("Repeated scooter data", ready: test.applicationUpdateCount >= TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount)
+                            requirementRow("Scooter data stayed live", ready: test.applicationEvidenceSurvivedHistoricalWindow)
                         }
-                        ProgressView(value: min(age / 45, 1))
-                            .accessibilityLabel("Read-only observation progress")
-                            .accessibilityValue("\(Int(min(age, 45))) of 45 seconds")
-                        requirementRow("Secure local link", ready: test.sdkLocalBLEOnline)
-                        requirementRow("Repeated scooter data", ready: test.applicationUpdateCount >= TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount)
-                        requirementRow("Scooter data stayed live", ready: test.applicationEvidenceSurvivedHistoricalWindow)
                     }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("nembra.capture.observation.surface")
                 }
+
+                stopConditionNotice
             }
         }
     }
@@ -3656,9 +4250,9 @@ private struct SecureLinkView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     Button {
-                        test.retry()
+                        stationarySafetyLaunch = .retry
                     } label: {
-                        Label("Restart from scooter OFF", systemImage: "arrow.counterclockwise")
+                        Label("Review safety and restart", systemImage: "arrow.counterclockwise")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
@@ -3672,6 +4266,12 @@ private struct SecureLinkView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+        }
+    }
+
+    private var stopConditionNotice: some View {
+        CaptureStopConditionPresentation {
+            dismiss()
         }
     }
 
@@ -3722,7 +4322,10 @@ private struct SecureLinkView: View {
     private var completionPanel: some View {
         panel {
             VStack(alignment: .leading, spacing: 18) {
-                if let data = test.exportData {
+                if let data = test.exportData,
+                   let sha256 = test.acceptedArtifactSHA256,
+                   let byteCount = test.acceptedArtifactByteCount,
+                   test.acceptedArtifactIntegrityVerified {
                     HStack(alignment: .top, spacing: 14) {
                         Image(systemName: "checkmark.seal.fill")
                             .font(.system(size: 38, weight: .semibold))
@@ -3733,13 +4336,26 @@ private struct SecureLinkView: View {
                                 .font(.caption2.bold())
                                 .tracking(1.3)
                                 .foregroundStyle(.green)
+                                .accessibilityIdentifier("nembra.capture.complete")
                             Text("Ready for analysis")
                                 .font(.title.bold())
                         }
                     }
 
-                    Text("The accepted artifact is sealed and encoded. Later callbacks, account changes, or diagnostics cannot rewrite the bytes being shared.")
+                    Text("The exact accepted JSON bytes are sealed and verified. Later callbacks, account changes, or diagnostics cannot rewrite the artifact being shared.")
                         .foregroundStyle(.secondary)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("Integrity verified", systemImage: "checkmark.shield.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.green)
+                            .accessibilityIdentifier("nembra.capture.integrity")
+                        Text("\(byteCount.formatted()) bytes · SHA-256 \(sha256.prefix(12))…")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("Artifact integrity")
+                            .accessibilityValue("Verified, \(byteCount) bytes, SHA-256 \(sha256)")
+                    }
 
                     ShareLink(item: SecureTransfer(data: data, name: test.exportName), preview: SharePreview(test.exportName)) {
                         Label("Share Capture", systemImage: "square.and.arrow.up")
@@ -3747,7 +4363,13 @@ private struct SecureLinkView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
-                    .accessibilityHint("Shares the immutable accepted Capture artifact for analysis.")
+                    .accessibilityIdentifier("nembra.capture.share")
+                    .accessibilityHint("Shares the immutable verified Capture artifact for analysis. If sharing is cancelled or fails, use this same action again to share the same sealed bytes.")
+
+                    Text("If sharing is cancelled or fails, tap Share Capture again. The same verified bytes remain sealed.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else {
                     HStack(alignment: .top, spacing: 14) {
                         Image(systemName: "checkmark.seal")
@@ -3985,7 +4607,7 @@ private struct SecureLinkView: View {
 
     private var phaseTitle: String {
         switch test.phase {
-        case .accepted: return test.exportData == nil ? "Capture sealed" : "Capture complete"
+        case .accepted: return test.acceptedArtifactIntegrityVerified ? "Capture complete" : "Capture sealed"
         case .failed: return "Capture stopped"
         case .baseline, .scanning, .powerOn: return "Find this scooter"
         case .correlated: return "Scooter signal found"
@@ -3998,9 +4620,9 @@ private struct SecureLinkView: View {
     private var phaseSubtitle: String {
         switch test.phase {
         case .accepted:
-            return test.exportData == nil
+            return !test.acceptedArtifactIntegrityVerified
                 ? "The evidence horizon is sealed. Prepare the immutable artifact before sharing it for analysis."
-                : "The immutable accepted artifact is encoded and ready to share for analysis."
+                : "The immutable accepted artifact bytes passed integrity verification and are ready to share for analysis."
         case .failed:
             return test.canRestartFromFreshOFF1
                 ? "Nothing from the stopped attempt will carry forward. Restore the missing requirement, then restart with the scooter powered off."
@@ -4035,6 +4657,164 @@ private struct SecureLinkView: View {
         case .failed: return .orange
         default: return .cyan
         }
+    }
+}
+
+struct CaptureCorrelationSuccessPresentation: View {
+    let isConfirmEnabled: Bool
+    let onConfirm: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("One nearby signal repeated through the full OFF → ON → OFF → ON pattern. Confirm this signal for the current attempt before Nembra opens the secure read-only link.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                onConfirm()
+            } label: {
+                Label("Confirm this scooter signal", systemImage: "checkmark.circle.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(!isConfirmEnabled)
+            .accessibilityIdentifier("nembra.capture.correlation.confirm")
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("nembra.capture.correlation.outcome")
+    }
+}
+
+struct CaptureStopConditionPresentation: View {
+    let accessibilityHint: String
+    let onStop: () -> Void
+
+    init(
+        accessibilityHint: String = "Leaves Secure Link. Capture retires this attempt and requires a new OFF1 safety confirmation.",
+        onStop: @escaping () -> Void
+    ) {
+        self.accessibilityHint = accessibilityHint
+        self.onStop = onStop
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Divider()
+                .overlay(Color.white.opacity(0.08))
+            Label("Stop if the scooter moves, the charger is connected, any control changes, account/build authority changes, or Capture leaves the foreground.", systemImage: "exclamationmark.octagon")
+                .font(.footnote)
+                .foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Stop this attempt") {
+                onStop()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .accessibilityIdentifier("nembra.capture.stop-attempt")
+            .accessibilityHint(accessibilityHint)
+        }
+    }
+}
+
+struct StationarySafetyConfirmationSheet: View {
+    let launch: StationarySafetyLaunch
+    let qaDisclosure: String?
+    let onConfirm: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    init(
+        launch: StationarySafetyLaunch,
+        qaDisclosure: String? = nil,
+        onConfirm: @escaping () -> Void
+    ) {
+        self.launch = launch
+        self.qaDisclosure = qaDisclosure
+        self.onConfirm = onConfirm
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Stationary procedure", systemImage: "checkmark.shield.fill")
+                            .font(.title2.bold())
+                            .foregroundStyle(.cyan)
+                        Text("Confirm these conditions for this attempt only.")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    VStack(alignment: .leading, spacing: 16) {
+                        let wording = StationaryCaptureOperatorAttestation.Wording.current
+                        safetyRow(wording.stationaryStatement, symbol: "scooter")
+                        safetyRow(wording.poweredOffStatement, symbol: "power")
+                        safetyRow(wording.chargerDisconnectedStatement, symbol: "powerplug")
+                        safetyRow(wording.noRidingStatement, symbol: "figure.stand")
+                        safetyRow(wording.controlsUntouchedStatement, symbol: "hand.raised.fill")
+                    }
+
+                    Label("Keep Capture open in the foreground for the whole attempt.", systemImage: "iphone")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text("Capture cannot sense or verify the charger or these physical conditions. Your confirmation is recorded as an operator declaration, never as scooter telemetry.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Button {
+                            onConfirm()
+                            dismiss()
+                        } label: {
+                            Label(
+                                launch == .retry ? "I confirm — restart at OFF1" : "I confirm — begin at OFF1",
+                                systemImage: "checkmark.circle.fill"
+                            )
+                            .frame(maxWidth: .infinity, minHeight: 50)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .accessibilityIdentifier("nembra.capture.stationary-safety-confirm")
+                        .accessibilityHint("Records a fresh operator declaration for this attempt and begins the first powered-off signal window.")
+
+                        Button("Cancel", role: .cancel) {
+                            dismiss()
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                }
+                .frame(maxWidth: 620, alignment: .leading)
+                .padding(20)
+                .frame(maxWidth: .infinity)
+            }
+            .navigationTitle("Safety check")
+            .navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if let qaDisclosure {
+                    CapturePresentationDisclosureBanner(
+                        text: qaDisclosure,
+                        accessibilityIdentifier: "nembra.capture.qa.synthetic-sheet-disclosure"
+                    )
+                }
+            }
+        }
+        .presentationDetents([.large])
+        .preferredColorScheme(.dark)
+    }
+
+    private func safetyRow(_ title: String, symbol: String) -> some View {
+        Label {
+            Text(title)
+                .fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: symbol)
+                .foregroundStyle(.cyan)
+                .frame(width: 26)
+        }
+        .font(.body.weight(.semibold))
     }
 }
 

@@ -38,7 +38,9 @@ struct TuyaCaptureAccessibilityXXXLCurrentProductSourceTests {
 
         let failure = String(try section(in: secureLinkView, from: "private var failurePanel: some View", to: "private var completionPanel: some View"))
         #expect(failure.contains("if test.canRestartFromFreshOFF1"))
-        #expect(failure.contains("test.retry()"))
+        #expect(failure.contains("stationarySafetyLaunch = .retry"))
+        #expect(secureLinkView.contains("case .retry:\n                    test.recordFreshOperatorAttestationAndRetry()"))
+        #expect(secureLinkView.contains("I confirm — restart at OFF1"))
         #expect(failure.contains(".disabled(!authorityReady || test.membershipBusy)"))
         #expect(failure.contains("Relaunch Capture before another attempt"))
 

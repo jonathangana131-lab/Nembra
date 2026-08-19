@@ -8,101 +8,61 @@ struct NembraApp: App {
 
     var body: some Scene {
         WindowGroup {
-            NembraNavigationHost {
-                AppRootView()
+            NembraNavigationHost { openNavigation in
+                AppRootView(onOpenNavigation: openNavigation)
                     .environment(runtime.vehicleStore)
                     .environment(runtime.rideStore)
                     .environment(runtime.rideHistoryStore)
                     .environment(runtime.rideRouteStore)
+                    .environment(runtime.dailyRideStore)
                     .task { await runtime.start() }
             }
             .environment(runtime.vehicleStore)
+            .environment(runtime.automaticCaptureReadiness)
         }
     }
 }
 
 private struct NembraNavigationHost<Content: View>: View {
-    @Environment(VehicleStore.self) private var vehicle
-    @Environment(\.verticalSizeClass) private var verticalSizeClass
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(AutomaticCaptureReadinessStore.self) private var automaticCaptureReadiness
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.scenePhase) private var scenePhase
     @State private var isNavigationPresented = false
 
-    let content: Content
+    let content: (() -> Void) -> Content
 
-    init(@ViewBuilder content: () -> Content) {
-        self.content = content()
+    init(@ViewBuilder content: @escaping (() -> Void) -> Content) {
+        self.content = content
     }
 
     var body: some View {
-        ZStack {
-            content
-
-            if shouldShowNavigationLauncher {
-                navigationLauncher
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: launcherAlignment)
-                    .padding(.top, verticalSizeClass == .compact ? 10 : 0)
-                    .padding(.trailing, verticalSizeClass == .compact ? 0 : 18)
-                    .padding(.bottom, verticalSizeClass == .compact ? 0 : 92)
-            }
-        }
+        content(openNavigation)
         .sheet(isPresented: $isNavigationPresented) {
             NavigationStack {
                 NembraNavigationView()
             }
         }
-    }
-
-    private var shouldShowNavigationLauncher: Bool {
-        guard verticalSizeClass == .compact else { return true }
-        guard let speed = vehicle.simulatorQualifiedLiveSpeedKilometersPerHour else { return false }
-        return speed < 0.5
-    }
-
-    private var launcherAlignment: Alignment {
-        verticalSizeClass == .compact ? .top : .bottomTrailing
-    }
-
-    private var navigationLauncher: some View {
-        Button {
-            withAnimation(reduceMotion ? nil : .snappy(duration: 0.28)) {
-                isNavigationPresented = true
-            }
-        } label: {
-            Group {
-                if dynamicTypeSize.isAccessibilitySize {
-                    Label("Navigation", systemImage: "location.north.circle.fill")
-                        .font(.headline)
-                        .padding(.horizontal, 18)
-                } else {
-                    Image(systemName: "location.north.circle.fill")
-                        .font(.system(size: 24, weight: .semibold))
-                }
-            }
-            .frame(minWidth: 54, minHeight: 54)
-            .background {
-                if reduceTransparency {
-                    Color(uiColor: .secondarySystemBackground)
-                } else {
-                    Rectangle().fill(.regularMaterial)
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 27, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 27, style: .continuous)
-                    .strokeBorder(.primary.opacity(0.12))
-            }
-            .shadow(radius: reduceTransparency ? 3 : 8, y: reduceTransparency ? 2 : 4)
+        .task {
+            automaticCaptureReadiness.updateSceneState(automaticCaptureSceneState)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Navigation")
-        .accessibilityHint(
-            verticalSizeClass == .compact
-                ? "Available while current stopped speed is confirmed. Search for a destination and preview it on the map."
-                : "Search for a destination and preview it on the map."
-        )
-        .accessibilityIdentifier("navigation.launch")
+        .onChange(of: scenePhase) { _, _ in
+            automaticCaptureReadiness.updateSceneState(automaticCaptureSceneState)
+        }
+    }
+
+    private func openNavigation() {
+        withAnimation(reduceMotion ? nil : .snappy(duration: 0.28)) {
+            isNavigationPresented = true
+        }
+    }
+
+    private var automaticCaptureSceneState: AutomaticCaptureAppSceneState {
+        switch scenePhase {
+        case .active: .active
+        case .inactive: .inactive
+        case .background: .background
+        @unknown default: .unknown
+        }
     }
 }
 
@@ -565,7 +525,7 @@ private struct NembraNavigationView: View {
                 .accessibilityIdentifier("navigation.change-destination")
 
                 Label(
-                    "Route guidance is handed off to Apple Maps. Nembra does not claim a road or path is scooter-legal or safe; follow local rules and posted signs.",
+                    "MapKit and Apple Maps routes are navigation suggestions, not proof that a road or path is scooter-legal or safe. Choose routes before riding or while safely stopped, and follow local rules and posted signs.",
                     systemImage: "info.circle"
                 )
                 .font(.footnote)
@@ -679,4 +639,5 @@ private struct NembraNavigationView: View {
     private func openDirections(to item: MKMapItem) {
         item.openInMaps()
     }
+
 }

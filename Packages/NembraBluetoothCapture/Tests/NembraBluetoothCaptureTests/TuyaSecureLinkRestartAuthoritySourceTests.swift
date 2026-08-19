@@ -26,13 +26,15 @@ struct TuyaSecureLinkRestartAuthoritySourceTests {
         #expect(controller.contains("guard phase == .failed, canRestartFromFreshOFF1 else"))
 
         guard let lifecycleGate = failurePanel.range(of: "if test.canRestartFromFreshOFF1"),
-              let retryCall = failurePanel.range(of: "test.retry()"),
+              let retryLaunch = failurePanel.range(of: "stationarySafetyLaunch = .retry"),
               let relaunchOnly = failurePanel.range(of: "Relaunch Capture before another attempt") else {
             Issue.record("Expected lifecycle-gated retry and relaunch-only branches are missing.")
             throw SourceContractError.sectionMissing
         }
-        #expect(lifecycleGate.lowerBound < retryCall.lowerBound)
-        #expect(retryCall.lowerBound < relaunchOnly.lowerBound)
+        #expect(lifecycleGate.lowerBound < retryLaunch.lowerBound)
+        #expect(retryLaunch.lowerBound < relaunchOnly.lowerBound)
+        #expect(app.contains("case .retry:\n                    test.recordFreshOperatorAttestationAndRetry()"))
+        #expect(app.contains("\"I confirm — restart at OFF1\""))
     }
 
     @Test("relaunch-only terminal recovery remains visible and cannot be replaced by generic restart copy")

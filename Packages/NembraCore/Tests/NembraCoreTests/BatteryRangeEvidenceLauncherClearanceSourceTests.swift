@@ -1,17 +1,19 @@
 import Foundation
 import Testing
 
-@Suite("Battery/Range evidence launcher clearance")
+@Suite("Battery/Range evidence layout")
 struct BatteryRangeEvidenceLauncherClearanceSourceTests {
-    @Test("Evidence values grow vertically and reserve the navigation launcher footprint")
-    func evidenceValuesClearPersistentLauncher() throws {
+    @Test("Evidence values grow vertically without obsolete launcher padding")
+    func evidenceValuesUseNaturalWidth() throws {
         let source = try readRepositoryFile("NembraApp/Features/Home/VehicleControlsView.swift")
         let row = try evidenceRowSection(in: source)
 
         #expect(row.contains("VStack(alignment: .leading"))
         #expect(row.contains("multilineTextAlignment(.leading)"))
         #expect(row.contains("fixedSize(horizontal: false, vertical: true)"))
-        #expect(row.contains("padding(.trailing, 72)"))
+        #expect(row.contains(".frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)"))
+        #expect(!row.contains("padding(.trailing, 72)"))
+        #expect(!row.contains("persistentNavigationViewportClearance"))
         #expect(!row.contains("multilineTextAlignment(.trailing)"))
     }
 

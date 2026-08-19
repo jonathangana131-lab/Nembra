@@ -1,3 +1,4 @@
+import CoreGraphics
 import XCTest
 @testable import Nembra
 
@@ -32,6 +33,40 @@ private actor AppCommandAcknowledgementGate {
 }
 
 final class NembraAppTests: XCTestCase {
+    func testHorizonV4PropulsionGeometryIsSymmetricRaisedAndFullyBounded() {
+        for size in [
+            CGSize(width: 640, height: 112),
+            CGSize(width: 720, height: 132),
+            CGSize(width: 896, height: 156)
+        ] {
+            let geometry = DashboardPropulsionGeometry(size: size)
+            let apex = geometry.point(at: 0.5)
+
+            XCTAssertEqual(geometry.start.y, geometry.end.y, accuracy: 0.001)
+            XCTAssertEqual(apex.x, size.width / 2, accuracy: 0.001)
+            XCTAssertLessThanOrEqual(apex.y, size.height * 0.17)
+            XCTAssertGreaterThan(geometry.start.y - apex.y, size.height * 0.70)
+
+            for index in 0...32 {
+                let progress = Double(index) / 32
+                let mirror = geometry.point(at: 1 - progress)
+                let point = geometry.point(at: progress)
+                XCTAssertEqual(point.x + mirror.x, size.width, accuracy: 0.001)
+                XCTAssertEqual(point.y, mirror.y, accuracy: 0.001)
+
+                let normal = geometry.outwardNormal(at: progress)
+                let tickEnd = CGPoint(
+                    x: point.x + normal.dx * 15,
+                    y: point.y + normal.dy * 15
+                )
+                XCTAssertGreaterThanOrEqual(tickEnd.x, 0)
+                XCTAssertLessThanOrEqual(tickEnd.x, size.width)
+                XCTAssertGreaterThanOrEqual(tickEnd.y, 0)
+                XCTAssertLessThanOrEqual(tickEnd.y, size.height)
+            }
+        }
+    }
+
     func testMaxshotIdentityIsHumanReadable() {
         XCTAssertEqual(VehicleProfile.maxshotV1SPro.identity.displayName, "MAXSHOT V1S Pro")
         XCTAssertFalse(VehicleProfile.maxshotV1SPro.identity.displayName.contains("BLE"))

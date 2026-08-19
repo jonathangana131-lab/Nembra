@@ -299,11 +299,13 @@ private struct DashboardEnergyRailVisualState: Equatable {
     let currentness: DashboardEnergyRailCurrentness
     let acceptedWatts: Double?
     let railFraction: Double?
+    let acceptedPeakMarkerFraction: Double?
 
     static let unavailable = DashboardEnergyRailVisualState(
         currentness: .unavailable,
         acceptedWatts: nil,
-        railFraction: nil
+        railFraction: nil,
+        acceptedPeakMarkerFraction: nil
     )
 }
 
@@ -346,6 +348,7 @@ private final class DashboardEnergyRailModel {
     @ObservationIgnored private var acceptedReceipt: Receipt?
     @ObservationIgnored private var rejectedCurrentReceipt = false
     @ObservationIgnored private var animationEndTask: Task<Void, Never>?
+    @ObservationIgnored private var peakEndTask: Task<Void, Never>?
     @ObservationIgnored private var freshnessTask: Task<Void, Never>?
 
     init() {
@@ -354,6 +357,7 @@ private final class DashboardEnergyRailModel {
 
     deinit {
         animationEndTask?.cancel()
+        peakEndTask?.cancel()
         freshnessTask?.cancel()
     }
 
@@ -459,7 +463,8 @@ private final class DashboardEnergyRailModel {
             return DashboardEnergyRailVisualState(
                 currentness: .retained,
                 acceptedWatts: accepted.watts,
-                railFraction: nil
+                railFraction: nil,
+                acceptedPeakMarkerFraction: nil
             )
         }
 
@@ -484,7 +489,8 @@ private final class DashboardEnergyRailModel {
             return DashboardEnergyRailVisualState(
                 currentness: .retained,
                 acceptedWatts: accepted.watts,
-                railFraction: nil
+                railFraction: nil,
+                acceptedPeakMarkerFraction: nil
             )
 
         case .live:
@@ -507,7 +513,8 @@ private final class DashboardEnergyRailModel {
             return DashboardEnergyRailVisualState(
                 currentness: .live,
                 acceptedWatts: accepted.watts,
-                railFraction: railFraction
+                railFraction: railFraction,
+                acceptedPeakMarkerFraction: rail.acceptedPeakMarkerFraction
             )
         }
     }
@@ -623,6 +630,16 @@ private final class DashboardEnergyRailModel {
             }
         }
 
+        if let peakDelay = delayFromReceipt(
+            receipt,
+            offsetNanoseconds: Timing.peakHoldNanoseconds
+        ) {
+            peakEndTask = scheduleWake(afterNanoseconds: peakDelay) { model in
+                model.peakEndTask = nil
+                model.revision &+= 1
+            }
+        }
+
         if let delay = delayFromReceipt(
             receipt,
             offsetNanoseconds: Timing.freshnessNanoseconds
@@ -666,8 +683,10 @@ private final class DashboardEnergyRailModel {
 
     private func cancelScheduledWakes() {
         animationEndTask?.cancel()
+        peakEndTask?.cancel()
         freshnessTask?.cancel()
         animationEndTask = nil
+        peakEndTask = nil
         freshnessTask = nil
         shouldTick = false
     }
@@ -695,16 +714,47 @@ private final class DashboardEnergyRailModel {
     }
 }
 
-private struct DashboardEnergyRailArc: Shape {
-    func path(in rect: CGRect) -> Path {
+struct DashboardPropulsionGeometry {
+    let start: CGPoint
+    let control: CGPoint
+    let end: CGPoint
+
+    init(size: CGSize) {
+        let horizontalInset = max(18, min(28, size.width * 0.032))
+        let endpointY = size.height * 0.90
+        // A symmetric quadratic reaches the midpoint between its endpoint and
+        // control-point Y values at t = 0.5. Define the rendered apex first,
+        // then derive the control point so the selected V4 rise is intentional
+        // rather than an accidental shallow midpoint.
+        let renderedApexY = max(18, size.height * 0.14)
+        let controlY = renderedApexY * 2 - endpointY
+        start = CGPoint(x: horizontalInset, y: endpointY)
+        control = CGPoint(x: size.width / 2, y: controlY)
+        end = CGPoint(x: size.width - horizontalInset, y: endpointY)
+    }
+
+    var path: Path {
         var path = Path()
-        let baseline = rect.height * 0.88
-        path.move(to: CGPoint(x: rect.minX, y: rect.minY + baseline))
-        path.addQuadCurve(
-            to: CGPoint(x: rect.maxX, y: rect.minY + baseline),
-            control: CGPoint(x: rect.midX, y: rect.minY + rect.height * 0.16)
-        )
+        path.move(to: start)
+        path.addQuadCurve(to: end, control: control)
         return path
+    }
+
+    func point(at rawProgress: Double) -> CGPoint {
+        let t = min(max(rawProgress, 0), 1)
+        let inverse = 1 - t
+        return CGPoint(
+            x: inverse * inverse * start.x + 2 * inverse * t * control.x + t * t * end.x,
+            y: inverse * inverse * start.y + 2 * inverse * t * control.y + t * t * end.y
+        )
+    }
+
+    func outwardNormal(at rawProgress: Double) -> CGVector {
+        let t = min(max(rawProgress, 0), 1)
+        let dx = 2 * (1 - t) * (control.x - start.x) + 2 * t * (end.x - control.x)
+        let dy = 2 * (1 - t) * (control.y - start.y) + 2 * t * (end.y - control.y)
+        let length = max(0.001, hypot(dx, dy))
+        return CGVector(dx: dy / length, dy: -dx / length)
     }
 }
 
@@ -713,39 +763,14 @@ private struct DashboardRollingPowerValueView: View {
 
     let value: Double
 
-    private static let numberModel: RollingNumberModel? = {
-        guard let layout = try? RollingNumberLayout(integerDigits: 4) else { return nil }
-        return try? RollingNumberModel(layout: layout)
-    }()
-
     var body: some View {
-        if let numberModel = Self.numberModel,
-           let snapshot = try? numberModel.snapshot(for: value) {
-            HStack(spacing: -4) {
-                ForEach(snapshot.digits.indices, id: \.self) { index in
-                    let digit = snapshot.digits[index]
-                    Text(String(digit.digit))
-                        .font(.system(size: 30, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                        .opacity(digit.isVisible ? 1 : 0)
-                        .contentTransition(
-                            reduceMotion ? .identity : .numericText(value: value)
-                        )
-                        .animation(
-                            reduceMotion ? nil : .snappy(duration: 0.10),
-                            value: digit.digit
-                        )
-                        .clipped()
-                }
-            }
-        } else {
-            Text(fallbackText)
-                .font(.system(size: 30, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-        }
+        Text(validatedText)
+            .font(.title3.weight(.semibold).monospacedDigit())
+            .contentTransition(reduceMotion ? .identity : .numericText(value: value))
+            .animation(reduceMotion ? nil : .snappy(duration: 0.15), value: validatedText)
     }
 
-    private var fallbackText: String {
+    private var validatedText: String {
         guard value.isFinite, value >= 0, value <= 99_999 else { return "—" }
         return String(Int(value.rounded(.toNearestOrAwayFromZero)))
     }
@@ -754,107 +779,170 @@ private struct DashboardRollingPowerValueView: View {
 private struct DashboardEnergyRailView: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let state: DashboardEnergyRailVisualState
 
     var body: some View {
-        ZStack(alignment: .top) {
-            railLayer
-                .frame(height: 70)
-                .padding(.top, dynamicTypeSize.isAccessibilitySize ? 72 : 22)
+        GeometryReader { proxy in
+            let geometry = DashboardPropulsionGeometry(size: proxy.size)
 
-            powerReadout
+            ZStack {
+                Canvas(opaque: false, rendersAsynchronously: true) { context, size in
+                    drawTicks(context: &context, geometry: geometry)
+                    drawRail(context: &context, geometry: geometry)
+                    drawMarkers(context: &context, geometry: geometry)
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+
+                powerReadout
+                    .position(x: proxy.size.width / 2, y: proxy.size.height * 0.74)
+            }
         }
-        .frame(maxWidth: .infinity, minHeight: dynamicTypeSize.isAccessibilitySize ? 150 : 92)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Propulsion power")
         .accessibilityValue(accessibilityValue)
         .accessibilityIdentifier("dashboard.energy-rail")
     }
 
-    private var railLayer: some View {
-        GeometryReader { _ in
-            ZStack {
-                DashboardEnergyRailArc()
-                    .stroke(
-                        Color.primary.opacity(colorSchemeContrast == .increased ? 0.28 : 0.14),
-                        style: StrokeStyle(
-                            lineWidth: colorSchemeContrast == .increased ? 3.5 : 2.5,
-                            lineCap: .round
-                        )
-                    )
+    private func drawTicks(
+        context: inout GraphicsContext,
+        geometry: DashboardPropulsionGeometry
+    ) {
+        var ticks = Path()
+        for index in 0...32 {
+            let progress = Double(index) / 32
+            let point = geometry.point(at: progress)
+            let normal = geometry.outwardNormal(at: progress)
+            let isMajor = index.isMultiple(of: 4)
+            let startOffset: CGFloat = 7
+            let length: CGFloat = isMajor ? 8 : 4
+            let start = CGPoint(
+                x: point.x + normal.dx * startOffset,
+                y: point.y + normal.dy * startOffset
+            )
+            let end = CGPoint(
+                x: point.x + normal.dx * (startOffset + length),
+                y: point.y + normal.dy * (startOffset + length)
+            )
+            ticks.move(to: start)
+            ticks.addLine(to: end)
+        }
+        context.stroke(
+            ticks,
+            with: .color(Color.white.opacity(colorSchemeContrast == .increased ? 0.42 : 0.24)),
+            style: StrokeStyle(lineWidth: colorSchemeContrast == .increased ? 1.4 : 0.8, lineCap: .round)
+        )
+    }
 
-                if let fraction = state.railFraction {
-                    if !reduceTransparency {
-                        DashboardEnergyRailArc()
-                            .trim(from: 0, to: CGFloat(fraction))
-                            .stroke(
-                                Color.primary.opacity(0.24),
-                                style: StrokeStyle(lineWidth: 10, lineCap: .round)
-                            )
-                    }
-
-                    DashboardEnergyRailArc()
-                        .trim(from: 0, to: CGFloat(fraction))
-                        .stroke(
-                            Color.primary,
-                            style: StrokeStyle(
-                                lineWidth: colorSchemeContrast == .increased ? 7 : 5.5,
-                                lineCap: .round
-                            )
-                        )
-                }
+    private func drawRail(
+        context: inout GraphicsContext,
+        geometry: DashboardPropulsionGeometry
+    ) {
+        if state.currentness == .live,
+           let fraction = validFraction(state.railFraction) {
+            let activePath = geometry.path.trimmedPath(from: 0, to: fraction)
+            if !reduceTransparency {
+                context.stroke(
+                    activePath,
+                    with: .color(NembraColor.gold.opacity(0.16)),
+                    style: StrokeStyle(lineWidth: 18, lineCap: .round, lineJoin: .round)
+                )
+                context.stroke(
+                    activePath,
+                    with: .color(NembraColor.activeGold.opacity(0.46)),
+                    style: StrokeStyle(lineWidth: 9, lineCap: .round, lineJoin: .round)
+                )
+            } else {
+                context.stroke(
+                    activePath,
+                    with: .color(NembraColor.gold),
+                    style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round)
+                )
             }
         }
-        .accessibilityHidden(true)
-        .allowsHitTesting(false)
+
+        context.stroke(
+            geometry.path,
+            with: .color(Color.white.opacity(colorSchemeContrast == .increased ? 1 : 0.92)),
+            style: StrokeStyle(
+                lineWidth: colorSchemeContrast == .increased ? 3.5 : 2.4,
+                lineCap: .round,
+                lineJoin: .round
+            )
+        )
+    }
+
+    private func drawMarkers(
+        context: inout GraphicsContext,
+        geometry: DashboardPropulsionGeometry
+    ) {
+        guard state.currentness == .live else { return }
+
+        if let peak = validFraction(state.acceptedPeakMarkerFraction) {
+            let center = geometry.point(at: peak)
+            let rect = CGRect(x: center.x - 5, y: center.y - 5, width: 10, height: 10)
+            context.fill(Path(ellipseIn: rect), with: .color(NembraColor.baseBlack))
+            context.stroke(
+                Path(ellipseIn: rect),
+                with: .color(NembraColor.gold.opacity(0.86)),
+                style: StrokeStyle(lineWidth: 2)
+            )
+        }
+
+        if let live = validFraction(state.railFraction) {
+            let center = geometry.point(at: live)
+            let outer = CGRect(x: center.x - 7, y: center.y - 7, width: 14, height: 14)
+            let inner = CGRect(x: center.x - 4, y: center.y - 4, width: 8, height: 8)
+            context.fill(Path(ellipseIn: outer), with: .color(NembraColor.gold))
+            context.stroke(
+                Path(ellipseIn: outer),
+                with: .color(Color.white.opacity(0.95)),
+                style: StrokeStyle(lineWidth: 2)
+            )
+            context.fill(Path(ellipseIn: inner), with: .color(Color.white.opacity(0.92)))
+        }
     }
 
     private var powerReadout: some View {
         VStack(spacing: 2) {
-            HStack(alignment: .firstTextBaseline, spacing: 5) {
+            Text("PROPULSION")
+                .font(.system(size: 9, weight: .bold))
+                .tracking(2.1)
+                .foregroundStyle(NembraColor.secondaryText.opacity(0.76))
+
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
                 if let watts = state.acceptedWatts {
-                    // The input is the typed accepted cockpit measurement. SwiftUI's
-                    // numeric transition may animate glyphs, but no render midpoint
-                    // is ever rebound as semantic or persisted power evidence.
                     DashboardRollingPowerValueView(value: watts)
                 } else {
                     Text("—")
-                        .font(.system(size: 30, weight: .semibold, design: .rounded))
+                        .font(.title3.weight(.semibold))
                 }
-
                 Text("W")
-                    .font(dynamicTypeSize.isAccessibilitySize ? .body.weight(.bold) : .caption.weight(.bold))
-                    .foregroundStyle(.secondary)
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(NembraColor.secondaryText)
             }
 
             Text(currentnessLabel)
-                .font(dynamicTypeSize.isAccessibilitySize ? .caption.weight(.bold) : .caption2.weight(.bold))
-                .tracking(dynamicTypeSize.isAccessibilitySize ? 0.4 : 1.2)
-                .foregroundStyle(currentnessForeground)
+                .font(.system(size: 8, weight: .semibold))
+                .tracking(0.5)
+                .foregroundStyle(currentnessColor)
         }
     }
 
     private var currentnessLabel: String {
         switch state.currentness {
-        case .live:
-            return state.acceptedWatts == nil ? "POWER UNAVAILABLE" : "LIVE POWER"
-        case .retained:
-            return state.acceptedWatts == nil ? "POWER UNAVAILABLE" : "LAST KNOWN POWER"
-        case .unavailable:
-            return "POWER UNAVAILABLE"
+        case .live: state.acceptedWatts == nil ? "UNAVAILABLE" : "ACCEPTED LIVE POWER"
+        case .retained: state.acceptedWatts == nil ? "UNAVAILABLE" : "LAST KNOWN POWER"
+        case .unavailable: "POWER UNAVAILABLE"
         }
     }
 
-    private var currentnessForeground: Color {
+    private var currentnessColor: Color {
         switch state.currentness {
-        case .live where state.acceptedWatts != nil:
-            return Color.primary.opacity(colorSchemeContrast == .increased ? 0.88 : 0.68)
-        case .retained where state.acceptedWatts != nil:
-            return Color.primary.opacity(colorSchemeContrast == .increased ? 0.66 : 0.50)
-        default:
-            return Color.primary.opacity(colorSchemeContrast == .increased ? 0.50 : 0.32)
+        case .live where state.acceptedWatts != nil: NembraColor.gold.opacity(0.82)
+        case .retained where state.acceptedWatts != nil: NembraColor.secondaryText.opacity(0.72)
+        default: NembraColor.secondaryText.opacity(0.48)
         }
     }
 
@@ -867,26 +955,26 @@ private struct DashboardEnergyRailView: View {
             return "Last known, \(Int(watts.rounded())) watts"
         case .live:
             guard let watts = state.acceptedWatts else { return "Unavailable" }
-            return "\(Int(watts.rounded())) watts"
+            return "\(Int(watts.rounded())) accepted watts"
         }
+    }
+
+    private func validFraction(_ value: Double?) -> CGFloat? {
+        guard let value, value.isFinite, (0...1).contains(value) else { return nil }
+        return CGFloat(value)
     }
 }
 
-/// A deliberately narrow high-frequency subtree for the landscape cockpit.
-///
-/// Only this view redraws on SwiftUI's animation timeline. Vehicle controls,
-/// ride detection, persistence, distance, and safety continue to consume the
-/// accepted domain/source state rather than rendered interpolation frames. Positive
-/// Energy Rail values are capability-gated to the exact Simulator power source;
-/// physical/unverified profiles still retain the designed unavailable machine layer.
+/// Narrow high-frequency render island for speed and propulsion motion. The
+/// timeline pauses whenever neither accepted projection is visually settling.
+/// Display frames are never written into evidence, persistence, or `VehicleStore`.
 @MainActor
 struct DashboardSpeedInstrumentView: View {
     @Environment(VehicleStore.self) private var vehicle
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @State private var model = SpeedInstrumentModel()
     @State private var energyRailModel = DashboardEnergyRailModel()
-
-    let modePersonality: DashboardModePersonality
 
     var body: some View {
         let allowsSimulatorQA = vehicle.profile == .simulatorQA
@@ -909,7 +997,7 @@ struct DashboardSpeedInstrumentView: View {
 
         TimelineView(
             .animation(
-                minimumInterval: 1.0 / 60.0,
+                minimumInterval: nil,
                 paused: !(speedShouldTick || energyRailShouldTick)
             )
         ) { _ in
@@ -936,8 +1024,8 @@ struct DashboardSpeedInstrumentView: View {
         .task {
             model.configureInterpolationPolicy(vehicle.speedInstrumentInterpolationPolicy)
             model.setSpeedEvidenceAvailability(
-                vehicle.speedEvidenceAvailability,
-                allowsSimulatorQA: vehicle.profile == .simulatorQA
+                rawSpeedAvailability,
+                allowsSimulatorQA: allowsSimulatorQA
             )
             energyRailModel.synchronize(
                 simulatorPowerProjection,
@@ -962,96 +1050,120 @@ struct DashboardSpeedInstrumentView: View {
         }
     }
 
-    private func isLivePresentation(_ availability: SpeedEvidenceAvailability) -> Bool {
-        if case .live = availability {
-            return true
-        }
-        return false
-    }
-
     private func instrumentContent(
         frame: SpeedInstrumentDisplayFrame?,
         speedAvailability: SpeedEvidenceAvailability,
         energyRailState: DashboardEnergyRailVisualState
     ) -> some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: 0)
+        GeometryReader { proxy in
+            let integerSize = max(92, min(146, min(proxy.size.width * 0.19, proxy.size.height * 0.39)))
+            let fractionSize = max(38, integerSize * 0.40)
+            let gaugeHeight = max(112, min(156, proxy.size.height * 0.36))
+            let gaugeCenterY = proxy.size.height * 0.69
 
-            HStack(alignment: .lastTextBaseline, spacing: 10) {
-                RollingSpeedValueView(value: displayedValue(kilometersPerHour: frame?.kilometersPerHour))
-                    .font(.system(size: 148, weight: .medium, design: .rounded))
-                    .monospacedDigit()
-                    .tracking(-7)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.58)
+            ZStack {
+                speedReadout(
+                    frame: frame,
+                    availability: speedAvailability,
+                    integerSize: integerSize,
+                    fractionSize: fractionSize
+                )
+                .position(x: proxy.size.width / 2, y: proxy.size.height * 0.35)
+
+                Text("DRIVE")
+                    .font(.caption.weight(.bold))
+                    .tracking(3.2)
+                    .foregroundStyle(NembraColor.gold.opacity(0.92))
+                    .position(x: proxy.size.width / 2, y: gaugeCenterY - gaugeHeight * 0.58)
                     .accessibilityHidden(true)
 
-                Text(speedUnitText)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.bottom, 18)
-                    .accessibilityHidden(true)
+                DashboardEnergyRailView(state: energyRailState)
+                    .frame(width: proxy.size.width, height: gaugeHeight)
+                    .position(x: proxy.size.width / 2, y: gaugeCenterY)
             }
-            .frame(maxWidth: .infinity)
-            .scaleEffect(modePersonality.speedScale)
-            .animation(modeAnimation, value: modePersonality.speedScale)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Speed")
-            // VoiceOver consumes the same sanitized field-specific speed state,
-            // never a 60 Hz render midpoint, estimate, cached aggregate speed, or
-            // synthetic sample ineligible for the active vehicle profile.
-            .accessibilityValue(accessibilitySpeed(speedAvailability))
-            .accessibilityIdentifier("dashboard.speed")
-
-            Group {
-                switch speedAvailability {
-                case .retained:
-                    Label("LAST KNOWN", systemImage: "clock.arrow.circlepath")
-                case let .live(sample):
-                    Text(sample.kilometersPerHour >= 0.5 ? "RIDING" : "READY")
-                case .unavailable:
-                    Text("NO LIVE SPEED")
-                }
-            }
-            .font(.caption2.weight(.bold))
-            .tracking(2.2)
-            .foregroundStyle(Color.white.opacity(modePersonality.statusOpacity))
-            .animation(modeAnimation, value: modePersonality.statusOpacity)
-
-            Spacer(minLength: 6)
-            DashboardEnergyRailView(state: energyRailState)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 6)
         }
-        .padding(.horizontal, 8)
+    }
+
+    private func speedReadout(
+        frame: SpeedInstrumentDisplayFrame?,
+        availability: SpeedEvidenceAvailability,
+        integerSize: CGFloat,
+        fractionSize: CGFloat
+    ) -> some View {
+        VStack(spacing: -2) {
+            RollingSpeedValueView(
+                value: displayedValue(kilometersPerHour: frame?.kilometersPerHour),
+                integerPointSize: integerSize,
+                fractionPointSize: fractionSize
+            )
+            .lineLimit(1)
+            .accessibilityHidden(true)
+
+            Text(speedUnitText)
+                .font(.caption.weight(.bold))
+                .tracking(3.2)
+                .foregroundStyle(NembraColor.secondaryText.opacity(0.82))
+                .accessibilityHidden(true)
+
+            Text(speedCurrentnessText(availability))
+                .font(.system(size: 8, weight: .bold))
+                .tracking(1.5)
+                .foregroundStyle(speedCurrentnessColor(availability))
+                .padding(.top, 3)
+                .accessibilityHidden(true)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Speed")
+        .accessibilityValue(accessibilitySpeed(availability))
+        .accessibilityIdentifier("dashboard.speed")
+    }
+
+    private func isLivePresentation(_ availability: SpeedEvidenceAvailability) -> Bool {
+        if case .live = availability { return true }
+        return false
     }
 
     private func displayedValue(kilometersPerHour: Double?) -> Double? {
         guard let kilometersPerHour,
               kilometersPerHour.isFinite,
-              kilometersPerHour >= 0 else {
-            return nil
-        }
+              kilometersPerHour >= 0 else { return nil }
         let normalized = kilometersPerHour == 0 ? 0 : kilometersPerHour
         return VehicleDisplayFormatting.usesMetric ? normalized : normalized * 0.621_371
     }
 
     private func accessibilitySpeed(_ availability: SpeedEvidenceAvailability) -> String {
+        let prefix = vehicle.profile == .simulatorQA
+            ? "Simulator QA synthetic evidence, not physical scooter truth. "
+            : ""
+        return prefix + {
+            switch availability {
+            case .unavailable:
+                return "Unavailable"
+            case let .retained(sample):
+                return "Last known, \(VehicleDisplayFormatting.speed(kilometersPerHour: sample.kilometersPerHour, decimals: 1))"
+            case let .live(sample):
+                return VehicleDisplayFormatting.speed(kilometersPerHour: sample.kilometersPerHour, decimals: 1)
+            }
+        }()
+    }
+
+    private func speedCurrentnessText(_ availability: SpeedEvidenceAvailability) -> String {
         switch availability {
-        case .unavailable:
-            return "Unavailable"
-        case let .retained(sample):
-            return "Last known, \(VehicleDisplayFormatting.speed(kilometersPerHour: sample.kilometersPerHour))"
-        case let .live(sample):
-            return VehicleDisplayFormatting.speed(kilometersPerHour: sample.kilometersPerHour)
+        case .live: "LIVE SPEED"
+        case .retained: "LAST KNOWN SPEED"
+        case .unavailable: "SPEED UNAVAILABLE"
+        }
+    }
+
+    private func speedCurrentnessColor(_ availability: SpeedEvidenceAvailability) -> Color {
+        switch availability {
+        case .live: colorSchemeContrast == .increased ? .white : NembraColor.primaryText.opacity(0.68)
+        case .retained: NembraColor.secondaryText.opacity(0.72)
+        case .unavailable: NembraColor.secondaryText.opacity(0.48)
         }
     }
 
     private var speedUnitText: String {
         VehicleDisplayFormatting.usesMetric ? "KM/H" : "MPH"
-    }
-
-    private var modeAnimation: Animation? {
-        reduceMotion ? nil : .snappy(duration: 0.26)
     }
 }

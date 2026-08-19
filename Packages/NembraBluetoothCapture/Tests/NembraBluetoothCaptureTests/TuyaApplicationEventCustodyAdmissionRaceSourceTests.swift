@@ -61,7 +61,9 @@ struct TuyaApplicationEventCustodyAdmissionRaceSourceTests {
 
         let details = try #require(receiver.range(of: "var eventDetails = custodySafeUpdate"))
         let stamp = try #require(receiver.range(of: "eventDetails[\"generation\"] = String(token.diagnosticGeneration)"))
-        let log = try #require(receiver.range(of: "log(\"tuya_application_update\", eventDetails)"))
+        let log = try #require(receiver.range(
+            of: "log(\n                \"tuya_application_update\",\n                eventDetails,\n                sourceReceivedAtUptimeNanoseconds: sourceReceivedAtUptimeNanoseconds\n            )"
+        ))
         #expect(details.lowerBound < stamp.lowerBound)
         #expect(stamp.lowerBound < log.lowerBound)
     }

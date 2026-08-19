@@ -12,6 +12,19 @@ xcuserdata/
 .swiftpm/
 Package.resolved
 
+# Python validation caches
+__pycache__/
+*.py[cod]
+
 # Local artifacts
 artifacts/
+Artifacts/
 *.log
+
+# Capture's one-time private Tuya field workspace. These files can contain the
+# app-specific security SDK, encoded app identity, and resolved private build
+# graph. They must never be committed or uploaded as CI artifacts.
+LocalSecrets/
+Pods/
+NembraCapture.xcworkspace/
+Podfile.lock

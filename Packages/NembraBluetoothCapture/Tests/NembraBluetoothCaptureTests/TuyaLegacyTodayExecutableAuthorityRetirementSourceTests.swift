@@ -52,13 +52,55 @@ struct TuyaLegacyTodayExecutableAuthorityRetirementSourceTests {
         #expect(runbook.contains("NO-GO"))
     }
 
+    @Test("every TODAY operator handoff is banner-retired before its preserved historical body")
+    func allTodayOperatorDocumentsFailClosedAtFirstLine() throws {
+        let docs = repositoryRoot.appendingPathComponent("docs", isDirectory: true)
+        let names = try FileManager.default.contentsOfDirectory(atPath: docs.path)
+            .filter { $0.hasPrefix("ES80_TODAY_") && $0.hasSuffix(".md") }
+            .sorted()
+        #expect(!names.isEmpty)
+
+        for name in names {
+            let source = try readRepositoryFile("docs/\(name)")
+            #expect(source.hasPrefix("# RETIRED / DO NOT USE"), "\(name) lacks a first-line retirement banner")
+            let banner = source.components(separatedBy: "\n---\n").first ?? ""
+            #expect(banner.contains("historical evidence only"), "\(name) does not demote its historical body")
+            #expect(banner.contains("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md"), "\(name) does not route to the canonical runbook")
+            #expect(banner.contains("scripts/field/install_one_time_capture.command"), "\(name) does not route to the canonical installer")
+            #expect(banner.contains("Physical Capture remains NO-GO"), "\(name) lacks a fail-closed physical status")
+        }
+    }
+
+    @Test("current operator entrypoints never route to retired signed-candidate wrappers")
+    func activeHandoffsCannotInvokeRetiredTodayExecutables() throws {
+        let activePaths = [
+            "CAPTURE_HARD_FREEZE_ACTIVE.md",
+            "docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md",
+            "docs/CAPTURE_TUYA_OFFICIAL_SDK_PROVISIONING.md",
+        ]
+        let retiredExecutableNames = [
+            "xcode27_today_research_field_candidate.sh",
+            "xcode27_signed_field_candidate.sh",
+        ]
+
+        for path in activePaths {
+            let source = try readRepositoryFile(path)
+            for executable in retiredExecutableNames {
+                #expect(!source.contains(executable), "\(path) routes to retired executable \(executable)")
+            }
+        }
+    }
+
+    private var repositoryRoot: URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+    }
+
     private func readRepositoryFile(_ relativePath: String) throws -> String {
-        let repositoryRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
         return try String(
             contentsOf: repositoryRoot.appendingPathComponent(relativePath),
             encoding: .utf8

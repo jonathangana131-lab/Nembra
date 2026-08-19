@@ -21,7 +21,7 @@ struct TuyaFieldProcedureRendezvousSourceTests {
         #expect(app.contains("var fieldProcedureIdentifier: String { NembraCaptureBuildIdentity.fieldProcedureIdentifier }"))
         #expect(app.contains("procedureIdentifier: NembraCaptureBuildIdentity.fieldProcedureIdentifier"))
         #expect(app.contains("LabeledContent(\"Procedure\", value: test.fieldProcedureIdentifier)"))
-        #expect(app.contains("schemaVersion: 10"))
+        #expect(app.contains("schemaVersion: 13"))
         #expect(!app.contains("schemaVersion: 9"))
     }
 

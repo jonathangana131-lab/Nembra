@@ -4,51 +4,72 @@ import Testing
 
 @Suite("Tuya application-timeout terminal presentation race")
 struct TuyaApplicationTimeoutPresentationRaceSourceTests {
-    @Test("timeout completion cannot overwrite a newer app terminal after actor suspension")
+    @Test("package-owned incomplete horizon cannot overwrite a newer app terminal after snapshot suspension")
     func timeoutCompletionRevalidatesPresentationOwnership() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let watchdog = String(try section(
             in: source,
-            from: "if self.applicationUpdateAdmissionsInFlight == 0,",
-            to: "try? await Task.sleep(for: .seconds(1))"
+            from: "private func startWatchdog",
+            to: "private func recordObservedTransportLoss"
         ))
-
         let terminal = try #require(watchdog.range(
-            of: "try await sessionLedger.markApplicationObservationTimedOut(for: token)"
+            of: "MutationError.incompleteObservationHorizonReached"
         ))
-        let phaseWrite = try #require(watchdog.range(
-            of: "self.phase = .failed",
+        let mirror = try #require(watchdog.range(
+            of: "mirrorAlreadyTerminalIncompleteObservationHorizon(",
             range: terminal.upperBound..<watchdog.endIndex
         ))
-        let postAwaitOwnership = String(watchdog[terminal.upperBound..<phaseWrite.lowerBound])
+        #expect(terminal.lowerBound < mirror.lowerBound)
 
-        // Foreground/view/source teardown can run while the package actor commits the timeout.
-        // Once another path has already changed app-local terminal ownership, the resumed timeout
-        // must not replace that more specific failure with a stale "no application update" reason.
-        #expect(postAwaitOwnership.contains("self.currentConnectionToken == token"))
-        #expect(postAwaitOwnership.contains("self.phase == .observing"))
+        let helper = String(try section(
+            in: source,
+            from: "private func mirrorAlreadyTerminalIncompleteObservationHorizon",
+            to: "private func invalidateObservationContinuity"
+        ))
+        let initialOwnership = try #require(helper.range(of: "guard currentConnectionToken == token else { return }"))
+        let snapshotAwait = try #require(helper.range(of: "await refreshLedgerSnapshot()"))
+        let postAwaitOwnership = try #require(helper.range(
+            of: "guard phase == .observing else { return }",
+            range: snapshotAwait.upperBound..<helper.endIndex
+        ))
+        let phaseWrite = try #require(helper.range(
+            of: "phase = .failed",
+            range: postAwaitOwnership.upperBound..<helper.endIndex
+        ))
+
+        // Foreground/view/source teardown can run while the package snapshot is refreshed. The
+        // already-terminal package verdict may update app presentation only while this exact
+        // observing owner remains current; it must never issue a duplicate package terminal.
+        #expect(initialOwnership.lowerBound < snapshotAwait.lowerBound)
+        #expect(snapshotAwait.lowerBound < postAwaitOwnership.lowerBound)
+        #expect(postAwaitOwnership.lowerBound < phaseWrite.lowerBound)
+        #expect(!helper.contains("markApplicationObservationTimedOut"))
+        #expect(!helper.contains("markObservationContinuityInvalidated"))
     }
 
-    @Test("timeout message remains downstream of the post-await ownership fence")
+    @Test("incomplete-horizon message remains downstream of the post-await ownership fence")
     func timeoutCopyIsPublishedOnlyByCurrentObservationOwner() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let watchdog = String(try section(
+        let helper = String(try section(
             in: source,
-            from: "if self.applicationUpdateAdmissionsInFlight == 0,",
-            to: "try? await Task.sleep(for: .seconds(1))"
+            from: "private func mirrorAlreadyTerminalIncompleteObservationHorizon",
+            to: "private func invalidateObservationContinuity"
         ))
 
-        let terminal = try #require(watchdog.range(
-            of: "try await sessionLedger.markApplicationObservationTimedOut(for: token)"
+        let snapshotAwait = try #require(helper.range(
+            of: "await refreshLedgerSnapshot()"
         ))
-        let message = try #require(watchdog.range(
-            of: "Authenticated session produced no application update before the observation deadline.",
-            range: terminal.upperBound..<watchdog.endIndex
+        let ownership = try #require(helper.range(
+            of: "guard phase == .observing else { return }",
+            range: snapshotAwait.upperBound..<helper.endIndex
         ))
-        let postAwait = String(watchdog[terminal.upperBound..<message.lowerBound])
+        let messageWrite = try #require(helper.range(
+            of: "self.message = message",
+            range: ownership.upperBound..<helper.endIndex
+        ))
 
-        #expect(postAwait.contains("self.currentConnectionToken == token"))
-        #expect(postAwait.contains("self.phase == .observing"))
+        #expect(snapshotAwait.lowerBound < ownership.lowerBound)
+        #expect(ownership.lowerBound < messageWrite.lowerBound)
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {

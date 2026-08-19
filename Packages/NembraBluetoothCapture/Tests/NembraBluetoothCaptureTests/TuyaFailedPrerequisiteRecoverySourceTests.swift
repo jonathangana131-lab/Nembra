@@ -32,11 +32,14 @@ struct TuyaFailedPrerequisiteRecoverySourceTests {
         #expect(restartAuthority.contains("localBLESettlementToken == nil"))
         #expect(restartAuthority.contains("driver == nil"))
         #expect(restartAuthority.contains("OfficialTuyaFactory.packageCorrelationMayStart"))
-        #expect(app.contains("func retry()"))
+        #expect(app.contains("func recordFreshOperatorAttestationAndRetry()"))
         #expect(app.contains("guard phase == .failed, canRestartFromFreshOFF1 else"))
         #expect(app.contains("Relaunch Capture before another OFF1 attempt"))
         let failure = try section(in: app, from: "private var failurePanel: some View", to: "private var completionPanel: some View")
-        #expect(failure.contains("test.retry()"))
+        #expect(failure.contains("stationarySafetyLaunch = .retry"))
+        #expect(failure.contains("Label(\"Review safety and restart\""))
+        #expect(app.contains("case .retry:\n                    test.recordFreshOperatorAttestationAndRetry()"))
+        #expect(app.contains("\"I confirm — restart at OFF1\""))
         #expect(failure.contains(".disabled(!authorityReady || test.membershipBusy)"))
     }
 

@@ -14,12 +14,20 @@ rm -rf "$RESULT_BUNDLE"
 
 {
   echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "source_sha=$(git rev-parse HEAD)"
+  echo "expected_source_sha=${EXPECTED_SOURCE_SHA:-not-provided}"
   echo "runner_arch=$(uname -m)"
   sw_vers
   xcodebuild -version
   xcrun simctl list runtimes
   xcrun simctl list devicetypes
 } > "$ARTIFACTS_DIR/environment.txt"
+
+SOURCE_SHA="$(git rev-parse HEAD)"
+if [[ -n "${EXPECTED_SOURCE_SHA:-}" && "$SOURCE_SHA" != "$EXPECTED_SOURCE_SHA" ]]; then
+  echo "Checked-out source $SOURCE_SHA does not match requested exact head $EXPECTED_SOURCE_SHA." >&2
+  exit 8
+fi
 
 RUNTIME_ID="$({ xcrun simctl list runtimes -j | python3 -c '
 import json,sys
@@ -36,14 +44,12 @@ print(c[0]["identifier"])
 DEVICE_TYPE="$({ xcrun simctl list devicetypes -j | python3 -c '
 import json,sys
 items=json.load(sys.stdin)["devicetypes"]
-preferred=["iPhone 12", "iPhone 17", "iPhone 17 Pro", "iPhone 16"]
-for name in preferred:
-    for x in items:
-        if x.get("name")==name:
-            print(x["identifier"]); raise SystemExit(0)
+for x in items:
+    if x.get("name")=="iPhone 12":
+        print(x["identifier"]); raise SystemExit(0)
 raise SystemExit(1)
 '; } 2>/dev/null)" || {
-  echo "No supported iPhone Simulator device type found." >&2
+  echo "The required iPhone 12 Simulator device type is not installed on this runner." >&2
   exit 3
 }
 
@@ -63,6 +69,16 @@ echo "simulator_udid=$UDID" >> "$ARTIFACTS_DIR/environment.txt"
 
 xcrun simctl boot "$UDID"
 xcrun simctl bootstatus "$UDID" -b
+
+# Keep UI-test attachments and direct screenshots on the same deterministic
+# status-bar fixture. This is Simulator presentation evidence only.
+xcrun simctl status_bar "$UDID" override \
+  --time 9:41 \
+  --batteryState charged \
+  --batteryLevel 82 \
+  --wifiBars 3 \
+  --cellularMode active \
+  --cellularBars 4 >/dev/null 2>&1 || true
 
 set +e
 set -o pipefail
@@ -89,13 +105,25 @@ if [[ -d "$RESULT_BUNDLE" ]]; then
     --path "$RESULT_BUNDLE" \
     --output-path "$ATTACHMENTS_DIR" \
     > "$ARTIFACTS_DIR/logs/xcresult-attachments.log" 2>&1; then
-    find "$ATTACHMENTS_DIR" -type f -maxdepth 2 -print | sort \
+    find "$ATTACHMENTS_DIR" -type f -print | sort \
       > "$ARTIFACTS_DIR/test-attachments.txt" || true
   else
     {
       echo "Attachment export failed; the complete xcresult is still preserved."
       xcrun xcresulttool help export attachments || true
     } >> "$ARTIFACTS_DIR/logs/xcresult-attachments.log" 2>&1
+  fi
+
+  if ! xcrun xcresulttool get test-results metrics \
+    --path "$RESULT_BUNDLE" \
+    --compact \
+    > "$ARTIFACTS_DIR/performance-metrics.json" \
+    2> "$ARTIFACTS_DIR/logs/xcresult-performance-metrics.log"; then
+    {
+      echo "Performance metric export failed; the complete xcresult is still preserved."
+      xcrun xcresulttool help get test-results metrics || true
+    } >> "$ARTIFACTS_DIR/logs/xcresult-performance-metrics.log" 2>&1
+    rm -f "$ARTIFACTS_DIR/performance-metrics.json"
   fi
 fi
 
@@ -113,22 +141,15 @@ fi
 
 xcrun simctl install "$UDID" "$APP_PATH"
 
-xcrun simctl status_bar "$UDID" override \
-  --time 9:41 \
-  --batteryState charged \
-  --batteryLevel 82 \
-  --wifiBars 3 \
-  --cellularMode active \
-  --cellularBars 4 >/dev/null 2>&1 || true
-
 capture_state() {
   local state="$1"
-  local appearance="${2:-light}"
+  local appearance="${2:-dark}"
   xcrun simctl terminate "$UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
   xcrun simctl ui "$UDID" appearance "$appearance" >/dev/null 2>&1 || true
   local launch_output pid screenshot_path
   launch_output="$(
     SIMCTL_CHILD_NEMBRA_SIMULATION_SCENARIO="$state" \
+    SIMCTL_CHILD_NEMBRA_SIMULATION_STORAGE_NAMESPACE="direct-${state}-${appearance}-${SOURCE_SHA}" \
       xcrun simctl launch "$UDID" "$BUNDLE_ID" \
       | tee "$ARTIFACTS_DIR/logs/launch-${state}-${appearance}.log"
   )"
@@ -163,10 +184,12 @@ for state in \
   scooter-unavailable \
   unsupported-configuration
 do
-  capture_state "$state" light
+  # Nembra Dark is the product default and AppRootView intentionally owns that
+  # preference. Simulator appearance cannot turn these into light-app evidence,
+  # so name and capture the artifact truthfully instead of emitting misleading
+  # `*-light.png` files.
+  capture_state "$state" dark
 done
-capture_state connected-stopped dark
-capture_state reconnecting dark
 
 printf '%s\n' "Captured screenshots:" > "$ARTIFACTS_DIR/screenshots.txt"
 find "$ARTIFACTS_DIR/screenshots" -type f -name '*.png' -print | sort >> "$ARTIFACTS_DIR/screenshots.txt"

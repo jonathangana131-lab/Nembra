@@ -4,49 +4,45 @@ import Testing
 
 @Suite("Capture first-fold VoiceOver source contract")
 struct CaptureFirstFoldVoiceOverSourceTests {
-    @Test("localized visual compaction preserves spoken physical-lock authority")
-    func localizedVisualCopyPreservesSpokenAuthority() throws {
+    @Test("first fold speaks the public physical lock before offering explanation")
+    func publicFirstFoldPreservesSpokenAuthority() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let strings = try readRepositoryFile("NembraApp/Resources/Localizable.strings")
-
-        let authorityKey = "Link the Tuya Smart account that owns this scooter. Bluetooth and physical evidence stay locked until the reviewed field build and fresh scooter authority are verified."
-        let compactValue = "Link the Tuya Smart account that owns this scooter."
-        #expect(strings.contains("\"\(authorityKey)\" = \"\(compactValue)\";"))
-
-        let rootHero = try sourceRegion(
+        let root = try sourceRegion(
             in: app,
+            from: "@MainActor\nprivate struct CaptureP0Root: View",
+            to: "@MainActor\nprivate final class SecureLinkController:"
+        )
+
+        #expect(strings.contains("\"Link your scooter\" = \"Link your scooter\";"))
+        #expect(strings.contains("\"Link scooter account\" = \"Link scooter account\";"))
+
+        let hero = try sourceRegion(
+            in: root,
             from: "private var rootHero: some View",
             to: "private var buildAuthorityStatus: some View"
         )
-        #expect(rootHero.contains("Text(\"\(authorityKey)\")"))
+        #expect(hero.contains("Text(\"Link your scooter\")"))
+        #expect(hero.contains("Sign in once, choose the intended scooter, then follow one instruction at a time."))
 
-        // SwiftUI Text created from a string literal is localized by default, and VoiceOver
-        // speaks that rendered value unless an explicit accessibility semantic overrides it.
-        // Once Localizable.strings shortens this key for the sighted first fold, the compact
-        // visible value must not silently become the only spoken authority warning.
-        let spoken = try explicitVerbatimAccessibilityText(in: rootHero)
-        let normalized = spoken.lowercased()
-        #expect(normalized.contains("bluetooth"))
-        #expect(normalized.contains("physical evidence"))
-        #expect(normalized.contains("lock"))
-        #expect(normalized.contains("build"))
-        #expect(normalized.contains("scooter"))
-        #expect(normalized.contains("authority"))
-    }
+        let authority = try sourceRegion(
+            in: root,
+            from: "private var buildAuthorityStatus: some View",
+            to: "private var accountSetupPanel: some View"
+        )
+        #expect(authority.contains(".accessibilityElement(children: .combine)"))
+        #expect(authority.contains(".accessibilitySortPriority(isAccessibilityLayout ? 100 : 0)"))
+        #expect(authority.contains(".accessibilityLabel(fieldBuildIsAuthoritative ? \"Field build ready\" : \"Physical capture locked\")"))
+        #expect(authority.contains("This public build cannot authorize Bluetooth or collect physical evidence."))
 
-    private func explicitVerbatimAccessibilityText(in source: String) throws -> String {
-        for marker in [
-            ".accessibilityLabel(Text(verbatim: \"",
-            ".accessibilityValue(Text(verbatim: \""
-        ] {
-            guard let start = source.range(of: marker) else { continue }
-            let tail = source[start.upperBound...]
-            guard let end = tail.range(of: "\"))") else {
-                throw SourceContractError.malformedAccessibilityOverride
-            }
-            return String(tail[..<end.lowerBound])
-        }
-        throw SourceContractError.missingVerbatimAccessibilityOverride
+        let account = try sourceRegion(
+            in: root,
+            from: "private var accountSetupPanel: some View",
+            to: "private var scooterChooserPanel: some View"
+        )
+        #expect(account.contains("Label(\"Review field requirements\", systemImage: \"lock.shield\")"))
+        #expect(account.contains(".accessibilityHint(\"Shows why this public build cannot start account or Bluetooth authorization.\")"))
+        #expect(account.contains(".accessibilityIdentifier(\"nembra.capture.root.account-link-action\")"))
     }
 
     private func sourceRegion(in source: String, from startMarker: String, to endMarker: String) throws -> String {
@@ -70,7 +66,5 @@ struct CaptureFirstFoldVoiceOverSourceTests {
 
     private enum SourceContractError: Error {
         case missingSourceRegion
-        case missingVerbatimAccessibilityOverride
-        case malformedAccessibilityOverride
     }
 }

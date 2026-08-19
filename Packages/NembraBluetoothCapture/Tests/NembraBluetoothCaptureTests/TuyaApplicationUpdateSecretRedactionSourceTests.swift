@@ -15,6 +15,9 @@ struct TuyaApplicationUpdateSecretRedactionSourceTests {
 
         #expect(driver.contains("private static func redactApplicationSecrets(_ object: Any) -> Any"))
         #expect(driver.contains("secretKeyFragments"))
+        #expect(driver.contains("authorization"))
+        #expect(driver.contains("credential"))
+        #expect(driver.contains("token"))
         #expect(driver.contains("localkey"))
         #expect(driver.contains("accesstoken"))
         #expect(driver.contains("refreshtoken"))
@@ -45,13 +48,16 @@ struct TuyaApplicationUpdateSecretRedactionSourceTests {
             to: "private func startWatchdog"
         ))
 
-        #expect(export.contains("secretsRedacted: true"))
+        #expect(export.contains("knownSecretsRedacted: true"))
         #expect(updates.contains("let custodySafeUpdate = redactedApplicationEventDetails(update, accountUID: leasedAccountUID)"))
         #expect(updates.contains("var eventDetails = custodySafeUpdate"))
         #expect(updates.contains("eventDetails[\"generation\"] = String(token.diagnosticGeneration)"))
-        #expect(updates.contains("log(\"tuya_application_update\", eventDetails)"))
+        #expect(updates.contains(
+            "log(\n                \"tuya_application_update\",\n                eventDetails,\n                sourceReceivedAtUptimeNanoseconds: sourceReceivedAtUptimeNanoseconds\n            )"
+        ))
         #expect(!updates.contains("update.merging(["))
-        #expect(source.contains("No account UID, AppKey/AppSecret, password, account token, local_key, session key"))
+        #expect(source.contains("Known credential fields are redacted"))
+        #expect(source.contains("exact AppKey/AppSecret/current account UID values are absent"))
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {

@@ -1,45 +1,38 @@
 import Foundation
 import Testing
 
-@Suite("Battery/Range accessibility launcher clearance")
+@Suite("Battery/Range accessibility navigation clearance")
 struct BatteryRangeAccessibilityLauncherClearanceSourceTests {
-    @Test("Accessibility Battery/Range reserves the expanded Navigation launcher from the viewport")
-    func accessibilityViewportClearsExpandedNavigationLauncher() throws {
+    @Test("Battery/Range reserves native tab-bar safe area at accessibility sizes")
+    func accessibilityContentClearsNativeTabBar() throws {
         let source = try readRepositoryFile("NembraApp/Features/Home/VehicleControlsView.swift")
         let view = try batteryRangeViewSection(in: source)
 
-        #expect(view.contains("dynamicTypeSize.isAccessibilitySize"))
-        #expect(view.contains("persistentNavigationViewportClearance"))
-        #expect(view.contains(".padding(.bottom, persistentNavigationViewportClearance)"))
-        #expect(view.contains("? 144 : 72"))
+        #expect(view.contains("ScrollView"))
+        #expect(view.contains(".safeAreaPadding(.bottom, tabBarClearance)"))
+        #expect(view.contains("dynamicTypeSize.isAccessibilitySize ? 104 : 80"))
+        #expect(view.contains(".navigationTitle(\"Battery & Range\")"))
+        #expect(!view.contains("persistentNavigationViewportClearance"))
     }
 
-    @Test("Clearance is viewport geometry, not another content-tail spacer")
-    func clearanceDoesNotHideInsideScrollContent() throws {
+    @Test("Accessibility Battery/Range recomposes its truthful battery and range readouts")
+    func accessibilityReadoutsRecomposeWithoutLauncherGeometry() throws {
         let source = try readRepositoryFile("NembraApp/Features/Home/VehicleControlsView.swift")
         let view = try batteryRangeViewSection(in: source)
 
-        guard let contentTail = view.range(of: ".safeAreaPadding(.bottom, 36)"),
-              let viewportModifier = view.range(
-                of: "\n        }\n        .padding(.bottom, persistentNavigationViewportClearance)"
-              ) else {
-            Issue.record("BatteryRangeView viewport-clearance boundary was not found")
-            throw SourceContractError.sectionMissing
-        }
-
-        // The viewport modifier may begin exactly at the byte boundary immediately
-        // following the content-tail token. Equality therefore still proves that the
-        // modifier is outside, rather than inside, the ScrollView content.
-        #expect(contentTail.upperBound <= viewportModifier.lowerBound)
+        #expect(view.contains("ViewThatFits(in: .horizontal)"))
+        #expect(view.contains("dynamicTypeSize.isAccessibilitySize ? 52 : 72"))
+        #expect(view.contains("dynamicTypeSize.isAccessibilitySize ? 46 : 58"))
+        #expect(view.contains(".accessibilityValue(\"Unavailable, not calibrated\")"))
+        #expect(!view.contains("padding(.trailing, 72)"))
     }
 
     private func batteryRangeViewSection(in source: String) throws -> Substring {
-        guard let start = source.range(of: "private struct BatteryRangeView: View"),
-              let end = source.range(of: "private var batteryHero: some View", range: start.upperBound..<source.endIndex) else {
-            Issue.record("BatteryRangeView body section was not found")
+        guard let start = source.range(of: "private struct BatteryRangeView: View") else {
+            Issue.record("BatteryRangeView section was not found")
             throw SourceContractError.sectionMissing
         }
-        return source[start.lowerBound..<end.lowerBound]
+        return source[start.lowerBound..<source.endIndex]
     }
 
     private func readRepositoryFile(_ relativePath: String) throws -> String {

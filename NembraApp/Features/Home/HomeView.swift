@@ -1,11 +1,27 @@
+import NembraCore
 import SwiftUI
 import UIKit
 
+/// Portrait Home for the selected Nembra 1.0 graphite / warm-gold direction.
+///
+/// This view is deliberately a projection of durable ride and vehicle truth.
+/// It never owns a trip counter, promotes cached telemetry to live, or treats a
+/// tapped vehicle command as confirmed state.
 struct HomeView: View {
     @Environment(VehicleStore.self) private var vehicle
+    @Environment(RideApplicationStore.self) private var rides
+    @Environment(RideHistoryPresentationStore.self) private var history
+    @Environment(DailyRidePresentationStore.self) private var daily
     @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
     @State private var pendingLockConfirmation: Bool?
+    @State private var isModeSelectorPresented = false
+
+    let onOpenRides: () -> Void
+    let onOpenDashboard: () -> Void
 
     var body: some View {
         ScrollView {
@@ -16,33 +32,21 @@ struct HomeView: View {
                     connectionRecovery
                 }
 
-                statusPanel
-                controlsSection
-
-                if !supportedModes.isEmpty {
-                    modeSection
-                }
-
-                vehicleSection
+                energyHero
+                readinessAndToday
+                controlsRail
+                latestRideContinuation
             }
             .padding(.horizontal, 20)
-            .padding(.top, 8)
-            .padding(.bottom, 24)
+            .padding(.top, 14)
+            .padding(.bottom, 28)
         }
-        .padding(.bottom, homeViewportBottomClearance)
-        .background(Color(uiColor: .systemBackground))
-        .navigationTitle("Nembra")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink {
-                    VehicleControlsView()
-                } label: {
-                    Image(systemName: "slider.horizontal.3")
-                        .fontWeight(.semibold)
-                }
-                .accessibilityLabel("Vehicle controls")
-            }
+        .scrollIndicators(.hidden)
+        .background(NembraColor.baseBlack.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
+        .task(id: rides.lastCompletedSessionID) {
+            await history.refresh()
+            await daily.refresh(currentRideSessionID: rides.activeSessionID)
         }
         .alert("Command not confirmed", isPresented: errorPresented) {
             Button("OK", role: .cancel) { vehicle.lastErrorMessage = nil }
@@ -68,10 +72,31 @@ struct HomeView: View {
         } message: {
             Text("Nembra changes the lock state only after the scooter confirms the command.")
         }
-    }
+        .confirmationDialog(
+            "Ride mode",
+            isPresented: $isModeSelectorPresented,
+            titleVisibility: .visible
+        ) {
+            ForEach(supportedModes, id: \.self) { mode in
+                Button(mode.displayName) {
+                    guard vehicle.state.rideMode != mode else { return }
+                    Task { await vehicle.setMode(mode) }
+                }
+                .disabled(
+                    vehicle.state.rideMode == mode ||
+                    vehicle.isVehicleCommandPending ||
+                    vehicle.state.connection != .connected
+                )
+            }
 
-    private var homeViewportBottomClearance: CGFloat {
-        dynamicTypeSize.isAccessibilitySize ? 100 : 76
+            Button("Open Horizon Dashboard") {
+                onOpenDashboard()
+            }
+
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Choose a verified scooter mode, or open the landscape riding cockpit.")
+        }
     }
 
     private var errorPresented: Binding<Bool> {
@@ -88,191 +113,409 @@ struct HomeView: View {
         )
     }
 
+    // MARK: - Vehicle identity
+
     private var vehicleHeader: some View {
         Group {
             if dynamicTypeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 16) {
                     vehicleIdentity
-                    lockStatus
+                    vehicleControlsLink
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 HStack(alignment: .center, spacing: 16) {
                     vehicleIdentity
                     Spacer(minLength: 12)
-                    lockStatus
+                    vehicleControlsLink
                 }
             }
         }
-        .accessibilityElement(children: .combine)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var vehicleIdentity: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(vehicle.profile.identity.displayName)
+        VStack(alignment: .leading, spacing: 7) {
+            Text(displayVehicleName)
                 .font(.title2.weight(.bold))
-                .foregroundStyle(.primary)
+                .tracking(0.2)
+                .foregroundStyle(NembraColor.primaryText)
+                .fixedSize(horizontal: false, vertical: true)
 
-            Label {
-                Text(vehicleStatusText)
-            } icon: {
+            HStack(spacing: 8) {
                 Circle()
                     .fill(connectionIndicatorColor)
-                    .frame(width: 7, height: 7)
+                    .frame(width: 8, height: 8)
+                    .accessibilityHidden(true)
+
+                Text(vehicleStatusText)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(NembraColor.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(.secondary)
+
+            if vehicle.profile == .simulatorQA {
+                HStack(spacing: 6) {
+                    Text("Nembra Simulator")
+                        .accessibilityLabel("Nembra Simulator")
+                    Text("QA only · synthetic evidence")
+                        .foregroundStyle(NembraColor.secondaryText)
+                }
+                .font(.caption2.weight(.semibold))
+                .textCase(.uppercase)
+                .tracking(0.8)
+                .foregroundStyle(NembraColor.gold)
+                .padding(.horizontal, 9)
+                .frame(minHeight: 26)
+                .background(NembraColor.quietSurface, in: Capsule(style: .continuous))
+                .overlay {
+                    Capsule(style: .continuous)
+                        .strokeBorder(NembraColor.gold.opacity(0.20))
+                }
+            }
         }
     }
 
-    @ViewBuilder
-    private var lockStatus: some View {
-        if let isLocked = vehicle.state.isLocked {
-            Label(isLocked ? "Locked" : "Unlocked", systemImage: isLocked ? "lock.fill" : "lock.open")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(isLocked ? .primary : .secondary)
-                .padding(.horizontal, 11)
-                .padding(.vertical, 8)
-                .background(Color.primary.opacity(0.055), in: Capsule())
+    private var vehicleControlsLink: some View {
+        NavigationLink {
+            VehicleControlsView()
+        } label: {
+            Image(systemName: "slider.horizontal.3")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(NembraColor.primaryText)
+                .frame(width: 50, height: 50)
         }
+        .buttonStyle(.glass)
+        .tint(NembraColor.warmGraphite)
+        .accessibilityLabel("Vehicle controls")
+        .accessibilityHint("Opens detailed vehicle controls and verified settings.")
     }
 
-    private var statusPanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if vehicle.state.connection != .connected && hasRetainedSummaryData {
-                Label("Last known vehicle data", systemImage: "clock.arrow.circlepath")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .accessibilityHint("These values may be stale until the scooter reconnects.")
+    private var displayVehicleName: String {
+        // Simulator is an evidence source, never the product identity. Simulator
+        // disclosure remains visible below the real target vehicle name.
+        vehicle.profile == .simulatorQA
+            ? VehicleProfile.aovoproES80.identity.displayName
+            : vehicle.profile.identity.displayName
+    }
+
+    // MARK: - Energy hero
+
+    private var energyHero: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if batteryIsRetained {
+                Label("Last known battery", systemImage: "clock.arrow.circlepath")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(NembraColor.secondaryText)
+                    .accessibilityHint("This battery value may be stale until the scooter reconnects.")
             }
 
             if dynamicTypeSize.isAccessibilitySize {
-                VStack(spacing: 0) {
-                    statusMetric(
-                        title: "Battery",
-                        value: batteryText,
-                        icon: batteryIcon,
-                        accessibilityIdentifier: "home.metric.battery",
-                        accessibilityValue: batteryAccessibilityValue,
-                        valueStyle: batteryValueStyle
-                    )
-                    accessibilityMetricDivider
-                    statusMetric(
-                        title: "Trip",
-                        value: tripDistanceText,
+                accessibilityEnergyHero
+            } else {
+                standardEnergyHero
+            }
+        }
+        .accessibilityIdentifier("home.energy-hero")
+    }
+
+    private var standardEnergyHero: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                batteryReadout
+                    .padding(.top, 4)
+
+                batteryBody
+                    .frame(height: 82)
+                    .padding(.trailing, 11)
+                    .offset(y: 105)
+
+                groundedShadow
+                    .frame(width: proxy.size.width * 0.76, height: 36)
+                    .position(x: proxy.size.width * 0.54, y: 300)
+
+                Image("ES80Side")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: min(proxy.size.width * 1.08, 400), height: 246)
+                    .shadow(color: .black.opacity(0.75), radius: 22, y: 16)
+                    .shadow(color: NembraColor.gold.opacity(0.13), radius: 20, y: 18)
+                    .position(x: proxy.size.width * 0.54, y: 218)
+                    .accessibilityHidden(true)
+            }
+        }
+        .frame(height: 338)
+    }
+
+    private var accessibilityEnergyHero: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            batteryReadout
+            batteryBody
+                .frame(height: 94)
+            ZStack(alignment: .bottom) {
+                groundedShadow
+                    .frame(height: 36)
+                Image("ES80Side")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 220)
+                    .shadow(color: .black.opacity(0.75), radius: 20, y: 14)
+                    .accessibilityHidden(true)
+            }
+            .frame(height: 230)
+        }
+    }
+
+    private var batteryReadout: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(batteryNumericText)
+                .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 54 : 72, weight: .light, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(batteryValueColor)
+                .contentTransition(reduceMotion ? .identity : .numericText())
+
+            if batteryPercent != nil {
+                Text("%")
+                    .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 27 : 34, weight: .light, design: .rounded))
+                    .foregroundStyle(batteryValueColor)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Battery")
+        .accessibilityValue(batteryAccessibilityValue)
+        .accessibilityIdentifier("home.metric.battery")
+    }
+
+    private var batteryBody: some View {
+        GeometryReader { proxy in
+            let terminalWidth: CGFloat = 12
+            let bodyWidth = max(0, proxy.size.width - terminalWidth)
+            let fillWidth = bodyWidth * batteryFillFraction
+
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 23, style: .continuous)
+                    .fill(Color.white.opacity(reduceTransparency ? 0.075 : 0.045))
+                    .frame(width: bodyWidth)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 23, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
+                    }
+
+                if batteryPercent != nil {
+                    RoundedRectangle(cornerRadius: 23, style: .continuous)
+                        .fill(isBatteryLow ? Color.red : NembraColor.gold)
+                        .frame(width: fillWidth)
+                        .clipShape(RoundedRectangle(cornerRadius: 23, style: .continuous))
+                        .animation(reduceMotion ? nil : .snappy(duration: 0.28), value: batteryFillFraction)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("ESTIMATED RANGE")
+                        .font(.caption2.weight(.bold))
+                        .tracking(1.1)
+                    Text("Unavailable")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .foregroundStyle(rangeLabelColor)
+                .padding(.leading, 17)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Estimated range unavailable")
+
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(Color.white.opacity(0.12))
+                    .frame(width: terminalWidth, height: proxy.size.height * 0.47)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.16))
+                    }
+                    .offset(x: bodyWidth - 1)
+            }
+        }
+    }
+
+    private var groundedShadow: some View {
+        Ellipse()
+            .fill(Color.black.opacity(0.86))
+            .shadow(color: NembraColor.gold.opacity(0.18), radius: 22, y: -2)
+            .accessibilityHidden(true)
+    }
+
+    // MARK: - Readiness and durable Today
+
+    private var readinessAndToday: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            readinessRow
+
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 18) {
+                    todayMetric(
+                        title: "Today's trip",
+                        value: todayDistanceText,
+                        detail: todayDistanceDetail,
                         icon: "point.bottomleft.forward.to.point.topright.scurvepath",
-                        accessibilityTitle: "Scooter Trip",
-                        accessibilityIdentifier: "home.metric.trip"
+                        accessibilityValue: todayDistanceAccessibilityValue,
+                        identifier: "home.metric.trip"
                     )
-                    accessibilityMetricDivider
-                    statusMetric(
-                        title: "Mode",
-                        value: vehicle.state.rideMode?.displayName ?? "—",
-                        icon: "gauge.with.dots.needle.67percent",
-                        accessibilityIdentifier: "home.metric.mode"
+                    Divider().overlay(NembraColor.quietLine)
+                    todayMetric(
+                        title: "Today's duration",
+                        value: todayDurationText,
+                        detail: todayDurationDetail,
+                        icon: "clock",
+                        accessibilityValue: todayDurationAccessibilityValue,
+                        identifier: "home.metric.duration"
                     )
                 }
             } else {
-                HStack(spacing: 0) {
-                    statusMetric(
-                        title: "Battery",
-                        value: batteryText,
-                        icon: batteryIcon,
-                        accessibilityIdentifier: "home.metric.battery",
-                        accessibilityValue: batteryAccessibilityValue,
-                        valueStyle: batteryValueStyle
-                    )
-                    metricDivider
-                    statusMetric(
-                        title: "Trip",
-                        value: tripDistanceText,
+                HStack(alignment: .top, spacing: 20) {
+                    todayMetric(
+                        title: "Today's trip",
+                        value: todayDistanceText,
+                        detail: todayDistanceDetail,
                         icon: "point.bottomleft.forward.to.point.topright.scurvepath",
-                        accessibilityTitle: "Scooter Trip",
-                        accessibilityIdentifier: "home.metric.trip"
+                        accessibilityValue: todayDistanceAccessibilityValue,
+                        identifier: "home.metric.trip"
                     )
-                    metricDivider
-                    statusMetric(
-                        title: "Mode",
-                        value: vehicle.state.rideMode?.displayName ?? "—",
-                        icon: "gauge.with.dots.needle.67percent",
-                        accessibilityIdentifier: "home.metric.mode"
+
+                    Divider()
+                        .frame(height: 58)
+                        .overlay(NembraColor.quietLine)
+
+                    todayMetric(
+                        title: "Today's duration",
+                        value: todayDurationText,
+                        detail: todayDurationDetail,
+                        icon: "clock",
+                        accessibilityValue: todayDurationAccessibilityValue,
+                        identifier: "home.metric.duration"
                     )
                 }
             }
         }
-        .padding(16)
-        .background(
-            Color(uiColor: .secondarySystemBackground),
-            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(.primary.opacity(0.045))
+        .padding(.horizontal, 8)
+    }
+
+    private var readinessRow: some View {
+        Button(action: onOpenDashboard) {
+            HStack(spacing: 12) {
+                Image(systemName: readinessSymbol)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(readinessForeground)
+                    .frame(width: 44, height: 44)
+                    .background(readinessBackground, in: Circle())
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(readinessTitle)
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(NembraColor.primaryText)
+
+                    Text(modeReadoutText)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(modeReadoutColor)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text("Dashboard")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(NembraColor.secondaryText)
+                    Image(systemName: "arrow.up.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(NembraColor.gold)
+                }
+                .accessibilityHidden(true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .frame(minHeight: 56)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Open Horizon Dashboard")
+        .accessibilityValue("\(readinessTitle), \(modeAccessibilityValue)")
+        .accessibilityHint("Requests landscape and opens the riding cockpit.")
+        .accessibilityIdentifier("home.horizon-entry")
     }
 
-    private var metricDivider: some View {
-        Divider()
-            .frame(height: 44)
-            .padding(.horizontal, 12)
-    }
-
-    private var accessibilityMetricDivider: some View {
-        Divider()
-            .padding(.vertical, 12)
-    }
-
-    private func statusMetric(
+    private func todayMetric(
         title: String,
         value: String,
+        detail: String?,
         icon: String,
-        accessibilityTitle: String? = nil,
-        accessibilityIdentifier: String,
-        accessibilityValue: String? = nil,
-        valueStyle: Color = .primary
+        accessibilityValue: String,
+        identifier: String
     ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label(title, systemImage: icon)
-                .font(.caption)
-                .foregroundStyle(title == "Battery" && isBatteryLow ? valueStyle : .secondary)
-                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
-                .fixedSize(horizontal: false, vertical: true)
+        HStack(alignment: .top, spacing: 11) {
+            Image(systemName: icon)
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(NembraColor.secondaryText)
+                .frame(width: 25, height: 25)
+                .accessibilityHidden(true)
 
-            Text(value)
-                .font(.title3.weight(.semibold).monospacedDigit())
-                .foregroundStyle(valueStyle)
-                .contentTransition(.numericText())
-                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
-                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.72)
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(value)
+                    .font(.title3.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(NembraColor.primaryText)
+                    .contentTransition(reduceMotion ? .identity : .numericText())
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(NembraColor.secondaryText)
+                if let detail {
+                    Text(detail)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(NembraColor.gold)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityTitle ?? title)
-        .accessibilityValue(accessibilityValue ?? value)
-        .accessibilityIdentifier(accessibilityIdentifier)
+        .accessibilityLabel(title)
+        .accessibilityValue(accessibilityValue)
+        .accessibilityIdentifier(identifier)
     }
 
-    private var controlsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader(title: "Controls")
+    // MARK: - Confirmed vehicle controls
 
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(spacing: 12) {
-                    actionControls
-                }
-            } else {
-                HStack(spacing: 12) {
-                    actionControls
+    private var controlsRail: some View {
+        VStack(spacing: 14) {
+            GlassEffectContainer(spacing: 10) {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(spacing: 12) {
+                        lightControl
+                        lockControl
+                        modeControl
+                    }
+                } else {
+                    HStack(spacing: 10) {
+                        lightControl
+                        lockControl
+                        modeControl
+                    }
                 }
             }
+
         }
+        .padding(14)
+        .background(
+            reduceTransparency ? NembraColor.warmGraphite : NembraColor.quietSurface,
+            in: RoundedRectangle(cornerRadius: 25, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 25, style: .continuous)
+                .strokeBorder(NembraColor.quietLine)
+        }
+        .accessibilityIdentifier("home.controls")
     }
 
     @ViewBuilder
-    private var actionControls: some View {
+    private var lightControl: some View {
         if vehicle.profile.capabilities.supportsHeadlight {
-            actionControl(
+            controlButton(
                 title: "Light",
                 subtitle: lightSubtitle,
                 icon: vehicle.state.isHeadlightOn == true ? "lightbulb.fill" : "lightbulb",
@@ -284,10 +527,15 @@ struct HomeView: View {
                 guard let isOn = vehicle.state.isHeadlightOn else { return }
                 Task { await vehicle.setHeadlight(!isOn) }
             }
+        } else {
+            unavailableControl(title: "Light", icon: "lightbulb")
         }
+    }
 
+    @ViewBuilder
+    private var lockControl: some View {
         if vehicle.profile.capabilities.supportsLock {
-            actionControl(
+            controlButton(
                 title: lockControlTitle,
                 subtitle: lockSubtitle,
                 icon: vehicle.state.isLocked == true ? "lock.fill" : "lock.open",
@@ -299,10 +547,33 @@ struct HomeView: View {
                 guard let locked = vehicle.state.isLocked else { return }
                 pendingLockConfirmation = !locked
             }
+        } else {
+            unavailableControl(title: "Lock", icon: "lock")
         }
     }
 
-    private func actionControl(
+    @ViewBuilder
+    private var modeControl: some View {
+        if supportedModes.isEmpty {
+            unavailableControl(title: "Mode", icon: "gauge.with.dots.needle.67percent")
+        } else {
+            controlButton(
+                title: "Mode",
+                subtitle: vehicle.state.rideMode?.displayName ?? "Unknown",
+                icon: modeSymbol,
+                active: vehicle.state.rideMode != nil,
+                pending: vehicle.pendingCommands.contains(.mode),
+                available: vehicle.state.rideMode != nil,
+                enabled: true
+            ) {
+                isModeSelectorPresented = true
+            }
+            .accessibilityIdentifier("home.mode.selector")
+            .accessibilityHint("Opens verified ride modes and the Horizon Dashboard entry action.")
+        }
+    }
+
+    private func controlButton(
         title: String,
         subtitle: String,
         icon: String,
@@ -315,39 +586,39 @@ struct HomeView: View {
         let displayedState = available ? subtitle : "Unavailable"
 
         return Button(action: action) {
-            HStack(spacing: 11) {
+            VStack(spacing: 9) {
                 ZStack {
                     Circle()
-                        .fill(active ? Color.primary.opacity(0.10) : Color.primary.opacity(0.055))
-                        .frame(width: 36, height: 36)
+                        .fill(active ? NembraColor.gold.opacity(0.14) : Color.white.opacity(0.055))
+                        .frame(width: 44, height: 44)
 
                     if pending {
                         ProgressView()
                             .controlSize(.small)
+                            .tint(NembraColor.gold)
                             .accessibilityHidden(true)
                     } else {
                         Image(systemName: icon)
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(active ? NembraColor.gold : NembraColor.primaryText)
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(spacing: 2) {
                     Text(title)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(NembraColor.primaryText)
                     Text(displayedState)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(NembraColor.secondaryText)
                         .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-
-                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 13)
-            .padding(.vertical, 11)
-            .frame(minHeight: 58)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 12)
             .frame(maxWidth: .infinity)
+            .frame(minHeight: dynamicTypeSize.isAccessibilitySize ? 96 : 100)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -363,162 +634,195 @@ struct HomeView: View {
         .accessibilityValue(pending ? "Requesting confirmation" : "")
     }
 
-    private var modeSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader(title: "Ride Mode")
+    private func unavailableControl(title: String, icon: String) -> some View {
+        VStack(spacing: 9) {
+            Image(systemName: icon)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(NembraColor.secondaryText)
+                .frame(width: 44, height: 44)
+                .background(Color.white.opacity(0.04), in: Circle())
 
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(spacing: 8) {
-                    ForEach(supportedModes, id: \.self) { mode in
-                        modeChoice(mode)
-                    }
-                }
-                .padding(4)
-                .background(
-                    Color.primary.opacity(0.055),
-                    in: RoundedRectangle(cornerRadius: 17, style: .continuous)
-                )
-            } else {
-                HStack(spacing: 4) {
-                    ForEach(supportedModes, id: \.self) { mode in
-                        modeChoice(mode)
-                    }
-                }
-                .padding(4)
-                .background(
-                    Color.primary.opacity(0.055),
-                    in: RoundedRectangle(cornerRadius: 17, style: .continuous)
-                )
+            VStack(spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(NembraColor.primaryText)
+                Text("Unavailable")
+                    .font(.caption)
+                    .foregroundStyle(NembraColor.secondaryText)
             }
         }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity)
+        .frame(minHeight: dynamicTypeSize.isAccessibilitySize ? 96 : 100)
+        .background(Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title), unavailable")
     }
 
-    private func modeChoice(_ mode: RideMode) -> some View {
-        let isSelected = vehicle.state.rideMode == mode
-        let isPending = vehicle.pendingRideMode == mode
-
-        return Button {
-            Task { await vehicle.setMode(mode) }
-        } label: {
-            ZStack {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 13, style: .continuous)
-                        .fill(Color(uiColor: .systemBackground))
-                        .shadow(color: .black.opacity(0.05), radius: 3, y: 1)
-                }
-
-                HStack(spacing: 5) {
-                    Text(mode.displayName)
-                        .font(.subheadline.weight(isSelected ? .semibold : .medium))
-                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    if isPending {
-                        ProgressView()
-                            .controlSize(.mini)
-                    }
-                }
-                .foregroundStyle(isSelected ? .primary : .secondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 12 : 0)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(minHeight: dynamicTypeSize.isAccessibilitySize ? 48 : 42)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending || isSelected)
-        .accessibilityLabel(mode.displayName)
-        .accessibilityValue(modeChoiceAccessibilityValue(selected: isSelected, pending: isPending))
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .accessibilityIdentifier("home.mode.\(mode.displayName.lowercased())")
-    }
-
-    private var vehicleSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader(title: "Vehicle")
-
-            VStack(spacing: 0) {
-                ForEach(vehicleDetailItems.indices, id: \.self) { index in
-                    let item = vehicleDetailItems[index]
-                    detailRow(title: item.title, value: item.value, icon: item.icon)
-
-                    if index < vehicleDetailItems.index(before: vehicleDetailItems.endIndex) {
-                        Divider().padding(.leading, 42)
-                    }
-                }
-
-                if !vehicleDetailItems.isEmpty {
-                    Divider().padding(.leading, 42)
-                }
-
-                NavigationLink {
-                    VehicleControlsView()
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "slider.horizontal.3")
-                            .frame(width: 26)
-                            .foregroundStyle(.secondary)
-                        Text("All Vehicle Controls")
-                            .foregroundStyle(.primary)
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .frame(minHeight: 48)
-                }
-            }
-            .padding(.horizontal, 14)
-            .background(
-                Color(uiColor: .secondarySystemBackground),
-                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-            )
-        }
-    }
-
-    private func sectionHeader(title: String) -> some View {
-        Text(title)
-            .font(.headline)
-            .foregroundStyle(.primary)
-    }
+    // MARK: - Durable ride-history continuation
 
     @ViewBuilder
-    private func detailRow(title: String, value: String, icon: String) -> some View {
-        if dynamicTypeSize.isAccessibilitySize {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: icon)
-                    .frame(width: 26)
-                    .foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                    Text(value)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                        .fixedSize(horizontal: false, vertical: true)
+    private var latestRideContinuation: some View {
+        switch history.status {
+        case .idle, .loading:
+            latestRideStateRow(
+                title: "Loading latest ride",
+                detail: "Reading saved ride history",
+                icon: "clock.arrow.circlepath",
+                showsProgress: true
+            )
+            .accessibilityIdentifier("home.latest-ride.loading")
+        case .ready:
+            if let record = history.records.first {
+                Button(action: onOpenRides) {
+                    latestRideLabel(record)
                 }
-                Spacer(minLength: 0)
+                .buttonStyle(.plain)
+                .nembraGlassControl()
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Continue to rides")
+                .accessibilityValue(latestRideAccessibilityValue(record))
+                .accessibilityHint("Opens saved ride history.")
+                .accessibilityIdentifier("home.latest-ride.open")
+            } else {
+                latestRideStateRow(
+                    title: "No completed rides yet",
+                    detail: "Accepted rides appear here after they are safely saved",
+                    icon: "clock.arrow.circlepath",
+                    showsProgress: false
+                )
+                .accessibilityIdentifier("home.latest-ride.empty")
             }
-            .font(.body)
-            .padding(.vertical, 8)
-            .frame(minHeight: 48)
-            .accessibilityElement(children: .combine)
-        } else {
-            HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .frame(width: 26)
-                    .foregroundStyle(.secondary)
-                Text(title)
-                Spacer()
-                Text(value)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-            }
-            .font(.body)
-            .frame(minHeight: 48)
-            .accessibilityElement(children: .combine)
+        case .unavailable, .failed:
+            latestRideStateRow(
+                title: "Ride history unavailable",
+                detail: history.lastErrorMessage ?? "Saved ride history could not be read safely",
+                icon: "exclamationmark.triangle",
+                showsProgress: false
+            )
+            .accessibilityIdentifier("home.latest-ride.unavailable")
         }
     }
+
+    private func latestRideLabel(_ record: RideHistoryRecord) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: "clock.arrow.circlepath")
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(NembraColor.gold)
+                .frame(width: 48, height: 48)
+                .background(NembraColor.gold.opacity(0.10), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Continue to rides")
+                    .font(.headline)
+                    .foregroundStyle(NembraColor.primaryText)
+
+                HStack(spacing: 7) {
+                    Text(record.evidence.endedAtDate.formatted(date: .abbreviated, time: .shortened))
+                    Text("·")
+                    Text(latestRideDistanceText(record))
+                }
+                .font(.caption)
+                .foregroundStyle(NembraColor.secondaryText)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                .fixedSize(horizontal: false, vertical: true)
+
+                if record.evidence.continuity == .recoveredCheckpoint {
+                    Label("Recovered ride", systemImage: "arrow.triangle.2.circlepath")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(NembraColor.gold)
+                }
+            }
+
+            Spacer(minLength: 4)
+
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(NembraColor.secondaryText)
+        }
+        .padding(.horizontal, 15)
+        .padding(.vertical, 13)
+        .frame(maxWidth: .infinity, minHeight: 78, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+
+    private func latestRideStateRow(
+        title: String,
+        detail: String,
+        icon: String,
+        showsProgress: Bool
+    ) -> some View {
+        HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .fill(Color.white.opacity(0.035))
+                    .frame(width: 48, height: 48)
+
+                if showsProgress {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(NembraColor.gold)
+                } else {
+                    Image(systemName: icon)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(NembraColor.secondaryText)
+                }
+            }
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(NembraColor.primaryText)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(NembraColor.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 15)
+        .padding(.vertical, 13)
+        .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
+        .background(NembraColor.quietSurface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(NembraColor.quietLine)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func latestRideDistanceText(_ record: RideHistoryRecord) -> String {
+        if let start = record.evidence.startingOdometerKilometers,
+           let end = record.evidence.endingOdometerKilometers,
+           start.isFinite,
+           end.isFinite,
+           end > start {
+            return "Scooter \(VehicleDisplayFormatting.distance(kilometers: end - start))"
+        }
+
+        let gpsMeters = record.evidence.qualityScreenedGPSDistanceMeters
+        if gpsMeters.isFinite, gpsMeters > 0 {
+            return "GPS \(VehicleDisplayFormatting.distance(kilometers: gpsMeters / 1_000))"
+        }
+
+        return "Distance unavailable"
+    }
+
+    private func latestRideAccessibilityValue(_ record: RideHistoryRecord) -> String {
+        var parts = [
+            record.evidence.endedAtDate.formatted(date: .complete, time: .shortened),
+            latestRideDistanceText(record)
+        ]
+        if record.evidence.continuity == .recoveredCheckpoint {
+            parts.append("recovered after relaunch")
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    // MARK: - Connection recovery
 
     private var connectionRecovery: some View {
         let presentation = connectionRecoveryPresentation
@@ -526,55 +830,56 @@ struct HomeView: View {
         return Group {
             if dynamicTypeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: 12) {
-                    connectionRecoveryText(presentation)
+                    connectionRecoveryText(presentation, includesIcon: true)
                     connectionRecoveryAction(presentation)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 HStack(spacing: 12) {
                     Image(systemName: presentation.icon)
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(connectionRecoveryColor)
                         .frame(width: 28)
+                        .accessibilityHidden(true)
 
-                    connectionRecoveryText(presentation)
+                    connectionRecoveryText(presentation, includesIcon: false)
                     Spacer(minLength: 8)
                     connectionRecoveryAction(presentation)
                 }
             }
         }
-        .padding(14)
-        .background(
-            Color(uiColor: .secondarySystemBackground),
-            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(connectionRecoveryColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(connectionRecoveryColor.opacity(0.20))
+        }
     }
 
-    @ViewBuilder
-    private func connectionRecoveryText(_ presentation: ConnectionRecoveryPresentation) -> some View {
+    private func connectionRecoveryText(
+        _ presentation: ConnectionRecoveryPresentation,
+        includesIcon: Bool
+    ) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            if dynamicTypeSize.isAccessibilitySize {
+            if includesIcon {
                 Image(systemName: presentation.icon)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(connectionRecoveryColor)
                     .frame(width: 28)
+                    .accessibilityHidden(true)
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                switch presentation.action {
-                case .progress:
-                    Text(presentation.message)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                default:
+                if presentation.action != .progress {
                     Text(presentation.title)
                         .font(.subheadline.weight(.semibold))
-                    Text(presentation.message)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .foregroundStyle(NembraColor.primaryText)
                 }
+                Text(presentation.message)
+                    .font(.caption)
+                    .foregroundStyle(NembraColor.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -585,6 +890,7 @@ struct HomeView: View {
         case .progress:
             ProgressView()
                 .controlSize(.small)
+                .tint(NembraColor.gold)
                 .accessibilityHidden(true)
         case .reconnect:
             Button {
@@ -617,7 +923,7 @@ struct HomeView: View {
         }
     }
 
-    private enum ConnectionRecoveryAction {
+    private enum ConnectionRecoveryAction: Equatable {
         case progress
         case reconnect
         case settings
@@ -697,75 +1003,187 @@ struct HomeView: View {
         }
     }
 
-    private struct VehicleDetailItem {
-        let title: String
-        let value: String
-        let icon: String
+    // MARK: - Truthful presentation values
+
+    private var batteryPercent: Int? { vehicle.batteryDisplayPercent }
+
+    private var batteryIsRetained: Bool { vehicle.batteryDataAvailability == .retained }
+
+    private var batteryNumericText: String {
+        batteryPercent.map(String.init) ?? "—"
     }
 
-    private var vehicleDetailItems: [VehicleDetailItem] {
-        var items: [VehicleDetailItem] = []
+    private var batteryFillFraction: Double {
+        Double(batteryPercent ?? 0) / 100
+    }
 
-        if vehicle.profile.capabilities.supportsOdometer {
-            items.append(VehicleDetailItem(
-                title: "Odometer",
-                value: VehicleDisplayFormatting.distance(kilometers: vehicle.state.odometerKilometers),
-                icon: "road.lanes"
-            ))
+    private var batteryAccessibilityValue: String {
+        guard let batteryPercent else { return "Unavailable" }
+        var parts = ["\(batteryPercent) percent"]
+        if isBatteryLow { parts.append("low battery") }
+        if batteryIsRetained { parts.append("last known") }
+        return parts.joined(separator: ", ")
+    }
+
+    private var batteryValueColor: Color {
+        isBatteryLow ? .red : NembraColor.primaryText
+    }
+
+    private var rangeLabelColor: Color {
+        guard let batteryPercent else { return NembraColor.secondaryText }
+        return batteryPercent >= 27 ? Color.black.opacity(0.74) : NembraColor.secondaryText
+    }
+
+    private var todayDistanceText: String {
+        guard let meters = daily.todayAndCurrent?.today.distanceMeters.value else { return "—" }
+        return VehicleDisplayFormatting.distance(kilometers: meters / 1_000)
+    }
+
+    private var todayDurationText: String {
+        guard let seconds = daily.todayAndCurrent?.today.durationSeconds.value,
+              seconds.isFinite,
+              seconds >= 0 else { return "—" }
+        let totalMinutes = Int(seconds.rounded(.down)) / 60
+        if seconds > 0, totalMinutes == 0 { return "<1 min" }
+        let hours = totalMinutes / 60
+        let minutes = totalMinutes % 60
+        if hours > 0 { return "\(hours) hr \(minutes) min" }
+        return "\(minutes) min"
+    }
+
+    private var todayDistanceDetail: String? {
+        todayMetricDetail(
+            daily.todayAndCurrent?.today.distanceMeters.availability,
+            unavailableText: "Distance unavailable"
+        )
+    }
+
+    private var todayDurationDetail: String? {
+        todayMetricDetail(
+            daily.todayAndCurrent?.today.durationSeconds.availability,
+            unavailableText: "Duration unavailable"
+        )
+    }
+
+    private func todayMetricDetail(
+        _ availability: NembraCore.DailyRideMetricAvailability?,
+        unavailableText: String
+    ) -> String? {
+        switch availability {
+        case .partial: "Partial accepted evidence"
+        case .noEvidence: "No accepted rides yet"
+        case .unavailable: unavailableText
+        case .complete, .none: nil
+        }
+    }
+
+    private var todayDistanceAccessibilityValue: String {
+        metricAccessibilityValue(
+            value: todayDistanceText,
+            summary: daily.todayAndCurrent?.today.distanceMeters,
+            unavailableLabel: "Accepted distance unavailable"
+        )
+    }
+
+    private var todayDurationAccessibilityValue: String {
+        metricAccessibilityValue(
+            value: todayDurationText,
+            summary: daily.todayAndCurrent?.today.durationSeconds,
+            unavailableLabel: "Accepted duration unavailable"
+        )
+    }
+
+    private func metricAccessibilityValue(
+        value: String,
+        summary: NembraCore.DailyRideMetricSummary?,
+        unavailableLabel: String
+    ) -> String {
+        guard let summary else {
+            switch daily.status {
+            case .unavailable, .failed: return unavailableLabel
+            case .idle, .loading: return "Loading accepted daily evidence"
+            case .ready: return "No accepted ride evidence today"
+            }
         }
 
-        if vehicle.profile.capabilities.supportsStartMode {
-            items.append(VehicleDetailItem(
-                title: "Start",
-                value: vehicle.state.startMode?.displayName ?? "—",
-                icon: "figure.walk.motion"
-            ))
+        switch summary.availability {
+        case .complete: return value
+        case .partial: return "\(value), partial accepted evidence"
+        case .noEvidence: return "No accepted ride evidence today"
+        case .unavailable: return unavailableLabel
         }
+    }
 
-        if vehicle.profile.capabilities.supportsCruise {
-            items.append(VehicleDetailItem(
-                title: "Cruise",
-                value: cruiseText,
-                icon: "gauge.open.with.lines.needle.33percent"
-            ))
+    private var readinessTitle: String {
+        switch rides.status {
+        case .candidate: "Ready when you move"
+        case .active: "Recording automatically"
+        case .temporarilyDisconnected: "Ride protected"
+        case .endingCandidate: "Checking ride end"
+        case .saving: "Saving accepted ride"
+        case .restoring: "Restoring ride"
+        case .persistenceUnavailable, .failed: "Ride tracking unavailable"
+        case .disabled:
+            vehicle.state.connection == .connected ? "Ride capture not configured" : "Ride capture unavailable"
+        case .idle:
+            vehicle.state.connection == .connected ? "Ready" : "Vehicle offline"
         }
+    }
 
-        return items
+    private var readinessSymbol: String {
+        switch rides.status {
+        case .temporarilyDisconnected: "arrow.triangle.2.circlepath"
+        case .persistenceUnavailable, .failed: "exclamationmark.triangle.fill"
+        case .saving, .restoring: "arrow.down.doc"
+        case .disabled: "pause"
+        default: vehicle.state.connection == .connected ? "checkmark" : "bolt.slash"
+        }
+    }
+
+    private var readinessForeground: Color {
+        switch rides.status {
+        case .persistenceUnavailable, .failed: .red
+        case .disabled: NembraColor.secondaryText
+        default: vehicle.state.connection == .connected ? Color.black : NembraColor.secondaryText
+        }
+    }
+
+    private var readinessBackground: Color {
+        switch rides.status {
+        case .persistenceUnavailable, .failed: Color.red.opacity(0.14)
+        case .disabled: Color.white.opacity(0.06)
+        default: vehicle.state.connection == .connected ? NembraColor.gold : Color.white.opacity(0.06)
+        }
+    }
+
+    private var modeReadoutText: String {
+        guard let mode = vehicle.state.rideMode else { return "Ride mode unavailable" }
+        let suffix = mode == .walk ? "" : " mode"
+        return vehicle.state.dataAvailability == .retained
+            ? "Last known · \(mode.displayName)\(suffix)"
+            : "\(mode.displayName)\(suffix)"
+    }
+
+    private var modeAccessibilityValue: String {
+        vehicle.state.rideMode?.displayName ?? "Unavailable"
+    }
+
+    private var modeReadoutColor: Color {
+        vehicle.state.rideMode == nil ? NembraColor.secondaryText : NembraColor.gold
+    }
+
+    private var modeSymbol: String {
+        guard let mode = vehicle.state.rideMode else { return "gauge.with.dots.needle.67percent" }
+        switch mode {
+        case .walk: "figure.walk"
+        case .eco: "leaf.fill"
+        case .drive: "d.circle.fill"
+        case .sport: "s.circle.fill"
+        }
     }
 
     private var supportedModes: [RideMode] {
         RideMode.allCases.filter(vehicle.profile.capabilities.supportedRideModes.contains)
-    }
-
-    private func modeChoiceAccessibilityValue(selected: Bool, pending: Bool) -> String {
-        if pending { return "Requesting confirmation" }
-        return selected ? "Selected" : "Not selected"
-    }
-
-    private var hasRetainedSummaryData: Bool {
-        guard vehicle.state.dataAvailability == .retained else { return false }
-        return vehicle.state.batteryPercent != nil ||
-            vehicle.state.tripKilometers != nil ||
-            vehicle.state.rideMode != nil
-    }
-
-    private var batteryText: String {
-        guard let value = vehicle.state.batteryPercent else { return "—" }
-        return "\(value)%"
-    }
-
-    private var batteryAccessibilityValue: String {
-        guard let value = vehicle.state.batteryPercent else { return "Unavailable" }
-        return isBatteryLow ? "\(value) percent, low battery" : "\(value) percent"
-    }
-
-    private var tripDistanceText: String {
-        VehicleDisplayFormatting.distance(kilometers: vehicle.state.tripKilometers)
-    }
-
-    private var cruiseText: String {
-        guard let enabled = vehicle.state.isCruiseEnabled else { return "—" }
-        return enabled ? "On" : "Off"
     }
 
     private var lightSubtitle: String {
@@ -802,23 +1220,8 @@ struct HomeView: View {
     }
 
     private var isBatteryLow: Bool {
-        guard let battery = vehicle.state.batteryPercent else { return false }
-        return battery <= 15
-    }
-
-    private var batteryIcon: String {
-        guard let battery = vehicle.state.batteryPercent else { return "battery.0percent" }
-        switch battery {
-        case ...15: return "battery.0percent"
-        case ...35: return "battery.25percent"
-        case ...60: return "battery.50percent"
-        case ...85: return "battery.75percent"
-        default: return "battery.100percent"
-        }
-    }
-
-    private var batteryValueStyle: Color {
-        isBatteryLow ? .red : .primary
+        guard let batteryPercent else { return false }
+        return batteryPercent <= 15
     }
 
     private var vehicleStatusText: String {
@@ -841,16 +1244,30 @@ struct HomeView: View {
             }
             return "Connected"
         case .connecting: return "Connecting"
-        case .reconnecting: return "Reconnecting"
-        case .disconnected: return "Offline"
+        case .reconnecting:
+            return vehicle.state.dataAvailability == .retained
+                ? "Reconnecting · last known data"
+                : "Reconnecting"
+        case .disconnected:
+            return vehicle.state.dataAvailability == .retained
+                ? "Offline · last known data"
+                : "Offline"
         }
     }
 
     private var connectionIndicatorColor: Color {
         switch vehicle.state.connection {
         case .connected: .green
-        case .connecting, .reconnecting: .orange
-        case .disconnected: .secondary
+        case .connecting, .reconnecting: NembraColor.gold
+        case .disconnected: NembraColor.secondaryText
+        }
+    }
+
+    private var connectionRecoveryColor: Color {
+        switch vehicle.state.connectionIssue {
+        case .bluetoothPermissionDenied, .unsupportedConfiguration: .red
+        case .bluetoothPoweredOff, .scooterUnavailable: .orange
+        case .none: NembraColor.gold
         }
     }
 }

@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@Suite("ES80 Capture representative screenshot viewport acceptance")
+@Suite("Capture synthetic representative screenshot viewport acceptance")
 struct ES80CaptureRepresentativeViewportAcceptanceTests {
     private static var repositoryRoot: URL {
         URL(fileURLWithPath: #filePath)
@@ -15,57 +15,75 @@ struct ES80CaptureRepresentativeViewportAcceptanceTests {
     private static func uiTestSource() throws -> String {
         try String(
             contentsOf: repositoryRoot
-                .appendingPathComponent("NembraUITests")
-                .appendingPathComponent("ES80ResearchCaptureUITests.swift"),
+                .appendingPathComponent("NembraCaptureUITests")
+                .appendingPathComponent("NembraCaptureUITests.swift"),
             encoding: .utf8
         )
     }
 
-    private static func representativeMatrix(in source: String) throws -> Substring {
+    private static func section(
+        in source: String,
+        from startNeedle: String,
+        to endNeedle: String
+    ) throws -> Substring {
         let start = try #require(
-            source.range(
-                of: "func testV14SimulatorQACapturesRepresentativeInProgressAndRecoveryStates()"
-            )
+            source.range(of: startNeedle)
         )
         let end = try #require(
             source.range(
-                of: "func testSimulatorQAAppSeamIsCompileBoundedAndProductionRouteRemainsLocked()",
+                of: endNeedle,
                 range: start.lowerBound..<source.endIndex
             )
         )
         return source[start.lowerBound..<end.lowerBound]
     }
 
-    @Test("representative screenshots prove required state is inside the captured viewport")
-    func representativeScreenshotsRequireViewportEvidence() throws {
+    @Test("retained synthetic screenshots reveal a required action before capture")
+    func representativeSyntheticScreenshotsRequireActionViewportEvidence() throws {
         let source = try Self.uiTestSource()
-        let matrix = try Self.representativeMatrix(in: source)
+        let representatives = [
+            (
+                start: "func testSyntheticSafetySheetAtAccessibilityXXXLKeepsDisclosureAndConfirmationReachable()",
+                end: "func testSyntheticCorrelationWithNoRepeatableTargetStopsWithoutConfirmation()",
+                reveal: "reveal(confirm, in: app)",
+                screenshot: "keepSyntheticScreenshot(named: \"SAFETY-SHEET-AX-XXXL\")"
+            ),
+            (
+                start: "func testSyntheticSingleCorrelationRequiresConfirmationBeforeObservationPresentation()",
+                end: "func testSyntheticCorrelationToObservationFitsCompactLandscape()",
+                reveal: "reveal(confirm, in: app)",
+                screenshot: "keepSyntheticScreenshot(named: \"CORRELATION-SUCCESS\")"
+            ),
+            (
+                start: "func testSyntheticCorrelationToObservationFitsCompactLandscape()",
+                end: "func testSyntheticObservationCompletionPresentationStillRequiresIntegrityBeforeComplete()",
+                reveal: "reveal(app.buttons[\"nembra.capture.qa.complete-observation\"], in: app)",
+                screenshot: "keepSyntheticScreenshot(named: \"CORRELATION-OBSERVATION-COMPACT-LANDSCAPE\")"
+            )
+        ]
 
-        let assertionToken = "assertVisibleInScreenshotViewport("
-        let navigationToken = "bringIntoScreenshotViewport("
-        let screenshotToken = "XCTAttachment(screenshot: app.screenshot())"
+        for representative in representatives {
+            let block = try Self.section(
+                in: source,
+                from: representative.start,
+                to: representative.end
+            )
+            let reveal = try #require(block.range(of: representative.reveal))
+            let screenshot = try #require(block.range(of: representative.screenshot))
+            #expect(
+                reveal.lowerBound < screenshot.lowerBound,
+                "The required action must be scrolled into a hittable viewport before retaining the synthetic screenshot."
+            )
+        }
 
-        let assertionCount = matrix.components(separatedBy: assertionToken).count - 1
-        let navigationCount = matrix.components(separatedBy: navigationToken).count - 1
-
-        #expect(
-            assertionCount >= 3,
-            "The representative matrix must mechanically prove the Simulator QA disclosure, rider-facing state, and any required action are inside the screenshot viewport."
+        let revealHelper = try Self.section(
+            in: source,
+            from: "private func reveal(",
+            to: "private func waitForHittable("
         )
-        #expect(
-            navigationCount >= 2,
-            "Scrollable representative states must be brought into the screenshot viewport before their retained evidence is captured."
-        )
-
-        let firstViewportAssertion = try #require(matrix.range(of: assertionToken))
-        let firstScreenshot = try #require(matrix.range(of: screenshotToken))
-        #expect(
-            firstViewportAssertion.lowerBound < firstScreenshot.lowerBound,
-            "Viewport proof must happen before the representative screenshot is retained."
-        )
-
-        #expect(matrix.contains("es80.capture.simulator-qa"))
-        #expect(matrix.contains("expectation.requiredText"))
-        #expect(matrix.contains("expectation.requiredIdentifier"))
+        #expect(revealHelper.contains("XCTAssertTrue(waitForHittable(element, timeout: 2))"))
+        #expect(source.contains("XCTAttachment(screenshot: XCUIScreen.main.screenshot())"))
+        #expect(source.contains("screenshot.name = \"SYNTHETIC-QA-\\(name)\""))
+        #expect(source.contains("syntheticDisclosureIdentifier"))
     }
 }

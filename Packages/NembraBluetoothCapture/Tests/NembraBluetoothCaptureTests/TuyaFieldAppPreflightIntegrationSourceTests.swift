@@ -8,7 +8,10 @@ struct TuyaFieldAppPreflightIntegrationSourceTests {
     func structuredSDKUpdateIsNotFabricatedIntoTransportBytes() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
-        #expect(source.contains("recordApplicationUpdate(isNonEmpty:"))
+        #expect(source.contains("sessionLedger.recordApplicationUpdate("))
+        #expect(source.contains("!update.isEmpty"))
+        #expect(source.contains("sessionLedger.captureApplicationDelivery("))
+        #expect(source.contains("receipt: receipt"))
         #expect(!source.contains("recordApplicationPayload("))
         #expect(!source.contains("JSONSerialization.data(withJSONObject: update"))
         #expect(source.contains("rawFD50BytesCaptured: false"))
@@ -44,11 +47,13 @@ struct TuyaFieldAppPreflightIntegrationSourceTests {
         #expect(source.contains("observation_poll_gap_exceeded"))
         guard let watchdog = source.range(of: "private func startWatchdog(token:"),
               let gapFailure = source.range(of: "observation_poll_gap_exceeded", range: watchdog.upperBound..<source.endIndex),
-              let observationAdvance = source.range(of: "sessionLedger.observeCurrentConnection(for: token)", range: watchdog.upperBound..<source.endIndex) else {
+              let livenessReceipt = source.range(of: "sessionLedger.captureLivenessReceipt(for: token)", range: watchdog.upperBound..<source.endIndex),
+              let observationAdvance = source.range(of: "sessionLedger.observeCurrentConnection(", range: watchdog.upperBound..<source.endIndex) else {
             Issue.record("Field source must reject a long monotonic observation gap before advancing ledger liveness.")
             return
         }
-        #expect(gapFailure.lowerBound < observationAdvance.lowerBound)
+        #expect(gapFailure.lowerBound < livenessReceipt.lowerBound)
+        #expect(livenessReceipt.lowerBound < observationAdvance.lowerBound)
     }
 
     @Test("canonical ledger and membership gates remain app-visible")

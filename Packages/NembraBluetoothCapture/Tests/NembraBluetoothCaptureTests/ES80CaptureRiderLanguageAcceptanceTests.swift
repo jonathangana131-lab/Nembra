@@ -137,8 +137,9 @@ struct ES80CaptureRiderLanguageAcceptanceTests {
         let preflight = source[preflightStart.lowerBound..<engineeringStart.lowerBound]
 
         #expect(preflight.contains("PREFLIGHT"))
-        #expect(preflight.contains("Keep the scooter stationary and begin with it powered off."))
-        #expect(preflight.contains("Start with scooter OFF"))
+        #expect(preflight.contains("Stationary safety check"))
+        #expect(preflight.contains("Before every attempt, confirm the scooter is OFF and stationary, the charger is disconnected, and nobody will ride or touch its controls."))
+        #expect(preflight.contains("Review safety and begin"))
         #expect(
             !preflight.contains("ES80-AUTHENTICATED-STATIONARY-v1"),
             "Stationary preflight must not expose the internal authenticated-stationary procedure identifier."

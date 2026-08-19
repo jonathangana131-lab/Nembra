@@ -45,8 +45,11 @@ struct TuyaFieldBuildPresentationAuthoritySourceTests {
         )
         #expect(preflight.contains("requirementRow(\"Capture build\", ready: test.fieldBuildIsAuthoritative)"))
         #expect(preflight.contains("if authorityReady"))
-        #expect(preflight.contains("test.startBaseline()"))
-        #expect(preflight.contains("Label(\"Start with scooter OFF\", systemImage: \"power\")"))
+        #expect(preflight.contains("stationarySafetyLaunch = .begin"))
+        #expect(preflight.contains("Label(\"Review safety and begin\", systemImage: \"checkmark.shield.fill\")"))
+        #expect(app.contains("StationarySafetyConfirmationSheet(launch: launch)"))
+        #expect(app.contains("case .begin:\n                    test.recordFreshOperatorAttestationAndBegin()"))
+        #expect(app.contains("\"I confirm — begin at OFF1\""))
 
         let authorityReady = try section(
             in: app,
@@ -66,7 +69,7 @@ struct TuyaFieldBuildPresentationAuthoritySourceTests {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let startBaseline = try section(
             in: app,
-            from: "func startBaseline()",
+            from: "private func beginBaselineAfterCurrentOperatorAttestation()",
             to: "private func beginCorrelationSeries"
         )
 

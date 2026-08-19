@@ -2,7 +2,16 @@ import Foundation
 
 enum VehicleDisplayFormatting {
     static var usesMetric: Bool {
-        Locale.current.measurementSystem == .metric
+        switch NembraUnitsPreference(
+            rawValue: UserDefaults.standard.string(forKey: NembraPreferenceKey.units) ?? ""
+        ) ?? .system {
+        case .system:
+            Locale.current.measurementSystem == .metric
+        case .miles:
+            false
+        case .metric:
+            true
+        }
     }
 
     static func speed(kilometersPerHour: Double?, decimals: Int = 0) -> String {

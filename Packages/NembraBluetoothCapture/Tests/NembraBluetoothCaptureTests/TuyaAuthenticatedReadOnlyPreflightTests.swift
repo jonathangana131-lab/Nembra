@@ -3,6 +3,16 @@ import Testing
 
 @Suite("Tuya authenticated read-only preflight")
 struct TuyaAuthenticatedReadOnlyPreflightTests {
+    @Test("45-second readiness remains distinct from the 60-second incomplete-session deadline")
+    func readinessAndIncompleteDeadlineRemainDistinct() {
+        #expect(TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds == 45_000_000_000)
+        #expect(TuyaAuthenticatedReadOnlyPreflight.maximumIncompleteObservationNanoseconds == 60_000_000_000)
+        #expect(
+            TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds
+                < TuyaAuthenticatedReadOnlyPreflight.maximumIncompleteObservationNanoseconds
+        )
+    }
+
     @Test("missing authentication fails closed")
     func missingAuthenticationBlocks() {
         let snapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(

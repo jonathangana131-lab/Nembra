@@ -14,15 +14,26 @@ struct TuyaFieldSDKDependencyProvenanceSourceTests {
         #expect(!podfile.contains("pod 'ThingSmartBusinessExtensionKit', '~> 7.8.0'"))
     }
 
-    @Test("bootstrap preserves lock state instead of silently upgrading dependencies")
-    func bootstrapUsesInstallAndRequiresResolvedLock() throws {
+    @Test("accepted bootstrap authenticates the existing lock before deployment-only install")
+    func bootstrapUsesDeploymentOnlyAcceptedLock() throws {
         let script = try readRepositoryFile("Scripts/bootstrap_capture_tuya_sdk.sh")
 
+        #expect(script.contains("if [[ \"$REVIEW_ONLY\" == \"1\" ]]"))
         #expect(script.contains("pod install --repo-update"))
+        #expect(script.contains("pod install --deployment --no-repo-update"))
         #expect(!script.contains("\npod update\n"))
-        #expect(script.contains("[[ ! -f Podfile.lock ]]"))
+        #expect(script.contains("[[ -f Podfile.lock && ! -L Podfile.lock ]]"))
+        #expect(script.contains("PREINSTALL_LOCK_SHA256"))
+        #expect(script.contains("No dependency command was run"))
+        #expect(script.contains("deployment-only install mutated the preauthenticated Podfile.lock"))
         #expect(script.contains("ThingSmartHomeKit (7.8.0)"))
         #expect(script.contains("ThingSmartBusinessExtensionKit (7.8.0)"))
+
+        let preauthentication = try #require(script.range(of: "[[ \"$PREINSTALL_LOCK_SHA256\" == \"$ACCEPTED_LOCK_SHA256\" ]]"))
+        let acceptedInstall = try #require(script.range(of: "pod install --deployment --no-repo-update"))
+        let postauthentication = try #require(script.range(of: "[[ \"$PREINSTALL_LOCK_SHA256\" == \"$LOCK_SHA256\" ]]"))
+        #expect(preauthentication.lowerBound < acceptedInstall.lowerBound)
+        #expect(acceptedInstall.lowerBound < postauthentication.lowerBound)
     }
 
     @Test("bootstrap delegates exact private-input fingerprinting to the hardened provenance helper")

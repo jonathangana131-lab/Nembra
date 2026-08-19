@@ -17,8 +17,16 @@ final class NembraUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["Nembra Simulator"].waitForExistence(timeout: 3))
 
+        let modeSelector = app.buttons["home.mode.selector"]
+        XCTAssertTrue(modeSelector.waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            swipeUpUntilHittable(modeSelector, in: app),
+            "The identified Home controls rail must scroll clear of the floating tab chrome."
+        )
+
         let light = button(containing: "Light", in: app)
         XCTAssertTrue(light.waitForExistence(timeout: 2))
+        XCTAssertTrue(light.isHittable)
         XCTAssertTrue(light.label.contains("Off"))
         light.tap()
 
@@ -33,15 +41,15 @@ final class NembraUITests: XCTestCase {
             "The light control must expose the simulator-confirmed On state after acknowledgement."
         )
 
-        let drive = app.buttons["home.mode.drive"]
-        XCTAssertTrue(drive.exists)
+        modeSelector.tap()
+
+        let drive = app.sheets.buttons["Drive"]
+        XCTAssertTrue(drive.waitForExistence(timeout: 2))
         drive.tap()
 
-        let confirmedDriveMetric = app.descendants(matching: .any)["home.metric.mode"]
-        XCTAssertTrue(confirmedDriveMetric.waitForExistence(timeout: 3))
         XCTAssertTrue(
-            waitForValue("Drive", element: confirmedDriveMetric),
-            "The status metric must expose the scooter-confirmed Drive mode, not merely a tapped segment."
+            waitForLabelContaining("Drive", element: app.buttons["home.mode.selector"]),
+            "The mode control must expose the scooter-confirmed Drive mode, not merely a tapped dialog choice."
         )
 
         let lock = button(containing: "Lock", in: app)
@@ -58,9 +66,13 @@ final class NembraUITests: XCTestCase {
         )
 
         let controls = app.buttons["Vehicle controls"]
-        XCTAssertTrue(controls.exists)
+        XCTAssertTrue(controls.waitForExistence(timeout: 2))
+        XCTAssertTrue(
+            swipeDownUntilHittable(controls, in: app),
+            "The Vehicle controls link must remain reachable after operating the lower Home controls."
+        )
         controls.tap()
-        XCTAssertTrue(app.navigationBars["Vehicle Controls"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.navigationBars["Vehicle"].waitForExistence(timeout: 2))
     }
 
     @MainActor
@@ -83,338 +95,189 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
-    func testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls() {
+    func testSelectedPortraitSurfacesCaptureSimulatorOnlyEvidence() {
+        let previousAppearance = XCUIDevice.shared.appearance
+        defer {
+            XCUIDevice.shared.orientation = .portrait
+            XCUIDevice.shared.appearance = previousAppearance
+        }
+
+        XCUIDevice.shared.appearance = .dark
+        let app = launch(scenario: "connected-stopped", orientation: .portrait)
+
+        XCTAssertTrue(app.descendants(matching: .any)["home.energy-hero"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Nembra Simulator"].waitForExistence(timeout: 3))
+        keepScreenshot(named: "Selected Portrait Home - Simulator QA Only")
+
+        selectTab("Rides", destinationIdentifier: "rides.mileage-activity", in: app)
+        keepScreenshot(named: "Selected Portrait Rides - Simulator QA Only")
+
+        selectTab("Vehicle", destinationIdentifier: "vehicle-controls.status", in: app)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["vehicle-controls.battery-range"].waitForExistence(timeout: 3)
+        )
+        keepScreenshot(named: "Selected Portrait Vehicle - Simulator QA Only")
+
+        selectTab("Settings", destinationIdentifier: "settings.surface", in: app)
+        keepScreenshot(named: "Selected Portrait Settings - Simulator QA Only")
+    }
+
+    @MainActor
+    func testPassiveLandscapeLeftAndRightNeverAuthorizeHorizonAndRestorePortraitHome() {
         defer { XCUIDevice.shared.orientation = .portrait }
-        let app = launch(scenario: "riding", orientation: .landscapeRight)
+
+        let app = launch(scenario: "connected-stopped", orientation: .portrait)
+        let homeEntry = app.buttons["home.horizon-entry"]
+        XCTAssertTrue(homeEntry.waitForExistence(timeout: 5))
+
+        for orientation in [UIDeviceOrientation.landscapeLeft, .landscapeRight] {
+            XCUIDevice.shared.orientation = orientation
+
+            XCTAssertTrue(
+                waitForPassivePortraitOwnership(in: app, timeout: 8),
+                "A passive \(orientation) change must return the exact Home scene to portrait without authorizing Horizon."
+            )
+            XCTAssertFalse(
+                app.descendants(matching: .any)["dashboard.cockpit"].exists,
+                "Device orientation is observation only and must never authorize Horizon."
+            )
+            XCTAssertFalse(
+                app.descendants(matching: .any)["home.orientation.failure"].exists,
+                "Home portrait ownership should recover without leaving a failure prompt."
+            )
+            XCTAssertTrue(homeEntry.waitForExistence(timeout: 3))
+        }
+    }
+
+    @MainActor
+    func testHorizonV4DriveEntryTruthAndPortraitRestoration() {
+        let previousAppearance = XCUIDevice.shared.appearance
+        defer {
+            XCUIDevice.shared.orientation = .portrait
+            XCUIDevice.shared.appearance = previousAppearance
+        }
+
+        XCUIDevice.shared.appearance = .dark
+        let app = launch(scenario: "riding", orientation: .portrait)
+        enterHorizon(in: app)
 
         let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
-        XCTAssertTrue(cockpit.waitForExistence(timeout: 4))
+        XCTAssertTrue(cockpit.waitForExistence(timeout: 8))
+        XCTAssertTrue(
+            waitForLandscapeWindow(in: app, timeout: 8),
+            "Horizon must appear only after the requested landscape geometry is observed."
+        )
+
+        let qaDisclosure = app.descendants(matching: .any)["dashboard.qa-disclosure"]
+        XCTAssertTrue(qaDisclosure.waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            (qaDisclosure.value as? String ?? "").localizedCaseInsensitiveContains("synthetic evidence"),
+            "The screenshot fixture must remain visibly and semantically simulator-only."
+        )
 
         let speed = app.descendants(matching: .any)["dashboard.speed"]
         XCTAssertTrue(speed.waitForExistence(timeout: 3))
-        XCTAssertFalse((speed.value as? String ?? "").isEmpty)
+        let speedValue = speed.value as? String ?? ""
+        XCTAssertTrue(speedValue.localizedCaseInsensitiveContains("Simulator QA"))
+        XCTAssertFalse(speedValue.localizedCaseInsensitiveContains("unavailable"))
 
-        let energyRail = app.descendants(matching: .any)["dashboard.energy-rail"]
+        let propulsion = app.descendants(matching: .any)["dashboard.energy-rail"]
+        XCTAssertTrue(propulsion.waitForExistence(timeout: 3))
         XCTAssertTrue(
-            energyRail.waitForExistence(timeout: 3),
-            "The riding Simulator cockpit must mount the canonical Energy Rail."
-        )
-        XCTAssertTrue(
-            waitForValue("356 watts", element: energyRail),
-            "Cockpit watts must expose the sealed Simulator receipt, never a render midpoint or cached aggregate field."
+            (propulsion.value as? String ?? "").localizedCaseInsensitiveContains("accepted watts"),
+            "V4 Drive must expose accepted simulator power without relabeling it as throttle."
         )
 
-        XCTAssertTrue(app.staticTexts["Controls available when stopped"].waitForExistence(timeout: 2))
-        XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
-        XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
-
-        keepScreenshot(named: "Dashboard Riding Landscape")
-    }
-
-    @MainActor
-    func testLandscapeDashboardRetainedSpeedTruthIsVisibleAndCapturable() {
-        defer { XCUIDevice.shared.orientation = .portrait }
-        let app = launch(
-            scenario: "connected-stopped",
-            orientation: .landscapeRight,
-            environment: ["NEMBRA_SIMULATION_SPEED_EVIDENCE_GAP": "1"]
-        )
-
-        let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
-        XCTAssertTrue(
-            cockpit.waitForExistence(timeout: 4),
-            "Landscape must keep the real Cockpit visible while speed evidence is retained."
-        )
-
-        let speed = app.descendants(matching: .any)["dashboard.speed"]
-        XCTAssertTrue(speed.waitForExistence(timeout: 2))
-        XCTAssertTrue(
-            (speed.value as? String ?? "").localizedCaseInsensitiveContains("last known"),
-            "A connected source gap must present the accepted speed as last-known, not live or unavailable."
-        )
-        XCTAssertTrue(
-            app.staticTexts["LAST KNOWN"].waitForExistence(timeout: 2),
-            "Retained speed evidence must carry an explicit last-known visual qualifier."
-        )
-        XCTAssertFalse(app.staticTexts["READY"].exists)
-        XCTAssertFalse(app.staticTexts["RIDING"].exists)
-        XCTAssertTrue(
-            app.descendants(matching: .any)["dashboard.controls-speed-unavailable-message"]
-                .waitForExistence(timeout: 2),
-            "A connected speed gap must retire stopped-control authority while preserving retained presentation."
-        )
-        XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
-        XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
-
-        keepScreenshot(named: "Dashboard Retained Speed Landscape")
-    }
-
-    @MainActor
-    func testLandscapeDashboardDisconnectedCachedSpeedProjectsUnavailable() {
-        defer { XCUIDevice.shared.orientation = .portrait }
-        let app = launch(scenario: "scooter-unavailable", orientation: .landscapeRight)
-
-        let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
-        XCTAssertTrue(
-            cockpit.waitForExistence(timeout: 4),
-            "Landscape must still render the real Cockpit when transport is unavailable."
-        )
-
-        let speed = app.descendants(matching: .any)["dashboard.speed"]
-        XCTAssertTrue(speed.waitForExistence(timeout: 2))
-        XCTAssertTrue(
-            (speed.value as? String ?? "").localizedCaseInsensitiveContains("unavailable"),
-            "A disconnected cached speed must not bypass app projection and become retained/current speed authority."
-        )
-        XCTAssertTrue(
-            app.staticTexts["NO LIVE SPEED"].waitForExistence(timeout: 2),
-            "Disconnected transport must fail the field-specific speed projection closed."
-        )
-
-        let energyRail = app.descendants(matching: .any)["dashboard.energy-rail"]
-        XCTAssertTrue(
-            energyRail.waitForExistence(timeout: 2),
-            "The Simulator cockpit must preserve a designed unavailable Energy Rail state."
-        )
-        XCTAssertTrue(
-            waitForValue("Unavailable", element: energyRail),
-            "Cached VehicleState watts must not fabricate propulsion authority after transport loss."
-        )
-
-        XCTAssertFalse(app.staticTexts["READY"].exists)
-        XCTAssertFalse(app.staticTexts["RIDING"].exists)
-        XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
-        XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
-
-        keepScreenshot(named: "Dashboard Disconnected Cached Speed Landscape")
-    }
-
-    @MainActor
-    func testLandscapeDashboardNeverObservedSpeedIsUnavailableAndCapturable() {
-        defer { XCUIDevice.shared.orientation = .portrait }
-        let app = launch(scenario: "cold-disconnected", orientation: .landscapeRight)
-
-        let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
-        XCTAssertTrue(
-            cockpit.waitForExistence(timeout: 4),
-            "Landscape must still render the real Cockpit before any speed evidence exists."
-        )
-
-        let speed = app.descendants(matching: .any)["dashboard.speed"]
-        XCTAssertTrue(speed.waitForExistence(timeout: 2))
-        XCTAssertTrue(
-            (speed.value as? String ?? "").localizedCaseInsensitiveContains("unavailable"),
-            "No accepted speed evidence must remain explicitly unavailable rather than becoming zero."
-        )
-        XCTAssertTrue(
-            app.staticTexts["NO LIVE SPEED"].waitForExistence(timeout: 2),
-            "The Cockpit must not manufacture a numeric speed before any accepted source evidence exists."
-        )
-        XCTAssertFalse(app.staticTexts["LAST KNOWN"].exists)
-
-        let energyRail = app.descendants(matching: .any)["dashboard.energy-rail"]
-        XCTAssertTrue(
-            energyRail.waitForExistence(timeout: 2),
-            "The never-observed Simulator state must still render an explicit Energy Rail unavailable state."
-        )
-        XCTAssertTrue(
-            waitForValue("Unavailable", element: energyRail),
-            "No source receipt means no numeric propulsion power, including zero."
-        )
-
-        let vehicleStatus = app.descendants(matching: .any)["dashboard.vehicle-status"]
-        XCTAssertTrue(vehicleStatus.waitForExistence(timeout: 2))
-        let dataStatus = vehicleStatus.descendants(matching: .any).matching(
-            NSPredicate(format: "label == %@", "Vehicle data")
-        ).firstMatch
-        XCTAssertTrue(
-            dataStatus.waitForExistence(timeout: 2),
-            "Cold disconnected launch must expose the no-telemetry vehicle-data semantic."
-        )
-        XCTAssertTrue(
-            (dataStatus.value as? String ?? "")
-                .localizedCaseInsensitiveContains("no confirmed scooter telemetry"),
-            "Cold disconnected launch must identify vehicle telemetry as not yet confirmed."
-        )
-        XCTAssertFalse(app.buttons["dashboard.control.lock"].exists)
-        XCTAssertFalse(app.buttons["dashboard.control.light"].exists)
-
-        keepScreenshot(named: "Dashboard No Speed Evidence Landscape")
-    }
-
-    @MainActor
-    func testLandscapeDashboardStoppedControlsConfirmEveryModePersonality() throws {
-        defer { XCUIDevice.shared.orientation = .portrait }
-        let app = launch(scenario: "connected-stopped", orientation: .landscapeRight)
-
-        let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
-        XCTAssertTrue(cockpit.waitForExistence(timeout: 4))
-
-        let energyRail = app.descendants(matching: .any)["dashboard.energy-rail"]
-        XCTAssertTrue(
-            energyRail.waitForExistence(timeout: 2),
-            "Connected-stopped must keep the Energy Rail present at a source-observed zero."
-        )
-        XCTAssertTrue(
-            waitForValue("0 watts", element: energyRail),
-            "A sealed zero-watt receipt is accepted measurement truth and must remain distinct from unavailable."
-        )
-
-        let light = app.buttons["dashboard.control.light"]
-        let lock = app.buttons["dashboard.control.lock"]
-        assertMinimumTouchTarget(light, named: "Dashboard light")
-        assertMinimumTouchTarget(lock, named: "Dashboard lock")
-
-        let modeIdentifiers = [
-            "dashboard.mode.walk",
-            "dashboard.mode.eco",
-            "dashboard.mode.drive",
-            "dashboard.mode.sport"
-        ]
-        for identifier in modeIdentifiers {
-            assertMinimumTouchTarget(app.buttons[identifier], named: identifier)
-        }
-
-        let confirmedMode = app.descendants(matching: .any)["dashboard.mode"]
-        XCTAssertTrue(confirmedMode.waitForExistence(timeout: 2))
-        XCTAssertTrue(waitForValue("Sport", element: confirmedMode))
-        keepScreenshot(named: "Dashboard Sport Landscape")
-
-        selectDashboardMode(
-            identifier: "dashboard.mode.walk",
-            expectedValue: "Walk",
-            screenshotName: "Dashboard Walk Landscape",
-            in: app,
-            confirmedMode: confirmedMode
-        )
-        selectDashboardMode(
-            identifier: "dashboard.mode.eco",
-            expectedValue: "Eco",
-            screenshotName: "Dashboard Eco Landscape",
-            in: app,
-            confirmedMode: confirmedMode
-        )
-        selectDashboardMode(
-            identifier: "dashboard.mode.drive",
-            expectedValue: "Drive",
-            screenshotName: "Dashboard Drive Landscape",
-            in: app,
-            confirmedMode: confirmedMode
-        )
-        selectDashboardMode(
-            identifier: "dashboard.mode.sport",
-            expectedValue: "Sport",
-            screenshotName: "Dashboard Sport Confirmed Landscape",
-            in: app,
-            confirmedMode: confirmedMode
-        )
-
-        try app.performAccessibilityAudit(
-            for: [
-                .sufficientElementDescription,
-                .hitRegion,
-                .textClipped,
-                .trait,
-                .dynamicType
-            ]
-        )
-    }
-
-    @MainActor
-    func testLandscapePhysicalProfileKeepsPowerUnavailableRailVisible() {
-        defer { XCUIDevice.shared.orientation = .portrait }
-        XCUIDevice.shared.orientation = .landscapeRight
-
-        let app = XCUIApplication()
-        app.launch()
-
-        let cockpit = app.descendants(matching: .any)["dashboard.cockpit"]
-        XCTAssertTrue(
-            cockpit.waitForExistence(timeout: 5),
-            "The real unverified AOVOPRO profile must render the landscape Cockpit."
-        )
-
-        let energyRail = app.descendants(matching: .any)["dashboard.energy-rail"]
-        XCTAssertTrue(
-            energyRail.waitForExistence(timeout: 3),
-            "The physical/unverified profile must keep the propulsion machine layer visible even without power authority."
-        )
-        XCTAssertTrue(
-            waitForValue("Unavailable", element: energyRail),
-            "An AOVOPRO ES80 profile with no verified watts capability must never manufacture numeric propulsion power."
-        )
-        XCTAssertFalse(app.staticTexts["LIVE POWER"].exists)
-        XCTAssertFalse(app.staticTexts["LAST KNOWN POWER"].exists)
-
-        keepScreenshot(named: "Dashboard Physical Power Unavailable Landscape")
-    }
-
-    @MainActor
-    func testLandscapeDashboardLaunchPerformance() {
-        defer { XCUIDevice.shared.orientation = .portrait }
-
-        // A prior Dashboard UI test can leave the app alive with continuous
-        // instrument animation. Rotating that live process makes XCTest wait for
-        // an animation-idle notification for ~60 seconds before launch metrics
-        // even begin. Terminate residual app state first so this test measures
-        // launch responsiveness instead of predecessor-test animation lifetime.
-        let app = XCUIApplication()
-        app.terminate()
-        XCUIDevice.shared.orientation = .landscapeRight
-
-        measure(metrics: [XCTApplicationLaunchMetric(waitUntilResponsive: true)]) {
-            app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = "connected-stopped"
-            app.launch()
-
+        for identifier in [
+            "dashboard.today",
+            "dashboard.ride-time",
+            "dashboard.odometer",
+            "dashboard.city-explored",
+            "dashboard.recording-status"
+        ] {
             XCTAssertTrue(
-                app.descendants(matching: .any)["dashboard.cockpit"].waitForExistence(timeout: 4),
-                "Launch measurement is valid only when the real landscape Cockpit becomes responsive."
+                app.descendants(matching: .any)[identifier].waitForExistence(timeout: 3),
+                "Missing Horizon truth surface: \(identifier)"
             )
-            app.terminate()
         }
-    }
 
-    @MainActor
-    private func selectDashboardMode(
-        identifier: String,
-        expectedValue: String,
-        screenshotName: String,
-        in app: XCUIApplication,
-        confirmedMode: XCUIElement
-    ) {
-        let button = app.buttons[identifier]
-        XCTAssertTrue(button.waitForExistence(timeout: 2))
-        button.tap()
+        let windowFrame = app.windows.firstMatch.frame
+        for identifier in ["dashboard.speed", "dashboard.energy-rail"] {
+            let element = app.descendants(matching: .any)[identifier]
+            XCTAssertTrue(
+                windowFrame.contains(element.frame),
+                "\(identifier) must remain fully inside the iPhone 12 landscape window."
+            )
+        }
+
+        let home = app.buttons["dashboard.control.home"]
+        let navigate = app.buttons["dashboard.control.navigate"]
+        assertMinimumTouchTarget(home, named: "Horizon Home")
+        assertMinimumTouchTarget(navigate, named: "Horizon Navigate")
+
+        let battery = app.buttons["dashboard.battery-range"]
+        XCTAssertTrue(battery.waitForExistence(timeout: 3))
+        if !battery.label.localizedCaseInsensitiveContains("Battery") {
+            battery.tap()
+            XCTAssertTrue(waitForLabelContaining("Battery", element: app.buttons["dashboard.battery-range"]))
+        }
+
+        keepScreenshot(named: "Horizon V4 Drive - Simulator QA Only")
+
+        let initialBatterySemantics = semantics(of: app.buttons["dashboard.battery-range"])
+        app.buttons["dashboard.battery-range"].tap()
         XCTAssertTrue(
-            waitForValue(expectedValue, element: confirmedMode),
-            "Dashboard personality must follow the scooter-confirmed \(expectedValue) mode, not the tapped button alone."
+            waitForSemanticChange(
+                identifier: "dashboard.battery-range",
+                from: initialBatterySemantics,
+                in: app
+            ),
+            "The battery control must switch percentage/range semantics while its fill remains SOC."
         )
-        keepScreenshot(named: screenshotName)
+
+        home.tap()
+        XCTAssertTrue(
+            waitForPortraitWindow(in: app, timeout: 8),
+            "The cockpit Home control must restore the owned portrait session."
+        )
+        XCTAssertTrue(app.buttons["home.horizon-entry"].waitForExistence(timeout: 5))
+        XCTAssertFalse(cockpit.exists)
     }
 
     @MainActor
-    private func assertMinimumTouchTarget(
-        _ element: XCUIElement,
-        named name: String,
-        minimum: CGFloat = 44,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) {
-        XCTAssertTrue(element.waitForExistence(timeout: 2), "\(name) control must exist.", file: file, line: line)
-        XCTAssertGreaterThanOrEqual(
-            element.frame.width,
-            minimum,
-            "\(name) touch target width must be at least \(minimum) pt.",
-            file: file,
-            line: line
-        )
-        XCTAssertGreaterThanOrEqual(
-            element.frame.height,
-            minimum,
-            "\(name) touch target height must be at least \(minimum) pt.",
-            file: file,
-            line: line
-        )
+    func testHorizonV4DriveBatteryToggleHitchEvidence() {
+        let previousAppearance = XCUIDevice.shared.appearance
+        defer {
+            XCUIDevice.shared.orientation = .portrait
+            XCUIDevice.shared.appearance = previousAppearance
+        }
+
+        XCUIDevice.shared.appearance = .dark
+        let app = launch(scenario: "riding", orientation: .portrait)
+        enterHorizon(in: app)
+
+        XCTAssertTrue(app.descendants(matching: .any)["dashboard.cockpit"].waitForExistence(timeout: 8))
+        XCTAssertTrue(waitForLandscapeWindow(in: app, timeout: 8))
+        XCTAssertTrue(app.buttons["dashboard.battery-range"].waitForExistence(timeout: 3))
+
+        let options = XCTMeasureOptions()
+        options.iterationCount = 5
+        measure(metrics: [XCTHitchMetric(application: app)], options: options) {
+            let battery = app.buttons["dashboard.battery-range"]
+            let before = semantics(of: battery)
+            battery.tap()
+            XCTAssertTrue(
+                waitForSemanticChange(
+                    identifier: "dashboard.battery-range",
+                    from: before,
+                    in: app,
+                    timeout: 3
+                )
+            )
+        }
+
+        app.buttons["dashboard.control.home"].tap()
+        XCTAssertTrue(waitForPortraitWindow(in: app, timeout: 8))
     }
 
     @MainActor
@@ -426,11 +289,189 @@ final class NembraUITests: XCTestCase {
         XCUIDevice.shared.orientation = orientation
         let app = XCUIApplication()
         app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = scenario
+        app.launchEnvironment["NEMBRA_SIMULATION_STORAGE_NAMESPACE"] = UUID().uuidString
         for (key, value) in environment {
             app.launchEnvironment[key] = value
         }
         app.launch()
         return app
+    }
+
+    @MainActor
+    private func enterHorizon(in app: XCUIApplication) {
+        let entry = app.buttons["home.horizon-entry"]
+        XCTAssertTrue(entry.waitForExistence(timeout: 5))
+        if !entry.isHittable {
+            app.swipeUp()
+        }
+        XCTAssertTrue(entry.isHittable)
+        entry.tap()
+    }
+
+    @MainActor
+    private func selectTab(
+        _ name: String,
+        destinationIdentifier: String,
+        in app: XCUIApplication
+    ) {
+        let tab = app.tabBars.buttons[name]
+        XCTAssertTrue(tab.waitForExistence(timeout: 3), "Missing \(name) tab.")
+        tab.tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)[destinationIdentifier].waitForExistence(timeout: 6),
+            "The \(name) tab did not expose \(destinationIdentifier)."
+        )
+    }
+
+    @MainActor
+    private func waitForLandscapeWindow(
+        in app: XCUIApplication,
+        timeout: TimeInterval
+    ) -> Bool {
+        waitForWindowGeometry(in: app, timeout: timeout) { $0.width > $0.height }
+    }
+
+    @MainActor
+    private func waitForPortraitWindow(
+        in app: XCUIApplication,
+        timeout: TimeInterval
+    ) -> Bool {
+        waitForWindowGeometry(in: app, timeout: timeout) { $0.height > $0.width }
+    }
+
+    @MainActor
+    private func waitForWindowGeometry(
+        in app: XCUIApplication,
+        timeout: TimeInterval,
+        predicate: (CGRect) -> Bool
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            let window = app.windows.firstMatch
+            if window.exists, predicate(window.frame) {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        } while Date() < deadline
+        return false
+    }
+
+    @MainActor
+    private func waitForPassivePortraitOwnership(
+        in app: XCUIApplication,
+        timeout: TimeInterval
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        var portraitStableSince: Date?
+
+        repeat {
+            if app.descendants(matching: .any)["dashboard.cockpit"].exists {
+                return false
+            }
+            if app.descendants(matching: .any)["home.orientation.failure"].exists {
+                return false
+            }
+
+            let window = app.windows.firstMatch
+            let homeEntry = app.buttons["home.horizon-entry"]
+            if window.exists,
+               window.frame.height > window.frame.width,
+               homeEntry.exists {
+                if portraitStableSince == nil {
+                    portraitStableSince = .now
+                }
+                if let portraitStableSince,
+                   Date().timeIntervalSince(portraitStableSince) >= 0.75 {
+                    return true
+                }
+            } else {
+                portraitStableSince = nil
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        } while Date() < deadline
+        return false
+    }
+
+    @MainActor
+    private func waitForSemanticChange(
+        identifier: String,
+        from original: String,
+        in app: XCUIApplication,
+        timeout: TimeInterval = 3
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            let element = app.buttons[identifier]
+            if element.exists, semantics(of: element) != original {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        } while Date() < deadline
+        return false
+    }
+
+    @MainActor
+    private func semantics(of element: XCUIElement) -> String {
+        "\(element.label)|\(element.value as? String ?? "")"
+    }
+
+    @MainActor
+    private func swipeUpUntilHittable(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        maximumAttempts: Int = 4
+    ) -> Bool {
+        scrollUntilHittable(
+            element,
+            maximumAttempts: maximumAttempts,
+            swipe: { app.swipeUp() }
+        )
+    }
+
+    @MainActor
+    private func swipeDownUntilHittable(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        maximumAttempts: Int = 4
+    ) -> Bool {
+        scrollUntilHittable(
+            element,
+            maximumAttempts: maximumAttempts,
+            swipe: { app.swipeDown() }
+        )
+    }
+
+    @MainActor
+    private func scrollUntilHittable(
+        _ element: XCUIElement,
+        maximumAttempts: Int,
+        swipe: () -> Void
+    ) -> Bool {
+        guard element.waitForExistence(timeout: 2) else { return false }
+        if element.isHittable { return true }
+
+        for _ in 0..<maximumAttempts {
+            swipe()
+            if element.waitForExistence(timeout: 1), element.isHittable {
+                return true
+            }
+        }
+
+        return element.exists && element.isHittable
+    }
+
+    @MainActor
+    private func assertMinimumTouchTarget(
+        _ element: XCUIElement,
+        named name: String,
+        minimum: CGFloat = 44,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertTrue(element.waitForExistence(timeout: 3), "\(name) must exist.", file: file, line: line)
+        XCTAssertGreaterThanOrEqual(element.frame.width, minimum, file: file, line: line)
+        XCTAssertGreaterThanOrEqual(element.frame.height, minimum, file: file, line: line)
     }
 
     @MainActor
@@ -447,8 +488,12 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
-    private func waitForValue(_ value: String, element: XCUIElement, timeout: TimeInterval = 3) -> Bool {
-        let predicate = NSPredicate(format: "value == %@", value)
+    private func waitForLabelContaining(
+        _ value: String,
+        element: XCUIElement,
+        timeout: TimeInterval = 3
+    ) -> Bool {
+        let predicate = NSPredicate(format: "label CONTAINS %@", value)
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }

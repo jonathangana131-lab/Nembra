@@ -7,6 +7,8 @@ struct NavigationVisualSurfaceSourceTests {
     func navigationSurfaceExistsWithoutInventedTelemetry() throws {
         let source = try String(contentsOf: nembraAppURL, encoding: .utf8)
 
+        #expect(source.contains(".sheet(isPresented: $isNavigationPresented)"))
+        #expect(source.contains("NavigationStack {\n                NembraNavigationView()"))
         #expect(source.contains("navigation.surface"))
         #expect(source.contains("Navigation unavailable"))
         #expect(source.contains("dynamicTypeSize.isAccessibilitySize"))
@@ -41,14 +43,17 @@ struct NavigationVisualSurfaceSourceTests {
         #expect(statusState.contains("ScrollView"))
     }
 
-    @Test("Map and launcher preserve accessibility geometry")
-    func accessibilityGeometryIsExplicit() throws {
+    @Test("Native sheet, map, and search chrome preserve accessibility geometry")
+    func nativePresentationAndAccessibilityGeometryAreExplicit() throws {
         let source = try String(contentsOf: nembraAppURL, encoding: .utf8)
-        #expect(source.contains(".frame(minWidth: 54, minHeight: 54)"))
+        #expect(source.contains("Button(\"Done\") { dismiss() }"))
+        #expect(source.contains(".searchable(text: $query, prompt: \"Search destinations\")"))
         #expect(source.contains("dynamicTypeSize.isAccessibilitySize ? 160 : 180"))
         #expect(source.contains("dynamicTypeSize.isAccessibilitySize ? 220 : 280"))
         #expect(source.contains("withAnimation(reduceMotion ? nil : .snappy(duration: 0.28))"))
         #expect(source.contains("if reduceTransparency"))
+        #expect(!source.contains(".frame(minWidth: 54, minHeight: 54)"))
+        #expect(!source.contains("persistentNavigationViewportClearance"))
     }
 
     @Test("Changing a query clears stale provider results before debounce")

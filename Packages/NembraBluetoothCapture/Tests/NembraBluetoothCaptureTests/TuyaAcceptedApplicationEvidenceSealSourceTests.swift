@@ -166,7 +166,7 @@ struct TuyaAcceptedApplicationEvidenceSealSourceTests {
     @Test("accepted export starts at the current physical attempt boundary")
     func acceptedExportCannotInheritOlderAttemptEvents() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let start = String(try section(in: app, from: "func startBaseline()", to: "private func beginCorrelationSeries"))
+        let start = String(try section(in: app, from: "private func beginBaselineAfterCurrentOperatorAttestation()", to: "private func beginCorrelationSeries"))
         let watchdog = String(try section(in: app, from: "private func startWatchdog", to: "private func recordObservedTransportLoss"))
         let boundary = try #require(start.range(of: "captureAttemptEventStartIndex = events.count"))
         let membership = try #require(start.range(of: "verifySDKMembership", range: boundary.upperBound..<start.endIndex))

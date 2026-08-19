@@ -670,6 +670,7 @@ struct RidePersistenceStack: Sendable {
     let checkpointStore: AtomicRideCheckpointStore
     let historyStore: SwiftDataRideHistoryStore
     let routeStore: SwiftDataRideRouteStore?
+    let dailyRideStore: SwiftDataDailyRideSegmentStore?
 }
 
 enum RidePersistenceFactory {
@@ -701,10 +702,23 @@ enum RidePersistenceFactory {
             routeStore = nil
         }
 
+        // Day segments are a distinct exact-evidence ledger. Failure is kept
+        // visible to Today/Rides and automatic-capture readiness without making
+        // previously saved completed-history records unreadable.
+        let dailyRideStore: SwiftDataDailyRideSegmentStore?
+        do {
+            let dailyURL = scopeDirectory.appendingPathComponent("DailyRideSegments.store")
+            let dailyContainer = try makeDailyRideContainer(storeURL: dailyURL)
+            dailyRideStore = SwiftDataDailyRideSegmentStore(modelContainer: dailyContainer)
+        } catch {
+            dailyRideStore = nil
+        }
+
         return RidePersistenceStack(
             checkpointStore: checkpointStore,
             historyStore: historyStore,
-            routeStore: routeStore
+            routeStore: routeStore,
+            dailyRideStore: dailyRideStore
         )
     }
 
@@ -728,6 +742,23 @@ enum RidePersistenceFactory {
         let schema = Schema([StoredRideRouteChunk.self, StoredRideRouteManifest.self])
         let configuration = ModelConfiguration(
             "NembraRideRoutes",
+            schema: schema,
+            url: storeURL,
+            allowsSave: true,
+            cloudKitDatabase: .none
+        )
+        return try ModelContainer(for: schema, migrationPlan: nil, configurations: [configuration])
+    }
+
+    static func makeDailyRideContainer(storeURL: URL) throws -> ModelContainer {
+        let parent = storeURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        let schema = Schema([
+            StoredDailyRideSegment.self,
+            StoredDailyRideAccumulatorState.self
+        ])
+        let configuration = ModelConfiguration(
+            "NembraDailyRideSegments",
             schema: schema,
             url: storeURL,
             allowsSave: true,

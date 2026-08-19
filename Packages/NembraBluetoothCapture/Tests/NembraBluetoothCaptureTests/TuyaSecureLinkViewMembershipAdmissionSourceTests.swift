@@ -23,7 +23,7 @@ struct TuyaSecureLinkViewMembershipAdmissionSourceTests {
     func verificationRequiresOpenViewAdmissionBeforeAnyMembershipMutation() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let controller = String(try section(in: source, from: "private final class SecureLinkController", to: "@MainActor\nprivate protocol OfficialTuyaDriver"))
-        let verification = String(try section(in: controller, from: "func verifySDKMembership(completion:", to: "func retry()"))
+        let verification = String(try section(in: controller, from: "func verifySDKMembership(completion:", to: "func authenticate()"))
 
         let admission = try requiredOffset(containing: "guard acceptsViewScopedMembershipRequests else", in: verification)
         let clearLease = try requiredOffset(containing: "membershipAccountUID = nil", in: verification)

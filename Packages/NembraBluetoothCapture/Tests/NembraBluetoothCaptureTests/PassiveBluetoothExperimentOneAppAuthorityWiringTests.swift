@@ -10,9 +10,10 @@ struct PassiveBluetoothExperimentOneAppAuthorityWiringTests {
         let installer = try Self.repositoryFile("scripts/field/install_one_time_capture.command")
 
         #expect(project.contains("NembraCaptureEntrypoint.swift in Sources"))
-        #expect(project.contains("TuyaAccountBridge.swift in Sources"))
-        #expect(project.contains("ES80CaptureShellView.swift in Sources"))
+        #expect(project.contains("NembraCaptureSimulatorQAHarness.swift in Sources"))
         #expect(project.contains("NembraCaptureBuildIdentity.swift in Sources"))
+        #expect(!project.contains("TuyaAccountBridge.swift"))
+        #expect(!project.contains("ES80CaptureShellView.swift"))
         #expect(!project.contains("NembraApp.swift in Sources"))
 
         #expect(installer.contains("-workspace NembraCapture.xcworkspace"))
@@ -28,7 +29,7 @@ struct PassiveBluetoothExperimentOneAppAuthorityWiringTests {
         let source = try Self.repositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let startBaseline = String(try Self.section(
             in: source,
-            from: "    func startBaseline() {",
+            from: "    private func beginBaselineAfterCurrentOperatorAttestation() {",
             to: "    private func beginCorrelationSeries() {"
         ))
         let beginCorrelation = String(try Self.section(
@@ -58,6 +59,51 @@ struct PassiveBluetoothExperimentOneAppAuthorityWiringTests {
         #expect(!source.contains("disconnectedDeclarationAccepted"))
         #expect(!source.contains("selectedChargerState"))
         #expect(!source.contains("UserDefaults"))
+    }
+
+    @Test("root selection is only context; Secure Link freshly verifies exact membership before scan and authentication")
+    func secureLinkRechecksMembershipAtBothAuthorityBoundaries() throws {
+        let source = try Self.repositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let root = String(try Self.section(
+            in: source,
+            from: "@MainActor\nprivate struct CaptureP0Root: View",
+            to: "@MainActor\nprivate final class SecureLinkController:"
+        ))
+        let start = String(try Self.section(
+            in: source,
+            from: "    private func beginBaselineAfterCurrentOperatorAttestation() {",
+            to: "    private func beginCorrelationSeries() {"
+        ))
+        let authenticate = String(try Self.section(
+            in: source,
+            from: "    func authenticate() {",
+            to: "    private func beginOfficialConnection(candidate: Candidate) {"
+        ))
+        let membership = String(try Self.section(
+            in: source,
+            from: "    func verifySDKMembership(completion: ((Bool) -> Void)? = nil) {",
+            to: "    func authenticate() {"
+        ))
+
+        #expect(root.contains("SecureLinkView(device: selected, sdkAccount: sdkAccount)"))
+        #expect(root.contains("fresh, complete same-account membership check immediately before Bluetooth discovery"))
+
+        #expect(start.contains("verifySDKMembership { [weak self] authorized in"))
+        #expect(start.contains("TuyaSDKAccountIdentityLeaseGate.verdict"))
+        #expect(start.contains("self.beginCorrelationSeries()"))
+
+        #expect(authenticate.contains("// Membership is re-proven immediately before granting Tuya BLE ownership."))
+        #expect(authenticate.contains("verifySDKMembership { [weak self] stillAuthorized in"))
+        #expect(authenticate.contains("self.phase == .selected"))
+        #expect(authenticate.contains("self.targetCorrelationOperatorConfirmed"))
+        #expect(authenticate.contains("self.selectedID == candidate.id"))
+        #expect(authenticate.contains("self.beginOfficialConnection(candidate: candidate)"))
+
+        #expect(membership.contains("let requestID = UUID()"))
+        #expect(membership.contains("membershipRequestID = requestID"))
+        #expect(membership.contains("guard let self, self.membershipRequestID == requestID else { return }"))
+        #expect(membership.contains("TuyaSDKAccountIdentityLeaseGate.verdict"))
+        #expect(membership.contains("self.membershipDeviceID = expected"))
     }
 
     @Test("package correlation retires before official Tuya BLE ownership and failed restart stays fenced")

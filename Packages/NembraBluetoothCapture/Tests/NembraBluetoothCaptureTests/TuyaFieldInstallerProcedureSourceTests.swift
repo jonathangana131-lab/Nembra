@@ -28,7 +28,8 @@ struct TuyaFieldInstallerProcedureSourceTests {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
 
         #expect(installer.contains("field-build provenance is not proven, STOP"))
-        #expect(installer.contains("a genuine same-generation dpsUpdate"))
+        #expect(installer.contains("at least two genuine non-empty same-generation dpsUpdate callbacks"))
+        #expect(installer.contains("the latest at least 30 seconds after SDK authentication"))
         #expect(installer.contains("canonical continuity of at least 45 seconds"))
         #expect(installer.contains("a sealed accepted prefix"))
         #expect(installer.contains("No outdoor ride is authorized by this installer"))

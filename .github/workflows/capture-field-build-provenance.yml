@@ -1,0 +1,112 @@
+name: Capture Field Handoff Provenance
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - NembraApp/App/NembraCaptureBuildIdentity.swift
+      - NembraApp/App/NembraCaptureEntrypoint.swift
+      - NembraCapture.xcodeproj/project.pbxproj
+      - NembraCapture.xcodeproj/xcshareddata/xcschemes/Nembra Capture.xcscheme
+      - NembraCapture-Info.plist
+      - Packages/NembraBluetoothCapture/**
+      - Packages/NembraCore/**
+      - Podfile
+      - Podfile.lock
+      - Scripts/bootstrap_capture_tuya_sdk.sh
+      - Scripts/capture_tuya_private_input_provenance.py
+      - Scripts/provision_capture_tuya_identity.sh
+      - scripts/ci/es80_signed_field_artifact_private_runner.py
+      - scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+      - scripts/field/install_one_time_capture.command
+      - CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md
+      - docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md
+      - docs/CAPTURE_NEXT_TUYA_SECURE_LINK_TEST.md
+      - docs/CAPTURE_TUYA_OFFICIAL_SDK_PROVISIONING.md
+      - docs/ES80_TODAY_*.md
+      - .github/workflows/capture-field-build-provenance.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-field-handoff-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  public-contract:
+    name: Validate public handoff only
+    runs-on: xcode-27
+    timeout-minutes: 15
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+
+    steps:
+      - name: Checkout immutable PR head
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Checkout dispatched ref
+        if: github.event_name != 'pull_request'
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Verify exact head and canonical procedure
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${EXPECTED_HEAD_SHA:-}" ]]; then
+            test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          fi
+          procedure='ES80-AUTHENTICATED-STATIONARY-v1'
+          grep -Fq "PROCEDURE_ID=\"$procedure\"" scripts/field/install_one_time_capture.command
+          grep -Fq "requiredFieldProcedureIdentifier = \"$procedure\"" NembraApp/App/NembraCaptureBuildIdentity.swift
+
+      - name: Validate public handoff code without secrets or devices
+        run: |
+          set -euo pipefail
+          bash -n Scripts/provision_capture_tuya_identity.sh
+          bash -n Scripts/bootstrap_capture_tuya_sdk.sh
+          bash -n scripts/field/install_one_time_capture.command
+          /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
+          /usr/bin/python3 -m py_compile scripts/ci/es80_signed_field_artifact_private_runner.py
+          /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          for historical in docs/ES80_TODAY_*.md; do
+            head -n 1 "$historical" | grep -Fq '# RETIRED / DO NOT USE'
+            sed -n '1,/^---$/p' "$historical" | grep -Fq 'docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md'
+            sed -n '1,/^---$/p' "$historical" | grep -Fq 'scripts/field/install_one_time_capture.command'
+          done
+          if rg -n 'xcode27_(today_research_)?signed_field_candidate\.sh|xcode27_today_research_field_candidate\.sh' \
+            CAPTURE_HARD_FREEZE_ACTIVE.md \
+            docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md \
+            docs/CAPTURE_TUYA_OFFICIAL_SDK_PROVISIONING.md; then
+            printf '%s\n' 'ERROR: an active Capture handoff routes to a retired signed-candidate wrapper.' >&2
+            exit 1
+          fi
+          test ! -e LocalSecrets
+          test ! -e Pods
+          test ! -e NembraCapture.xcworkspace
+
+      - name: Run field-handoff source contracts
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          swift test --filter TuyaPrivateIdentityProvisionerCustodyTests
+          swift test --filter TuyaFieldSDKDependencyProvenanceSourceTests
+          swift test --filter TuyaPrivateFieldInputProvenanceSourceTests
+          swift test --filter TuyaFieldInstallerIntendedDeviceAuthoritySourceTests
+          swift test --filter TuyaFieldInstallerSignedBundleVerificationSourceTests
+          swift test --filter TuyaSignedAppleAppIdentityCustodySourceTests
+          swift test --filter TuyaLegacyTodayExecutableAuthorityRetirementSourceTests
+
+      - name: Preserve physical truth boundary
+        run: |
+          set -euo pipefail
+          test ! -e LocalSecrets
+          printf '%s\n' 'This public job never resolves private pods, invokes xcodebuild for a device, installs an app, touches Bluetooth, or grants physical authority.'

@@ -4,156 +4,167 @@ import Testing
 
 @Suite("Capture root product surface")
 struct TuyaCaptureRootProductSurfaceSourceTests {
-    @Test("public unprovisioned launch is guided fail-closed Capture preflight, not an engineering console")
+    @Test("public launch is guided and cannot bootstrap account or Bluetooth authority")
     func publicRootIsGuidedPreflight() throws {
-        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let root = try section(
-            in: app,
-            from: "private struct CaptureP0Root: View",
-            to: "@MainActor\nprivate final class SecureLinkController"
-        )
-        let body = String(root)
-
-        #expect(body.contains(".navigationTitle(\"Nembra Capture\")"))
-        #expect(!body.contains("NEMBRA CAPTURE"))
-        #expect(body.contains("private let buildIdentity = NembraCaptureBuildIdentity.current"))
-        #expect(body.contains("isAccessibilityLayout ? \"Capture locked\" : \"Physical capture locked\""))
-        #expect(body.contains(".accessibilityLabel(fieldBuildIsAuthoritative ? \"Build provenance ready\" : \"Physical capture locked\")"))
-        #expect(body.contains("This public build can prepare account metadata only. Bluetooth and physical evidence collection are locked."))
-        #expect(body.contains("Account setup is available. Bluetooth scanning, connection, and physical evidence stay locked until the reviewed field build is installed."))
-        #expect(body.contains("This step reads Tuya account/device metadata only. It never starts Bluetooth or changes scooter settings."))
-        #expect(body.contains("Engineering details"))
-        #expect(body.contains("Build provenance: ready"))
-        #expect(body.contains("Continue to preflight"))
-        #expect(!body.contains("Field build ready"))
-        #expect(!body.contains("Field build authority: ready"))
-        #expect(!body.contains("Continue to Capture"))
-        #expect(!body.contains("P0 · TUYA AUTHENTICATION"))
-        #expect(!body.contains("Prove the secure scooter link first."))
-        #expect(!body.contains("Read-only control boundary"))
-        #expect(!body.contains("local_key"))
-        #expect(!body.contains("No DP query"))
-        #expect(!body.contains(".card()"))
-    }
-
-    @Test("premium root preserves the real account and device authority path")
-    func accountAndDeviceAuthorityRemainReachable() throws {
-        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
-        let root = try section(
-            in: app,
-            from: "private struct CaptureP0Root: View",
-            to: "@MainActor\nprivate final class SecureLinkController"
-        )
-        let body = String(root)
-
-        #expect(body.contains("tuya.requestApproval()"))
-        #expect(body.contains("tuya.checkApprovalNow()"))
-        #expect(body.contains("tuya.refreshDevices()"))
-        #expect(body.contains("tuya.selectDevice(device)"))
-        #expect(body.contains("SecureLinkView(device: device)"))
-        #expect(body.contains("NavigationLink(fieldBuildIsAuthoritative ? \"Continue to preflight\" : \"View locked preflight\")"))
-        #expect(app.contains("No DP query or scooter command is authorized by this surface."))
-    }
-
-    @Test("Accessibility XXXL keeps the primary metadata action in the first fold")
-    func accessibilityRootIsDeliberatelyCompactAndActionFirst() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let root = String(try section(
             in: app,
-            from: "private struct CaptureP0Root: View",
-            to: "@MainActor\nprivate final class SecureLinkController"
+            from: "@MainActor\nprivate struct CaptureP0Root: View",
+            to: "@MainActor\nprivate final class SecureLinkController:"
         ))
 
-        #expect(root.contains("@Environment(\\.dynamicTypeSize) private var dynamicTypeSize"))
-        #expect(root.contains("private var isAccessibilityLayout: Bool"))
-        #expect(root.contains("private var rootHero: some View"))
-        #expect(root.contains("if !isAccessibilityLayout"))
-        #expect(root.contains("isAccessibilityLayout ? \"Capture locked\" : \"Physical capture locked\""))
-        #expect(root.contains(".dynamicTypeSize(...DynamicTypeSize.accessibility1)"))
-        #expect(root.contains("isAccessibilityLayout ? \"Account setup\" : \"Prepare account metadata\""))
-        #expect(root.contains(".accessibilityAddTraits(.isHeader)"))
-        #expect(root.contains("Text(\"Choose this scooter\")\n                .font(.title3.bold())\n                .accessibilityAddTraits(.isHeader)"))
-        #expect(root.contains("TextField(isAccessibilityLayout ? \"Tuya user code\" : \"Paste user code\""))
-        #expect(root.contains("Label(isAccessibilityLayout ? \"Create QR\" : \"Create approval QR\""))
-        #expect(root.contains(".accessibilityLabel(\"Create approval QR\")"))
-        #expect(root.contains("nembra.capture.root.account-link-action"))
-        #expect(root.contains("private func rootSection"))
-        #expect(!root.contains("private func rootPanel"))
-        #expect(!root.contains("Account setup only in this public build."))
+        #expect(root.contains(".navigationTitle(\"Nembra Capture\")"))
+        #expect(root.contains("Text(\"Link your scooter\")"))
+        #expect(root.contains(".onAppear { synchronizeSDKSession() }"))
+        #expect(root.contains("guard fieldBuildIsAuthoritative else { return }\n        sdkAccount.bootstrap()"))
+        #expect(root.contains("Label(\"Review field requirements\", systemImage: \"lock.shield\")"))
+        #expect(root.contains("This public build cannot authorize Bluetooth or collect physical evidence."))
+        #expect(root.contains("No scooter command, DP query, or second Bluetooth ownership path is authorized here."))
+        #expect(!root.contains("TuyaAccountBridge"))
+        #expect(!root.contains("Create approval QR"))
+        #expect(!root.contains("Paste user code"))
+        #expect(!root.contains("local_key"))
+    }
 
-        let panel = String(try section(
-            in: root,
-            from: "private var accountSetupPanel: some View",
-            to: "private var statusText: some View"
+    @Test("root owns one official account authorizer and injects it into Secure Link")
+    func oneOfficialSDKAccountAuthorityIsSharedWithSecureLink() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let root = String(try section(
+            in: app,
+            from: "@MainActor\nprivate struct CaptureP0Root: View",
+            to: "@MainActor\nprivate final class SecureLinkController:"
         ))
-        let field = try #require(panel.range(of: "TextField(isAccessibilityLayout ? \"Tuya user code\" : \"Paste user code\""))
-        let action = try #require(panel.range(of: "Label(isAccessibilityLayout ? \"Create QR\" : \"Create approval QR\""))
-        let accessibilitySupport = try #require(
-            panel.range(
-                of: "if isAccessibilityLayout, tuya.phase != .needsUserCode",
-                range: action.upperBound..<panel.endIndex
-            )
-        )
-        #expect(field.lowerBound < action.lowerBound)
-        #expect(action.lowerBound < accessibilitySupport.lowerBound)
-
-        let authority = String(try section(
-            in: root,
-            from: "private var buildAuthorityStatus: some View",
-            to: "private var accountSetupPanel: some View"
-        ))
-        #expect(authority.contains(".accessibilityLabel(fieldBuildIsAuthoritative ? \"Build provenance ready\" : \"Physical capture locked\")"))
-        #expect(authority.contains("This public build can prepare account metadata only. Bluetooth and physical evidence collection are locked."))
-
         let secureLink = String(try section(
             in: app,
-            from: "private struct SecureLinkView: View",
+            from: "@MainActor\nprivate struct SecureLinkView: View",
             to: "private struct SecureTransfer: Transferable"
         ))
-        #expect(secureLink.contains("if !dynamicTypeSize.isAccessibilitySize {\n                    ZStack {"))
-        #expect(secureLink.contains(".font(dynamicTypeSize.isAccessibilitySize ? .title2.bold() : .system(.largeTitle, design: .rounded, weight: .bold))"))
-        #expect(secureLink.contains(".accessibilityElement(children: .combine)\n        .accessibilityAddTraits(.isHeader)"))
+
+        #expect(root.occurrenceCount(of: "@StateObject private var sdkAccount = OfficialTuyaAccountAuthorizer()") == 1)
+        #expect(root.contains("SignInWithAppleButton(.signIn)"))
+        #expect(root.contains("DisclosureGroup(\"Use email or phone instead\""))
+        #expect(root.contains("SecureLinkView(device: selected, sdkAccount: sdkAccount)"))
+        #expect(secureLink.contains("@ObservedObject private var sdkAccount: OfficialTuyaAccountAuthorizer"))
+        #expect(secureLink.contains("init(device: CaptureTargetDevice, sdkAccount: OfficialTuyaAccountAuthorizer)"))
+        #expect(!secureLink.contains("@StateObject private var sdkAccount = OfficialTuyaAccountAuthorizer()"))
     }
 
-    @Test("metadata preparation bridge remains cloud-only and command-free")
-    func metadataBridgeCannotAcquireBluetoothOrScooterCommandAuthority() throws {
-        let bridge = try readRepositoryFile("NembraApp/Features/Research/TuyaAccountBridge.swift")
+    @Test("catalog completely walks every home and both owned and shared device lists")
+    func catalogEnumeratesAllAccountHomesAndMembershipKinds() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let probe = String(try section(
+            in: app,
+            from: "private final class OfficialTuyaDeviceCatalogProbe",
+            to: "@MainActor\nprivate struct CaptureP0Root: View"
+        ))
 
-        #expect(bridge.contains("Official Tuya Smart account-link preflight"))
-        #expect(bridge.contains("read-only Device Sharing endpoints"))
-        #expect(bridge.contains("signedGET(path:"))
-        #expect(!bridge.contains("import CoreBluetooth"))
-        #expect(!bridge.contains("ThingSmartBLEManager"))
-        #expect(!bridge.contains("connectBLE"))
-        #expect(!bridge.contains("disconnectBLE"))
-        #expect(!bridge.contains("publishDps"))
-        #expect(!bridge.contains("queryDps"))
-        #expect(!bridge.contains("writeValue"))
-        #expect(!bridge.contains("setDp"))
+        #expect(probe.contains("homeManager.getHomeList(success:"))
+        #expect(probe.contains("self.homes = homes ?? []"))
+        #expect(probe.contains("let model = homes[index]\n        index += 1"))
+        #expect(probe.contains("ThingSmartHome(homeId: model.homeId)"))
+        #expect(probe.contains("home.getDataWithSuccess"))
+        #expect(probe.contains("for device in home.deviceList ?? [] { self.admit(device) }"))
+        #expect(probe.contains("for device in home.sharedDeviceList ?? [] { self.admit(device) }"))
+        #expect(probe.contains("self.loadedHomeCount += 1"))
+        #expect(probe.contains("self.loadNextHome()"))
+        #expect(probe.contains("try accumulator.finish("))
+        #expect(probe.contains("expectedHomeCount: homes.count"))
+        #expect(probe.contains("loadedHomeCount: loadedHomeCount"))
+        #expect(probe.contains("homeLoadFailureCount: homeLoadFailureCount"))
+        #expect(probe.contains("guard !didFinish else { return }"))
     }
 
-    @Test("cloud status is never mislabeled as local strategy evidence")
-    func metadataExportPreservesStatusTruth() throws {
-        let bridge = try readRepositoryFile("NembraApp/Features/Research/TuyaAccountBridge.swift")
-        #expect(!bridge.contains("selectedDeviceLocalStrategy"))
-        #expect(!bridge.contains("\"localStrategy\""))
-        #expect(!bridge.contains("/status\")"))
-        #expect(bridge.contains("\"status\": Self.redactSecrets(selectedDeviceStatus ?? [:])"))
-        #expect(bridge.contains("\"specifications\": Self.redactSecrets(selectedDeviceSpecifications ?? [:])"))
+    @Test("catalog callbacks are fenced to request and account UID and stale selection is revoked")
+    func catalogFencesRequestAndAccountUID() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let catalog = String(try section(
+            in: app,
+            from: "private final class OfficialTuyaDeviceCatalog: ObservableObject",
+            to: "#if canImport(ThingSmartHomeKit)\n@MainActor\nprivate final class OfficialTuyaDeviceCatalogProbe"
+        ))
+        let probe = String(try section(
+            in: app,
+            from: "private final class OfficialTuyaDeviceCatalogProbe",
+            to: "@MainActor\nprivate struct CaptureP0Root: View"
+        ))
+
+        #expect(catalog.contains("private var requestID = UUID()"))
+        #expect(catalog.contains("private var sourceAccountUID: String?"))
+        #expect(catalog.contains("let request = UUID()\n        requestID = request"))
+        #expect(catalog.contains("let accountUID = OfficialTuyaFactory.currentAccountUID"))
+        #expect(catalog.contains("guard let self, self.requestID == request else { return }"))
+        #expect(catalog.contains("OfficialTuyaFactory.currentAccountUID == accountUID"))
+        #expect(catalog.contains("self.invalidate()"))
+        #expect(catalog.contains("self.sourceAccountUID = accountUID"))
+        #expect(catalog.contains("guard isCurrentAccountCatalog else { return nil }"))
+        #expect(catalog.contains("guard isCurrentAccountCatalog,\n              device.hasCompleteLocator"))
+
+        #expect(probe.contains("private let accountUID: String"))
+        #expect(probe.contains("private var accountIsCurrent: Bool"))
+        #expect(probe.contains("OfficialTuyaFactory.currentAccountUID == accountUID"))
+        #expect(probe.occurrenceCount(of: "guard accountIsCurrent else") >= 2)
+        #expect(probe.contains("guard self.accountIsCurrent else"))
     }
 
-    @Test("legacy card-based Capture root is retired from the metadata bridge")
-    func legacyCardRootIsRetired() throws {
-        let bridge = try readRepositoryFile("NembraApp/Features/Research/TuyaAccountBridge.swift")
+    @Test("required locators merge deterministically and any conflict or partial home walk fails closed")
+    func locatorMergeAndEnumerationPolicyRemainStrict() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let policy = try readRepositoryFile(
+            "Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaSDKDeviceCatalogSelection.swift"
+        )
 
-        #expect(bridge.contains("final class TuyaAccountBridge: ObservableObject"))
-        #expect(bridge.contains("struct TuyaQRCodeExport: Transferable"))
-        #expect(bridge.contains("struct TuyaMetadataExport: Transferable"))
-        #expect(!bridge.contains("struct NembraCaptureRootView: View"))
-        #expect(!bridge.contains("func captureCard() -> some View"))
-        #expect(!bridge.contains("ES80OneTimeBluetoothDumpView()"))
-        #expect(!bridge.contains("We already proved this scooter uses Tuya FD50."))
-        #expect(!bridge.contains("Continue to Bluetooth Capture"))
+        #expect(app.contains("typealias CaptureTargetDevice = TuyaSDKDeviceLocator"))
+        #expect(app.contains("private var accumulator = TuyaSDKDeviceCatalogAccumulator()"))
+        #expect(app.contains("accumulator.admit(\n            id: device.devId,\n            name: device.name,\n            productID: device.productId,\n            uuid: device.uuid"))
+
+        #expect(policy.contains("public let id: String"))
+        #expect(policy.contains("public let productID: String"))
+        #expect(policy.contains("public let uuid: String"))
+        #expect(policy.contains("public var hasCompleteLocator: Bool"))
+        #expect(policy.contains("!id.isEmpty && !productID.isEmpty && !uuid.isEmpty"))
+        #expect(policy.contains("encounteredDeviceIDs.insert(id)"))
+        #expect(policy.contains("guard candidate.hasCompleteLocator else"))
+        #expect(policy.contains("existing.productID == candidate.productID"))
+        #expect(policy.contains("existing.uuid == candidate.uuid"))
+        #expect(policy.contains("hasConflictingRequiredLocator = true"))
+        #expect(policy.contains("throw TuyaSDKDeviceCatalogSelectionError.conflictingRequiredLocator"))
+        #expect(policy.contains("loadedHomeCount == expectedHomeCount"))
+        #expect(policy.contains("homeLoadFailureCount == 0"))
+        #expect(policy.contains("throw TuyaSDKDeviceCatalogSelectionError.incompleteHomeEnumeration"))
+        #expect(policy.contains("Capture will not guess from a partial scooter list."))
+    }
+
+    @Test("every account device requires an explicit operator selection")
+    func catalogNeverAutoSelects() throws {
+        let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let catalog = String(try section(
+            in: app,
+            from: "private final class OfficialTuyaDeviceCatalog: ObservableObject",
+            to: "#if canImport(ThingSmartHomeKit)\n@MainActor\nprivate final class OfficialTuyaDeviceCatalogProbe"
+        ))
+        let root = String(try section(
+            in: app,
+            from: "@MainActor\nprivate struct CaptureP0Root: View",
+            to: "@MainActor\nprivate final class SecureLinkController:"
+        ))
+        let select = String(try section(
+            in: catalog,
+            from: "func select(_ device: CaptureTargetDevice) {",
+            to: "func invalidate() {"
+        ))
+        let success = String(try section(
+            in: catalog,
+            from: "case let .success(snapshot):",
+            to: "case let .failure(error):"
+        ))
+
+        #expect(select.contains("selectedDeviceID = device.id"))
+        #expect(catalog.occurrenceCount(of: "selectedDeviceID = device.id") == 1)
+        #expect(!success.contains("selectedDeviceID"))
+        #expect(success.contains("One account device was found. Confirm that it is the intended scooter before continuing."))
+        #expect(root.contains("Button {\n                        deviceCatalog.select(device)"))
+        #expect(root.contains("if let selected = deviceCatalog.selectedDevice, selected.hasCompleteLocator"))
+        #expect(root.contains("SecureLinkView(device: selected, sdkAccount: sdkAccount)"))
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
@@ -177,5 +188,18 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
 
     private enum SourceContractError: Error {
         case sectionMissing
+    }
+}
+
+private extension String {
+    func occurrenceCount(of needle: String) -> Int {
+        var count = 0
+        var searchStart = startIndex
+        while searchStart < endIndex,
+              let match = range(of: needle, range: searchStart..<endIndex) {
+            count += 1
+            searchStart = match.upperBound
+        }
+        return count
     }
 }

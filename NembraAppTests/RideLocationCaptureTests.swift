@@ -248,7 +248,8 @@ final class RideLocationCaptureTests: XCTestCase {
             initialState: initialState,
             configuration: configuration,
             checkpointStore: persistence.checkpointStore,
-            historyStore: persistence.historyStore
+            historyStore: persistence.historyStore,
+            dailyRideStore: persistence.dailyRideStore
         )
         await rideStore.start()
 
@@ -259,7 +260,8 @@ final class RideLocationCaptureTests: XCTestCase {
 
         await rideStore.ingestQualityScreenedGPSDistanceDelta(
             6,
-            receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
+            receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+            receivedAtDate: .now
         )
         try await waitUntil("The existing RideEngine should confirm from screened GPS evidence.") {
             rideStore.status == .active
@@ -286,7 +288,8 @@ final class RideLocationCaptureTests: XCTestCase {
             initialState: initialState,
             configuration: try RideApplicationConfiguration.simulatorQA(),
             checkpointStore: persistence.checkpointStore,
-            historyStore: persistence.historyStore
+            historyStore: persistence.historyStore,
+            dailyRideStore: persistence.dailyRideStore
         )
         await rideStore.start()
 
@@ -308,6 +311,7 @@ final class RideLocationCaptureTests: XCTestCase {
         await rideStore.ingestQualityScreenedGPSDistanceDelta(
             25,
             receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+            receivedAtDate: .now,
             for: completedSessionID
         )
         try await Task.sleep(nanoseconds: 75_000_000)

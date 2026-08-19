@@ -1,696 +1,979 @@
 import Foundation
+import NembraCore
 import SwiftUI
 
-/// Pure presentation state for the landscape cockpit.
-///
-/// Mode personality is deliberately visual-only. It never changes speed,
-/// telemetry, command behavior, speed limits, or ride evidence, and it does not
-/// imply any unverified mapping between MAXSHOT ride modes and DP101/102/103.
+/// Source-compatible visual-only policy retained for the existing presentation
+/// regression test. Horizon V4 does not consume this legacy personality or let
+/// ride mode alter telemetry, propulsion geometry, commands, or evidence.
 struct DashboardModePersonality: Equatable {
     let mode: RideMode?
     let ambientOpacity: Double
     let speedScale: CGFloat
-    let modeScale: CGFloat
-    let modeMarkerWidth: CGFloat
-    let modeMarkerOpacity: Double
-    let statusOpacity: Double
 
     static func resolved(for mode: RideMode?) -> DashboardModePersonality {
         switch mode {
-        case .walk:
-            DashboardModePersonality(mode: .walk, ambientOpacity: 0.018, speedScale: 0.96, modeScale: 0.97, modeMarkerWidth: 24, modeMarkerOpacity: 0.22, statusOpacity: 0.58)
-        case .eco:
-            DashboardModePersonality(mode: .eco, ambientOpacity: 0.030, speedScale: 0.98, modeScale: 0.99, modeMarkerWidth: 30, modeMarkerOpacity: 0.32, statusOpacity: 0.62)
-        case .drive:
-            DashboardModePersonality(mode: .drive, ambientOpacity: 0.044, speedScale: 1.0, modeScale: 1.0, modeMarkerWidth: 38, modeMarkerOpacity: 0.46, statusOpacity: 0.68)
-        case .sport:
-            DashboardModePersonality(mode: .sport, ambientOpacity: 0.062, speedScale: 1.025, modeScale: 1.03, modeMarkerWidth: 48, modeMarkerOpacity: 0.62, statusOpacity: 0.74)
-        case nil:
-            DashboardModePersonality(mode: nil, ambientOpacity: 0.012, speedScale: 1.0, modeScale: 1.0, modeMarkerWidth: 22, modeMarkerOpacity: 0.14, statusOpacity: 0.58)
+        case .walk: DashboardModePersonality(mode: .walk, ambientOpacity: 0.018, speedScale: 0.96)
+        case .eco: DashboardModePersonality(mode: .eco, ambientOpacity: 0.030, speedScale: 0.98)
+        case .drive: DashboardModePersonality(mode: .drive, ambientOpacity: 0.044, speedScale: 1.0)
+        case .sport: DashboardModePersonality(mode: .sport, ambientOpacity: 0.062, speedScale: 1.025)
+        case nil: DashboardModePersonality(mode: nil, ambientOpacity: 0.012, speedScale: 1.0)
         }
     }
 }
 
-private enum DashboardBatteryReadout: Equatable {
-    case charge
-    case range
-}
-
-/// Presentation-only layout policy. Accessibility sizes deliberately stop using
-/// fixed side rails so large text cannot squeeze the central speed instrument.
-private enum DashboardCockpitComposition: Equatable {
-    case standard
-    case accessibility
-
-    static func resolved(for dynamicTypeSize: DynamicTypeSize) -> DashboardCockpitComposition {
-        dynamicTypeSize.isAccessibilitySize ? .accessibility : .standard
-    }
-}
-
-/// The dedicated landscape riding surface.
+/// Selected Horizon V4 Drive composition.
 ///
-/// Battery/range intentionally has no synthetic range fallback. Until a verified
-/// ES80 battery source and learned range model exist, range presents as unavailable
-/// rather than deriving miles from advertised range or battery percentage.
+/// This screen reads accepted app/domain projections. It never increments ride
+/// totals, creates range estimates, promotes interpolated frames, or turns
+/// Simulator QA fixtures into physical AOVOPRO evidence.
+@MainActor
 struct DashboardView: View {
-    @Environment(VehicleStore.self) private var vehicle
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @State private var showLockConfirmation = false
-    @State private var batteryReadout: DashboardBatteryReadout = .charge
+
+    let cockpit: HorizonCockpitStore
+    let adaptiveRangeEstimate: NembraCore.AdaptiveBatteryRangeLiveEstimate?
+    let onHome: () -> Void
+    let onNavigate: () -> Void
+
+    init(
+        cockpit: HorizonCockpitStore,
+        adaptiveRangeEstimate: NembraCore.AdaptiveBatteryRangeLiveEstimate? = nil,
+        onHome: @escaping () -> Void,
+        onNavigate: @escaping () -> Void
+    ) {
+        self.cockpit = cockpit
+        self.adaptiveRangeEstimate = adaptiveRangeEstimate
+        self.onHome = onHome
+        self.onNavigate = onNavigate
+    }
 
     var body: some View {
-        let personality = DashboardModePersonality.resolved(for: vehicle.state.rideMode)
-        let composition = DashboardCockpitComposition.resolved(for: dynamicTypeSize)
+        GeometryReader { proxy in
+            let insets = proxy.safeAreaInsets
+            let horizontalPadding = max(16, min(24, proxy.size.width * 0.024))
+            let topPadding = max(10, insets.top + 8)
+            let bottomPadding = max(8, insets.bottom + 7)
+            let slowLayout = DashboardDriveSlowLayout(
+                viewportWidth: proxy.size.width,
+                viewportHeight: proxy.size.height,
+                safeAreaTop: insets.top,
+                safeAreaLeading: insets.leading,
+                safeAreaBottom: insets.bottom,
+                safeAreaTrailing: insets.trailing,
+                horizontalPadding: horizontalPadding,
+                topPadding: topPadding,
+                bottomPadding: bottomPadding
+            )
 
-        ZStack {
-            Color.black.ignoresSafeArea()
+            ZStack {
+                cockpitBackground
+                    .ignoresSafeArea()
 
-            if !reduceTransparency {
-                RadialGradient(
-                    colors: [Color.white.opacity(admittedAmbientOpacity(personality)), Color.clear],
-                    center: .center,
-                    startRadius: 18,
-                    endRadius: 390
+                DashboardSpeedInstrumentView()
+                    .padding(.leading, insets.leading + horizontalPadding)
+                    .padding(.trailing, insets.trailing + horizontalPadding)
+                    .padding(.top, topPadding)
+                    .padding(.bottom, bottomPadding)
+
+                DashboardDriveSnapshotBridge(
+                    cockpit: cockpit,
+                    adaptiveRangeEstimate: adaptiveRangeEstimate,
+                    layout: slowLayout
                 )
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
-                .animation(modeAnimation, value: personality)
-            }
 
-            Group {
-                switch composition {
-                case .standard:
-                    standardCockpit(personality: personality)
-                case .accessibility:
-                    accessibilityCockpit(personality: personality)
+                VStack(spacing: 0) {
+                    HStack {
+                        Spacer(minLength: 0)
+                        DashboardFunctionalActionControls(
+                            onHome: onHome,
+                            onNavigate: onNavigate
+                        )
+                    }
+                    Spacer(minLength: 0)
                 }
+                .padding(.leading, insets.leading + horizontalPadding)
+                .padding(.trailing, insets.trailing + horizontalPadding)
+                .padding(.top, topPadding)
+                .padding(.bottom, bottomPadding)
             }
-            .safeAreaPadding(.horizontal, composition == .accessibility ? 14 : 20)
-            .safeAreaPadding(.vertical, composition == .accessibility ? 8 : 12)
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(NembraColor.primaryText)
         .preferredColorScheme(.dark)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("dashboard.cockpit")
-        .confirmationDialog(
-            vehicle.state.isLocked == true ? "Unlock scooter?" : "Lock scooter?",
-            isPresented: $showLockConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button(
-                vehicle.state.isLocked == true ? "Unlock" : "Lock",
-                role: vehicle.state.isLocked == true ? nil : .destructive
-            ) {
-                Task { await vehicle.setLocked(!(vehicle.state.isLocked ?? false)) }
-            }
-        } message: {
-            Text("Nembra changes the lock state only after the scooter confirms the command.")
-        }
-        .alert("Command not confirmed", isPresented: errorPresented) {
-            Button("OK", role: .cancel) { vehicle.lastErrorMessage = nil }
-        } message: {
-            Text(vehicle.lastErrorMessage ?? "The scooter did not confirm the change.")
-        }
     }
 
-    private func standardCockpit(personality: DashboardModePersonality) -> some View {
-        HStack(spacing: 0) {
-            statusRail
-                .frame(width: 156)
+    private var cockpitBackground: some View {
+        ZStack {
+            NembraColor.baseBlack
 
-            DashboardSpeedInstrumentView(modePersonality: personality)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .layoutPriority(2)
-
-            contextRail(personality: personality)
-                .frame(width: 176)
-        }
-    }
-
-    private func accessibilityCockpit(personality: DashboardModePersonality) -> some View {
-        VStack(spacing: 8) {
-            HStack(alignment: .top, spacing: 14) {
-                accessibilityStatusSummary
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                modeReadout(personality: personality)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-
-            DashboardSpeedInstrumentView(modePersonality: personality)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .layoutPriority(3)
-
-            accessibilityControlStrip
-                .frame(maxWidth: .infinity, alignment: .trailing)
-        }
-        .accessibilityIdentifier("dashboard.cockpit.accessibility")
-    }
-
-    private var accessibilityStatusSummary: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Text(vehicle.profile.identity.displayName)
-                    .font(.headline.weight(.semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-
-                Label(connectionText, systemImage: connectionIcon)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(connectionStyle)
-                    .lineLimit(1)
-            }
-
-            HStack(spacing: 14) {
-                compactAccessibilityMetric(
-                    title: "Battery",
-                    value: batteryText,
-                    warning: batteryInstrumentWarning,
-                    retained: isRetainedBatteryData
+            if !reduceTransparency {
+                RadialGradient(
+                    colors: [
+                        NembraColor.gold.opacity(colorSchemeContrast == .increased ? 0.07 : 0.12),
+                        NembraColor.deepGold.opacity(0.035),
+                        .clear
+                    ],
+                    center: UnitPoint(x: 0.50, y: 0.56),
+                    startRadius: 10,
+                    endRadius: 310
                 )
-                compactAccessibilityMetric(
-                    title: "Trip",
-                    value: tripText,
-                    retained: isRetainedVehicleData
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
+        }
+    }
+}
+
+private struct DashboardDriveSlowLayout: Equatable {
+    let viewportWidth: CGFloat
+    let viewportHeight: CGFloat
+    let safeAreaTop: CGFloat
+    let safeAreaLeading: CGFloat
+    let safeAreaBottom: CGFloat
+    let safeAreaTrailing: CGFloat
+    let horizontalPadding: CGFloat
+    let topPadding: CGFloat
+    let bottomPadding: CGFloat
+}
+
+/// Stable, low-frequency projection for Dashboard chrome and the durable ride
+/// ledger. High-frequency speed, power, and `VehicleState.lastUpdated` are
+/// intentionally absent; those values stay inside `DashboardSpeedInstrumentView`.
+private struct DashboardDriveSnapshot: Equatable {
+    enum Connection: Equatable {
+        case connected
+        case connecting
+        case reconnecting
+        case disconnected
+    }
+
+    enum ConnectionIssue: Equatable {
+        case bluetoothPoweredOff
+        case bluetoothPermissionDenied
+        case scooterUnavailable
+        case unsupportedConfiguration
+    }
+
+    let isSimulatorQA: Bool
+    let connection: Connection
+    let connectionIssue: ConnectionIssue?
+    let batteryPresentation: NembraCore.BatteryPrimaryReadoutPresentation
+    let batteryDataAvailability: VehicleDataAvailability
+    let adaptiveRangeDisplay: NembraCore.BatteryEstimatedRangeDisplay
+    let odometerKilometers: Double?
+    let odometerIsRetained: Bool
+    let rideStatus: RideApplicationStatus
+    let dailyStatus: DailyRidePresentationStatus
+    let todayDistanceSummary: NembraCore.DailyRideMetricSummary?
+    let currentRideDurationSummary: NembraCore.DailyRideMetricSummary?
+    let hasCurrentRide: Bool
+    let isAutomaticCaptureEnabled: Bool
+    let canCaptureRideTelemetryWithoutOpeningApp: Bool
+
+    @MainActor
+    init(
+        vehicle: VehicleStore,
+        rides: RideApplicationStore,
+        daily: DailyRidePresentationStore,
+        automaticCapture: AutomaticCaptureReadinessStore,
+        cockpit: HorizonCockpitStore,
+        adaptiveRangeEstimate: NembraCore.AdaptiveBatteryRangeLiveEstimate?
+    ) {
+        let vehicleState = vehicle.state
+        let isSimulatorQA = vehicle.profile == .simulatorQA
+        let adaptiveRangeDisplay = NembraCore.AdaptiveBatteryRangePrimaryPresentationPolicy()
+            .resolve(liveEstimate: adaptiveRangeEstimate)
+        let odometerKilometers: Double? = if isSimulatorQA,
+                                            vehicle.profile.capabilities.supportsOdometer,
+                                            let value = vehicleState.odometerKilometers,
+                                            value.isFinite,
+                                            value >= 0 {
+            value
+        } else {
+            nil
+        }
+
+        self.isSimulatorQA = isSimulatorQA
+        self.connection = switch vehicleState.connection {
+        case .connected: .connected
+        case .connecting: .connecting
+        case .reconnecting: .reconnecting
+        case .disconnected: .disconnected
+        }
+        self.connectionIssue = switch vehicleState.connectionIssue {
+        case .bluetoothPoweredOff: .bluetoothPoweredOff
+        case .bluetoothPermissionDenied: .bluetoothPermissionDenied
+        case .scooterUnavailable: .scooterUnavailable
+        case .unsupportedConfiguration: .unsupportedConfiguration
+        case nil: nil
+        }
+        self.batteryPresentation = cockpit.batteryPrimaryReadoutState.presentation(
+            for: NembraCore.BatteryPrimaryReadoutInputs(
+                displaySOCPercent: vehicle.batteryDisplayPercent,
+                estimatedRange: adaptiveRangeDisplay
+            )
+        )
+        self.batteryDataAvailability = vehicle.batteryDataAvailability
+        self.adaptiveRangeDisplay = adaptiveRangeDisplay
+        self.odometerKilometers = odometerKilometers
+        self.odometerIsRetained = odometerKilometers != nil && vehicleState.connection != .connected
+        self.rideStatus = rides.status
+        self.dailyStatus = daily.status
+        self.todayDistanceSummary = daily.todayAndCurrent?.today.distanceMeters
+        self.currentRideDurationSummary = daily.todayAndCurrent?.currentRide?.durationSeconds
+        self.hasCurrentRide = daily.todayAndCurrent?.currentRide != nil
+        self.isAutomaticCaptureEnabled = automaticCapture.isAutomaticCaptureEnabled
+        self.canCaptureRideTelemetryWithoutOpeningApp = automaticCapture.readiness
+            .canCaptureRideTelemetryWithoutOpeningApp
+    }
+}
+
+/// The sole environment bridge for slow Dashboard data. Observation may revisit
+/// this tiny projection when monolithic `VehicleStore.state` changes, but the
+/// equatable layer below is not re-rendered unless a visible slow fact changes.
+@MainActor
+private struct DashboardDriveSnapshotBridge: View {
+    @Environment(VehicleStore.self) private var vehicle
+    @Environment(RideApplicationStore.self) private var rides
+    @Environment(DailyRidePresentationStore.self) private var daily
+    @Environment(AutomaticCaptureReadinessStore.self) private var automaticCapture
+
+    let cockpit: HorizonCockpitStore
+    let adaptiveRangeEstimate: NembraCore.AdaptiveBatteryRangeLiveEstimate?
+    let layout: DashboardDriveSlowLayout
+
+    var body: some View {
+        DashboardDriveSlowLayer(
+            snapshot: DashboardDriveSnapshot(
+                vehicle: vehicle,
+                rides: rides,
+                daily: daily,
+                automaticCapture: automaticCapture,
+                cockpit: cockpit,
+                adaptiveRangeEstimate: adaptiveRangeEstimate
+            ),
+            cockpit: cockpit,
+            layout: layout
+        )
+        .equatable()
+    }
+}
+
+@MainActor
+private struct DashboardFunctionalActionControls: View {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    let onHome: () -> Void
+    let onNavigate: () -> Void
+
+    var body: some View {
+        GlassEffectContainer(spacing: 10) {
+            HStack(spacing: 10) {
+                cockpitAction(
+                    title: "Home",
+                    systemImage: "house",
+                    emphasized: false,
+                    action: onHome
+                )
+                cockpitAction(
+                    title: "Navigate",
+                    systemImage: "location.north.line.fill",
+                    emphasized: true,
+                    action: onNavigate
                 )
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("dashboard.accessibility-status")
+        .accessibilityLabel("Cockpit controls")
     }
 
-    private func compactAccessibilityMetric(
+    private func cockpitAction(
         title: String,
-        value: String,
-        warning: Bool = false,
-        retained: Bool = false
+        systemImage: String,
+        emphasized: Bool,
+        action: @escaping () -> Void
     ) -> some View {
-        HStack(spacing: 5) {
-            Text(title)
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(warning ? Color.red : Color.secondary)
-            Text(value)
-                .font(.caption.weight(.semibold).monospacedDigit())
-                .foregroundStyle(warning ? Color.red : (retained ? Color.secondary : Color.white))
-                .lineLimit(1)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(title)
-        .accessibilityValue(retained && value != "—" ? "Last known \(value)" : value)
-    }
-
-    @ViewBuilder
-    private var accessibilityControlStrip: some View {
-        if shouldShowStoppedControls {
-            stoppedControls
-                .transition(.opacity)
-        } else if vehicle.state.connection == .connected && !hasUsableStoppedSpeed {
-            Label("Live speed required for controls", systemImage: "speedometer")
+        let button = Button(action: action) {
+            Label(title, systemImage: systemImage)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .accessibilityLabel("Controls unavailable until current stopped speed is known")
-                .accessibilityIdentifier("dashboard.controls-speed-unavailable-message")
-        } else if isVehicleMoving {
-            Text("Controls available when stopped")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .accessibilityIdentifier("dashboard.controls-moving-message")
+                .foregroundStyle(emphasized ? NembraColor.gold : NembraColor.primaryText.opacity(0.82))
+                .lineLimit(1)
+                .padding(.horizontal, dynamicTypeSize.isAccessibilitySize ? 10 : 14)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
         }
+
+        return Group {
+            if reduceTransparency {
+                button
+                    .buttonStyle(.plain)
+                    .background {
+                        Capsule(style: .continuous)
+                            .fill(NembraColor.warmGraphite)
+                            .overlay {
+                                Capsule(style: .continuous)
+                                    .strokeBorder(
+                                        emphasized ? NembraColor.gold.opacity(0.44) : Color.white.opacity(0.22),
+                                        lineWidth: colorSchemeContrast == .increased ? 1.5 : 1
+                                    )
+                            }
+                    }
+            } else {
+                button
+                    .buttonStyle(.glass)
+            }
+        }
+        .accessibilityIdentifier("dashboard.control.\(title.lowercased())")
+    }
+}
+
+@MainActor
+private struct DashboardDriveSlowLayer: View, Equatable {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    let snapshot: DashboardDriveSnapshot
+    let cockpit: HorizonCockpitStore
+    let layout: DashboardDriveSlowLayout
+
+    static func == (lhs: DashboardDriveSlowLayer, rhs: DashboardDriveSlowLayer) -> Bool {
+        lhs.snapshot == rhs.snapshot
+            && lhs.cockpit === rhs.cockpit
+            && lhs.layout == rhs.layout
     }
 
-    private var statusRail: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 7) {
-                Text(vehicle.profile.identity.displayName)
-                    .font(.headline.weight(.semibold))
+    var body: some View {
+        ZStack {
+            adaptiveRangeReadout
+                .frame(width: dynamicTypeSize.isAccessibilitySize ? 92 : 118)
+                .position(
+                    x: layout.viewportWidth - layout.safeAreaTrailing - layout.horizontalPadding - 59,
+                    y: max(112, layout.viewportHeight * 0.31)
+                )
+
+            VStack(spacing: 0) {
+                topChrome
+                Spacer(minLength: 0)
+                rideLedger
+            }
+            .padding(.leading, layout.safeAreaLeading + layout.horizontalPadding)
+            .padding(.trailing, layout.safeAreaTrailing + layout.horizontalPadding)
+            .padding(.top, layout.topPadding)
+            .padding(.bottom, layout.bottomPadding)
+        }
+        .frame(width: layout.viewportWidth, height: layout.viewportHeight)
+    }
+
+    private var topChrome: some View {
+        ZStack(alignment: .top) {
+            HStack(alignment: .top, spacing: 12) {
+                batteryControl
+                    .layoutPriority(2)
+
+                Spacer(minLength: 170)
+            }
+
+            vehicleIdentity
+                .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? 150 : 210)
+        }
+        .frame(maxWidth: .infinity, minHeight: dynamicTypeSize.isAccessibilitySize ? 58 : 54)
+        .accessibilityIdentifier("dashboard.top-chrome")
+    }
+
+    private var vehicleIdentity: some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 7) {
+                Text("AOVOPRO ES80")
+                    .font(.caption.weight(.bold))
+                    .tracking(dynamicTypeSize.isAccessibilitySize ? 0.8 : 2.6)
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
 
-                Label(connectionText, systemImage: connectionIcon)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(connectionStyle)
-                    .lineLimit(1)
-
-                dataStatusBadge
+                if isSimulatorQA {
+                    Text("QA ONLY")
+                        .font(.system(size: 8, weight: .bold))
+                        .tracking(0.7)
+                        .foregroundStyle(NembraColor.gold)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 3)
+                        .background(NembraColor.gold.opacity(0.10), in: Capsule())
+                        .accessibilityLabel("Simulator QA disclosure")
+                        .accessibilityValue("Synthetic evidence, not physical scooter truth")
+                        .accessibilityIdentifier("dashboard.qa-disclosure")
+                }
             }
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("dashboard.vehicle-status")
 
-            Spacer(minLength: 0)
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(connectionColor)
+                    .frame(width: 7, height: 7)
+                    .accessibilityHidden(true)
 
-            batteryRangeInstrument
+                Text(connectionStatusText)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(NembraColor.secondaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
+        }
+        .accessibilityElement(children: isSimulatorQA ? .contain : .ignore)
+        .accessibilityLabel("AOVOPRO ES80")
+        .accessibilityValue(identityAccessibilityValue)
+        .accessibilityIdentifier("dashboard.vehicle-identity")
+    }
 
-            dashboardMetric(
-                title: "TRIP",
-                value: tripText,
-                symbol: "point.bottomleft.forward.to.point.topright.scurvepath",
-                retained: isRetainedVehicleData,
-                identifier: "dashboard.trip"
+    private var batteryControl: some View {
+        Button {
+            withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
+                cockpit.toggleBatteryPrimaryReadout()
+            }
+        } label: {
+            HStack(spacing: 10) {
+                DashboardBatteryInstrument(
+                    fillFraction: batteryFillFraction,
+                    label: batteryPrimaryText,
+                    isRetained: snapshot.batteryDataAvailability == .retained,
+                    isLow: isBatteryLow
+                )
+                .frame(width: dynamicTypeSize.isAccessibilitySize ? 132 : 154, height: 40)
+
+                if !dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Battery")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(NembraColor.primaryText.opacity(0.92))
+                        Text(batterySecondaryText)
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(NembraColor.secondaryText)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                    }
+                }
+            }
+            .frame(minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .sensoryFeedback(.selection, trigger: snapshot.batteryPresentation.mode)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(batteryAccessibilityLabel)
+        .accessibilityValue(qualifiedForSimulator(batteryAccessibilityValue))
+        .accessibilityHint("Double tap to switch between battery percentage and adaptive range. The fill always represents battery charge.")
+        .accessibilityIdentifier("dashboard.battery-range")
+    }
+
+    private var rideLedger: some View {
+        ViewThatFits(in: .horizontal) {
+            standardRideLedger
+            compactRideLedger
+        }
+        .frame(maxWidth: .infinity, minHeight: dynamicTypeSize.isAccessibilitySize ? 76 : 62)
+        .accessibilityIdentifier("dashboard.ride-ledger")
+    }
+
+    private var adaptiveRangeReadout: some View {
+        VStack(alignment: .trailing, spacing: 5) {
+            Text("ADAPTIVE RANGE")
+                .font(.system(size: 8, weight: .bold))
+                .tracking(1.8)
+                .foregroundStyle(NembraColor.secondaryText.opacity(0.72))
+                .lineLimit(1)
+
+            Text(adaptiveRangeText)
+                .font(.title2.weight(.light).monospacedDigit())
+                .foregroundStyle(adaptiveRangeNumericMeters == nil ? NembraColor.secondaryText : NembraColor.primaryText.opacity(0.88))
+                .lineLimit(1)
+                .minimumScaleFactor(0.62)
+
+            Text(adaptiveRangeQualifier)
+                .font(.system(size: 8, weight: .medium))
+                .foregroundStyle(NembraColor.secondaryText.opacity(0.62))
+                .multilineTextAlignment(.trailing)
+                .lineLimit(2)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Adaptive range")
+        .accessibilityValue(qualifiedForSimulator(adaptiveRangeAccessibilityValue))
+        .accessibilityIdentifier("dashboard.adaptive-range")
+    }
+
+    private var standardRideLedger: some View {
+        HStack(alignment: .bottom, spacing: 18) {
+            recordingStatus
+                .frame(minWidth: 205, alignment: .leading)
+
+            Spacer(minLength: 8)
+
+            ledgerMetric(
+                title: "TODAY",
+                value: todayDistanceText,
+                qualifier: dailyMetricQualifier(todayDistanceSummary),
+                identifier: "dashboard.today"
+            )
+            ledgerMetric(
+                title: "RIDE TIME",
+                value: currentRideDurationText,
+                qualifier: dailyMetricQualifier(currentRideDurationSummary),
+                identifier: "dashboard.ride-time"
+            )
+            ledgerMetric(
+                title: "ODOMETER",
+                value: odometerText,
+                qualifier: retainedVehicleQualifier,
+                identifier: "dashboard.odometer"
+            )
+
+            Spacer(minLength: 8)
+
+            ledgerMetric(
+                title: "CITY EXPLORED",
+                value: "—",
+                qualifier: "NOT VERIFIED",
+                identifier: "dashboard.city-explored",
+                alignment: .trailing
             )
         }
     }
 
-    private var batteryRangeInstrument: some View {
-        Button {
-            batteryReadout = batteryReadout == .charge ? .range : .charge
-        } label: {
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 5) {
-                    Image(systemName: batteryReadout == .charge ? batteryIcon : "location.fill")
-                    Text(batteryReadout == .charge ? "BATTERY" : "RANGE")
-                    Image(systemName: "arrow.left.arrow.right")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(.tertiary)
-                }
-                .font(.caption2.weight(.bold))
-                .tracking(1.1)
-                .foregroundStyle(batteryInstrumentWarning ? Color.red : Color.secondary)
-
-                Text(batteryPrimaryText)
-                    .font(.title3.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(batteryPrimaryColor)
-                    .contentTransition(reduceMotion ? .identity : .numericText())
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-
-                batteryChargeBar
-                    .frame(width: 82)
-
-                if isRetainedBatteryData, batteryPercent != nil {
-                    Text("LAST KNOWN")
-                        .font(.caption2.weight(.bold))
-                        .tracking(1.0)
-                        .foregroundStyle(.orange)
-                } else if batteryReadout == .range {
-                    Text("NOT CALIBRATED")
-                        .font(.caption2.weight(.bold))
-                        .tracking(0.8)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .frame(minWidth: 44, minHeight: 44, alignment: .leading)
-        .sensoryFeedback(.selection, trigger: batteryReadout)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(batteryReadout == .charge ? "Battery" : "Estimated range")
-        .accessibilityValue(batteryAccessibilityValue)
-        .accessibilityHint("Double tap to switch between battery charge and range. Range remains unavailable until Nembra has verified battery evidence and a learned range model.")
-        .accessibilityIdentifier("dashboard.battery-range")
-    }
-
-    private var batteryChargeBar: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .leading) {
-                Capsule(style: .continuous)
-                    .fill(Color.white.opacity(colorSchemeContrast == .increased ? 0.22 : 0.10))
-
-                if let fill = batteryFillFraction {
-                    Capsule(style: .continuous)
-                        .fill(batteryInstrumentWarning ? Color.red : Color.white.opacity(isRetainedBatteryData ? 0.48 : 0.92))
-                        .frame(width: max(2, proxy.size.width * fill))
-                }
-            }
-        }
-        .frame(height: colorSchemeContrast == .increased ? 5 : 3)
-        .accessibilityHidden(true)
-    }
-
-    @ViewBuilder
-    private var dataStatusBadge: some View {
-        switch vehicle.state.dataAvailability {
-        case .live:
-            Label("LIVE DATA", systemImage: "wave.3.right")
-                .foregroundStyle(colorSchemeContrast == .increased ? Color.white : Color.green)
-                .accessibilityLabel("Vehicle data")
-                .accessibilityValue("Live")
-        case .retained:
-            Label("LAST KNOWN", systemImage: "clock.arrow.circlepath")
-                .foregroundStyle(.orange)
-                .accessibilityLabel("Vehicle data")
-                .accessibilityValue("Last known values retained from the previous connection")
-        case .unavailable:
-            Label("WAITING FOR DATA", systemImage: "ellipsis")
-                .foregroundStyle(.secondary)
-                .accessibilityLabel("Vehicle data")
-                .accessibilityValue("No confirmed scooter telemetry yet")
+    private var compactRideLedger: some View {
+        HStack(alignment: .bottom, spacing: 12) {
+            recordingStatus
+                .frame(maxWidth: .infinity, alignment: .leading)
+            ledgerMetric(
+                title: "TODAY",
+                value: todayDistanceText,
+                qualifier: dailyMetricQualifier(todayDistanceSummary),
+                identifier: "dashboard.today"
+            )
+            ledgerMetric(
+                title: "RIDE",
+                value: currentRideDurationText,
+                qualifier: dailyMetricQualifier(currentRideDurationSummary),
+                identifier: "dashboard.ride-time"
+            )
+            ledgerMetric(
+                title: "ODOMETER",
+                value: odometerText,
+                qualifier: retainedVehicleQualifier,
+                identifier: "dashboard.odometer"
+            )
+            ledgerMetric(
+                title: "CITY",
+                value: "—",
+                qualifier: "NOT VERIFIED",
+                identifier: "dashboard.city-explored"
+            )
         }
     }
 
-    private func contextRail(personality: DashboardModePersonality) -> some View {
-        VStack(alignment: .trailing, spacing: 14) {
-            modeReadout(personality: personality)
-            Spacer(minLength: 0)
-
-            if shouldShowStoppedControls {
-                stoppedControls
-                    .transition(.opacity.combined(with: .scale(scale: 0.97)))
-            } else if vehicle.state.connection == .connected && !hasUsableStoppedSpeed {
-                Label("Live speed required", systemImage: "speedometer")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
-                    .accessibilityLabel("Controls unavailable until current stopped speed is known")
-                    .accessibilityIdentifier("dashboard.controls-speed-unavailable-message")
-            } else if isVehicleMoving {
-                Text("Controls available when stopped")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.trailing)
-                    .accessibilityIdentifier("dashboard.controls-moving-message")
-            }
-        }
-        .animation(reduceMotion ? nil : .snappy(duration: 0.20), value: shouldShowStoppedControls)
-    }
-
-    private func modeReadout(personality: DashboardModePersonality) -> some View {
-        VStack(alignment: .trailing, spacing: 5) {
-            Text("MODE")
-                .font(.caption2.weight(.bold))
-                .tracking(1.6)
-                .foregroundStyle(.secondary)
-
-            Text(vehicle.state.rideMode?.displayName.uppercased() ?? "—")
-                .font(.title2.weight(.semibold))
-                .foregroundStyle(isRetainedVehicleData ? Color.secondary : Color.white)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-
-            Capsule(style: .continuous)
-                .fill(Color.white.opacity(colorSchemeContrast == .increased ? max(personality.modeMarkerOpacity, 0.62) : personality.modeMarkerOpacity))
-                .frame(width: personality.modeMarkerWidth, height: colorSchemeContrast == .increased ? 3 : 2)
+    private var recordingStatus: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Circle()
+                .strokeBorder(recordingStatusColor, lineWidth: 2)
+                .frame(width: 12, height: 12)
+                .padding(.top, 3)
                 .accessibilityHidden(true)
 
-            if isRetainedVehicleData, vehicle.state.rideMode != nil {
-                Text("LAST KNOWN")
-                    .font(.caption2.weight(.bold))
-                    .tracking(1.2)
-                    .foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(recordingStatusTitle)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(NembraColor.primaryText.opacity(0.80))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                Text(recordingStatusSubtitle)
+                    .font(.caption2)
+                    .foregroundStyle(NembraColor.secondaryText.opacity(0.58))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
             }
         }
-        .scaleEffect(personality.modeScale, anchor: .trailing)
-        .animation(modeAnimation, value: personality)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Ride mode")
-        .accessibilityValue(modeAccessibilityValue)
-        .accessibilityIdentifier("dashboard.mode")
+        .accessibilityLabel("Automatic ride recording")
+        .accessibilityValue(qualifiedForSimulator("\(recordingStatusTitle). \(recordingStatusSubtitle)"))
+        .accessibilityIdentifier("dashboard.recording-status")
     }
 
-    private var stoppedControls: some View {
-        VStack(alignment: .trailing, spacing: 10) {
-            if !supportedModes.isEmpty {
-                HStack(spacing: 5) {
-                    ForEach(supportedModes, id: \.self) { mode in
-                        let isSelected = vehicle.state.rideMode == mode
-                        let isPending = vehicle.pendingRideMode == mode
-
-                        Button {
-                            Task { await vehicle.setMode(mode) }
-                        } label: {
-                            ZStack {
-                                if isSelected {
-                                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                                        .fill(.white.opacity(colorSchemeContrast == .increased ? 0.20 : 0.12))
-                                }
-
-                                if isPending {
-                                    ProgressView().controlSize(.mini)
-                                } else {
-                                    Text(modeAbbreviation(mode))
-                                        .font(.caption.weight(isSelected ? .bold : .semibold))
-                                        .foregroundStyle(isSelected ? .white : .secondary)
-                                }
-                            }
-                            .frame(width: 44, height: 44)
-                        }
-                        .buttonStyle(.glass)
-                        .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending || isSelected)
-                        .accessibilityLabel(mode.displayName)
-                        .accessibilityValue(modeChoiceAccessibilityValue(selected: isSelected, pending: isPending))
-                        .accessibilityAddTraits(isSelected ? .isSelected : [])
-                        .accessibilityIdentifier("dashboard.mode.\(mode.displayName.lowercased())")
-                    }
-                }
-                .accessibilityElement(children: .contain)
-                .accessibilityLabel("Ride mode controls")
-            }
-
-            HStack(spacing: 7) {
-                if vehicle.profile.capabilities.supportsHeadlight,
-                   let isOn = vehicle.state.isHeadlightOn {
-                    let isPending = vehicle.pendingCommands.contains(.headlight)
-
-                    Button {
-                        Task { await vehicle.setHeadlight(!isOn) }
-                    } label: {
-                        ZStack {
-                            if isPending {
-                                ProgressView().controlSize(.mini)
-                            } else {
-                                Image(systemName: isOn ? "lightbulb.fill" : "lightbulb")
-                            }
-                        }
-                        .frame(width: 44, height: 44)
-                    }
-                    .buttonStyle(.glass)
-                    .disabled(vehicle.isVehicleCommandPending)
-                    .accessibilityLabel(isOn ? "Turn light off" : "Turn light on")
-                    .accessibilityValue(isPending ? "Updating" : (isOn ? "On" : "Off"))
-                    .accessibilityIdentifier("dashboard.control.light")
-                }
-
-                if vehicle.profile.capabilities.supportsLock,
-                   let isLocked = vehicle.state.isLocked {
-                    let isPending = vehicle.pendingCommands.contains(.lock)
-
-                    Button {
-                        showLockConfirmation = true
-                    } label: {
-                        ZStack {
-                            if isPending {
-                                ProgressView().controlSize(.mini)
-                            } else {
-                                Image(systemName: isLocked ? "lock.fill" : "lock.open")
-                            }
-                        }
-                        .frame(width: 44, height: 44)
-                    }
-                    .buttonStyle(.glass)
-                    .disabled(vehicle.isVehicleCommandPending)
-                    .accessibilityLabel(isLocked ? "Unlock scooter" : "Lock scooter")
-                    .accessibilityValue(isPending ? "Updating" : (isLocked ? "Secured" : "Ready"))
-                    .accessibilityIdentifier("dashboard.control.lock")
-                }
-            }
-            .accessibilityElement(children: .contain)
-        }
-    }
-
-    private func dashboardMetric(
+    private func ledgerMetric(
         title: String,
         value: String,
-        symbol: String,
-        warning: Bool = false,
-        retained: Bool = false,
-        identifier: String
+        qualifier: String?,
+        identifier: String,
+        alignment: HorizontalAlignment = .leading
     ) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Label(title, systemImage: symbol)
-                .font(.caption2.weight(.bold))
-                .tracking(1.2)
-                .foregroundStyle(warning ? Color.red : Color.secondary)
-
+        VStack(alignment: alignment, spacing: 3) {
+            Text(title)
+                .font(.system(size: 9, weight: .bold))
+                .tracking(1.6)
+                .foregroundStyle(NembraColor.secondaryText.opacity(0.70))
+                .lineLimit(1)
             Text(value)
-                .font(.title3.weight(.semibold).monospacedDigit())
-                .foregroundStyle(warning ? Color.red : (retained ? Color.secondary : Color.white))
+                .font(.callout.weight(.semibold).monospacedDigit())
+                .foregroundStyle(value == "—" ? NembraColor.secondaryText : NembraColor.primaryText.opacity(0.78))
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
-
-            if retained, value != "—" {
-                Text("LAST KNOWN")
-                    .font(.caption2.weight(.bold))
-                    .tracking(1.0)
-                    .foregroundStyle(.orange)
+            if let qualifier {
+                Text(qualifier)
+                    .font(.system(size: 8, weight: .bold))
+                    .tracking(0.7)
+                    .foregroundStyle(NembraColor.secondaryText.opacity(0.55))
+                    .lineLimit(1)
             }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title.capitalized)
-        .accessibilityValue(retained && value != "—" ? "Last known \(value)" : value)
+        .accessibilityValue(qualifiedForSimulator(metricAccessibilityValue(value: value, qualifier: qualifier)))
         .accessibilityIdentifier(identifier)
     }
 
-    private var errorPresented: Binding<Bool> {
-        Binding(
-            get: { vehicle.lastErrorMessage != nil },
-            set: { if !$0 { vehicle.lastErrorMessage = nil } }
-        )
+    private var batteryPresentation: NembraCore.BatteryPrimaryReadoutPresentation {
+        snapshot.batteryPresentation
     }
 
-    /// Only source-qualified current speed may admit stopped-only controls. A cached
-    /// aggregate speed can remain useful as retained display state, but it cannot
-    /// establish that the scooter is currently stopped after a gap or reconnect.
-    /// Physical/unverified profiles therefore remain unavailable until direct ES80
-    /// evidence establishes a verified speed authority.
-    private var usableStoppedControlSpeedKilometersPerHour: Double? {
-        vehicle.simulatorQualifiedLiveSpeedKilometersPerHour
-    }
-
-    private var shouldShowStoppedControls: Bool {
-        guard let speed = usableStoppedControlSpeedKilometersPerHour else { return false }
-        return speed < 0.5
-    }
-
-    private var hasUsableStoppedSpeed: Bool {
-        usableStoppedControlSpeedKilometersPerHour != nil
-    }
-
-    private var isVehicleMoving: Bool {
-        guard let speed = usableStoppedControlSpeedKilometersPerHour else { return false }
-        return speed >= 0.5
-    }
-
-    private var isRetainedVehicleData: Bool {
-        vehicle.state.dataAvailability == .retained
-    }
-
-    private var isRetainedBatteryData: Bool {
-        vehicle.batteryDataAvailability == .retained
-    }
-
-    private var supportedModes: [RideMode] {
-        RideMode.allCases.filter(vehicle.profile.capabilities.supportedRideModes.contains)
-    }
-
-    private func modeAbbreviation(_ mode: RideMode) -> String {
-        switch mode {
-        case .walk: "W"
-        case .eco: "E"
-        case .drive: "D"
-        case .sport: "S"
-        }
-    }
-
-    private func modeChoiceAccessibilityValue(selected: Bool, pending: Bool) -> String {
-        if pending { return "Updating" }
-        return selected ? "Selected" : "Not selected"
-    }
-
-    private var modeAccessibilityValue: String {
-        guard let mode = vehicle.state.rideMode?.displayName else { return "Unknown" }
-        return isRetainedVehicleData ? "Last known \(mode)" : mode
-    }
-
-    private var tripText: String {
-        VehicleDisplayFormatting.distance(kilometers: vehicle.state.tripKilometers)
-    }
-
-    private var batteryPercent: Int? {
-        vehicle.batteryDisplayPercent
-    }
-
-    private var batteryText: String {
-        guard let battery = batteryPercent else { return "—" }
-        return "\(battery)%"
+    private var batteryEstimatedRangeDisplay: NembraCore.BatteryEstimatedRangeDisplay {
+        snapshot.adaptiveRangeDisplay
     }
 
     private var batteryPrimaryText: String {
-        switch batteryReadout {
-        case .charge: batteryText
-        case .range: "—"
+        switch batteryPresentation.primaryValue {
+        case let .percentage(percent): "\(percent)%"
+        case let .estimatedRangeMeters(meters): rangeText(meters: meters)
+        case .learningRange: "Learning"
+        case .unavailable: "—"
+        }
+    }
+
+    private var batterySecondaryText: String {
+        switch batteryPresentation.mode {
+        case .percentage:
+            adaptiveRangeNumericMeters == nil ? "tap for adaptive range" : "tap for learned range"
+        case .estimatedRange:
+            snapshot.batteryDataAvailability == .retained ? "last known charge fill" : "fill remains battery charge"
+        }
+    }
+
+    private var batteryAccessibilityLabel: String {
+        switch batteryPresentation.mode {
+        case .percentage: "Battery"
+        case .estimatedRange: "Adaptive range"
         }
     }
 
     private var batteryAccessibilityValue: String {
-        switch batteryReadout {
-        case .charge:
-            if isRetainedBatteryData, batteryPercent != nil {
-                return "Last known \(batteryText)"
-            }
-            if batteryPercent == nil {
-                return "Unavailable until battery evidence is display-authoritative"
-            }
-            return batteryText
-        case .range:
+        let qualifier = snapshot.batteryDataAvailability == .retained ? "Last known. " : ""
+        switch batteryPresentation.primaryValue {
+        case let .percentage(percent):
+            return "\(qualifier)\(percent) percent. Fill represents state of charge."
+        case let .estimatedRangeMeters(meters):
+            return "\(rangeText(meters: meters)), learned from accepted scooter evidence. Fill represents state of charge."
+        case .learningRange:
+            return "Learning from accepted scooter evidence. Fill represents state of charge."
+        case .unavailable:
+            return "Unavailable until display-authoritative battery and learned-range evidence exist."
+        }
+    }
+
+    private var batteryFillFraction: CGFloat? {
+        guard let percent = batteryPresentation.batteryFillPercent else { return nil }
+        return CGFloat(percent) / 100
+    }
+
+    private var isBatteryLow: Bool {
+        guard let percent = batteryPresentation.batteryFillPercent else { return false }
+        return percent <= 15 && snapshot.batteryDataAvailability == .live
+    }
+
+    private var adaptiveRangeNumericMeters: Double? {
+        if case let .valueMeters(meters) = batteryEstimatedRangeDisplay { return meters }
+        return nil
+    }
+
+    private var adaptiveRangeText: String {
+        switch batteryEstimatedRangeDisplay {
+        case let .valueMeters(meters): rangeText(meters: meters)
+        case .learning: "Learning"
+        case .unavailable: "—"
+        }
+    }
+
+    private var adaptiveRangeQualifier: String {
+        switch batteryEstimatedRangeDisplay {
+        case .valueMeters: "learned from this scooter"
+        case .learning: "building accepted ride history"
+        case .unavailable: "needs verified scooter history"
+        }
+    }
+
+    private var adaptiveRangeAccessibilityValue: String {
+        switch batteryEstimatedRangeDisplay {
+        case let .valueMeters(meters):
+            return "\(rangeText(meters: meters)), learned from accepted evidence for this scooter"
+        case .learning:
+            return "Learning from accepted ride history"
+        case .unavailable:
             return "Unavailable until a verified learned range model exists"
         }
     }
 
-    private var batteryPrimaryColor: Color {
-        if batteryInstrumentWarning { return .red }
-        if isRetainedBatteryData { return .secondary }
-        return batteryReadout == .range || batteryPercent == nil ? .secondary : .white
+    private func rangeText(meters: Double) -> String {
+        VehicleDisplayFormatting.distance(kilometers: meters / 1_000, decimals: 1)
     }
 
-    private var batteryInstrumentWarning: Bool {
-        batteryReadout == .charge && isBatteryLow && !isRetainedBatteryData
+    private var todayDistanceSummary: NembraCore.DailyRideMetricSummary? {
+        snapshot.todayDistanceSummary
     }
 
-    private var batteryFillFraction: CGFloat? {
-        guard let battery = batteryPercent else { return nil }
-        return CGFloat(min(max(battery, 0), 100)) / 100
+    private var currentRideDurationSummary: NembraCore.DailyRideMetricSummary? {
+        snapshot.currentRideDurationSummary
     }
 
-    private var isBatteryLow: Bool {
-        guard let battery = batteryPercent else { return false }
-        return battery <= 15
+    private var todayDistanceText: String {
+        guard let meters = todayDistanceSummary?.value else { return "—" }
+        return VehicleDisplayFormatting.distance(kilometers: meters / 1_000)
     }
 
-    private var batteryIcon: String {
-        guard let battery = batteryPercent else { return "battery.0percent" }
-        return switch battery {
-        case ...15: "battery.0percent"
-        case ...35: "battery.25percent"
-        case ...60: "battery.50percent"
-        case ...85: "battery.75percent"
-        default: "battery.100percent"
+    private var currentRideDurationText: String {
+        guard let seconds = currentRideDurationSummary?.value,
+              seconds.isFinite,
+              seconds >= 0 else { return "—" }
+        let roundedSeconds = Int(seconds.rounded(.down))
+        let hours = roundedSeconds / 3_600
+        let minutes = (roundedSeconds % 3_600) / 60
+        let remainingSeconds = roundedSeconds % 60
+        return hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, remainingSeconds)
+            : String(format: "%d:%02d", minutes, remainingSeconds)
+    }
+
+    private var odometerText: String {
+        // The public app has no field-specific odometer authority yet. Simulator
+        // QA owns an explicit synthetic source; every physical profile remains
+        // unavailable until Capture promotes a verified odometer projection.
+        VehicleDisplayFormatting.distance(kilometers: snapshot.odometerKilometers)
+    }
+
+    private var retainedVehicleQualifier: String? {
+        guard odometerText != "—" else { return "UNAVAILABLE" }
+        return snapshot.odometerIsRetained ? "LAST KNOWN" : nil
+    }
+
+    private func dailyMetricQualifier(_ summary: NembraCore.DailyRideMetricSummary?) -> String? {
+        switch snapshot.dailyStatus {
+        case .failed:
+            return "STORAGE FAILED"
+        case .unavailable:
+            return "UNAVAILABLE"
+        case .loading where summary != nil:
+            return "LAST SAVED"
+        case .idle, .loading, .ready:
+            break
+        }
+
+        guard let summary else {
+            switch snapshot.dailyStatus {
+            case .loading: return "LOADING"
+            case .failed: return "STORAGE FAILED"
+            case .unavailable: return "UNAVAILABLE"
+            case .idle, .ready: return "NO EVIDENCE"
+            }
+        }
+        return switch summary.availability {
+        case .complete: nil
+        case .partial: "PARTIAL EVIDENCE"
+        case .unavailable: "UNAVAILABLE"
+        case .noEvidence: "NO EVIDENCE"
         }
     }
 
-    private var connectionText: String {
-        if let issue = vehicle.state.connectionIssue {
-            switch issue {
-            case .bluetoothPoweredOff: "Bluetooth Off"
-            case .bluetoothPermissionDenied: "Permission Needed"
-            case .scooterUnavailable: "Not Found"
-            case .unsupportedConfiguration: "Unsupported"
+    private var recordingStatusTitle: String {
+        switch snapshot.rideStatus {
+        case .persistenceUnavailable, .failed:
+            return "Recording unavailable"
+        case .restoring:
+            return "Restoring ride"
+        case .candidate:
+            return "Detecting ride"
+        case .active:
+            return "Recording automatically"
+        case .temporarilyDisconnected:
+            return "Ride protected"
+        case .endingCandidate:
+            return "Checking ride end"
+        case .saving:
+            return "Saving ride"
+        case .disabled:
+            return "Automatic recording unavailable"
+        case .idle:
+            guard snapshot.isAutomaticCaptureEnabled else {
+                return "Automatic recording off"
+            }
+            return snapshot.canCaptureRideTelemetryWithoutOpeningApp
+                ? "Automatic recording ready"
+                : "Automatic recording blocked"
+        }
+    }
+
+    private var recordingStatusSubtitle: String {
+        let truth: String = switch snapshot.rideStatus {
+        case .persistenceUnavailable, .failed:
+            "Accepted progress cannot be saved safely"
+        case .restoring:
+            "Recovering the last durable checkpoint"
+        case .candidate:
+            "Waiting for accepted movement evidence"
+        case .active:
+            "Today continues across every stop"
+        case .temporarilyDisconnected:
+            "Waiting through the reconnect grace period"
+        case .endingCandidate:
+            "Waiting for accepted ride-end evidence"
+        case .saving:
+            "Committing accepted ride evidence"
+        case .disabled:
+            "Verified production tracking is not configured"
+        case .idle:
+            if !snapshot.isAutomaticCaptureEnabled {
+                "Enable after one-time setup when wanted"
+            } else if snapshot.canCaptureRideTelemetryWithoutOpeningApp {
+                "Best effort within iOS background limits"
+            } else {
+                "Open Settings to finish required setup"
+            }
+        }
+        return isSimulatorQA ? "Simulator QA synthetic evidence · \(truth)" : truth
+    }
+
+    private var recordingStatusColor: Color {
+        switch snapshot.rideStatus {
+        case .persistenceUnavailable, .failed:
+            return .red
+        case .candidate, .active, .temporarilyDisconnected, .endingCandidate, .saving, .restoring:
+            return NembraColor.gold
+        case .disabled:
+            return NembraColor.secondaryText.opacity(0.55)
+        case .idle:
+            return snapshot.canCaptureRideTelemetryWithoutOpeningApp
+                ? NembraColor.gold.opacity(0.82)
+                : NembraColor.secondaryText.opacity(0.55)
+        }
+    }
+
+    private var connectionStatusText: String {
+        let base: String
+        if let issue = snapshot.connectionIssue {
+            base = switch issue {
+            case .bluetoothPoweredOff: "Bluetooth off"
+            case .bluetoothPermissionDenied: "Bluetooth permission needed"
+            case .scooterUnavailable: "Scooter unavailable"
+            case .unsupportedConfiguration: "Unsupported configuration"
             }
         } else {
-            switch vehicle.state.connection {
+            base = switch snapshot.connection {
             case .connected: "Connected"
             case .connecting: "Connecting"
             case .reconnecting: "Reconnecting"
             case .disconnected: "Offline"
             }
         }
+
+        if isSimulatorQA { return "\(base) · Simulator QA" }
+        if snapshot.hasCurrentRide { return "\(base) · ride recording" }
+        return base
     }
 
-    private var connectionIcon: String {
-        switch vehicle.state.connection {
-        case .connected: "checkmark.circle.fill"
-        case .connecting, .reconnecting: "antenna.radiowaves.left.and.right"
-        case .disconnected: "antenna.radiowaves.left.and.right.slash"
-        }
-    }
-
-    private var connectionStyle: Color {
-        switch vehicle.state.connection {
+    private var connectionColor: Color {
+        switch snapshot.connection {
         case .connected: .green
-        case .connecting, .reconnecting: .orange
-        case .disconnected: .secondary
+        case .connecting, .reconnecting: NembraColor.gold
+        case .disconnected: NembraColor.secondaryText.opacity(0.55)
         }
     }
 
-    private func admittedAmbientOpacity(_ personality: DashboardModePersonality) -> Double {
-        let contrastMultiplier = colorSchemeContrast == .increased ? 0.35 : 1.0
-        return personality.ambientOpacity * contrastMultiplier
+    private var identityAccessibilityValue: String {
+        qualifiedForSimulator(connectionStatusText)
     }
 
-    private var modeAnimation: Animation? {
-        reduceMotion ? nil : .snappy(duration: 0.26)
+    private var isSimulatorQA: Bool {
+        snapshot.isSimulatorQA
+    }
+
+    private func qualifiedForSimulator(_ value: String) -> String {
+        isSimulatorQA ? "Simulator QA synthetic evidence, not physical scooter truth. \(value)" : value
+    }
+
+    private func metricAccessibilityValue(value: String, qualifier: String?) -> String {
+        if let qualifier { return "\(value), \(qualifier.lowercased())" }
+        return value
+    }
+}
+
+private struct DashboardBatteryInstrument: View {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+
+    let fillFraction: CGFloat?
+    let label: String
+    let isRetained: Bool
+    let isLow: Bool
+
+    var body: some View {
+        GeometryReader { proxy in
+            let terminalWidth = max(5, proxy.size.width * 0.035)
+            let shellWidth = proxy.size.width - terminalWidth - 3
+            let shellRect = CGRect(x: 0, y: 0, width: shellWidth, height: proxy.size.height)
+            let innerInset: CGFloat = 4
+            let innerWidth = max(0, shellRect.width - innerInset * 2)
+
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: proxy.size.height * 0.42, style: .continuous)
+                    .fill(NembraColor.quietSurface)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: proxy.size.height * 0.42, style: .continuous)
+                            .strokeBorder(
+                                Color.white.opacity(colorSchemeContrast == .increased ? 0.55 : 0.34),
+                                lineWidth: colorSchemeContrast == .increased ? 1.5 : 1
+                            )
+                    }
+                    .frame(width: shellRect.width, height: shellRect.height)
+
+                if let fillFraction, fillFraction > 0 {
+                    RoundedRectangle(cornerRadius: max(5, (proxy.size.height - innerInset * 2) * 0.40), style: .continuous)
+                        .fill(fillColor)
+                        .frame(
+                            width: max(3, innerWidth * min(max(fillFraction, 0), 1)),
+                            height: proxy.size.height - innerInset * 2
+                        )
+                        .padding(innerInset)
+                        .opacity(isRetained ? 0.48 : 1)
+                }
+
+                Text(label)
+                    .font(.headline.weight(.bold).monospacedDigit())
+                    .foregroundStyle(labelForeground)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.58)
+                    .frame(width: shellRect.width, height: shellRect.height)
+
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(Color.white.opacity(reduceTransparency ? 0.58 : 0.42))
+                    .frame(width: terminalWidth, height: proxy.size.height * 0.36)
+                    .offset(x: shellRect.width + 3)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    private var fillColor: Color {
+        if isLow { return .red }
+        return Color.white.opacity(reduceTransparency ? 0.90 : 0.84)
+    }
+
+    private var labelForeground: Color {
+        guard label != "—" else { return NembraColor.secondaryText }
+        guard let fillFraction, fillFraction >= 0.52 else { return NembraColor.primaryText }
+        return Color.black.opacity(isLow ? 0.86 : 0.92)
     }
 }
