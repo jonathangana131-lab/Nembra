@@ -69,30 +69,12 @@ jobs:
           write_blob() {
             rel="$1"
             oid="$2"
-            git cat-file blob "$oid" | /usr/bin/sudo -n /usr/bin/python3 -B - "$bundle/$rel" "$oid" <<'PY'
-          import hashlib
-          import os
-          from pathlib import Path
-          import sys
-
-          destination = Path(sys.argv[1])
-          expected = sys.argv[2]
-          data = sys.stdin.buffer.read()
-          digest = hashlib.sha1()
-          digest.update(f"blob {len(data)}\0".encode("ascii"))
-          digest.update(data)
-          if digest.hexdigest() != expected:
-              raise SystemExit("Git object stream does not match pinned blob OID")
-          flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-          fd = os.open(destination, flags, 0o400)
-          try:
-              offset = 0
-              while offset < len(data):
-                  offset += os.write(fd, data[offset:])
-              os.fsync(fd)
-          finally:
-              os.close(fd)
-          PY
+            tmp="$RUNNER_TEMP/nembra-root-custody-${oid}"
+            /bin/rm -f "$tmp"
+            git cat-file blob "$oid" > "$tmp"
+            test "$(git hash-object "$tmp")" = "$oid"
+            /usr/bin/sudo -n /usr/bin/install -o root -g wheel -m 0400 "$tmp" "$bundle/$rel"
+            /bin/rm -f "$tmp"
           }
 
           write_blob scripts/ci/capture_accepted_build_input_snapshot.py "$SNAPSHOT_BLOB"
