@@ -82,12 +82,18 @@ jobs:
             sed -n '1,/^---$/p' "$historical" | grep -Fq 'docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md'
             sed -n '1,/^---$/p' "$historical" | grep -Fq 'scripts/field/install_one_time_capture.command'
           done
-          if rg -n 'xcode27_(today_research_)?signed_field_candidate\.sh|xcode27_today_research_field_candidate\.sh' \
+          if grep -En 'xcode27_(today_research_)?signed_field_candidate\.sh|xcode27_today_research_field_candidate\.sh' \
             CAPTURE_HARD_FREEZE_ACTIVE.md \
             docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md \
             docs/CAPTURE_TUYA_OFFICIAL_SDK_PROVISIONING.md; then
             printf '%s\n' 'ERROR: an active Capture handoff routes to a retired signed-candidate wrapper.' >&2
             exit 1
+          else
+            search_status=$?
+            if [[ "$search_status" -ne 1 ]]; then
+              printf '%s\n' 'ERROR: the retired-wrapper reference scan did not execute successfully.' >&2
+              exit "$search_status"
+            fi
           fi
           test ! -e LocalSecrets
           test ! -e Pods

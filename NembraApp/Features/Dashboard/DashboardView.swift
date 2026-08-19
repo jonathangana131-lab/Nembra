@@ -332,7 +332,7 @@ private struct DashboardFunctionalActionControls: View {
 }
 
 @MainActor
-private struct DashboardDriveSlowLayer: View, Equatable {
+private struct DashboardDriveSlowLayer: View, @MainActor Equatable {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 

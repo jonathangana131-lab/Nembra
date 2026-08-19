@@ -29,9 +29,9 @@ private struct NembraNavigationHost<Content: View>: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var isNavigationPresented = false
 
-    let content: (() -> Void) -> Content
+    let content: (@escaping () -> Void) -> Content
 
-    init(@ViewBuilder content: @escaping (() -> Void) -> Content) {
+    init(@ViewBuilder content: @escaping (@escaping () -> Void) -> Content) {
         self.content = content
     }
 
