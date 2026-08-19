@@ -68,7 +68,15 @@ jobs:
             git fetch --no-tags --depth=1 origin "$BEFORE_SHA"
           fi
 
-          mapfile -t changed < <(git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA")
+          if ! git cat-file -e "${EXPECTED_SOURCE_SHA}^{commit}" 2>/dev/null; then
+            echo "Exact candidate commit is unavailable: $EXPECTED_SOURCE_SHA" >&2
+            exit 1
+          fi
+
+          changed_paths_file="$(mktemp)"
+          trap 'rm -f "$changed_paths_file"' EXIT
+          git diff --name-only "$BEFORE_SHA" "$EXPECTED_SOURCE_SHA" > "$changed_paths_file"
+          mapfile -t changed < "$changed_paths_file"
           printf 'Changed paths (%s):\n' "${#changed[@]}"
           printf '  %s\n' "${changed[@]}"
 
@@ -83,8 +91,7 @@ jobs:
               *.md|\
               scripts/ci/xcode27_queue_janitor.py|\
               scripts/ci/capture_trusted_queue_janitor.py|\
-              .github/workflows/xcode27-queue-janitor.yml|\
-              .github/workflows/xcode27-simulator.yml)
+              .github/workflows/xcode27-queue-janitor.yml)
                 ;;
               *)
                 echo 'requires_xcode=true' >> "$GITHUB_OUTPUT"
@@ -95,7 +102,7 @@ jobs:
           done
 
           echo 'requires_xcode=false' >> "$GITHUB_OUTPUT"
-          echo 'Only documentation/queue-control/Simulator-workflow paths changed; do not reserve xcode-27.'
+          echo 'Only documentation or queue-control paths changed; do not reserve xcode-27.'
 
   simulator-qa:
     name: Build, test, and capture iOS 27 Simulator
