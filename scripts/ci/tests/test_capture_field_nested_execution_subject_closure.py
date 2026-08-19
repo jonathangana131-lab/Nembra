@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import base64
-import hashlib
 from pathlib import Path
 import subprocess
 import sys
@@ -29,6 +28,16 @@ def run(*args: str, cwd: Path, input_bytes: bytes | None = None) -> subprocess.C
     )
 
 
+def production_capture_function(installer: str) -> str:
+    start_marker = "capture_accepted_git_source_base64() {"
+    end_marker = "\n}\n\nCAPTURE_BOOTSTRAP_PATH="
+    start = installer.find(start_marker)
+    end = installer.find(end_marker, start)
+    if start < 0 or end < 0:
+        raise AssertionError("production accepted-Git capture function could not be isolated")
+    return installer[start : end + 2]
+
+
 class NestedFieldExecutionSubjectClosureTests(unittest.TestCase):
     def test_installer_has_no_checkout_path_execution_for_nested_repo_tools(self) -> None:
         installer = INSTALLER.read_text(encoding="utf-8")
@@ -48,7 +57,10 @@ class NestedFieldExecutionSubjectClosureTests(unittest.TestCase):
         self.assertIn('CAPTURED_PROVENANCE_BLOB', bootstrap)
         self.assertIn('/usr/bin/python3 -I -B - "$PROVENANCE_HELPER_SOURCE_B64" "$operation"', bootstrap)
 
-    def test_path_swap_after_git_object_capture_cannot_change_executed_bytes(self) -> None:
+    def test_actual_installer_capture_survives_checkout_path_swap(self) -> None:
+        installer = INSTALLER.read_text(encoding="utf-8")
+        capture_function = production_capture_function(installer)
+
         with tempfile.TemporaryDirectory(prefix="nembra-nested-field-exec-") as temporary:
             repo = Path(temporary) / "repo"
             repo.mkdir()
@@ -64,17 +76,30 @@ class NestedFieldExecutionSubjectClosureTests(unittest.TestCase):
             head = run("git", "rev-parse", "HEAD", cwd=repo)
             self.assertEqual(head.returncode, 0, head.stderr.decode(errors="replace"))
             source_sha = head.stdout.decode().strip()
-            oid_result = run("git", "rev-parse", f"{source_sha}:accepted.py", cwd=repo)
-            self.assertEqual(oid_result.returncode, 0, oid_result.stderr.decode(errors="replace"))
-            oid = oid_result.stdout.decode().strip()
-            captured_result = run("git", "cat-file", "blob", oid, cwd=repo)
-            self.assertEqual(captured_result.returncode, 0, captured_result.stderr.decode(errors="replace"))
-            captured = captured_result.stdout
 
-            expected_oid = hashlib.sha1(
-                b"blob " + str(len(captured)).encode("ascii") + b"\0" + captured
-            ).hexdigest()
-            self.assertEqual(expected_oid, oid)
+            harness = textwrap.dedent(
+                f"""\
+                #!/bin/bash -p
+                set -euo pipefail
+                ROOT="$1"
+                SOURCE_SHA="$2"
+                die() {{ builtin printf 'ERROR: %s\\n' "$*" >&2; exit 1; }}
+                {capture_function}
+                capture_accepted_git_source_base64 "accepted.py"
+                """
+            )
+            harness_path = repo / "capture-harness.sh"
+            harness_path.write_text(harness, encoding="utf-8")
+
+            captured_result = run("/bin/bash", "-p", str(harness_path), str(repo), source_sha, cwd=repo)
+            self.assertEqual(
+                captured_result.returncode,
+                0,
+                captured_result.stderr.decode(errors="replace"),
+            )
+            captured_b64 = captured_result.stdout.strip()
+            captured = base64.b64decode(captured_b64, validate=True)
+            self.assertEqual(captured, b"print('accepted')\n")
 
             marker = repo / "attacker-ran.txt"
             subject.write_text(
@@ -88,12 +113,21 @@ class NestedFieldExecutionSubjectClosureTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            encoded = base64.b64encode(captured)
-            decoded = base64.b64decode(encoded, validate=True)
-            completed = run(sys.executable, "-I", "-", cwd=repo, input_bytes=decoded)
+            completed = run(sys.executable, "-I", "-", cwd=repo, input_bytes=captured)
             self.assertEqual(completed.returncode, 0, completed.stderr.decode(errors="replace"))
             self.assertEqual(completed.stdout.decode().strip(), "accepted")
             self.assertFalse(marker.exists(), "mutable checkout pathname executed after accepted Git capture")
+
+    def test_private_reader_bootstrap_and_provenance_share_the_same_capture_primitive(self) -> None:
+        installer = INSTALLER.read_text(encoding="utf-8")
+        calls = [
+            'CAPTURE_BOOTSTRAP_SOURCE_B64="$(capture_accepted_git_source_base64 "$CAPTURE_BOOTSTRAP_PATH")"',
+            'TUYA_PROVENANCE_SOURCE_B64="$(capture_accepted_git_source_base64 "$TUYA_PROVENANCE_PATH")"',
+            'PRIVATE_DEVICE_RUNNER="$(capture_accepted_git_source_base64 "$PRIVATE_DEVICE_RUNNER_PATH")"',
+        ]
+        for call in calls:
+            self.assertIn(call, installer)
+        self.assertEqual(installer.count("$(capture_accepted_git_source_base64"), 3)
 
 
 if __name__ == "__main__":
