@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Capture private Tuya field-input provenance")
 struct TuyaPrivateFieldInputProvenanceSourceTests {
-    @Test("review creates opaque authority while field mode rebinds to the externally accepted commitment")
+    @Test("review creates opaque authority while field mode rebinds to the exact-source accepted commitment")
     func bootstrapSeparatesReviewFromFieldAdmission() throws {
         let bootstrap = try readRepositoryFile("Scripts/bootstrap_capture_tuya_sdk.sh")
         let helper = try readRepositoryFile("Scripts/capture_tuya_private_input_provenance.py")
@@ -12,7 +12,12 @@ struct TuyaPrivateFieldInputProvenanceSourceTests {
         #expect(bootstrap.contains("capture_tuya_private_input_provenance.py"))
         #expect(bootstrap.contains("run_private_input_provenance review"))
         #expect(bootstrap.contains("run_private_input_provenance verify-review"))
-        #expect(bootstrap.contains("--field-private-input-commitment"))
+        #expect(bootstrap.contains("PRIVATE_REVIEW_AUTHORITY_PATH=\"CAPTURE_TUYA_PRIVATE_INPUT_REVIEW_COMMITMENT.txt\""))
+        #expect(bootstrap.contains("PRIVATE_REVIEW_AUTHORITY_BLOB"))
+        #expect(bootstrap.contains("rev-parse \"$EXPECTED_FIELD_SOURCE_SHA:$PRIVATE_REVIEW_AUTHORITY_PATH\""))
+        #expect(bootstrap.contains("cat-file blob \"$PRIVATE_REVIEW_AUTHORITY_BLOB\""))
+        #expect(bootstrap.contains("not from the mutable checkout pathname or a caller-supplied field value"))
+        #expect(!bootstrap.contains("--field-private-input-commitment"))
         #expect(bootstrap.contains("ACCEPTED_PRIVATE_INPUT_COMMITMENT"))
         #expect(bootstrap.contains("PRIVATE_REVIEW_KEY"))
         #expect(bootstrap.contains("accepted-lock mode requires the pre-existing reviewed private-input provenance record"))
@@ -28,12 +33,14 @@ struct TuyaPrivateFieldInputProvenanceSourceTests {
         #expect(bootstrap.contains("--review-key \"$PRIVATE_REVIEW_KEY\""))
         #expect(bootstrap.contains("--accepted-commitment \"$ACCEPTED_PRIVATE_INPUT_COMMITMENT\""))
 
+        let sourceAuthority = try requiredIndex(of: "PRIVATE_REVIEW_AUTHORITY_BLOB=", in: bootstrap)
         let preverify = try requiredIndex(of: "if ! run_private_input_provenance verify-review", in: bootstrap)
         let podInstall = try requiredIndex(of: "pod install --deployment --no-repo-update", in: bootstrap)
         let secondVerify = try requiredIndex(
             of: "private Tuya build inputs changed across dependency installation or no longer match the accepted review commitment",
             in: bootstrap
         )
+        #expect(sourceAuthority < preverify)
         #expect(preverify < podInstall)
         #expect(podInstall < secondVerify)
 
