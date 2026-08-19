@@ -22,9 +22,10 @@ This repository file is the recovery authority. Chat/task summaries are suppleme
 - PR base: `main`
 - PR state: draft until all exact-current-head acceptance gates below are green and inspected
 - Latest pushed implementation checkpoint recorded here: `1095f367c8d6ae7bc9f41b1bec4ede47fe055539`
-- Recovery rule: after cloning, run `git rev-parse HEAD` and `git ls-remote origin refs/heads/product/capture-1-0-main-20260818`; if either differs from the SHA above, inspect newer commits and update this file before development.
+- Latest pushed visual-authority/continuity checkpoint recorded here: `2f3a9e7f04d0bd153666610406cefeb7d561f8ae`
+- Recovery rule: after cloning, run `git rev-parse HEAD` and `git ls-remote origin refs/heads/product/capture-1-0-main-20260818`; if either is newer than the recorded checkpoints, inspect those commits and update this file before development.
 
-The file cannot self-embed the SHA of the commit containing its own changed bytes. Therefore the SHA above names the latest pushed implementation checkpoint that this document has audited; the remote branch HEAD is the authority for any later continuity-only commit.
+The file cannot self-embed the SHA of the commit containing its own changed bytes. Therefore the SHAs above name the latest pushed implementation and meaningful continuity checkpoints this document has audited; the remote branch HEAD is the authority for any later continuity-only commit.
 
 ## Current focused aspect and production acceptance gate
 
