@@ -1,0 +1,188 @@
+name: Capture Accepted Build Root Custody V2
+
+on:
+  pull_request:
+    paths:
+      - scripts/ci/capture_accepted_build_input_snapshot.py
+      - scripts/ci/capture_accepted_build_root_custody.py
+      - .github/workflows/capture-accepted-build-root-custody-v2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SNAPSHOT_BLOB: 317d36e2d95b2d904770908a491d17bb057ca79c
+  CUSTODY_BLOB: 2eb437eaf2e5d46f784c05ea666ebeb92ba9175c
+  WITNESS_BLOB: 1532a3b728e3562c090837b0f4d62f655c9a14d1
+  PYTHONDONTWRITEBYTECODE: 1
+
+jobs:
+  custody:
+    name: Prove current-carrier sealed accepted compiler-input root
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind immutable current carrier and accepted helper blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          expected_head="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$expected_head"
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            base_sha="${{ github.event.pull_request.base.sha }}"
+            test -n "$base_sha"
+            git merge-base --is-ancestor "$base_sha" HEAD
+            git diff --check "$base_sha"...HEAD
+          else
+            git diff --check HEAD^...HEAD
+          fi
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git cat-file -e "$WITNESS_BLOB^{blob}"
+          test "$(git rev-parse "${expected_head}:scripts/ci/capture_accepted_build_input_snapshot.py")" = "$SNAPSHOT_BLOB"
+          test "$(git rev-parse "${expected_head}:scripts/ci/capture_accepted_build_root_custody.py")" = "$CUSTODY_BLOB"
+
+      - name: Require noninteractive root authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/sudo -n /usr/bin/true
+
+      - name: Root-create sealed exact sibling bundle
+        id: bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="/private/tmp/nembra-capture-root-custody-v2-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          /usr/bin/sudo -n /bin/rm -rf "$bundle"
+          /usr/bin/sudo -n /bin/mkdir -p "$bundle/scripts/ci/tests"
+          /usr/bin/sudo -n /usr/sbin/chown -R 0:0 "$bundle"
+          /usr/bin/sudo -n /bin/chmod 0700 "$bundle" "$bundle/scripts" "$bundle/scripts/ci" "$bundle/scripts/ci/tests"
+
+          write_blob() {
+            rel="$1"
+            oid="$2"
+            git cat-file blob "$oid" | /usr/bin/sudo -n /usr/bin/python3 -B - "$bundle/$rel" "$oid" <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+          import sys
+
+          destination = Path(sys.argv[1])
+          expected = sys.argv[2]
+          data = sys.stdin.buffer.read()
+          digest = hashlib.sha1()
+          digest.update(f"blob {len(data)}\0".encode("ascii"))
+          digest.update(data)
+          if digest.hexdigest() != expected:
+              raise SystemExit("Git object stream does not match pinned blob OID")
+          flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+          fd = os.open(destination, flags, 0o400)
+          try:
+              offset = 0
+              while offset < len(data):
+                  offset += os.write(fd, data[offset:])
+              os.fsync(fd)
+          finally:
+              os.close(fd)
+          PY
+          }
+
+          write_blob scripts/ci/capture_accepted_build_input_snapshot.py "$SNAPSHOT_BLOB"
+          write_blob scripts/ci/capture_accepted_build_root_custody.py "$CUSTODY_BLOB"
+          write_blob scripts/ci/tests/test_capture_accepted_build_root_custody.py "$WITNESS_BLOB"
+          /usr/bin/sudo -n /usr/bin/find "$bundle" -type d -exec /bin/chmod 0500 {} +
+          printf '%s\n' "$bundle" > "$RUNNER_TEMP/accepted-root-custody-v2-path"
+          echo "bundle=$bundle" >> "$GITHUB_OUTPUT"
+
+      - name: Re-attest exact root-owned bundle
+        shell: bash
+        env:
+          SEALED_BUNDLE: ${{ steps.bundle.outputs.bundle }}
+        run: |
+          set -euo pipefail
+          /usr/bin/sudo -n /usr/bin/python3 -B - "$SEALED_BUNDLE" "$SNAPSHOT_BLOB" "$CUSTODY_BLOB" "$WITNESS_BLOB" <<'PY'
+          import hashlib
+          from pathlib import Path
+          import stat
+          import sys
+
+          root = Path(sys.argv[1])
+          expected = {
+              Path("scripts/ci/capture_accepted_build_input_snapshot.py"): sys.argv[2],
+              Path("scripts/ci/capture_accepted_build_root_custody.py"): sys.argv[3],
+              Path("scripts/ci/tests/test_capture_accepted_build_root_custody.py"): sys.argv[4],
+          }
+          for rel, oid in expected.items():
+              path = root / rel
+              meta = path.lstat()
+              if meta.st_uid != 0 or not stat.S_ISREG(meta.st_mode) or stat.S_IMODE(meta.st_mode) != 0o400:
+                  raise SystemExit(f"sealed exact file custody mismatch: {rel}")
+              data = path.read_bytes()
+              digest = hashlib.sha1()
+              digest.update(f"blob {len(data)}\0".encode("ascii"))
+              digest.update(data)
+              if digest.hexdigest() != oid:
+                  raise SystemExit(f"sealed exact blob mismatch: {rel}")
+          PY
+
+      - name: Prove accepted-root custody against field mutation
+        shell: bash
+        env:
+          SEALED_BUNDLE: ${{ steps.bundle.outputs.bundle }}
+        run: |
+          set -euo pipefail
+          field_user="$(/usr/bin/id -un)"
+          witness="$SEALED_BUNDLE/scripts/ci/tests/test_capture_accepted_build_root_custody.py"
+          /usr/bin/sudo -n env \
+            NEMBRA_TEST_FIELD_USER="$field_user" \
+            PYTHONDONTWRITEBYTECODE=1 \
+            /usr/bin/python3 -B -I "$witness" --field-user "$field_user"
+          echo "NEMBRA_ACCEPTED_BUILD_ROOT_V2 rootCustodyProved=true pinnedBlobOIDs=true xcodeBuildWired=false signingAuthority=false installAuthority=false deviceTouched=false bluetoothTouched=false physicalAuthorityCreated=false"
+
+      - name: Re-attest bundle after witness
+        shell: bash
+        env:
+          SEALED_BUNDLE: ${{ steps.bundle.outputs.bundle }}
+        run: |
+          set -euo pipefail
+          for spec in \
+            "scripts/ci/capture_accepted_build_input_snapshot.py:$SNAPSHOT_BLOB" \
+            "scripts/ci/capture_accepted_build_root_custody.py:$CUSTODY_BLOB" \
+            "scripts/ci/tests/test_capture_accepted_build_root_custody.py:$WITNESS_BLOB"; do
+            rel="${spec%%:*}"
+            oid="${spec#*:}"
+            actual="$(/usr/bin/sudo -n /usr/bin/python3 -B - "$SEALED_BUNDLE/$rel" <<'PY'
+          import hashlib
+          from pathlib import Path
+          import sys
+          data = Path(sys.argv[1]).read_bytes()
+          digest = hashlib.sha1()
+          digest.update(f"blob {len(data)}\0".encode("ascii"))
+          digest.update(data)
+          print(digest.hexdigest())
+          PY
+          )"
+            test "$actual" = "$oid"
+          done
+
+      - name: Remove sealed validation bundle
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          file="$RUNNER_TEMP/accepted-root-custody-v2-path"
+          if [[ -f "$file" ]]; then
+            bundle="$(cat "$file")"
+            case "$bundle" in
+              /private/tmp/nembra-capture-root-custody-v2-*) /usr/bin/sudo -n /bin/rm -rf "$bundle" ;;
+              *) echo "unsafe cleanup path: $bundle" >&2; exit 1 ;;
+            esac
+          fi
