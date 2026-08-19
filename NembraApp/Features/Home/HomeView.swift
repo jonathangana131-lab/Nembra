@@ -1185,12 +1185,11 @@ struct HomeView: View {
             return NembraColor.primaryText
         case (false, .estimatedRange):
             return NembraColor.primaryText.opacity(0.82)
-        case (true, .percentage):
-            return NembraColor.primaryText.opacity(0.86)
-        case (true, .estimatedRange):
-            // Retained telemetry remains visibly demoted, but never to the
-            // compounded ~50% opacity that failed on the small percent glyph.
-            return NembraColor.primaryText.opacity(0.74)
+        case (true, .percentage), (true, .estimatedRange):
+            // Retention truth is carried by the explicit freshness and offline
+            // surfaces. Keep the thin percent glyph fully legible instead of
+            // encoding staleness by dimming primary information.
+            return NembraColor.primaryText
         }
     }
 
@@ -1217,7 +1216,11 @@ struct HomeView: View {
     }
 
     private var batteryRangeSecondaryColor: Color {
-        NembraColor.secondaryText.opacity(batteryIsRetained ? 0.90 : 0.96)
+        // `secondaryText` is already a muted token. Applying another opacity
+        // made the qualifier fail when it crossed the gold or low-battery fill.
+        // This remains a cool secondary hierarchy while holding contrast over
+        // every part of the instrument's graphite copy well.
+        NembraColor.primaryText.opacity(0.82)
     }
 
     private var adaptiveRangeText: String {

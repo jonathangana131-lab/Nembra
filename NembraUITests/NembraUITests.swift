@@ -526,7 +526,7 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
-    func testHorizonV4DriveEntryTruthAndPortraitRestoration() {
+    func testHorizonV4DriveEntryTruthAndScreenshot() {
         let previousAppearance = XCUIDevice.shared.appearance
         defer {
             if XCUIDevice.shared.orientation != .portrait {
@@ -602,8 +602,6 @@ final class NembraUITests: XCTestCase {
             XCTAssertTrue(waitForLabelContaining("Battery", element: app.buttons["dashboard.battery-range"]))
         }
 
-        keepScreenshot(named: "Horizon V4 Drive - Simulator QA Only")
-
         let initialBatterySemantics = semantics(of: app.buttons["dashboard.battery-range"])
         app.buttons["dashboard.battery-range"].tap()
         XCTAssertTrue(
@@ -615,13 +613,14 @@ final class NembraUITests: XCTestCase {
             "The battery control must switch percentage/range semantics while its fill remains SOC."
         )
 
-        home.tap()
-        XCTAssertTrue(
-            waitForPortraitWindow(in: app, timeout: 8),
-            "The cockpit Home control must restore the owned portrait session."
-        )
-        XCTAssertTrue(app.buttons["home.horizon-entry"].waitForExistence(timeout: 5))
-        XCTAssertFalse(cockpit.exists)
+        // Hosted Xcode 27 proved that asking XCUI to dispatch another event after
+        // a landscape screenshot can wait indefinitely for an animation-idle
+        // notification even while the app process is quiescent. Keep the exact
+        // Drive screenshot terminal in this fixture. The immediately following
+        // battery hitch test independently exercises the real Home control and
+        // proves exact-scene portrait restoration after its five toggle samples.
+        keepScreenshot(named: "Horizon V4 Drive - Simulator QA Only")
+        app.terminate()
     }
 
     @MainActor
@@ -661,7 +660,12 @@ final class NembraUITests: XCTestCase {
         }
 
         app.buttons["dashboard.control.home"].tap()
-        XCTAssertTrue(waitForPortraitWindow(in: app, timeout: 8))
+        XCTAssertTrue(
+            waitForPortraitWindow(in: app, timeout: 8),
+            "The cockpit Home control must restore the owned portrait session."
+        )
+        XCTAssertTrue(app.buttons["home.horizon-entry"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["dashboard.cockpit"].exists)
     }
 
     @MainActor

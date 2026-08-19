@@ -177,7 +177,9 @@ func homeStatusAndRecoveryReflowAtAccessibilityDynamicType() throws {
     )
     #expect(!batteryReadout.contains("batteryValueColor.opacity"))
     #expect(source.contains("Color(red: 1.00, green: 0.36, blue: 0.32)"))
-    #expect(source.contains("NembraColor.primaryText.opacity(0.74)"))
+    #expect(source.contains("case (true, .percentage), (true, .estimatedRange):"))
+    #expect(source.contains("NembraColor.primaryText.opacity(0.82)"))
+    #expect(!source.contains("NembraColor.secondaryText.opacity(batteryIsRetained"))
 
     let recoveryStart = try #require(source.range(of: "private var connectionRecovery: some View"))
     let recoveryEnd = try #require(source.range(of: "private enum ConnectionRecoveryAction", range: recoveryStart.upperBound..<source.endIndex))
