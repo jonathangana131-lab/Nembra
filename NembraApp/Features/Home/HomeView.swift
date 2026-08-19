@@ -209,6 +209,15 @@ struct HomeView: View {
         .buttonStyle(.glass)
         .tint(NembraColor.warmGraphite)
         .frame(minWidth: 44, minHeight: 44)
+        .overlay {
+            // Native glass needs a stable, high-contrast control boundary over
+            // Home's near-black scene. A single cool specular rim preserves the
+            // selected material character without replacing native glass.
+            Circle()
+                .strokeBorder(NembraColor.primaryText.opacity(0.44), lineWidth: 1)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
         .contentShape(Rectangle())
         .accessibilityLabel("Vehicle controls")
         .accessibilityHint("Opens detailed vehicle controls and verified settings.")
@@ -347,21 +356,13 @@ struct HomeView: View {
             Text(batteryNumericText)
                 .font(.system(size: batteryNumericFontSize, weight: .light, design: .rounded))
                 .monospacedDigit()
-                .foregroundStyle(
-                    batteryReadoutMode == .percentage
-                        ? batteryValueColor
-                        : batteryValueColor.opacity(0.64)
-                )
+                .foregroundStyle(batteryValueColor)
                 .contentTransition(reduceMotion ? .identity : .numericText())
 
             if batteryPercent != nil {
                 Text("%")
                     .font(.system(size: batteryPercentFontSize, weight: .light, design: .rounded))
-                    .foregroundStyle(
-                        batteryReadoutMode == .percentage
-                            ? batteryValueColor
-                            : batteryValueColor.opacity(0.64)
-                    )
+                    .foregroundStyle(batteryValueColor)
             }
         }
         .frame(
@@ -1172,10 +1173,25 @@ struct HomeView: View {
     }
 
     private var batteryValueColor: Color {
-        if isBatteryLow { return .red }
-        return batteryIsRetained
-            ? NembraColor.primaryText.opacity(0.78)
-            : NembraColor.primaryText
+        if isBatteryLow {
+            // Keep the semantic warning red bright enough for the thin rolling
+            // numerals in both emphasis modes. Do not compound opacity when the
+            // estimated range is primary: that made `14` fail the runtime audit.
+            return Color(red: 1.00, green: 0.36, blue: 0.32)
+        }
+
+        switch (batteryIsRetained, batteryReadoutMode) {
+        case (false, .percentage):
+            return NembraColor.primaryText
+        case (false, .estimatedRange):
+            return NembraColor.primaryText.opacity(0.82)
+        case (true, .percentage):
+            return NembraColor.primaryText.opacity(0.86)
+        case (true, .estimatedRange):
+            // Retained telemetry remains visibly demoted, but never to the
+            // compounded ~50% opacity that failed on the small percent glyph.
+            return NembraColor.primaryText.opacity(0.74)
+        }
     }
 
     private var batteryRangePrimaryWeight: Font.Weight {

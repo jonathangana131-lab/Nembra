@@ -96,6 +96,8 @@ The current functional Xcode 27 Home capture is not the 1.0 visual-acceptance im
 
 Home is visually accepted only after a fresh exact-head GitHub Xcode 27 iPhone 12 screenshot is placed beside the selected reference at the same logical viewport and visibly proves battery detail, typography, approved scooter quality, zero copy occlusion, integrated grounding/light, and premium native-control glass together. Source-string tests and a functional screenshot alone are not visual acceptance.
 
+The current exact-head functional comparison is retained under `runtime-evidence/` with an explicit rejection marker, source SHA, workflow run, artifact digest, and visible mismatch record. It is recovery evidence only and must not be promoted into the final Home reference.
+
 ## Rides
 
 Use the refined archive reference exactly as the structure:

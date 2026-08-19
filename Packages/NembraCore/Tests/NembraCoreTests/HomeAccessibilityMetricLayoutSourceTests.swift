@@ -160,6 +160,24 @@ func homeStatusAndRecoveryReflowAtAccessibilityDynamicType() throws {
     let header = String(source[headerStart.lowerBound..<panelStart.lowerBound])
     #expect(header.contains("if dynamicTypeSize.isAccessibilitySize"))
     #expect(header.contains("VStack(alignment: .leading, spacing: 12)"))
+    #expect(header.contains("NembraColor.primaryText.opacity(0.44)"))
+    #expect(header.contains(".accessibilityHidden(true)"))
+
+    let batteryReadoutEnd = try #require(
+        source.range(
+            of: "private var batteryBody: some View",
+            range: batteryReadoutStart.upperBound..<source.endIndex
+        )
+    )
+    let batteryReadout = String(
+        source[batteryReadoutStart.lowerBound..<batteryReadoutEnd.lowerBound]
+    )
+    #expect(
+        batteryReadout.components(separatedBy: ".foregroundStyle(batteryValueColor)").count == 3
+    )
+    #expect(!batteryReadout.contains("batteryValueColor.opacity"))
+    #expect(source.contains("Color(red: 1.00, green: 0.36, blue: 0.32)"))
+    #expect(source.contains("NembraColor.primaryText.opacity(0.74)"))
 
     let recoveryStart = try #require(source.range(of: "private var connectionRecovery: some View"))
     let recoveryEnd = try #require(source.range(of: "private enum ConnectionRecoveryAction", range: recoveryStart.upperBound..<source.endIndex))
@@ -329,7 +347,7 @@ func homeRuntimeAccessibilityCoverageRemainsProductionStrength() throws {
     #expect(accessibilityXXXL.contains("\"-UIPreferredContentSizeCategoryName\""))
     #expect(
         accessibilityXXXL.contains(
-            "\"UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge\""
+            "\"UICTContentSizeCategoryAccessibilityXXXL\""
         )
     )
     for stableIdentifier in [

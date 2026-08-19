@@ -792,6 +792,7 @@ private struct RideHistoryRowView: View {
 private struct RideHistoryDetailView: View {
     @Environment(RideRoutePresentationStore.self) private var routes
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Namespace private var timelineAccessibilityNamespace
     @State private var recordingDetailsExpanded = false
 
     let record: RideHistoryRecord
@@ -1189,29 +1190,45 @@ private struct RideHistoryDetailView: View {
             HStack(spacing: 12) {
                 Text(title)
                     .font(.subheadline.weight(.medium))
+                    .accessibilityLabeledPair(
+                        role: .label,
+                        id: title,
+                        in: timelineAccessibilityNamespace
+                    )
                 Spacer(minLength: 12)
                 Text(timestamp(date))
                     .font(.subheadline.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.trailing)
+                    .accessibilityLabeledPair(
+                        role: .content,
+                        id: title,
+                        in: timelineAccessibilityNamespace
+                    )
             }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.subheadline.weight(.medium))
+                    .accessibilityLabeledPair(
+                        role: .label,
+                        id: title,
+                        in: timelineAccessibilityNamespace
+                    )
                 Text(timestamp(date))
                     .font(.subheadline.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabeledPair(
+                        role: .content,
+                        id: title,
+                        in: timelineAccessibilityNamespace
+                    )
             }
         }
         .padding(.leading, 20)
         .padding(.trailing, 72)
         .padding(.vertical, 16)
-        .contentShape(.accessibility, Rectangle())
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(title)
-        .accessibilityValue(timestamp(date))
     }
 
     @ViewBuilder

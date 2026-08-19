@@ -164,7 +164,9 @@ final class NembraUITests: XCTestCase {
             orientation: .portrait,
             arguments: [
                 "-UIPreferredContentSizeCategoryName",
-                "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
+                // This preference consumes UIKit's raw category identifier,
+                // not the Swift symbol's expanded English case name.
+                "UICTContentSizeCategoryAccessibilityXXXL"
             ]
         )
         XCTAssertTrue(waitForPortraitWindow(in: app, timeout: 5))

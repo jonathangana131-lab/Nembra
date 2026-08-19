@@ -21,12 +21,12 @@ struct RideWindowNavigationClearanceSourceTests {
             "The retained Ride detail witness shows navigation.launch covering the Ended timestamp. Reserve the 54 pt launcher + 18 pt trailing footprint locally in Ride Window rows instead of shrinking text or moving global Navigation."
         )
         #expect(
-            timelineSource.contains(".accessibilityElement(children: .ignore)")
-                && timelineSource.contains(".accessibilityLabel(title)")
-                && timelineSource.contains(".accessibilityValue(timestamp(date))")
-                && timelineSource.contains(".contentShape(.accessibility, Rectangle())")
+            timelineSource.contains("role: .label,")
+                && timelineSource.contains("role: .content,")
+                && timelineSource.contains("in: timelineAccessibilityNamespace")
+                && !timelineSource.contains(".accessibilityElement(children: .ignore)")
                 && !timelineSource.contains(".accessibilityElement(children: .combine)"),
-            "Ride Window rows must expose one explicit label/value element across the padded row while their semantic Text views remain free to scale. Combining the adaptive ViewThatFits children caused alternating Xcode 27 Dynamic Type audit failures, and limiting the accessibility shape to its text caused an 18 pt hit-region audit failure."
+            "Ride Window rows must keep their native, scaling Text elements and associate each title with its timestamp as a label/content pair. Synthetic combined or ignored row elements caused alternating Xcode 27 Dynamic Type and hit-region audit failures."
         )
     }
 
