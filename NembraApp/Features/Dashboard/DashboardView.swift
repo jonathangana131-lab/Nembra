@@ -211,10 +211,11 @@ struct DashboardView: View {
         }
         .accessibilityLabel(batteryReadout == .charge ? "Battery" : "Learned range")
         .accessibilityValue(batteryAccessibilityValue)
-        .accessibilityHint("Double tap to switch between battery charge and learned range. Learned range remains unavailable until Nembra has verified battery evidence and a learned range model.")
+        .accessibilityHint(batteryRangeAccessibilityHint)
         .accessibilityIdentifier("dashboard.battery-range")
         .id(batteryReadout)
         .buttonStyle(.plain)
+        .disabled(!batteryRangeInteractionIsAvailable)
         .frame(minWidth: 44, minHeight: 44, alignment: .leading)
         .sensoryFeedback(.selection, trigger: batteryReadout)
     }
@@ -322,11 +323,12 @@ struct DashboardView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(!batteryRangeInteractionIsAvailable)
         .frame(minWidth: 44, minHeight: 44, alignment: .leading)
         .sensoryFeedback(.selection, trigger: batteryReadout)
         .accessibilityLabel(batteryReadout == .charge ? "Battery" : "Learned range")
         .accessibilityValue(batteryAccessibilityValue)
-        .accessibilityHint("Double tap to switch between battery charge and learned range. Battery fill always represents charge. Learned range remains unavailable until Nembra has verified battery evidence and a learned range model.")
+        .accessibilityHint(batteryRangeAccessibilityHint)
         .accessibilityIdentifier("dashboard.battery-range")
     }
 
@@ -671,6 +673,17 @@ struct DashboardView: View {
         }
     }
 
+    private var batteryRangeInteractionIsAvailable: Bool {
+        shouldShowStoppedControls
+    }
+
+    private var batteryRangeAccessibilityHint: String {
+        if batteryRangeInteractionIsAvailable {
+            return "Double tap to switch between battery charge and learned range. Learned range remains unavailable until Nembra has verified battery evidence and a learned range model."
+        }
+        return "Range selection is available when stopped."
+    }
+
     private var batteryPrimaryColor: Color {
         if batteryInstrumentWarning { return .red }
         if isRetainedBatteryData { return .secondary }
@@ -691,7 +704,10 @@ struct DashboardView: View {
         if batteryPercent == nil {
             return "CHARGE UNAVAILABLE"
         }
-        return isBatteryLow ? "LOW CHARGE" : "TAP FOR RANGE"
+        if isBatteryLow {
+            return "LOW CHARGE"
+        }
+        return batteryRangeInteractionIsAvailable ? "TAP FOR RANGE" : ""
     }
 
     private var batterySecondaryColor: Color {
