@@ -31,6 +31,7 @@ class PrivateInputProvenanceTests(unittest.TestCase):
         self.security_podspec = self.sdk / "ThingSmartCryption.podspec"
         self.identity_podspec = self.identity / "NembraTuyaPrivateConfig.podspec"
         self.record = self.identity / "ResolvedTuyaDependencyProvenance.txt"
+        self.review_key = self.identity / "PrivateInputReviewKey.bin"
 
         self.lockfile.write_text(
             "  - ThingSmartHomeKit (7.8.0)\n"
@@ -68,6 +69,86 @@ class PrivateInputProvenanceTests(unittest.TestCase):
         self.assertIn("private_identity_sources_tree_sha256=", text)
         self.assertNotIn("DO-NOT-SERIALIZE", text)
         self.assertEqual(stat.S_IMODE(self.record.stat().st_mode), 0o600)
+
+    def test_opaque_review_commitment_verifies_same_generation(self) -> None:
+        current = self.current()
+        commitment = provenance.create_private_review(
+            record_path=self.record,
+            key_path=self.review_key,
+            current=current,
+        )
+        self.assertRegex(commitment, r"^[0-9a-f]{64}$")
+        self.assertEqual(stat.S_IMODE(self.review_key.stat().st_mode), 0o600)
+        self.assertEqual(self.review_key.stat().st_size, provenance.PRIVATE_REVIEW_KEY_BYTES)
+        self.assertNotIn("DO-NOT-SERIALIZE", commitment)
+
+        provenance.verify_private_review(
+            record_path=self.record,
+            key_path=self.review_key,
+            current=self.current(),
+            accepted_commitment=commitment,
+        )
+
+    def test_replacing_private_generation_and_local_witness_cannot_match_accepted_commitment(self) -> None:
+        accepted = provenance.create_private_review(
+            record_path=self.record,
+            key_path=self.review_key,
+            current=self.current(),
+        )
+
+        # Simulate same-user replacement of the entire local private generation.
+        (self.security_build / "ThingSmartCryption.bin").write_bytes(b"replacement-sdk")
+        (self.identity_sources / "NembraTuyaPrivateIdentity.swift").write_text(
+            'private let encodedAppKey = "REPLACEMENT"\n',
+            encoding="utf-8",
+        )
+        replacement = self.current()
+
+        # The attacker can replace the local record and local random key too.
+        replacement_commitment = provenance.create_private_review(
+            record_path=self.record,
+            key_path=self.review_key,
+            current=replacement,
+        )
+        self.assertNotEqual(replacement_commitment, accepted)
+        with self.assertRaisesRegex(provenance.ProvenanceError, "externally accepted review commitment"):
+            provenance.verify_private_review(
+                record_path=self.record,
+                key_path=self.review_key,
+                current=replacement,
+                accepted_commitment=accepted,
+            )
+
+    def test_tampered_review_key_is_rejected(self) -> None:
+        accepted = provenance.create_private_review(
+            record_path=self.record,
+            key_path=self.review_key,
+            current=self.current(),
+        )
+        self.review_key.write_bytes(b"x" * provenance.PRIVATE_REVIEW_KEY_BYTES)
+        self.review_key.chmod(0o600)
+        with self.assertRaisesRegex(provenance.ProvenanceError, "externally accepted review commitment"):
+            provenance.verify_private_review(
+                record_path=self.record,
+                key_path=self.review_key,
+                current=self.current(),
+                accepted_commitment=accepted,
+            )
+
+    def test_review_key_permissions_fail_closed(self) -> None:
+        accepted = provenance.create_private_review(
+            record_path=self.record,
+            key_path=self.review_key,
+            current=self.current(),
+        )
+        self.review_key.chmod(0o644)
+        with self.assertRaisesRegex(provenance.ProvenanceError, "mode 0600"):
+            provenance.verify_private_review(
+                record_path=self.record,
+                key_path=self.review_key,
+                current=self.current(),
+                accepted_commitment=accepted,
+            )
 
     def test_any_private_input_drift_fails_closed(self) -> None:
         provenance.write_record(self.record, self.current())
