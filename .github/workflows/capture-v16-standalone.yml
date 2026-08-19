@@ -93,10 +93,11 @@ jobs:
         run: |
           set -euo pipefail
           contract='Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerProcedureSourceTests.swift'
+          installer='scripts/field/install_one_time_capture.command'
           test -f "$contract"
-          grep -Fq 'scripts/field/install_one_time_capture.command' "$contract"
-          test ! -e scripts/field/install_one_time_capture.command
-          printf '%s\n' 'Field-installer contract remains present but belongs to a later Capture objective; this standalone gate does not silently skip or recreate its authority input.'
+          grep -Fq "$installer" "$contract"
+          test -f "$installer"
+          printf '%s\n' 'Field installer and its contract are present on the composed carrier; this standalone gate validates the software-only app and does not execute field install/Bluetooth authority.'
 
       - name: Build standalone Capture for Simulator
         run: |
