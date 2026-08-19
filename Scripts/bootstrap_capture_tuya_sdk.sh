@@ -16,21 +16,21 @@ FIELD_MODE=0
 PROVENANCE_HELPER_SOURCE_B64=""
 EXPECTED_FIELD_SOURCE_SHA=""
 ACCEPTED_PRIVATE_INPUT_COMMITMENT=""
+PRIVATE_REVIEW_AUTHORITY_PATH="CAPTURE_TUYA_PRIVATE_INPUT_REVIEW_COMMITMENT.txt"
 
 if [[ "${1:-}" == "--resolve-lock-for-review" ]]; then
   REVIEW_ONLY=1
   shift
 elif [[ "${1:-}" == "--field-repo-root" ]]; then
   FIELD_MODE=1
-  [[ "$#" == "8" && "${3:-}" == "--field-source-sha" && "${5:-}" == "--field-provenance-helper-base64" && "${7:-}" == "--field-private-input-commitment" ]] || {
+  [[ "$#" == "6" && "${3:-}" == "--field-source-sha" && "${5:-}" == "--field-provenance-helper-base64" ]] || {
     echo "ERROR: internal field bootstrap arguments are malformed." >&2
     exit 2
   }
   REPO_ROOT="${2:-}"
   EXPECTED_FIELD_SOURCE_SHA="${4:-}"
   PROVENANCE_HELPER_SOURCE_B64="${6:-}"
-  ACCEPTED_PRIVATE_INPUT_COMMITMENT="${8:-}"
-  shift 8
+  shift 6
 fi
 
 if [[ "$FIELD_MODE" == "1" ]]; then
@@ -51,10 +51,6 @@ if [[ "$FIELD_MODE" == "1" ]]; then
     exit 2
   }
   EXPECTED_FIELD_SOURCE_SHA="$(printf '%s' "$EXPECTED_FIELD_SOURCE_SHA" | tr '[:upper:]' '[:lower:]')"
-  [[ "$ACCEPTED_PRIVATE_INPUT_COMMITMENT" =~ ^[0-9a-f]{64}$ ]] || {
-    echo "ERROR: internal field bootstrap requires one canonical externally accepted private-input commitment." >&2
-    exit 2
-  }
   CURRENT_FIELD_SOURCE_SHA="$(GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null | tr '[:upper:]' '[:lower:]')" || {
     echo "ERROR: internal field bootstrap could not resolve checkout HEAD." >&2
     exit 2
@@ -67,6 +63,7 @@ if [[ "$FIELD_MODE" == "1" ]]; then
     echo "ERROR: accepted provenance-helper execution bytes are unavailable." >&2
     exit 2
   }
+
   PROVENANCE_HELPER_PATH="Scripts/capture_tuya_private_input_provenance.py"
   PROVENANCE_HELPER_BLOB="$(GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_ROOT" rev-parse "$EXPECTED_FIELD_SOURCE_SHA:$PROVENANCE_HELPER_PATH" 2>/dev/null)" || {
     echo "ERROR: accepted provenance helper is missing from the exact Git tree." >&2
@@ -84,7 +81,25 @@ if [[ "$FIELD_MODE" == "1" ]]; then
     echo "ERROR: provenance-helper execution bytes do not match the exact accepted Git object." >&2
     exit 2
   }
-  unset CANONICAL_REPO_ROOT CURRENT_FIELD_SOURCE_SHA CAPTURED_PROVENANCE_BLOB
+
+  PRIVATE_REVIEW_AUTHORITY_BLOB="$(GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_ROOT" rev-parse "$EXPECTED_FIELD_SOURCE_SHA:$PRIVATE_REVIEW_AUTHORITY_PATH" 2>/dev/null)" || {
+    echo "ERROR: exact accepted source does not contain a private-input review commitment. Physical field admission remains locked." >&2
+    exit 2
+  }
+  [[ "$PRIVATE_REVIEW_AUTHORITY_BLOB" =~ ^[0-9a-f]{40}$ ]] || {
+    echo "ERROR: accepted private-input review authority Git identity is malformed." >&2
+    exit 2
+  }
+  ACCEPTED_PRIVATE_INPUT_COMMITMENT="$(GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_ROOT" cat-file blob "$PRIVATE_REVIEW_AUTHORITY_BLOB" 2>/dev/null)" || {
+    echo "ERROR: accepted private-input review commitment could not be read from the exact Git object." >&2
+    exit 2
+  }
+  [[ "$ACCEPTED_PRIVATE_INPUT_COMMITMENT" =~ ^[0-9a-f]{64}$ ]] || {
+    echo "ERROR: exact accepted source has no canonical 64-hex private-input review commitment. Run review mode, independently accept the opaque commitment, and record it in CAPTURE_TUYA_PRIVATE_INPUT_REVIEW_COMMITMENT.txt before any field build." >&2
+    exit 2
+  }
+
+  unset CANONICAL_REPO_ROOT CURRENT_FIELD_SOURCE_SHA CAPTURED_PROVENANCE_BLOB PRIVATE_REVIEW_AUTHORITY_BLOB
   SCRIPT_DIR="$REPO_ROOT/Scripts"
   PROVENANCE_HELPER=""
 else
@@ -201,10 +216,6 @@ PY
 
 if [[ "$REVIEW_ONLY" == "1" ]]; then
   printf '%s\n' 'Resolving a candidate official Tuya SDK graph for review…'
-  # This is the only mode allowed to refresh public spec metadata or create a
-  # new lock/private review generation. Its output is non-authorizing until the
-  # resulting lock digest and opaque private-input commitment are independently
-  # accepted into the exact field source.
   pod install --repo-update
 else
   [[ -f Podfile.lock && ! -L Podfile.lock ]] || {
@@ -238,10 +249,6 @@ else
     exit 8
   }
 
-  # The local witness and key are not authority by themselves. Field mode must
-  # rebind the current private generation to the opaque commitment already
-  # accepted by the exact source *before* CocoaPods can interpret a private
-  # podspec, then repeat the same proof after dependency installation.
   if ! run_private_input_provenance verify-review \
       --review-key "$PRIVATE_REVIEW_KEY" \
       --accepted-commitment "$ACCEPTED_PRIVATE_INPUT_COMMITMENT"; then
@@ -322,10 +329,10 @@ The review key and fingerprint record stay private. The 64-hex commitment is saf
 to carry into the public acceptance plane because it is HMAC-bound to a random
 local key rather than being a direct credential-derived hash.
 
-After reviewing this candidate, record the exact opaque commitment in the tracked
-field-authority source for a later accepted source SHA. Field mode will verify the
-current private generation against that exact accepted commitment before CocoaPods
-and again before returning. It will never snapshot a replacement generation.
+After reviewing this candidate, record the exact opaque commitment in:
+  $PRIVATE_REVIEW_AUTHORITY_PATH
+on a new source commit. Field mode reads that value from the exact accepted Git
+object, not from the mutable checkout pathname or a caller-supplied field value.
 EOF
   exit 0
 fi
@@ -342,5 +349,5 @@ unset ACCEPTED_LOCK_SHA256 PREINSTALL_LOCK_SHA256 NEMBRA_CAPTURE_ACCEPTED_TUYA_L
 unset PROVENANCE_HELPER_SOURCE_B64 EXPECTED_FIELD_SOURCE_SHA PROVENANCE_HELPER_BLOB || true
 
 printf 'Preaccepted Tuya dependency lock matched: %s\n' "$LOCK_SHA256"
-printf 'Externally accepted private-input commitment matched: %s\n' "$ACCEPTED_PRIVATE_INPUT_COMMITMENT"
+printf 'Exact-source private-input review commitment matched: %s\n' "$ACCEPTED_PRIVATE_INPUT_COMMITMENT"
 printf '%s\n' 'Private Tuya inputs matched the externally accepted review generation. Use NembraCapture.xcworkspace for the field build.'
