@@ -21,7 +21,7 @@ This repository file is the recovery authority. Chat/task summaries are suppleme
 - Pull request: [#3675 — Finish Capture checkpoint and production Nembra surfaces](https://github.com/jonathangana131-lab/Nembra/pull/3675)
 - PR base: `main`
 - PR state: draft until all exact-current-head acceptance gates below are green and inspected
-- Latest pushed implementation checkpoint recorded here: `1095f367c8d6ae7bc9f41b1bec4ede47fe055539`
+- Latest pushed implementation checkpoint recorded here: `a381a30fd9c321120a6fd5998785d6ce2b1acc4b`
 - Latest pushed visual-authority/continuity checkpoint recorded here: `2f3a9e7f04d0bd153666610406cefeb7d561f8ae`
 - Recovery rule: after cloning, run `git rev-parse HEAD` and `git ls-remote origin refs/heads/product/capture-1-0-main-20260818`; if either is newer than the recorded checkpoints, inspect those commits and update this file before development.
 
@@ -63,34 +63,34 @@ Checkpoint `1095f367…` specifically fixes the steady-state Dashboard animation
 - `NembraApp/App/AppRootView.swift`
 - `Packages/NembraCore/Tests/NembraCoreTests/RideWindowNavigationClearanceSourceTests.swift`
 
+Checkpoint `a381a30f…` is the current pushed Home/evidence candidate. It closes the three failures proven by exact run `32290421627` and implements the first focused Home energy-material correction without claiming visual acceptance:
+
+- `NembraUITests/NembraUITests.swift` terminates the intentionally continuous render-stress fixture after its preserved 3×6-second measurement, post-update proof, QA screenshot, and metrics rather than waiting for impossible XCUI animation quiescence. Independent exact-scene portrait restoration coverage remains unchanged.
+- `NembraApp/App/AppRootView.swift` gives the explicit read-only Ride timeline label/value node the full existing padded-row accessibility focus shape without adding a button trait or changing layout.
+- `NembraApp/Features/Home/HomeView.swift` adds a synchronous, input-driven engineered battery Canvas with truthful SOC fill, SOC-clipped graphite copy well, gold/red dimensional fill, fine clipped ribs, metallic shell/rim/terminal, state-aware typography/contrast, early large-text reflow, a measured current-asset copy corridor, and separate blurred tire/deck/ambient/gold/floor grounding layers. It shortens the standard hero to restore populated-row/tab clearance and applies native glass only to the actionable saved-ride continuation.
+- `NembraApp/DesignSystem/NembraVisuals.swift` uses a stable dark Nembra fallback and boundary under Reduce Transparency/Show Borders rather than an adaptive light surface that could erase white glyphs.
+- `NembraUITests/NembraUITests.swift` adds standard accessibility auditing (including contrast), explicit Accessibility XXXL reachability/screenshots, and retained/low-battery contrast audits.
+- Focused source contracts are updated under `Packages/NembraCore/Tests/NembraCoreTests/HomeAccessibilityControlLayoutSourceTests.swift`, `HomeAccessibilityMetricLayoutSourceTests.swift`, and `RideWindowNavigationClearanceSourceTests.swift`.
+
+Local proportional evidence for `a381a30f…`: all seven changed Swift files parse; `git diff --check` passes; six focused Swift Testing source tests pass; and a diagnostic local Swift 6 strict-concurrency `build-for-testing` compiled the app, unit-test, and UI-test targets. This local Xcode 26.1 result is not release authority.
+
 ## Work in progress
 
-The following local candidate is intentionally **not yet committed or pushed** while exact-head `1095f367…` Xcode 27 evidence is audited and the user-required Home hero correction is completed:
+No intentional source change is local-only at this checkpoint. The coherent code candidate is pushed as `a381a30fd9c321120a6fd5998785d6ce2b1acc4b`; this continuity update is the only expected follow-up change.
 
-- `NembraApp/Features/Home/HomeView.swift`
-  - standard Home hero remeasured toward the selected reference;
-  - smaller standard header/control chrome, lifted/narrowed ES80 asset, widened battery body, retained hero clipping and gold grounding;
-  - Dynamic Type-scaled battery number/percent through `@ScaledMetric`;
-  - no change to telemetry authority, SOC fill meaning, or unavailable adaptive-range truth.
-- `NembraUITests/NembraUITests.swift`
-  - standard Home production accessibility audit;
-  - explicit Accessibility XXXL Simulator-QA run with truth semantics, 44-point controls, scroll reachability, tab clearance, and top/bottom screenshots.
-- `Packages/NembraCore/Tests/NembraCoreTests/HomeAccessibilityMetricLayoutSourceTests.swift`
-  - source contracts for the measured Home geometry and runtime accessibility coverage.
+Hosted evidence is in progress and is not yet transferable:
 
-This local geometry/accessibility batch is only a starting point. It does **not** yet implement the required battery microtexture/material depth, refined range typography, stronger approved ES80 render, complete non-occlusion proof, integrated floor lighting, or final native-glass response. Do not commit or call it visually complete in its present form.
+- `Xcode 27 Simulator QA` run [`32306198999`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32306198999) is queued for exact `a381a30f…`.
+- `Capture V16 Standalone Exact-Head` run [`32306199002`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32306199002), `Capture Field Build Provenance` run [`32306198992`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32306198992), and `Capture Standalone Visual Evidence` run [`32306199106`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32306199106) are running/queued at the same exact code SHA.
+- `Capture TODAY Field Candidate Preflight QA` run [`32306199026`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32306199026) and `Capture TODAY Final GO QA` run [`32306199112`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32306199112) are green at exact `a381a30f…`; they remain nonphysical/non-authorizing contract evidence.
 
-Why uncommitted: the user explicitly rejected the current functional hero as the 1.0 visual target. The correction needs an asset-provenance decision and a measured implementation before it becomes a coherent remote candidate. Recovery if this task disappears before that push: start from pushed `1095f367…`, retain the runtime accessibility additions described above, and implement the full visual-acceptance list in this document; do not merely reproduce the current three-file geometry diff.
-
-Local proportional checks already green for this candidate:
-
-- `xcrun swiftc -frontend -parse` on all three changed Swift files.
-- `git diff --check`.
-- `swift test --package-path Packages/NembraCore --filter HomeAccessibilityMetricLayoutSourceTests` — 2/2 tests passed.
+Do not call the Home correction visually accepted from source or local-build evidence. The first exact Xcode 27 runtime screenshots must be compared directly with the selected Home reference, and the current temporary ES80 asset still blocks final visual/provenance acceptance.
 
 ## Exact CI and retained evidence
 
-All results below are scoped to exact checkpoint `1095f367c8d6ae7bc9f41b1bec4ede47fe055539` unless stated otherwise.
+The current implementation checkpoint is `a381a30fd9c321120a6fd5998785d6ce2b1acc4b`. Its exact-head main/Capture workflows are listed under Work in progress above. Only the two Ubuntu Capture contract lanes are currently green; the Xcode 27 product and standalone evidence lanes are pending and control acceptance.
+
+The detailed results below are scoped to ancestor checkpoint `1095f367c8d6ae7bc9f41b1bec4ede47fe055539`. They are retained root-cause/baseline evidence only and do not transfer to `a381a30f…`.
 
 - `Capture TODAY Field Candidate Preflight QA` run `32290421595` — **green**; non-authorizing prerequisite/custody validation only.
 - `Capture TODAY Final GO QA` run `32290421666` — **green**; hardened authority-contract validation only, not physical GO.
@@ -114,16 +114,16 @@ All results below are scoped to exact checkpoint `1095f367c8d6ae7bc9f41b1bec4ede
 
 Historical evidence useful for root cause only:
 
-- Exact `45d020fa…` run `32275420710`, artifact `9378517919`, proved Core 1,353/1,353 and app/unit 76/76, but failed two Dashboard idle timeouts and one Ride Dynamic Type audit. Checkpoint `1095f367…` contains the bounded fixes. Ancestor evidence is not merge authority.
+- Exact `45d020fa…` run `32275420710`, artifact `9378517919`, proved Core 1,353/1,353 and app/unit 76/76, but failed two Dashboard idle timeouts and one Ride Dynamic Type audit. Its `Selected Portrait Home - Simulator QA Only` attachment is the functional screenshot that exposed the flat battery, temporary grey/red scooter, copy occlusion, weak grounding, and shallow material response. It is explicitly not the Home 1.0 visual-acceptance image. Checkpoint `1095f367…` contains the bounded runtime fixes; `a381a30f…` contains the subsequent Home/evidence correction. Ancestor evidence is not merge authority.
 
 ## Known blockers
 
 ### Code/CI work
 
-- Fix exact run `32290421627` without weakening gates: stop/pause the Simulator stress source before post-measurement Dashboard exit, correct the noninteractive Ride timeline hit-region semantics, and restore at least 8 points of populated Home/tab clearance.
-- Implement the complete Home visual correction above, including asset provenance, battery material/typography, zero occlusion, integrated grounding, and native functional-glass response.
-- Compare the resulting fresh Home runtime screenshot beside `docs/design-reference/nembra-1.0-gold-glass/selected-home-gold-glass.png` at the same 390×844 logical viewport/state before visual acceptance.
-- Push the coherent Home visual/accessibility candidate and rerun exact-head Xcode 27; its new runtime audits are not yet proven.
+- Validate exact `a381a30f…` on GitHub-hosted Xcode 27. Source work for all three failures in run `32290421627` is pushed, but only the new runtime can prove stress-fixture shutdown, the Ride read-only hit region, populated Home/tab clearance, standard/retained/low-battery contrast, and Accessibility XXXL reachability.
+- Inspect the exact-head Home screenshots beside `docs/design-reference/nembra-1.0-gold-glass/selected-home-gold-glass.png` on one same-viewport comparison canvas. Source geometry is not visual acceptance.
+- Continue the Home correction only from visible runtime mismatches. The current battery/material/typography/grounding implementation is a candidate, not a final image.
+- Replace the temporary 500×500 grey/red ES80 source only after the user supplies a user-owned/commissioned high-resolution actual-scooter side photo or written AOVOPRO permission for a specific high-resolution source. Update `docs/PRODUCTION_VISUAL_ASSET_PROVENANCE.md` with exact custody before shipping it.
 - Keep PR description/checklist synchronized with this file after each pushed checkpoint.
 
 ### GitHub/external
@@ -142,26 +142,12 @@ Historical evidence useful for root cause only:
 
 ## Exact next executable action
 
-1. Fix the three proven exact-run defects from `32290421627`: bounded stress-fixture shutdown before Home exit, truthful noninteractive Ride timeline hit-region semantics, and populated Home continuation/tab clearance.
-2. Preserve the passing battery-toggle, exact-scene entry/portrait restoration, Dynamic Type, Core, and app/unit contracts.
-3. Use the current `ES80Side` only as a temporary truthful layout silhouette. Implement battery/layout/grounding independently; final visual acceptance remains blocked until the asset-rights requirement above is met. Preserve any new source/edit provenance and checksum in `docs/PRODUCTION_VISUAL_ASSET_PROVENANCE.md`.
-4. Implement the focused Home hero correction in `NembraApp/Features/Home/HomeView.swift` and project assets. Keep SOC/range/currentness truth and the rest of Home unchanged.
-5. Extend deterministic frame-intersection, state screenshot, Dynamic Type, and runtime accessibility evidence without substituting source-string tests for visual review.
-5. Run:
-
-   ```sh
-   xcrun swiftc -frontend -parse \
-     NembraApp/Features/Home/HomeView.swift \
-     NembraUITests/NembraUITests.swift \
-     Packages/NembraCore/Tests/NembraCoreTests/HomeAccessibilityMetricLayoutSourceTests.swift
-   git diff --check
-   swift test --package-path Packages/NembraCore \
-     --filter HomeAccessibilityMetricLayoutSourceTests
-   ```
-
-6. Create a same-viewport side-by-side comparison with the selected Home reference and inspect typography, battery texture/shell, approved scooter asset, non-occlusion, floor grounding, and native glass response together.
-7. Update this file and PR #3675 with the exact result, commit only the coherent Home/continuity batch, push `product/capture-1-0-main-20260818`, and verify `git ls-remote` contains the commit.
-8. Monitor the new exact-head Capture and main Xcode 27 workflows. Do not merge until every current-head acceptance gate is green and inspected.
+1. Monitor exact `a381a30f…` `Xcode 27 Simulator QA` run `32306198999` through terminal status. Download its artifact and verify source SHA, Xcode/iOS/iPhone 12 identity, Core/app/unit/UI results, Release clock + Hitch Time Ratio samples, direct screenshot matrix, retained attachments, and any accessibility issue element.
+2. Monitor the three exact `a381a30f…` Capture Xcode lanes listed above. Treat queue/cancellation separately from test failure and preserve the physical/private NO-GO boundary.
+3. If the product run is green, place its unscrolled deterministic `Selected Portrait Home - Simulator QA Only` screenshot beside `docs/design-reference/nembra-1.0-gold-glass/selected-home-gold-glass.png` on one 390×844 logical comparison canvas. Inspect battery ribs/shell/copy-well contrast, scooter/text intersections, grounding, functional glass, populated-row/tab clearance, and all state screenshots. Record visible mismatches; do not infer fidelity from source.
+4. If the product run is red, apply only the narrow evidenced fix in the files named by the failure. Preserve the passing battery-toggle, exact-scene portrait restoration, telemetry truth, daily continuity, and performance gates.
+5. Before every new checkpoint, run parsers, `git diff --check`, the three focused source suites, and a secret/scope audit; commit/push intentionally, verify the remote branch SHA, then update this file and PR #3675 again.
+6. Do not merge until every exact-current-head gate is green and inspected. Home remains visually unfinished while the temporary unlicensed/low-resolution ES80 asset is present even if functional CI turns green.
 
 ## Rejected designs and approaches
 
@@ -179,13 +165,13 @@ Historical evidence useful for root cause only:
 
 ## Unverified assumptions and evidence still required
 
-- The `1095f367…` conditional Timeline/static branch is statically verified but still needs the exact Xcode 27 runtime to prove both prior idle timeouts are gone.
+- The `a381a30f…` stress-fixture termination is statically verified and preserves measurement evidence, but exact Xcode 27 must prove the sustained test exits within allowance and the Release metric validator receives real samples.
 - The V4 pixel execution is no longer visual authority. Existing Drive/Nav/Explore screenshots can prove functionality and rejected traits only; a new production composition study/selection and later exact-head screenshots are required.
-- Ride Window explicit row semantics still need the exact Xcode 27 Dynamic Type audit.
-- The local Home hero measurements need a fresh same-state side-by-side screenshot comparison; source literals and parser tests are not visual acceptance.
+- Ride Window explicit row semantics and full padded accessibility shape still need the exact Xcode 27 audit.
+- The pushed Home hero measurements support a conservative >20-point copy corridor for the current temporary asset at the default iPhone 12 state, but only fresh same-state screenshots and hosted accessibility audits can prove real non-occlusion/contrast. Source literals and parser tests are not visual acceptance.
 - The current 500×500 `ES80Side` presentation asset is linked to AOVOPRO's official product page but is not production-cleared: the exact source/hash, retrieval date, masking steps, author/license, and written reproduction permission are missing. The user has also rejected its low-resolution grey/red treatment as final. A replacement needs a user-owned actual-scooter photo or written licensed high-resolution source, full provenance, truthful geometry, and visual review.
-- Battery microtexture, dimensional shell/rim, adaptive typography/contrast, zero-copy-occlusion, integrated floor lighting, and richer native functional-glass response are not implemented or proven yet.
-- The new standard and Accessibility XXXL Home audits need exact Xcode 27 execution after the candidate is pushed.
+- Battery microtexture, dimensional shell/rim, adaptive typography/contrast, SOC-clipped copy well, floor/contact lighting, and actionable continuation glass are implemented as the `a381a30f…` candidate but are not visually or performance accepted until exact Xcode 27 screenshots/audits are inspected.
+- The new standard, retained, low-battery, and Accessibility XXXL Home audits need exact Xcode 27 execution at the current implementation SHA.
 - Production numeric adaptive range remains unavailable because no accepted physical estimator/identity/evidence pipeline is wired. Do not synthesize the reference image's `8.4 mi`.
 - Automatic capture is public-API best effort. Force-quit, restart-before-first-unlock, permissions, real ES80 restoration/reconnect, and background location behavior still require real-device evidence.
 - Explore domain foundations do not select a road-graph provider or license. No road may be marked covered without accepted map-matched evidence.
