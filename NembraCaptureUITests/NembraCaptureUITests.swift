@@ -6,6 +6,11 @@ final class NembraCaptureUITests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
+        XCUIDevice.shared.orientation = .portrait
+    }
+
+    override func tearDownWithError() throws {
+        XCUIDevice.shared.orientation = .portrait
     }
 
     @MainActor
@@ -269,7 +274,13 @@ final class NembraCaptureUITests: XCTestCase {
 
     @MainActor
     private func element(_ labelOrIdentifier: String, in app: XCUIApplication) -> XCUIElement {
-        app.descendants(matching: .any)[labelOrIdentifier]
+        let predicate = NSPredicate(
+            format: "identifier == %@ OR label == %@ OR value == %@",
+            labelOrIdentifier,
+            labelOrIdentifier,
+            labelOrIdentifier
+        )
+        return app.descendants(matching: .any).matching(predicate).firstMatch
     }
 
     @MainActor
@@ -289,7 +300,11 @@ final class NembraCaptureUITests: XCTestCase {
         if waitForHittable(element, timeout: 0.5) { return }
 
         for _ in 0..<maximumSwipes where !element.isHittable {
-            app.swipeUp()
+            if let scrollView = app.scrollViews.allElementsBoundByIndex.reversed().first(where: { $0.isHittable }) {
+                scrollView.swipeUp()
+            } else {
+                app.swipeUp()
+            }
         }
         XCTAssertTrue(waitForHittable(element, timeout: 2))
     }
