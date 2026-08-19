@@ -206,10 +206,32 @@ struct HomeView: View {
     private var energyHero: some View {
         VStack(alignment: .leading, spacing: 10) {
             if batteryIsRetained {
-                Label("Last known battery", systemImage: "clock.arrow.circlepath")
+                Label {
+                    if let observedAt = vehicle.retainedBatteryObservedAt {
+                        HStack(spacing: 3) {
+                            Text("Last confirmed")
+                            Text(observedAt, style: .relative)
+                        }
+                    } else {
+                        Text("Last confirmed · age unavailable")
+                    }
+                } icon: {
+                    Image(systemName: "clock.arrow.circlepath")
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(NembraColor.secondaryText)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Last confirmed battery")
+                .accessibilityValue(retainedBatteryFreshnessAccessibilityValue)
+                .accessibilityHint("This battery value may be stale until the scooter reconnects.")
+                .accessibilityIdentifier("home.battery.retained-freshness")
+            }
+
+            if isBatteryLow {
+                Label("Low battery", systemImage: "exclamationmark.triangle.fill")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(NembraColor.secondaryText)
-                    .accessibilityHint("This battery value may be stale until the scooter reconnects.")
+                    .foregroundStyle(Color.red)
+                    .accessibilityIdentifier("home.battery.low-warning")
             }
 
             Button {
@@ -1078,6 +1100,13 @@ struct HomeView: View {
 
     private var batteryIsRetained: Bool { vehicle.batteryDataAvailability == .retained }
 
+    private var retainedBatteryFreshnessAccessibilityValue: String {
+        guard let observedAt = vehicle.retainedBatteryObservedAt else {
+            return "Observation time unavailable"
+        }
+        return "Observed \(observedAt.formatted(date: .complete, time: .shortened))"
+    }
+
     private var batteryNumericText: String {
         batteryPercent.map(String.init) ?? "—"
     }
@@ -1090,7 +1119,15 @@ struct HomeView: View {
         guard let batteryPercent else { return "Unavailable" }
         var parts = ["\(batteryPercent) percent"]
         if isBatteryLow { parts.append("low battery") }
-        if batteryIsRetained { parts.append("last known") }
+        if batteryIsRetained {
+            if let observedAt = vehicle.retainedBatteryObservedAt {
+                parts.append(
+                    "last known, observed \(observedAt.formatted(date: .complete, time: .shortened))"
+                )
+            } else {
+                parts.append("last known, observation time unavailable")
+            }
+        }
         return parts.joined(separator: ", ")
     }
 

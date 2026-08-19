@@ -95,6 +95,137 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testRetainedBatteryShowsOriginalFreshnessAndDisablesControls() {
+        let app = launch(
+            scenario: "connected-stopped",
+            orientation: .portrait,
+            environment: ["NEMBRA_SIMULATION_HOME_STATE_FIXTURE": "retain-after-live"]
+        )
+
+        XCTAssertTrue(app.staticTexts["Reconnecting"].waitForExistence(timeout: 5))
+        let freshness = app.descendants(matching: .any)["home.battery.retained-freshness"]
+        XCTAssertTrue(freshness.waitForExistence(timeout: 3))
+        XCTAssertTrue(freshness.label.localizedCaseInsensitiveContains("Last confirmed"))
+
+        let battery = app.buttons["home.metric.battery"]
+        XCTAssertTrue(battery.waitForExistence(timeout: 3))
+        let batterySemantics = semantics(of: battery)
+        XCTAssertTrue(batterySemantics.localizedCaseInsensitiveContains("92 percent"))
+        XCTAssertTrue(batterySemantics.localizedCaseInsensitiveContains("last known"))
+        XCTAssertTrue(batterySemantics.localizedCaseInsensitiveContains("unavailable"))
+
+        let modeSelector = app.buttons["home.mode.selector"]
+        XCTAssertTrue(swipeUpUntilHittable(modeSelector, in: app))
+        let light = button(containing: "Light", in: app)
+        XCTAssertTrue(light.waitForExistence(timeout: 2))
+        XCTAssertFalse(light.isEnabled)
+        keepScreenshot(named: "Home Retained Battery - Simulator QA Only")
+    }
+
+    @MainActor
+    func testLowBatteryHasVisibleNonColorWarning() {
+        let app = launch(scenario: "low-battery", orientation: .portrait)
+
+        let warning = app.descendants(matching: .any)["home.battery.low-warning"]
+        XCTAssertTrue(warning.waitForExistence(timeout: 3))
+        XCTAssertTrue(warning.label.localizedCaseInsensitiveContains("Low battery"))
+
+        let battery = app.buttons["home.metric.battery"]
+        XCTAssertTrue(battery.waitForExistence(timeout: 3))
+        let batterySemantics = semantics(of: battery)
+        XCTAssertTrue(batterySemantics.localizedCaseInsensitiveContains("14 percent"))
+        XCTAssertTrue(batterySemantics.localizedCaseInsensitiveContains("low battery"))
+        keepScreenshot(named: "Home Low Battery Warning - Simulator QA Only")
+    }
+
+    @MainActor
+    func testPendingCommandNeverAppearsConfirmed() {
+        let app = launch(
+            scenario: "connected-stopped",
+            orientation: .portrait,
+            environment: ["NEMBRA_SIMULATION_HOME_STATE_FIXTURE": "command-pending"]
+        )
+
+        let modeSelector = app.buttons["home.mode.selector"]
+        XCTAssertTrue(swipeUpUntilHittable(modeSelector, in: app))
+        let light = button(containing: "Light", in: app)
+        XCTAssertTrue(light.waitForExistence(timeout: 2))
+        XCTAssertTrue(light.label.localizedCaseInsensitiveContains("Off"))
+        light.tap()
+
+        let pending = app.buttons.matching(NSPredicate(
+            format: "label CONTAINS[c] %@ AND value CONTAINS[c] %@",
+            "Light",
+            "Requesting confirmation"
+        )).firstMatch
+        XCTAssertTrue(pending.waitForExistence(timeout: 3))
+        XCTAssertTrue(pending.label.localizedCaseInsensitiveContains("Off"))
+        XCTAssertFalse(pending.label.localizedCaseInsensitiveContains("On"))
+        keepScreenshot(named: "Home Command Pending - Simulator QA Only")
+    }
+
+    @MainActor
+    func testRejectedCommandShowsFailureAndKeepsConfirmedState() {
+        let app = launch(
+            scenario: "connected-stopped",
+            orientation: .portrait,
+            environment: ["NEMBRA_SIMULATION_HOME_STATE_FIXTURE": "command-rejected"]
+        )
+
+        let modeSelector = app.buttons["home.mode.selector"]
+        XCTAssertTrue(swipeUpUntilHittable(modeSelector, in: app))
+        let light = button(containing: "Light", in: app)
+        XCTAssertTrue(light.waitForExistence(timeout: 2))
+        XCTAssertTrue(light.label.localizedCaseInsensitiveContains("Off"))
+        light.tap()
+
+        XCTAssertTrue(app.alerts["Command not confirmed"].waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            app.staticTexts["The scooter rejected that command in its current state."]
+                .waitForExistence(timeout: 2)
+        )
+        keepScreenshot(named: "Home Command Rejected - Simulator QA Only")
+        app.alerts.buttons["OK"].tap()
+
+        let unchangedLight = button(containing: "Light", in: app)
+        XCTAssertTrue(unchangedLight.waitForExistence(timeout: 2))
+        XCTAssertTrue(unchangedLight.label.localizedCaseInsensitiveContains("Off"))
+    }
+
+    @MainActor
+    func testPersistenceFailureDoesNotCorruptVehicleTruth() {
+        let app = launch(
+            scenario: "connected-stopped",
+            orientation: .portrait,
+            environment: ["NEMBRA_SIMULATION_HOME_STATE_FIXTURE": "persistence-failure"]
+        )
+
+        XCTAssertTrue(app.staticTexts["Connected"].waitForExistence(timeout: 3))
+        let readiness = app.buttons["home.horizon-entry"]
+        XCTAssertTrue(readiness.waitForExistence(timeout: 3))
+        XCTAssertTrue(semantics(of: readiness).localizedCaseInsensitiveContains("Ride tracking unavailable"))
+
+        let trip = app.descendants(matching: .any)["home.metric.trip"]
+        XCTAssertTrue(trip.waitForExistence(timeout: 3))
+        XCTAssertTrue(semantics(of: trip).localizedCaseInsensitiveContains("unavailable"))
+
+        let battery = app.buttons["home.metric.battery"]
+        XCTAssertTrue(battery.exists)
+        XCTAssertTrue(semantics(of: battery).localizedCaseInsensitiveContains("92 percent"))
+
+        let latest = app.descendants(matching: .any)["home.latest-ride.unavailable"]
+        for _ in 0..<4 where !latest.exists {
+            app.swipeUp()
+        }
+        XCTAssertTrue(latest.waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            app.windows.firstMatch.frame.intersects(latest.frame),
+            "The persistence failure state must be visible above the native tab chrome."
+        )
+        keepScreenshot(named: "Home Persistence Failure - Simulator QA Only")
+    }
+
+    @MainActor
     func testSelectedPortraitSurfacesCaptureSimulatorOnlyEvidence() {
         let previousAppearance = XCUIDevice.shared.appearance
         defer {

@@ -198,6 +198,143 @@ final class NembraAppTests: XCTestCase {
             environment: [AppBootstrap.simulationDashboardRenderStressEnvironmentKey: "1"]
         ))
     }
+
+    func testHomeStateFixtureAuthorizationFailsClosed() {
+        let key = AppBootstrap.simulationHomeStateFixtureEnvironmentKey
+
+        XCTAssertNil(AppBootstrap.simulatorHomeStateFixture(
+            scenario: nil,
+            hasExactSimulatorService: false,
+            environment: [key: "retain-after-live"]
+        ))
+        XCTAssertNil(AppBootstrap.simulatorHomeStateFixture(
+            scenario: .riding,
+            hasExactSimulatorService: true,
+            environment: [key: "retain-after-live"]
+        ))
+        XCTAssertNil(AppBootstrap.simulatorHomeStateFixture(
+            scenario: .connectedStopped,
+            hasExactSimulatorService: false,
+            environment: [key: "retain-after-live"]
+        ))
+        XCTAssertNil(AppBootstrap.simulatorHomeStateFixture(
+            scenario: .connectedStopped,
+            hasExactSimulatorService: true,
+            environment: [key: "unknown"]
+        ))
+        XCTAssertNil(AppBootstrap.simulatorHomeStateFixture(
+            scenario: .connectedStopped,
+            hasExactSimulatorService: true,
+            environment: [
+                key: "command-rejected",
+                AppBootstrap.simulationSpeedEvidenceGapEnvironmentKey: "1"
+            ]
+        ))
+    }
+
+    func testHomeStateFixturesRequireExactConnectedSimulatorOptIn() {
+        let key = AppBootstrap.simulationHomeStateFixtureEnvironmentKey
+
+        XCTAssertEqual(AppBootstrap.simulatorHomeStateFixture(
+            scenario: .connectedStopped,
+            hasExactSimulatorService: true,
+            environment: [key: "retain-after-live"]
+        ), .retainAfterLive)
+        XCTAssertEqual(AppBootstrap.simulatorHomeStateFixture(
+            scenario: .connectedStopped,
+            hasExactSimulatorService: true,
+            environment: [key: "command-pending"]
+        ), .commandPending)
+        XCTAssertEqual(AppBootstrap.simulatorHomeStateFixture(
+            scenario: .connectedStopped,
+            hasExactSimulatorService: true,
+            environment: [key: "command-rejected"]
+        ), .commandRejected)
+        XCTAssertEqual(AppBootstrap.simulatorHomeStateFixture(
+            scenario: .connectedStopped,
+            hasExactSimulatorService: true,
+            environment: [key: "persistence-failure"]
+        ), .persistenceFailure)
+    }
+
+    @MainActor
+    func testRetainedFixtureDemotesLiveBatteryWithoutRedatingIt() async {
+        let runtime = AppBootstrap.makeRuntime(
+            arguments: ["Nembra"],
+            environment: homeFixtureEnvironment("retain-after-live")
+        )
+        let originalObservationDate = runtime.vehicleStore.state.lastUpdated
+
+        await runtime.start()
+        XCTAssertTrue(await waitUntil { runtime.vehicleStore.state.connection == .reconnecting })
+
+        XCTAssertEqual(runtime.vehicleStore.state.connection, .reconnecting)
+        XCTAssertEqual(runtime.vehicleStore.batteryDisplayPercent, 92)
+        XCTAssertEqual(runtime.vehicleStore.batteryDataAvailability, .retained)
+        XCTAssertEqual(runtime.vehicleStore.retainedBatteryAuthority, .displayOnly)
+        XCTAssertEqual(runtime.vehicleStore.retainedBatteryObservedAt, originalObservationDate)
+        XCTAssertEqual(runtime.vehicleStore.state.lastUpdated, originalObservationDate)
+    }
+
+    @MainActor
+    func testPendingFixtureNeverPublishesAnUnconfirmedCommand() async {
+        let runtime = AppBootstrap.makeRuntime(
+            arguments: ["Nembra"],
+            environment: homeFixtureEnvironment("command-pending")
+        )
+        await runtime.start()
+        XCTAssertEqual(runtime.vehicleStore.state.isHeadlightOn, false)
+
+        let command = Task { await runtime.vehicleStore.setHeadlight(true) }
+        XCTAssertTrue(await waitUntil { runtime.vehicleStore.pendingCommands.contains(.headlight) })
+
+        XCTAssertTrue(runtime.vehicleStore.pendingCommands.contains(.headlight))
+        XCTAssertEqual(runtime.vehicleStore.state.isHeadlightOn, false)
+        command.cancel()
+        await command.value
+        XCTAssertEqual(runtime.vehicleStore.state.isHeadlightOn, false)
+    }
+
+    @MainActor
+    func testRejectedFixtureKeepsConfirmedStateAndExposesFailure() async {
+        let runtime = AppBootstrap.makeRuntime(
+            arguments: ["Nembra"],
+            environment: homeFixtureEnvironment("command-rejected")
+        )
+        await runtime.start()
+
+        await runtime.vehicleStore.setHeadlight(true)
+
+        XCTAssertFalse(runtime.vehicleStore.isVehicleCommandPending)
+        XCTAssertEqual(runtime.vehicleStore.state.isHeadlightOn, false)
+        XCTAssertEqual(
+            runtime.vehicleStore.lastErrorMessage,
+            "The scooter rejected that command in its current state."
+        )
+    }
+
+    @MainActor
+    func testPersistenceFailureFixtureKeepsVehicleTruthIndependent() async {
+        let runtime = AppBootstrap.makeRuntime(
+            arguments: ["Nembra"],
+            environment: homeFixtureEnvironment("persistence-failure")
+        )
+
+        await runtime.start()
+        await runtime.rideHistoryStore.refresh()
+        await runtime.dailyRideStore.refresh(
+            now: .now,
+            calendar: .current,
+            currentRideSessionID: nil
+        )
+
+        XCTAssertEqual(runtime.vehicleStore.state.connection, .connected)
+        XCTAssertEqual(runtime.vehicleStore.batteryDisplayPercent, 92)
+        XCTAssertEqual(runtime.rideStore.status, .persistenceUnavailable)
+        XCTAssertEqual(runtime.rideHistoryStore.status, .unavailable)
+        XCTAssertEqual(runtime.dailyRideStore.status, .unavailable)
+        XCTAssertEqual(runtime.automaticCaptureReadiness.facts.storage, .unavailable)
+    }
 #endif
 
     @MainActor
@@ -709,4 +846,29 @@ final class NembraAppTests: XCTestCase {
             receivedAtDate: Date(timeIntervalSince1970: 0)
         )
     }
+
+#if targetEnvironment(simulator)
+    private func homeFixtureEnvironment(_ fixture: String) -> [String: String] {
+        [
+            "NEMBRA_SIMULATION_SCENARIO": "connected-stopped",
+            AppBootstrap.simulationStorageNamespaceEnvironmentKey:
+                "home-fixture-\(fixture)-\(UUID().uuidString)",
+            AppBootstrap.simulationHomeStateFixtureEnvironmentKey: fixture
+        ]
+    }
+
+    @MainActor
+    private func waitUntil(
+        _ condition: @MainActor () -> Bool,
+        timeout: Duration = .seconds(2)
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while clock.now < deadline {
+            if condition() { return true }
+            try? await clock.sleep(for: .milliseconds(10))
+        }
+        return condition()
+    }
+#endif
 }

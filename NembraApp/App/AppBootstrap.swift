@@ -26,6 +26,7 @@ final class AppRuntime {
     private let simulatorAutoCompletesRide: Bool
     private let simulatorStartsWithSpeedEvidenceGap: Bool
     private let simulatorDashboardRenderStressIsAuthorized: Bool
+    private let simulatorHomeStateFixture: AppBootstrap.SimulatorHomeStateFixture?
     private let simulatorRoutePointCount: Int
     private let simulatorRouteRecorder: RideRouteRecorder?
     private var didStart = false
@@ -44,6 +45,7 @@ final class AppRuntime {
         simulatorAutoCompletesRide: Bool,
         simulatorStartsWithSpeedEvidenceGap: Bool,
         simulatorDashboardRenderStressIsAuthorized: Bool,
+        simulatorHomeStateFixture: AppBootstrap.SimulatorHomeStateFixture?,
         simulatorRoutePointCount: Int,
         simulatorRouteRecorder: RideRouteRecorder?
     ) {
@@ -58,6 +60,7 @@ final class AppRuntime {
         self.simulatorAutoCompletesRide = simulatorAutoCompletesRide
         self.simulatorStartsWithSpeedEvidenceGap = simulatorStartsWithSpeedEvidenceGap
         self.simulatorDashboardRenderStressIsAuthorized = simulatorDashboardRenderStressIsAuthorized
+        self.simulatorHomeStateFixture = simulatorHomeStateFixture
         self.simulatorRoutePointCount = simulatorRoutePointCount
         self.simulatorRouteRecorder = simulatorRouteRecorder
     }
@@ -77,6 +80,15 @@ final class AppRuntime {
         // launch cannot race past the automatic ride application layer.
         await rideStore.start()
         await vehicleStore.start()
+
+        // This explicit Simulator-only transition begins from a confirmed live
+        // synthetic battery observation, then crosses the real connection-loss
+        // path. VehicleStore must preserve the original observation chronology
+        // and demote its availability; the fixture never inserts a retained value.
+        if simulatorHomeStateFixture == .retainAfterLive,
+           let simulatorService {
+            await simulatorService.simulateConnectionDrop()
+        }
 
         // Explicit Simulator-only visual/runtime fixture. A connected-stopped
         // launch owns a valid synthetic speed sample; this opt-in then opens the
@@ -355,6 +367,14 @@ enum AppBootstrap {
     static let simulationSpeedEvidenceGapEnvironmentKey = "NEMBRA_SIMULATION_SPEED_EVIDENCE_GAP"
     static let simulationRoutePointCountEnvironmentKey = "NEMBRA_SIMULATION_ROUTE_POINT_COUNT"
     static let simulationDashboardRenderStressEnvironmentKey = "NEMBRA_SIMULATION_DASHBOARD_RENDER_STRESS"
+    static let simulationHomeStateFixtureEnvironmentKey = "NEMBRA_SIMULATION_HOME_STATE_FIXTURE"
+
+    enum SimulatorHomeStateFixture: String, Equatable {
+        case retainAfterLive = "retain-after-live"
+        case commandPending = "command-pending"
+        case commandRejected = "command-rejected"
+        case persistenceFailure = "persistence-failure"
+    }
 
     private struct VehicleBootstrap {
         let service: any ScooterService
@@ -364,6 +384,7 @@ enum AppBootstrap {
         let shouldAutoConnectOnStart: Bool
         let speedInterpolationPolicy: SpeedInstrumentInterpolationPolicy
         let batteryObservationAuthority: BatteryObservationAuthority?
+        let homeStateFixture: SimulatorHomeStateFixture?
     }
 
     @MainActor
@@ -411,12 +432,17 @@ enum AppBootstrap {
 
         let persistence: RidePersistenceStack?
         let persistenceError: String?
-        do {
-            persistence = try RidePersistenceFactory.make(scope: persistenceScope)
-            persistenceError = nil
-        } catch {
+        if bootstrap.homeStateFixture == .persistenceFailure {
             persistence = nil
-            persistenceError = "Local ride storage could not be opened."
+            persistenceError = "Simulator QA forced local ride storage unavailable."
+        } else {
+            do {
+                persistence = try RidePersistenceFactory.make(scope: persistenceScope)
+                persistenceError = nil
+            } catch {
+                persistence = nil
+                persistenceError = "Local ride storage could not be opened."
+            }
         }
 
         let rideHistoryStore = RideHistoryPresentationStore(
@@ -530,6 +556,7 @@ enum AppBootstrap {
             simulatorAutoCompletesRide: simulatorAutoCompletesRide,
             simulatorStartsWithSpeedEvidenceGap: simulatorStartsWithSpeedEvidenceGap,
             simulatorDashboardRenderStressIsAuthorized: simulatorDashboardRenderStressIsAuthorized,
+            simulatorHomeStateFixture: bootstrap.homeStateFixture,
             simulatorRoutePointCount: simulatorRoutePointCount,
             simulatorRouteRecorder: simulatorRouteRecorder
         )
@@ -565,6 +592,28 @@ enum AppBootstrap {
 #endif
     }
 
+    static func simulatorHomeStateFixture(
+        scenario: ScooterSimulationScenario?,
+        hasExactSimulatorService: Bool,
+        environment: [String: String]
+    ) -> SimulatorHomeStateFixture? {
+#if DEBUG && targetEnvironment(simulator)
+        guard scenario == .connectedStopped,
+              hasExactSimulatorService,
+              let rawValue = environment[simulationHomeStateFixtureEnvironmentKey],
+              let fixture = SimulatorHomeStateFixture(rawValue: rawValue),
+              environment[simulationAutoCompleteRideEnvironmentKey] != "1",
+              environment[simulationSpeedEvidenceGapEnvironmentKey] != "1",
+              environment[simulationDashboardRenderStressEnvironmentKey] != "1",
+              environment[simulationRoutePointCountEnvironmentKey] == nil else {
+            return nil
+        }
+        return fixture
+#else
+        return nil
+#endif
+    }
+
     private static func simulationRoutePointCount(environment: [String: String]) -> Int {
         guard let rawValue = environment[simulationRoutePointCountEnvironmentKey],
               let requested = Int(rawValue),
@@ -588,12 +637,36 @@ enum AppBootstrap {
                 scenario: nil,
                 shouldAutoConnectOnStart: false,
                 speedInterpolationPolicy: .disabled,
-                batteryObservationAuthority: nil
+                batteryObservationAuthority: nil,
+                homeStateFixture: nil
             )
         }
 
         let state = SimulatedScooterService.state(for: scenario)
-        let service = SimulatedScooterService(initialState: state)
+        let homeStateFixture = simulatorHomeStateFixture(
+            scenario: scenario,
+            hasExactSimulatorService: true,
+            environment: environment
+        )
+        let service: SimulatedScooterService
+        switch homeStateFixture {
+        case .commandPending:
+            service = SimulatedScooterService(
+                initialState: state,
+                commandAcknowledgementGate: {
+                    try await Task.sleep(nanoseconds: 86_400_000_000_000)
+                }
+            )
+        case .commandRejected:
+            service = SimulatedScooterService(
+                initialState: state,
+                commandAcknowledgementGate: {
+                    throw ScooterCommandError.commandRejected
+                }
+            )
+        case .retainAfterLive, .persistenceFailure, .none:
+            service = SimulatedScooterService(initialState: state)
+        }
         return VehicleBootstrap(
             service: service,
             simulatorService: service,
@@ -601,7 +674,8 @@ enum AppBootstrap {
             scenario: scenario,
             shouldAutoConnectOnStart: scenario.shouldAutoConnectOnLaunch,
             speedInterpolationPolicy: .simulatorQA,
-            batteryObservationAuthority: .displayOnly
+            batteryObservationAuthority: .displayOnly,
+            homeStateFixture: homeStateFixture
         )
     }
 }

@@ -18,6 +18,13 @@ func homeStatusAndRecoveryReflowAtAccessibilityDynamicType() throws {
     #expect(source.contains("home.metric.duration"))
     #expect(source.contains("home.horizon-entry"))
     #expect(source.contains("home.mode.selector"))
+    #expect(source.contains("home.battery.retained-freshness"))
+    #expect(source.contains("Text(\"Last confirmed\")"))
+    #expect(source.contains("vehicle.retainedBatteryObservedAt"))
+    #expect(source.contains("Text(observedAt, style: .relative)"))
+    #expect(source.contains(".formatted(date: .complete, time: .shortened)"))
+    #expect(source.contains("home.battery.low-warning"))
+    #expect(source.contains("Label(\"Low battery\", systemImage: \"exclamationmark.triangle.fill\")"))
     #expect(source.contains("batteryAccessibilityValue"))
     #expect(source.contains("parts.append(\"low battery\")"))
 
