@@ -4,13 +4,18 @@ import Testing
 
 @Suite("Capture private Tuya field-input provenance")
 struct TuyaPrivateFieldInputProvenanceSourceTests {
-    @Test("bootstrap snapshots every ignored private build input")
-    func bootstrapOwnsExactPrivateInputSnapshot() throws {
+    @Test("review mode snapshots private inputs while field mode verifies the pre-existing witness")
+    func bootstrapSeparatesReviewSnapshotFromFieldAdmission() throws {
         let bootstrap = try readRepositoryFile("Scripts/bootstrap_capture_tuya_sdk.sh")
         let helper = try readRepositoryFile("Scripts/capture_tuya_private_input_provenance.py")
 
         #expect(bootstrap.contains("capture_tuya_private_input_provenance.py"))
-        #expect(bootstrap.contains("\"$PROVENANCE_HELPER\" snapshot"))
+        #expect(bootstrap.contains("run_private_input_provenance snapshot"))
+        #expect(bootstrap.contains("run_private_input_provenance verify"))
+        #expect(bootstrap.contains("accepted-lock mode requires the pre-existing reviewed private-input provenance record"))
+        #expect(bootstrap.contains("current private Tuya build inputs do not match the pre-existing review witness. No dependency command was run."))
+        #expect(bootstrap.contains("private Tuya build inputs changed across dependency installation. The reviewed witness was not replaced."))
+        #expect(bootstrap.contains("field mode will not create or replace this witness"))
         #expect(bootstrap.contains("--lockfile \"$REPO_ROOT/Podfile.lock\""))
         #expect(bootstrap.contains("--security-podspec \"$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec\""))
         #expect(bootstrap.contains("--security-build \"$TUYA_PRIVATE_SDK/Build\""))
@@ -18,6 +23,15 @@ struct TuyaPrivateFieldInputProvenanceSourceTests {
         #expect(bootstrap.contains("--identity-sources \"$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig\""))
         #expect(bootstrap.contains("--record \"$DEPENDENCY_PROVENANCE\""))
         #expect(bootstrap.contains("private Tuya dependency provenance record is not mode 0600"))
+
+        let preverify = try requiredIndex(of: "if ! run_private_input_provenance verify; then", in: bootstrap)
+        let podInstall = try requiredIndex(of: "pod install --deployment --no-repo-update", in: bootstrap)
+        let secondVerify = try requiredIndex(
+            of: "private Tuya build inputs changed across dependency installation. The reviewed witness was not replaced.",
+            in: bootstrap
+        )
+        #expect(preverify < podInstall)
+        #expect(podInstall < secondVerify)
 
         #expect(helper.contains("SCHEMA = \"nembra-capture-tuya-dependencies-v2\""))
         #expect(helper.contains("thing_smart_cryption_podspec_sha256"))
