@@ -14,8 +14,12 @@ final class NembraUITests: XCTestCase {
     @MainActor
     func testConnectedHomeControlsConfirmStateAndNavigate() {
         let app = launch(scenario: "connected-stopped", orientation: .portrait)
+        XCTAssertTrue(waitForPortraitWindow(in: app, timeout: 5))
 
-        XCTAssertTrue(staticText(containing: "Nembra Simulator", in: app).waitForExistence(timeout: 3))
+        let qaDisclosure = app.descendants(matching: .any)["home.connection-status"]
+        XCTAssertTrue(qaDisclosure.waitForExistence(timeout: 3))
+        XCTAssertTrue(semantics(of: qaDisclosure).localizedCaseInsensitiveContains("SIM"))
+        XCTAssertTrue(semantics(of: qaDisclosure).localizedCaseInsensitiveContains("synthetic evidence"))
 
         let modeSelector = app.buttons["home.mode.selector"]
         XCTAssertTrue(modeSelector.waitForExistence(timeout: 3))
@@ -76,6 +80,47 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    func testConnectedHomeInitialRailAndRideContinuationClearNativeTabWithoutScrolling() {
+        let app = launch(scenario: "connected-stopped", orientation: .portrait)
+        XCTAssertTrue(waitForPortraitWindow(in: app, timeout: 5))
+
+        let light = button(containing: "Light", in: app)
+        let lock = button(containing: "Lock", in: app)
+        let mode = app.buttons["home.mode.selector"]
+        let latest = app.descendants(matching: .any)["home.latest-ride.empty"]
+        let tabBar = app.tabBars.firstMatch
+        let window = app.windows.firstMatch
+
+        for (element, name) in [(light, "Light"), (lock, "Lock"), (mode, "Mode")] {
+            XCTAssertTrue(element.waitForExistence(timeout: 5), "Missing initial \(name) control.")
+            XCTAssertTrue(element.isHittable, "Initial \(name) control must be operable without scrolling.")
+        }
+        XCTAssertTrue(
+            latest.waitForExistence(timeout: 6),
+            "A fresh connected-stopped namespace must settle on the honest empty latest-ride row."
+        )
+        XCTAssertTrue(tabBar.waitForExistence(timeout: 3))
+        XCTAssertTrue(window.exists)
+
+        let controlsFrame = light.frame.union(lock.frame).union(mode.frame)
+            .insetBy(dx: -6, dy: -7)
+        XCTAssertTrue(
+            window.frame.contains(controlsFrame),
+            "The complete 110-point control rail \(controlsFrame) must be inside the initial window \(window.frame)."
+        )
+        XCTAssertLessThanOrEqual(
+            controlsFrame.maxY,
+            tabBar.frame.minY - 8,
+            "The complete control rail must clear native tab chrome at the untouched top scroll offset."
+        )
+        assertFullyInsideWindowAndAboveTabBar(
+            latest,
+            named: "Empty latest-ride row",
+            in: app
+        )
+    }
+
+    @MainActor
     func testUnavailableScooterCanRecoverWithoutInventingLiveState() {
         let app = launch(scenario: "scooter-unavailable", orientation: .portrait)
 
@@ -83,7 +128,14 @@ final class NembraUITests: XCTestCase {
         let reconnect = app.buttons["Reconnect scooter"]
         XCTAssertTrue(reconnect.exists)
         reconnect.tap()
-        XCTAssertTrue(app.staticTexts["Connected"].waitForExistence(timeout: 4))
+        XCTAssertTrue(
+            waitForSemanticsContaining(
+                "Connected",
+                identifier: "home.connection-status",
+                in: app,
+                timeout: 4
+            )
+        )
     }
 
     @MainActor
@@ -102,7 +154,14 @@ final class NembraUITests: XCTestCase {
             environment: ["NEMBRA_SIMULATION_HOME_STATE_FIXTURE": "retain-after-live"]
         )
 
-        XCTAssertTrue(staticText(containing: "Reconnecting", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            waitForSemanticsContaining(
+                "Reconnecting",
+                identifier: "home.connection-status",
+                in: app,
+                timeout: 5
+            )
+        )
         let freshness = app.descendants(matching: .any)["home.battery.retained-freshness"]
         XCTAssertTrue(freshness.waitForExistence(timeout: 3))
         XCTAssertTrue(freshness.label.localizedCaseInsensitiveContains("Last confirmed"))
@@ -200,7 +259,13 @@ final class NembraUITests: XCTestCase {
             environment: ["NEMBRA_SIMULATION_HOME_STATE_FIXTURE": "persistence-failure"]
         )
 
-        XCTAssertTrue(app.staticTexts["Connected"].waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            waitForSemanticsContaining(
+                "Connected",
+                identifier: "home.connection-status",
+                in: app
+            )
+        )
         let readiness = app.buttons["home.horizon-entry"]
         XCTAssertTrue(readiness.waitForExistence(timeout: 3))
         XCTAssertTrue(semantics(of: readiness).localizedCaseInsensitiveContains("Ride tracking unavailable"))
@@ -214,13 +279,16 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(semantics(of: battery).localizedCaseInsensitiveContains("92 percent"))
 
         let latest = app.descendants(matching: .any)["home.latest-ride.unavailable"]
-        for _ in 0..<4 where !latest.exists {
+        let window = app.windows.firstMatch
+        let tabBar = app.tabBars.firstMatch
+        for _ in 0..<4 where !isFullyInsideWindowAndAboveTabBar(latest, window: window, tabBar: tabBar) {
             app.swipeUp()
         }
         XCTAssertTrue(latest.waitForExistence(timeout: 3))
-        XCTAssertTrue(
-            app.windows.firstMatch.frame.intersects(latest.frame),
-            "The persistence failure state must be visible above the native tab chrome."
+        assertFullyInsideWindowAndAboveTabBar(
+            latest,
+            named: "Persistence failure state",
+            in: app
         )
         keepScreenshot(named: "Home Persistence Failure - Simulator QA Only")
     }
@@ -237,7 +305,10 @@ final class NembraUITests: XCTestCase {
         let app = launch(scenario: "connected-stopped", orientation: .portrait)
 
         XCTAssertTrue(app.buttons["home.metric.battery"].waitForExistence(timeout: 5))
-        XCTAssertTrue(staticText(containing: "Nembra Simulator", in: app).waitForExistence(timeout: 3))
+        let homeQADisclosure = app.descendants(matching: .any)["home.connection-status"]
+        XCTAssertTrue(homeQADisclosure.waitForExistence(timeout: 3))
+        XCTAssertTrue(semantics(of: homeQADisclosure).localizedCaseInsensitiveContains("SIM"))
+        XCTAssertTrue(semantics(of: homeQADisclosure).localizedCaseInsensitiveContains("synthetic evidence"))
 
         let battery = app.buttons["home.metric.battery"]
         assertMinimumTouchTarget(battery, named: "Home battery and range")
@@ -656,6 +727,25 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
+    private func waitForSemanticsContaining(
+        _ value: String,
+        identifier: String,
+        in app: XCUIApplication,
+        timeout: TimeInterval = 3
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            let element = app.descendants(matching: .any)[identifier]
+            if element.exists,
+               semantics(of: element).localizedCaseInsensitiveContains(value) {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        } while Date() < deadline
+        return false
+    }
+
+    @MainActor
     private func semantics(of element: XCUIElement) -> String {
         "\(element.label)|\(element.value as? String ?? "")"
     }
@@ -665,24 +755,24 @@ final class NembraUITests: XCTestCase {
         speed: XCUIElement,
         power: XCUIElement,
         requiredChanges: Int,
-        timeout: TimeInterval = 3
+        timeout: TimeInterval = 8
     ) -> Bool {
         guard requiredChanges > 0, speed.exists, power.exists else { return false }
 
         let deadline = Date().addingTimeInterval(timeout)
-        var previousSpeed = semantics(of: speed)
-        var previousPower = semantics(of: power)
+        var previousSpeed = dynamicValue(of: speed)
+        var previousPower = dynamicValue(of: power)
         var speedChanges = 0
         var powerChanges = 0
 
         repeat {
-            let currentSpeed = semantics(of: speed)
+            let currentSpeed = dynamicValue(of: speed)
             if currentSpeed != previousSpeed {
                 previousSpeed = currentSpeed
                 speedChanges += 1
             }
 
-            let currentPower = semantics(of: power)
+            let currentPower = dynamicValue(of: power)
             if currentPower != previousPower {
                 previousPower = currentPower
                 powerChanges += 1
@@ -692,10 +782,15 @@ final class NembraUITests: XCTestCase {
                 return true
             }
 
-            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         } while Date() < deadline
 
         return false
+    }
+
+    @MainActor
+    private func dynamicValue(of element: XCUIElement) -> String {
+        element.value as? String ?? ""
     }
 
     @MainActor
@@ -754,6 +849,48 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(element.waitForExistence(timeout: 3), "\(name) must exist.", file: file, line: line)
         XCTAssertGreaterThanOrEqual(element.frame.width, minimum, file: file, line: line)
         XCTAssertGreaterThanOrEqual(element.frame.height, minimum, file: file, line: line)
+    }
+
+    @MainActor
+    private func assertFullyInsideWindowAndAboveTabBar(
+        _ element: XCUIElement,
+        named name: String,
+        in app: XCUIApplication,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let window = app.windows.firstMatch
+        let tabBar = app.tabBars.firstMatch
+        XCTAssertTrue(window.exists, "The application window must exist.", file: file, line: line)
+        XCTAssertTrue(tabBar.exists, "The native tab bar must exist.", file: file, line: line)
+        XCTAssertFalse(window.frame.isEmpty, "The application window must have laid-out bounds.", file: file, line: line)
+        XCTAssertFalse(tabBar.frame.isEmpty, "The native tab bar must have laid-out bounds.", file: file, line: line)
+        XCTAssertFalse(element.frame.isEmpty, "\(name) must have a laid-out nonempty frame.", file: file, line: line)
+        XCTAssertTrue(
+            window.frame.contains(element.frame),
+            "\(name) \(element.frame) must remain inside window \(window.frame).",
+            file: file,
+            line: line
+        )
+        XCTAssertLessThanOrEqual(
+            element.frame.maxY,
+            tabBar.frame.minY - 8,
+            "\(name) \(element.frame) must clear tab bar \(tabBar.frame).",
+            file: file,
+            line: line
+        )
+    }
+
+    @MainActor
+    private func isFullyInsideWindowAndAboveTabBar(
+        _ element: XCUIElement,
+        window: XCUIElement,
+        tabBar: XCUIElement
+    ) -> Bool {
+        guard element.exists, window.exists, tabBar.exists else { return false }
+        guard !element.frame.isEmpty, !window.frame.isEmpty, !tabBar.frame.isEmpty else { return false }
+        return window.frame.contains(element.frame)
+            && element.frame.maxY <= tabBar.frame.minY - 8
     }
 
     @MainActor

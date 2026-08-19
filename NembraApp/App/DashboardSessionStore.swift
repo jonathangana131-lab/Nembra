@@ -580,9 +580,9 @@ final class DashboardSceneProbeView: UIView {
         super.init(frame: .zero)
         isUserInteractionEnabled = false
         // Keep the probe in UIKit's layout pass so an orientation update can
-        // reach `layoutSubviews`. The SwiftUI wrapper is already a transparent,
-        // noninteractive 1x1 accessibility-hidden view, so hiding this UIView
-        // would add no presentation benefit and can suppress the callback that
+        // reach `layoutSubviews`. The SwiftUI wrapper is a transparent,
+        // noninteractive full-root accessibility-hidden view: its bounds change
+        // with the owning scene and hiding it could suppress the callback that
         // supplies the exact post-rotation scene receipt.
         isOpaque = false
         backgroundColor = .clear

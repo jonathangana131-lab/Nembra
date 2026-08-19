@@ -28,7 +28,7 @@ struct HomeView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: NembraMetrics.section) {
+            VStack(alignment: .leading, spacing: homeSectionSpacing) {
                 vehicleHeader
 
                 if vehicle.state.connection != .connected {
@@ -41,8 +41,8 @@ struct HomeView: View {
                 latestRideContinuation
             }
             .padding(.horizontal, 20)
-            .padding(.top, 14)
-            .padding(.bottom, 28)
+            .padding(.top, dynamicTypeSize.isAccessibilitySize ? 14 : 8)
+            .padding(.bottom, 20)
         }
         .scrollIndicators(.hidden)
         .background(NembraColor.baseBlack.ignoresSafeArea())
@@ -116,19 +116,23 @@ struct HomeView: View {
         )
     }
 
+    private var homeSectionSpacing: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? NembraMetrics.section : 10
+    }
+
     // MARK: - Vehicle identity
 
     private var vehicleHeader: some View {
         Group {
             if dynamicTypeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 12) {
                     vehicleIdentity
                     vehicleControlsLink
                 }
             } else {
-                HStack(alignment: .center, spacing: 16) {
+                HStack(alignment: .center, spacing: 12) {
                     vehicleIdentity
-                    Spacer(minLength: 12)
+                    Spacer(minLength: 8)
                     vehicleControlsLink
                 }
             }
@@ -137,44 +141,43 @@ struct HomeView: View {
     }
 
     private var vehicleIdentity: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(displayVehicleName)
-                .font(.title2.weight(.bold))
+                .font(.title3.weight(.bold))
                 .tracking(0.2)
                 .foregroundStyle(NembraColor.primaryText)
                 .fixedSize(horizontal: false, vertical: true)
 
-            HStack(spacing: 8) {
+            HStack(spacing: 7) {
                 Circle()
                     .fill(connectionIndicatorColor)
-                    .frame(width: 8, height: 8)
+                    .frame(width: 7, height: 7)
                     .accessibilityHidden(true)
 
                 Text(vehicleStatusText)
-                    .font(.subheadline.weight(.medium))
+                    .font(.caption.weight(.medium))
                     .foregroundStyle(NembraColor.secondaryText)
+                    .lineLimit(1)
                     .fixedSize(horizontal: false, vertical: true)
-            }
 
-            if vehicle.profile == .simulatorQA {
-                HStack(spacing: 6) {
-                    Text("Nembra Simulator")
-                        .accessibilityLabel("Nembra Simulator")
-                    Text("QA only · synthetic evidence")
-                        .foregroundStyle(NembraColor.secondaryText)
-                }
-                .font(.caption2.weight(.semibold))
-                .textCase(.uppercase)
-                .tracking(0.8)
-                .foregroundStyle(NembraColor.gold)
-                .padding(.horizontal, 9)
-                .frame(minHeight: 26)
-                .background(NembraColor.quietSurface, in: Capsule(style: .continuous))
-                .overlay {
-                    Capsule(style: .continuous)
-                        .strokeBorder(NembraColor.gold.opacity(0.20))
+                if vehicle.profile == .simulatorQA {
+                    Text("SIM · QA")
+                        .font(.caption2.weight(.bold))
+                        .tracking(0.5)
+                        .foregroundStyle(NembraColor.gold)
+                        .padding(.horizontal, 6)
+                        .frame(minHeight: 20)
+                        .background(NembraColor.quietSurface, in: Capsule(style: .continuous))
+                        .overlay {
+                            Capsule(style: .continuous)
+                                .strokeBorder(NembraColor.gold.opacity(0.22))
+                        }
                 }
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Vehicle connection")
+            .accessibilityValue(vehicleStatusAccessibilityValue)
+            .accessibilityIdentifier("home.connection-status")
         }
     }
 
@@ -185,7 +188,7 @@ struct HomeView: View {
             Image(systemName: "slider.horizontal.3")
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(NembraColor.primaryText)
-                .frame(width: 50, height: 50)
+                .frame(width: 44, height: 44)
         }
         .buttonStyle(.glass)
         .tint(NembraColor.warmGraphite)
@@ -195,7 +198,7 @@ struct HomeView: View {
 
     private var displayVehicleName: String {
         // Simulator is an evidence source, never the product identity. Simulator
-        // disclosure remains visible below the real target vehicle name.
+        // disclosure remains visible beside connection truth, never as identity.
         vehicle.profile == .simulatorQA
             ? VehicleProfile.aovoproES80.identity.displayName
             : vehicle.profile.identity.displayName
@@ -264,31 +267,34 @@ struct HomeView: View {
 
     private var standardEnergyHero: some View {
         GeometryReader { proxy in
+            let scooterSize = min(proxy.size.width * 0.98, 320)
+
             ZStack(alignment: .topLeading) {
                 batteryReadout
-                    .padding(.top, 4)
+                    .padding(.top, 2)
 
                 batteryBody
                     .frame(height: 82)
                     .padding(.trailing, 11)
-                    .offset(y: 105)
+                    .offset(y: 98)
 
                 groundedShadow
-                    .frame(width: proxy.size.width * 0.76, height: 36)
+                    .frame(width: proxy.size.width * 0.78, height: 34)
                     .position(x: proxy.size.width * 0.54, y: 300)
 
                 Image("ES80Side")
                     .resizable()
                     .scaledToFit()
-                    .frame(width: min(proxy.size.width * 1.08, 400), height: 246)
+                    .frame(width: scooterSize, height: scooterSize)
                     .shadow(color: .black.opacity(0.75), radius: 22, y: 16)
                     .shadow(color: NembraColor.gold.opacity(0.13), radius: 20, y: 18)
-                    .position(x: proxy.size.width * 0.54, y: 218)
+                    .position(x: proxy.size.width * 0.54, y: 168)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
         }
-        .frame(height: 338)
+        .frame(height: 328)
+        .clipped()
     }
 
     private var accessibilityEnergyHero: some View {
@@ -408,15 +414,14 @@ struct HomeView: View {
     // MARK: - Readiness and durable Today
 
     private var readinessAndToday: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: dynamicTypeSize.isAccessibilitySize ? 18 : 7) {
             readinessRow
 
             if dynamicTypeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 12) {
                     todayMetric(
                         title: "Today's trip",
                         value: todayDistanceText,
-                        detail: todayDistanceDetail,
                         icon: "point.bottomleft.forward.to.point.topright.scurvepath",
                         accessibilityValue: todayDistanceAccessibilityValue,
                         identifier: "home.metric.trip"
@@ -425,81 +430,101 @@ struct HomeView: View {
                     todayMetric(
                         title: "Today's duration",
                         value: todayDurationText,
-                        detail: todayDurationDetail,
                         icon: "clock",
                         accessibilityValue: todayDurationAccessibilityValue,
                         identifier: "home.metric.duration"
                     )
                 }
             } else {
-                HStack(alignment: .top, spacing: 20) {
+                HStack(alignment: .top, spacing: 14) {
                     todayMetric(
                         title: "Today's trip",
                         value: todayDistanceText,
-                        detail: todayDistanceDetail,
                         icon: "point.bottomleft.forward.to.point.topright.scurvepath",
                         accessibilityValue: todayDistanceAccessibilityValue,
                         identifier: "home.metric.trip"
                     )
 
                     Divider()
-                        .frame(height: 58)
+                        .frame(height: 42)
                         .overlay(NembraColor.quietLine)
 
                     todayMetric(
                         title: "Today's duration",
                         value: todayDurationText,
-                        detail: todayDurationDetail,
                         icon: "clock",
                         accessibilityValue: todayDurationAccessibilityValue,
                         identifier: "home.metric.duration"
                     )
                 }
             }
+
+            if let todayEvidenceDetail {
+                Text(todayEvidenceDetail)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(NembraColor.gold)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityHidden(true)
+            }
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 4)
     }
 
     private var readinessRow: some View {
         Button(action: onOpenDashboard) {
-            HStack(spacing: 12) {
+            HStack(spacing: 9) {
                 Image(systemName: readinessSymbol)
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(readinessForeground)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 30, height: 30)
                     .background(readinessBackground, in: Circle())
                     .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(readinessTitle)
-                        .font(.title3.weight(.bold))
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(readinessVisibleText)
+                            .font(.headline.weight(.bold))
+                            .foregroundStyle(NembraColor.primaryText)
+
+                        Text(modeReadoutText)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(modeReadoutColor)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } else {
+                    Text(readinessVisibleText)
+                        .font(.headline.weight(.bold))
                         .foregroundStyle(NembraColor.primaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+
+                    Text("·")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(NembraColor.secondaryText)
+                        .accessibilityHidden(true)
 
                     Text(modeReadoutText)
-                        .font(.subheadline.weight(.medium))
+                        .font(.headline.weight(.semibold))
                         .foregroundStyle(modeReadoutColor)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
                 }
 
-                Spacer(minLength: 8)
+                Spacer(minLength: 4)
 
-                VStack(alignment: .trailing, spacing: 3) {
-                    Text("Dashboard")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(NembraColor.secondaryText)
-                    Image(systemName: "arrow.up.right")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(NembraColor.gold)
-                }
-                .accessibilityHidden(true)
+                Image(systemName: "arrow.up.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(NembraColor.gold)
+                    .frame(width: 28, height: 44)
+                    .accessibilityHidden(true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .frame(minHeight: 56)
+        .frame(minHeight: 44)
         .accessibilityLabel("Open Horizon Dashboard")
-        .accessibilityValue("\(readinessTitle), \(modeAccessibilityValue)")
+        .accessibilityValue(readinessAccessibilityValue)
         .accessibilityHint("Requests landscape and opens the riding cockpit.")
         .accessibilityIdentifier("home.horizon-entry")
     }
@@ -507,19 +532,18 @@ struct HomeView: View {
     private func todayMetric(
         title: String,
         value: String,
-        detail: String?,
         icon: String,
         accessibilityValue: String,
         identifier: String
     ) -> some View {
-        HStack(alignment: .top, spacing: 11) {
+        HStack(alignment: .top, spacing: 9) {
             Image(systemName: icon)
-                .font(.system(size: 18, weight: .medium))
+                .font(.system(size: 17, weight: .medium))
                 .foregroundStyle(NembraColor.secondaryText)
-                .frame(width: 25, height: 25)
+                .frame(width: 23, height: 23)
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(value)
                     .font(.title3.weight(.semibold).monospacedDigit())
                     .foregroundStyle(NembraColor.primaryText)
@@ -528,12 +552,6 @@ struct HomeView: View {
                 Text(title)
                     .font(.caption)
                     .foregroundStyle(NembraColor.secondaryText)
-                if let detail {
-                    Text(detail)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(NembraColor.gold)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -546,33 +564,44 @@ struct HomeView: View {
     // MARK: - Confirmed vehicle controls
 
     private var controlsRail: some View {
-        VStack(spacing: 14) {
-            GlassEffectContainer(spacing: 10) {
-                if dynamicTypeSize.isAccessibilitySize {
-                    VStack(spacing: 12) {
-                        lightControl
-                        lockControl
-                        modeControl
-                    }
-                } else {
-                    HStack(spacing: 10) {
-                        lightControl
-                        lockControl
-                        modeControl
-                    }
+        GlassEffectContainer(spacing: 14) {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: 0) {
+                    lightControl
+                    Divider().overlay(NembraColor.quietLine)
+                    lockControl
+                    Divider().overlay(NembraColor.quietLine)
+                    modeControl
+                }
+            } else {
+                HStack(spacing: 0) {
+                    lightControl
+                    railDivider
+                    lockControl
+                    railDivider
+                    modeControl
                 }
             }
-
         }
-        .padding(14)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity)
+        .frame(minHeight: 110)
         .background(
             reduceTransparency ? NembraColor.warmGraphite : NembraColor.quietSurface,
-            in: RoundedRectangle(cornerRadius: 25, style: .continuous)
+            in: RoundedRectangle(cornerRadius: 24, style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 25, style: .continuous)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .strokeBorder(NembraColor.quietLine)
         }
+    }
+
+    private var railDivider: some View {
+        Divider()
+            .frame(height: 64)
+            .overlay(NembraColor.quietLine)
+            .accessibilityHidden(true)
     }
 
     @ViewBuilder
@@ -649,7 +678,7 @@ struct HomeView: View {
         let displayedState = available ? subtitle : "Unavailable"
 
         return Button(action: action) {
-            VStack(spacing: 9) {
+            VStack(spacing: 6) {
                 ZStack {
                     Circle()
                         .fill(active ? NembraColor.gold.opacity(0.14) : Color.white.opacity(0.055))
@@ -666,8 +695,10 @@ struct HomeView: View {
                             .foregroundStyle(active ? NembraColor.gold : NembraColor.primaryText)
                     }
                 }
+                .frame(width: 44, height: 44)
+                .modifier(HomeControlIconGlassModifier())
 
-                VStack(spacing: 2) {
+                VStack(spacing: 1) {
                     Text(title)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(NembraColor.primaryText)
@@ -678,14 +709,12 @@ struct HomeView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 4)
             .frame(maxWidth: .infinity)
-            .frame(minHeight: dynamicTypeSize.isAccessibilitySize ? 96 : 100)
+            .frame(minHeight: 96)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .nembraGlassControl()
         .disabled(
             vehicle.state.connection != .connected ||
             vehicle.isVehicleCommandPending ||
@@ -697,14 +726,14 @@ struct HomeView: View {
     }
 
     private func unavailableControl(title: String, icon: String) -> some View {
-        VStack(spacing: 9) {
+        VStack(spacing: 6) {
             Image(systemName: icon)
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(NembraColor.secondaryText)
                 .frame(width: 44, height: 44)
                 .background(Color.white.opacity(0.04), in: Circle())
 
-            VStack(spacing: 2) {
+            VStack(spacing: 1) {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(NembraColor.primaryText)
@@ -713,11 +742,9 @@ struct HomeView: View {
                     .foregroundStyle(NembraColor.secondaryText)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 4)
         .frame(maxWidth: .infinity)
-        .frame(minHeight: dynamicTypeSize.isAccessibilitySize ? 96 : 100)
-        .background(Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .frame(minHeight: 96)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title), unavailable")
     }
@@ -741,7 +768,6 @@ struct HomeView: View {
                     latestRideLabel(record)
                 }
                 .buttonStyle(.plain)
-                .nembraGlassControl()
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Continue to rides")
                 .accessibilityValue(latestRideAccessibilityValue(record))
@@ -768,16 +794,16 @@ struct HomeView: View {
     }
 
     private func latestRideLabel(_ record: RideHistoryRecord) -> some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             Image(systemName: "clock.arrow.circlepath")
-                .font(.system(size: 19, weight: .semibold))
+                .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(NembraColor.gold)
-                .frame(width: 48, height: 48)
-                .background(NembraColor.gold.opacity(0.10), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                .frame(width: 44, height: 44)
+                .background(NembraColor.gold.opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text("Continue to rides")
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(NembraColor.primaryText)
 
                 HStack(spacing: 7) {
@@ -803,9 +829,14 @@ struct HomeView: View {
                 .font(.caption.weight(.bold))
                 .foregroundStyle(NembraColor.secondaryText)
         }
-        .padding(.horizontal, 15)
-        .padding(.vertical, 13)
-        .frame(maxWidth: .infinity, minHeight: 78, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, minHeight: 70, alignment: .leading)
+        .background(NembraColor.quietSurface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(NembraColor.quietLine)
+        }
         .contentShape(Rectangle())
     }
 
@@ -815,11 +846,11 @@ struct HomeView: View {
         icon: String,
         showsProgress: Bool
     ) -> some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             ZStack {
-                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(Color.white.opacity(0.035))
-                    .frame(width: 48, height: 48)
+                    .frame(width: 44, height: 44)
 
                 if showsProgress {
                     ProgressView()
@@ -833,7 +864,7 @@ struct HomeView: View {
             }
             .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(NembraColor.primaryText)
@@ -845,9 +876,9 @@ struct HomeView: View {
 
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 15)
-        .padding(.vertical, 13)
-        .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, minHeight: 70, alignment: .leading)
         .background(NembraColor.quietSurface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -1232,6 +1263,24 @@ struct HomeView: View {
         )
     }
 
+    /// One visible provenance line avoids repeating the same no-evidence or
+    /// partial-evidence qualifier beneath both Today metrics. Each metric keeps
+    /// its complete, independent accessibility value below.
+    private var todayEvidenceDetail: String? {
+        switch (todayDistanceDetail, todayDurationDetail) {
+        case (nil, nil):
+            nil
+        case let (distance?, duration?) where distance == duration:
+            distance
+        case let (distance?, duration?):
+            "Trip: \(distance) · Duration: \(duration)"
+        case let (distance?, nil):
+            "Trip: \(distance)"
+        case let (nil, duration?):
+            "Duration: \(duration)"
+        }
+    }
+
     private func todayMetricDetail(
         _ availability: NembraCore.DailyRideMetricAvailability?,
         unavailableText: String
@@ -1281,24 +1330,30 @@ struct HomeView: View {
         }
     }
 
-    private var readinessTitle: String {
+    private var readinessVisibleText: String {
         switch rides.status {
-        case .candidate: "Ready when you move"
-        case .active: "Recording automatically"
-        case .temporarilyDisconnected: "Ride protected"
-        case .endingCandidate: "Checking ride end"
-        case .saving: "Saving accepted ride"
-        case .restoring: "Restoring ride"
-        case .persistenceUnavailable, .failed: "Ride tracking unavailable"
+        case .restoring, .candidate, .active, .temporarilyDisconnected,
+             .endingCandidate, .saving, .persistenceUnavailable, .failed:
+            rides.statusText
         case .disabled:
-            vehicle.state.connection == .connected ? "Ride capture not configured" : "Ride capture unavailable"
+            rides.statusText
         case .idle:
             vehicle.state.connection == .connected ? "Ready" : "Vehicle offline"
         }
     }
 
+    private var readinessAccessibilityValue: String {
+        [
+            "Automatic ride tracking: \(rides.statusText)",
+            "Vehicle: \(vehicleStatusText)",
+            "Mode: \(modeAccessibilityValue)"
+        ]
+        .joined(separator: ". ")
+    }
+
     private var readinessSymbol: String {
         switch rides.status {
+        case .candidate, .active, .endingCandidate: "location.north.circle.fill"
         case .temporarilyDisconnected: "arrow.triangle.2.circlepath"
         case .persistenceUnavailable, .failed: "exclamationmark.triangle.fill"
         case .saving, .restoring: "arrow.down.doc"
@@ -1422,6 +1477,11 @@ struct HomeView: View {
         }
     }
 
+    private var vehicleStatusAccessibilityValue: String {
+        guard vehicle.profile == .simulatorQA else { return vehicleStatusText }
+        return "\(vehicleStatusText). SIM, QA only, synthetic evidence"
+    }
+
     private var connectionIndicatorColor: Color {
         switch vehicle.state.connection {
         case .connected: .green
@@ -1435,6 +1495,36 @@ struct HomeView: View {
         case .bluetoothPermissionDenied, .unsupportedConfiguration: .red
         case .bluetoothPoweredOff, .scooterUnavailable: .orange
         case .none: NembraColor.gold
+        }
+    }
+}
+
+/// Liquid Glass belongs to the functional icon controls, not the telemetry
+/// labels or the entire control rail. The parent `GlassEffectContainer` renders
+/// these three shapes as one efficient group while each full button retains its
+/// 44-point-or-larger hit region.
+private struct HomeControlIconGlassModifier: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.isEnabled) private var isEnabled
+
+    func body(content: Content) -> some View {
+        Group {
+            if reduceTransparency {
+                content
+                    .background(NembraColor.warmGraphite, in: Circle())
+                    .overlay {
+                        Circle()
+                            .strokeBorder(NembraColor.primaryText.opacity(0.24))
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
+            } else if #available(iOS 26.0, *) {
+                content
+                    .glassEffect(.regular.interactive(isEnabled), in: .circle)
+            } else {
+                content
+                    .background(.thinMaterial, in: Circle())
+            }
         }
     }
 }

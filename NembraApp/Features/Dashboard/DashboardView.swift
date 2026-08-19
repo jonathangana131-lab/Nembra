@@ -386,7 +386,6 @@ private struct DashboardDriveSlowLayer: View, @MainActor Equatable {
                 .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? 150 : 210)
         }
         .frame(maxWidth: .infinity, minHeight: dynamicTypeSize.isAccessibilitySize ? 58 : 54)
-        .accessibilityIdentifier("dashboard.top-chrome")
     }
 
     private var vehicleIdentity: some View {
@@ -477,7 +476,6 @@ private struct DashboardDriveSlowLayer: View, @MainActor Equatable {
             compactRideLedger
         }
         .frame(maxWidth: .infinity, minHeight: dynamicTypeSize.isAccessibilitySize ? 76 : 62)
-        .accessibilityIdentifier("dashboard.ride-ledger")
     }
 
     private var adaptiveRangeReadout: some View {

@@ -51,7 +51,10 @@ struct AppRootView: View {
             DashboardWindowSceneReader { scene in
                 dashboardSession.attach(windowScene: scene)
             }
-            .frame(width: 1, height: 1)
+            // Fill the exact root bounds so passive orientation changes relayout
+            // the transparent probe and publish the owning scene's new effective
+            // geometry. A fixed 1x1 probe is not guaranteed to relayout.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
 
@@ -189,7 +192,6 @@ private struct InactivePortraitRecoveryOverlay: View {
 }
 
 private struct PortraitRootView: View {
-    @Environment(RideApplicationStore.self) private var rides
     @Binding var selectedTab: NembraPrimaryTab
     let cockpit: HorizonCockpitStore
     let adaptiveRangeEstimate: NembraCore.AdaptiveBatteryRangeLiveEstimate?
@@ -212,11 +214,6 @@ private struct PortraitRootView: View {
                     // its final vehicle row can scroll clear of that glass bar
                     // instead of sitting underneath an interactive control.
                     .safeAreaPadding(.bottom, 72)
-                    .safeAreaInset(edge: .top, spacing: 0) {
-                        if rides.shouldPresentStatus {
-                            RideStatusStrip()
-                        }
-                    }
             }
             .tabItem {
                 Label("Home", systemImage: "house")
@@ -367,71 +364,6 @@ private struct DashboardGeometryRecoveryOverlay: View {
         switch failure.stablePresentation {
         case .portrait: "Stay on Home"
         case .dashboard: "Continue Dashboard"
-        }
-    }
-}
-
-private struct RideStatusStrip: View {
-    @Environment(RideApplicationStore.self) private var rides
-
-    var body: some View {
-        HStack(spacing: 10) {
-            statusIndicator
-                .frame(width: 20, height: 20)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Ride")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Text(rides.statusText)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(statusForegroundStyle)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 8)
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 9)
-        .background(Color(uiColor: .secondarySystemBackground))
-        .overlay(alignment: .bottom) {
-            Divider()
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Automatic ride tracking")
-        .accessibilityValue(rides.statusText)
-        .accessibilityIdentifier("home.ride-status")
-    }
-
-    @ViewBuilder
-    private var statusIndicator: some View {
-        switch rides.status {
-        case .restoring, .saving:
-            ProgressView()
-                .controlSize(.small)
-        case .persistenceUnavailable, .failed:
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.red)
-        case .temporarilyDisconnected:
-            Image(systemName: "arrow.triangle.2.circlepath")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.secondary)
-        case .candidate, .active, .endingCandidate:
-            Image(systemName: "location.north.circle.fill")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.primary)
-        case .disabled, .idle:
-            EmptyView()
-        }
-    }
-
-    private var statusForegroundStyle: Color {
-        switch rides.status {
-        case .persistenceUnavailable, .failed:
-            .red
-        default:
-            .primary
         }
     }
 }
@@ -892,6 +824,7 @@ private struct RideHistoryDetailView: View {
             Text(record.evidence.endedAtDate.formatted(date: .complete, time: .omitted))
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
 
             rideTimeAndRecovery
         }
@@ -918,6 +851,7 @@ private struct RideHistoryDetailView: View {
         Text(record.evidence.endedAtDate.formatted(date: .omitted, time: .shortened))
             .font(.body.monospacedDigit())
             .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder
@@ -933,29 +867,27 @@ private struct RideHistoryDetailView: View {
     private var routeSurface: some View {
         if let geometry = routes.geometry(sessionID: record.sessionID) {
             if geometry.hasDrawablePath {
-                ZStack(alignment: .topLeading) {
-                    RideRouteMapView(geometry: geometry)
-                        .frame(height: 268)
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel("Recorded ride route")
-                        .accessibilityValue(routeAccessibilityValue(geometry))
-                        .accessibilityHint("Shows only route points Nembra recorded for this ride.")
-                        .accessibilityIdentifier("rides.route-map")
+                VStack(alignment: .leading, spacing: 8) {
+                    if dynamicTypeSize.isAccessibilitySize {
+                        routeCoverageBadge(geometry.coverage)
+                    }
 
-                    Text(routeCoverageLabel(geometry.coverage))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(
-                            Color(uiColor: .systemBackground),
-                            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        )
-                        .padding(16)
-                        .accessibilityHidden(true)
+                    ZStack(alignment: .topLeading) {
+                        RideRouteMapView(geometry: geometry)
+                            .frame(height: dynamicTypeSize.isAccessibilitySize ? 220 : 268)
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel("Recorded ride route")
+                            .accessibilityValue(routeAccessibilityValue(geometry))
+                            .accessibilityHint("Shows only route points Nembra recorded for this ride.")
+                            .accessibilityIdentifier("rides.route-map")
+
+                        if !dynamicTypeSize.isAccessibilitySize {
+                            routeCoverageBadge(geometry.coverage)
+                                .padding(16)
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: NembraMetrics.heroRadius, style: .continuous))
                 }
-                .clipShape(RoundedRectangle(cornerRadius: NembraMetrics.heroRadius, style: .continuous))
             } else if geometry.hasRecordedGeometry {
                 routeStateSurface(
                     title: "Route points saved",
@@ -982,6 +914,20 @@ private struct RideHistoryDetailView: View {
                 routeUnavailableSurface
             }
         }
+    }
+
+    private func routeCoverageBadge(_ coverage: RideDistanceCoverage) -> some View {
+        Text(routeCoverageLabel(coverage))
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.primary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                Color(uiColor: .systemBackground),
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
+            .accessibilityHidden(true)
     }
 
     private var routeLoadingSurface: some View {
@@ -1237,25 +1183,27 @@ private struct RideHistoryDetailView: View {
 
     @ViewBuilder
     private func timelineRow(title: String, date: Date) -> some View {
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.subheadline.weight(.medium))
-                    Text(timestamp(date))
-                        .font(.subheadline.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-            } else {
-                HStack(spacing: 12) {
-                    Text(title)
-                        .font(.subheadline.weight(.medium))
-                    Spacer(minLength: 12)
-                    Text(timestamp(date))
-                        .font(.subheadline.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.trailing)
-                }
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                Text(title)
+                    .font(.subheadline.weight(.medium))
+                    .fixedSize(horizontal: true, vertical: true)
+                Spacer(minLength: 12)
+                Text(timestamp(date))
+                    .font(.subheadline.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.trailing)
+                    .fixedSize(horizontal: true, vertical: true)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline.weight(.medium))
+                Text(timestamp(date))
+                    .font(.subheadline.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.leading, 20)

@@ -8,12 +8,18 @@ struct HomeAccessibilityControlLayoutSourceTests {
         let source = try String(contentsOf: homeViewURL, encoding: .utf8)
 
         #expect(source.contains("if dynamicTypeSize.isAccessibilitySize"))
-        #expect(source.contains("VStack(spacing: 12)"))
+        #expect(source.contains("GlassEffectContainer(spacing: 14)"))
+        #expect(source.contains("VStack(spacing: 0)"))
+        #expect(source.contains("HStack(spacing: 0)"))
+        #expect(source.contains("railDivider"))
         #expect(source.contains("ForEach(supportedModes, id: \\.self)"))
         #expect(source.contains("home.mode.selector"))
         #expect(source.contains("Open Horizon Dashboard"))
         #expect(!source.contains(".accessibilityIdentifier(\"home.controls\")"))
-        #expect(source.contains(".frame(minHeight: dynamicTypeSize.isAccessibilitySize ? 96 : 100)"))
+        #expect(source.contains(".frame(minHeight: 110)"))
+        #expect(source.contains(".frame(minHeight: 96)"))
+        #expect(source.contains(".modifier(HomeControlIconGlassModifier())"))
+        #expect(source.contains(".glassEffect(.regular.interactive(isEnabled), in: .circle)"))
         #expect(!source.contains("Text(available ? subtitle : \"Unavailable\")\n                        .font(.caption)\n                        .foregroundStyle(.secondary)\n                        .lineLimit(1)"))
         #expect(!source.contains(".frame(height: 58)\n            .frame(maxWidth: .infinity)"))
 
@@ -27,6 +33,8 @@ struct HomeAccessibilityControlLayoutSourceTests {
         let controlButton = String(source[controlButtonStart.lowerBound..<unavailableControlStart.lowerBound])
         #expect(controlButton.contains("return Button(action: action)"))
         #expect(controlButton.contains(".accessibilityValue(pending ? \"Requesting confirmation\" : \"\")"))
+        #expect(controlButton.contains(".modifier(HomeControlIconGlassModifier())"))
+        #expect(!controlButton.contains(".nembraGlassControl()"))
         #expect(!controlButton.contains(".accessibilityElement(children: .ignore)"))
     }
 

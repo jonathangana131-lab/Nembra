@@ -3,14 +3,19 @@ import Testing
 
 @Test("Home status and recovery surfaces reflow at Accessibility Dynamic Type")
 func homeStatusAndRecoveryReflowAtAccessibilityDynamicType() throws {
-    let sourceURL = URL(fileURLWithPath: #filePath)
+    let repositoryRoot = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
+    let sourceURL = repositoryRoot
         .appendingPathComponent("NembraApp/Features/Home/HomeView.swift")
     let source = try String(contentsOf: sourceURL, encoding: .utf8)
+    let appRootSource = try String(
+        contentsOf: repositoryRoot.appendingPathComponent("NembraApp/App/AppRootView.swift"),
+        encoding: .utf8
+    )
 
     #expect(source.contains("@Environment(\\.dynamicTypeSize) private var dynamicTypeSize"))
     #expect(source.contains("home.metric.battery"))
@@ -30,6 +35,19 @@ func homeStatusAndRecoveryReflowAtAccessibilityDynamicType() throws {
     #expect(source.contains("parts.append(\"low battery\")"))
     #expect(!source.contains(".accessibilityIdentifier(\"home.energy-hero\")"))
     #expect(!source.contains(".accessibilityIdentifier(\"home.controls\")"))
+    #expect(source.contains("Text(\"SIM · QA\")"))
+    #expect(source.contains(".accessibilityIdentifier(\"home.connection-status\")"))
+    #expect(source.contains(".accessibilityValue(vehicleStatusAccessibilityValue)"))
+    #expect(source.contains("SIM, QA only, synthetic evidence"))
+    #expect(!source.contains("Text(\"Nembra Simulator\")"))
+
+    // Automatic-ride state is integrated into the compact Horizon readiness
+    // control instead of consuming a second top strip.
+    #expect(source.contains("rides.statusText"))
+    #expect(source.contains("readinessAccessibilityValue"))
+    #expect(!appRootSource.contains("private struct RideStatusStrip"))
+    #expect(!appRootSource.contains("home.ride-status"))
+    #expect(!appRootSource.contains(".safeAreaInset(edge: .top"))
 
     // Home keeps the selected simultaneous percentage + range composition, but
     // the whole energy instrument is one native control whose emphasis follows
@@ -71,17 +89,25 @@ func homeStatusAndRecoveryReflowAtAccessibilityDynamicType() throws {
         #expect(hero.contains("batteryReadout"))
         #expect(hero.contains("batteryBody"))
     }
+    #expect(standardHero.contains("min(proxy.size.width * 0.98, 320)"))
+    #expect(standardHero.contains(".position(x: proxy.size.width * 0.54, y: 168)"))
+    #expect(standardHero.contains(".frame(height: 328)"))
 
     let statusPanelStart = try #require(source.range(of: "private var readinessAndToday: some View"))
     let controlsStart = try #require(source.range(of: "private var controlsRail: some View", range: statusPanelStart.upperBound..<source.endIndex))
     let statusPanel = String(source[statusPanelStart.lowerBound..<controlsStart.lowerBound])
 
     #expect(statusPanel.contains("if dynamicTypeSize.isAccessibilitySize"))
-    #expect(statusPanel.contains("VStack(alignment: .leading, spacing: 18)"))
-    #expect(statusPanel.contains("HStack(alignment: .top, spacing: 20)"))
+    #expect(statusPanel.contains("spacing: dynamicTypeSize.isAccessibilitySize ? 18 : 7"))
+    #expect(statusPanel.contains("VStack(alignment: .leading, spacing: 12)"))
+    #expect(statusPanel.contains("HStack(alignment: .top, spacing: 14)"))
     #expect(statusPanel.contains("Divider()"))
     #expect(statusPanel.contains(".fixedSize(horizontal: false, vertical: true)"))
     #expect(statusPanel.contains(".accessibilityIdentifier(\"home.horizon-entry\")"))
+    #expect(statusPanel.contains("if let todayEvidenceDetail"))
+    #expect(statusPanel.contains(".accessibilityValue(readinessAccessibilityValue)"))
+    #expect(!statusPanel.contains("detail: todayDistanceDetail"))
+    #expect(!statusPanel.contains("detail: todayDurationDetail"))
     let readinessStart = try #require(statusPanel.range(of: "private var readinessRow: some View"))
     let todayMetricStart = try #require(
         statusPanel.range(
@@ -96,7 +122,7 @@ func homeStatusAndRecoveryReflowAtAccessibilityDynamicType() throws {
     let panelStart = try #require(source.range(of: "private var energyHero: some View", range: headerStart.upperBound..<source.endIndex))
     let header = String(source[headerStart.lowerBound..<panelStart.lowerBound])
     #expect(header.contains("if dynamicTypeSize.isAccessibilitySize"))
-    #expect(header.contains("VStack(alignment: .leading, spacing: 16)"))
+    #expect(header.contains("VStack(alignment: .leading, spacing: 12)"))
 
     let recoveryStart = try #require(source.range(of: "private var connectionRecovery: some View"))
     let recoveryEnd = try #require(source.range(of: "private enum ConnectionRecoveryAction", range: recoveryStart.upperBound..<source.endIndex))
