@@ -36,7 +36,7 @@ struct TuyaFieldSDKDependencyProvenanceSourceTests {
         #expect(acceptedInstall.lowerBound < postauthentication.lowerBound)
     }
 
-    @Test("review creates opaque private authority while field mode only verifies the externally accepted generation")
+    @Test("review creates opaque private authority while field mode only verifies the exact-source accepted generation")
     func bootstrapPreservesExternallyReviewedPrivateInputAuthority() throws {
         let script = try readRepositoryFile("Scripts/bootstrap_capture_tuya_sdk.sh")
         let helper = try readRepositoryFile("Scripts/capture_tuya_private_input_provenance.py")
@@ -47,7 +47,10 @@ struct TuyaFieldSDKDependencyProvenanceSourceTests {
         #expect(script.contains("run_private_input_provenance verify-review"))
         #expect(script.contains("field mode will not create or replace it"))
         #expect(script.contains("externally accepted review commitment"))
-        #expect(script.contains("--field-private-input-commitment"))
+        #expect(script.contains("PRIVATE_REVIEW_AUTHORITY_PATH=\"CAPTURE_TUYA_PRIVATE_INPUT_REVIEW_COMMITMENT.txt\""))
+        #expect(script.contains("rev-parse \"$EXPECTED_FIELD_SOURCE_SHA:$PRIVATE_REVIEW_AUTHORITY_PATH\""))
+        #expect(script.contains("cat-file blob \"$PRIVATE_REVIEW_AUTHORITY_BLOB\""))
+        #expect(!script.contains("--field-private-input-commitment"))
         #expect(script.contains("--accepted-commitment \"$ACCEPTED_PRIVATE_INPUT_COMMITMENT\""))
         #expect(script.contains("--lockfile \"$REPO_ROOT/Podfile.lock\""))
         #expect(script.contains("--security-podspec \"$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec\""))
@@ -59,6 +62,7 @@ struct TuyaFieldSDKDependencyProvenanceSourceTests {
         #expect(script.contains("ResolvedTuyaDependencyProvenance.txt"))
         #expect(script.contains("PrivateInputReviewKey.bin"))
 
+        let sourceAuthority = try #require(script.range(of: "PRIVATE_REVIEW_AUTHORITY_BLOB="))
         let preverify = try #require(script.range(of: "if ! run_private_input_provenance verify-review"))
         let acceptedInstall = try #require(script.range(of: "pod install --deployment --no-repo-update"))
         let review = try #require(script.range(of: "REVIEW_COMMITMENT=\"$(run_private_input_provenance review"))
@@ -67,6 +71,7 @@ struct TuyaFieldSDKDependencyProvenanceSourceTests {
                 of: "private Tuya build inputs changed across dependency installation or no longer match the accepted review commitment"
             )
         )
+        #expect(sourceAuthority.lowerBound < preverify.lowerBound)
         #expect(preverify.lowerBound < acceptedInstall.lowerBound)
         #expect(acceptedInstall.lowerBound < review.lowerBound)
         #expect(review.lowerBound < secondVerify.lowerBound)
