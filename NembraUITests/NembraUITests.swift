@@ -389,8 +389,12 @@ final class NembraUITests: XCTestCase {
     func testHorizonV4DriveEntryTruthAndPortraitRestoration() {
         let previousAppearance = XCUIDevice.shared.appearance
         defer {
-            XCUIDevice.shared.orientation = .portrait
-            XCUIDevice.shared.appearance = previousAppearance
+            if XCUIDevice.shared.orientation != .portrait {
+                XCUIDevice.shared.orientation = .portrait
+            }
+            if XCUIDevice.shared.appearance != previousAppearance {
+                XCUIDevice.shared.appearance = previousAppearance
+            }
         }
 
         XCUIDevice.shared.appearance = .dark
@@ -484,8 +488,12 @@ final class NembraUITests: XCTestCase {
     func testHorizonV4DriveBatteryToggleHitchEvidence() {
         let previousAppearance = XCUIDevice.shared.appearance
         defer {
-            XCUIDevice.shared.orientation = .portrait
-            XCUIDevice.shared.appearance = previousAppearance
+            if XCUIDevice.shared.orientation != .portrait {
+                XCUIDevice.shared.orientation = .portrait
+            }
+            if XCUIDevice.shared.appearance != previousAppearance {
+                XCUIDevice.shared.appearance = previousAppearance
+            }
         }
 
         XCUIDevice.shared.appearance = .dark
@@ -520,8 +528,12 @@ final class NembraUITests: XCTestCase {
     func testHorizonV4DriveSustainedRenderIslandHitchEvidence() {
         let previousAppearance = XCUIDevice.shared.appearance
         defer {
-            XCUIDevice.shared.orientation = .portrait
-            XCUIDevice.shared.appearance = previousAppearance
+            if XCUIDevice.shared.orientation != .portrait {
+                XCUIDevice.shared.orientation = .portrait
+            }
+            if XCUIDevice.shared.appearance != previousAppearance {
+                XCUIDevice.shared.appearance = previousAppearance
+            }
         }
 
         XCUIDevice.shared.appearance = .dark

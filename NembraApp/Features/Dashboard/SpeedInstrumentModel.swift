@@ -966,7 +966,9 @@ private struct DashboardEnergyRailView: View {
 }
 
 /// Narrow high-frequency render island for speed and propulsion motion. The
-/// timeline pauses whenever neither accepted projection is visually settling.
+/// animation timeline exists only while an accepted projection is visually
+/// settling; the steady-state instrument has no animation schedule to keep the
+/// app or UI automation artificially busy.
 /// Display frames are never written into evidence, persistence, or `VehicleStore`.
 @MainActor
 struct DashboardSpeedInstrumentView: View {
@@ -994,32 +996,28 @@ struct DashboardSpeedInstrumentView: View {
         let energyRailShouldTick = !reduceMotion
             && ownsSimulatorPowerSource
             && energyRailModel.shouldTick
+        let shouldTick = speedShouldTick || energyRailShouldTick
 
-        TimelineView(
-            .animation(
-                minimumInterval: nil,
-                paused: !(speedShouldTick || energyRailShouldTick)
-            )
-        ) { _ in
-            let now = DispatchTime.now().uptimeNanoseconds
-            let frame = model.presentationFrame(
-                for: rawSpeedAvailability,
-                atUptimeNanoseconds: now,
-                prefersReducedMotion: reduceMotion,
-                allowsSimulatorQA: allowsSimulatorQA
-            )
-            let energyRailState = ownsSimulatorPowerSource
-                ? energyRailModel.presentation(
-                    atUptimeNanoseconds: now,
-                    prefersReducedMotion: reduceMotion
+        Group {
+            if shouldTick {
+                TimelineView(.animation(minimumInterval: nil, paused: false)) { _ in
+                    instrumentContent(
+                        atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+                        rawSpeedAvailability: rawSpeedAvailability,
+                        speedAvailability: speedAvailability,
+                        allowsSimulatorQA: allowsSimulatorQA,
+                        ownsSimulatorPowerSource: ownsSimulatorPowerSource
+                    )
+                }
+            } else {
+                instrumentContent(
+                    atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+                    rawSpeedAvailability: rawSpeedAvailability,
+                    speedAvailability: speedAvailability,
+                    allowsSimulatorQA: allowsSimulatorQA,
+                    ownsSimulatorPowerSource: ownsSimulatorPowerSource
                 )
-                : .unavailable
-
-            instrumentContent(
-                frame: frame,
-                speedAvailability: speedAvailability,
-                energyRailState: energyRailState
-            )
+            }
         }
         .task {
             model.configureInterpolationPolicy(vehicle.speedInstrumentInterpolationPolicy)
@@ -1048,6 +1046,33 @@ struct DashboardSpeedInstrumentView: View {
             model.stop()
             energyRailModel.stop()
         }
+    }
+
+    private func instrumentContent(
+        atUptimeNanoseconds uptimeNanoseconds: UInt64,
+        rawSpeedAvailability: SpeedEvidenceAvailability,
+        speedAvailability: SpeedEvidenceAvailability,
+        allowsSimulatorQA: Bool,
+        ownsSimulatorPowerSource: Bool
+    ) -> some View {
+        let frame = model.presentationFrame(
+            for: rawSpeedAvailability,
+            atUptimeNanoseconds: uptimeNanoseconds,
+            prefersReducedMotion: reduceMotion,
+            allowsSimulatorQA: allowsSimulatorQA
+        )
+        let energyRailState = ownsSimulatorPowerSource
+            ? energyRailModel.presentation(
+                atUptimeNanoseconds: uptimeNanoseconds,
+                prefersReducedMotion: reduceMotion
+            )
+            : .unavailable
+
+        return instrumentContent(
+            frame: frame,
+            speedAvailability: speedAvailability,
+            energyRailState: energyRailState
+        )
     }
 
     private func instrumentContent(

@@ -20,6 +20,13 @@ struct RideWindowNavigationClearanceSourceTests {
             timelineSource.contains(".padding(.trailing, 72)"),
             "The retained Ride detail witness shows navigation.launch covering the Ended timestamp. Reserve the 54 pt launcher + 18 pt trailing footprint locally in Ride Window rows instead of shrinking text or moving global Navigation."
         )
+        #expect(
+            timelineSource.contains(".accessibilityElement(children: .ignore)")
+                && timelineSource.contains(".accessibilityLabel(title)")
+                && timelineSource.contains(".accessibilityValue(timestamp(date))")
+                && !timelineSource.contains(".accessibilityElement(children: .combine)"),
+            "Ride Window rows must expose one explicit label/value element while their semantic Text views remain free to scale. Combining the adaptive ViewThatFits children caused alternating Xcode 27 Dynamic Type audit failures."
+        )
     }
 
     private var appRootViewURL: URL {

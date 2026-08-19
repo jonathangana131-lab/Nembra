@@ -177,6 +177,18 @@ final class RideUITests: XCTestCase {
         assertNonzeroMetric(distanceBeforeRelaunch, named: "Today's trip")
         assertNonzeroMetric(durationBeforeRelaunch, named: "Today's duration")
 
+        // Preserve a same-offset visual witness for the selected Home composition.
+        // This fixture reached Home through the real Simulator RideEngine, daily
+        // ledger, and durable history path; the screenshot remains explicitly QA
+        // evidence and never substitutes its values for production telemetry.
+        assertFullyInsideWindowAndAboveTabBar(initialLatestRide, in: app)
+        XCTAssertLessThanOrEqual(
+            initialLatestRide.frame.maxY,
+            app.tabBars.firstMatch.frame.minY - 8,
+            "The populated latest-ride continuation must preserve the selected Home's breathing room above native tab chrome without scrolling."
+        )
+        keepScreenshot(named: "Selected Populated Portrait Home - Simulator QA Only")
+
         XCTAssertTrue(
             scrollFullyClearOfFloatingTabBar(initialLatestRide, in: app),
             "The durable latest-ride continuation must scroll fully clear of the native floating tab bar."
