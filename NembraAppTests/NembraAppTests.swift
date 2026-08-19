@@ -266,7 +266,10 @@ final class NembraAppTests: XCTestCase {
         let originalObservationDate = runtime.vehicleStore.state.lastUpdated
 
         await runtime.start()
-        XCTAssertTrue(await waitUntil { runtime.vehicleStore.state.connection == .reconnecting })
+        let didBecomeRetained = await waitUntil {
+            runtime.vehicleStore.state.connection == .reconnecting
+        }
+        XCTAssertTrue(didBecomeRetained)
 
         XCTAssertEqual(runtime.vehicleStore.state.connection, .reconnecting)
         XCTAssertEqual(runtime.vehicleStore.batteryDisplayPercent, 92)
@@ -286,7 +289,10 @@ final class NembraAppTests: XCTestCase {
         XCTAssertEqual(runtime.vehicleStore.state.isHeadlightOn, false)
 
         let command = Task { await runtime.vehicleStore.setHeadlight(true) }
-        XCTAssertTrue(await waitUntil { runtime.vehicleStore.pendingCommands.contains(.headlight) })
+        let didBeginCommand = await waitUntil {
+            runtime.vehicleStore.pendingCommands.contains(.headlight)
+        }
+        XCTAssertTrue(didBeginCommand)
 
         XCTAssertTrue(runtime.vehicleStore.pendingCommands.contains(.headlight))
         XCTAssertEqual(runtime.vehicleStore.state.isHeadlightOn, false)
