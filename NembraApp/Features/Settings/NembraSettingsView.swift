@@ -636,7 +636,7 @@ private struct NembraAboutView: View {
     private var versionText: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
-        switch (version, build) {
+        return switch (version, build) {
         case let (version?, build?): "\(version) (\(build))"
         case let (version?, nil): version
         case let (nil, build?): build

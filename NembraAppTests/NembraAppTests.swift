@@ -33,6 +33,29 @@ private actor AppCommandAcknowledgementGate {
 }
 
 final class NembraAppTests: XCTestCase {
+    @MainActor
+    func testBatteryReadoutPreferencePersistsAcrossSharedCockpitStoreRestoration() {
+        let suiteName = "NembraAppTests.battery-readout.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            return XCTFail("Could not create isolated defaults.")
+        }
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let key = "battery-primary-readout"
+        let firstLaunch = HorizonCockpitStore(defaults: defaults, batteryModeKey: key)
+        XCTAssertEqual(firstLaunch.batteryPrimaryReadoutState.mode, .percentage)
+
+        firstLaunch.toggleBatteryPrimaryReadout()
+        XCTAssertEqual(firstLaunch.batteryPrimaryReadoutState.mode, .estimatedRange)
+
+        let restoredLaunch = HorizonCockpitStore(defaults: defaults, batteryModeKey: key)
+        XCTAssertEqual(restoredLaunch.batteryPrimaryReadoutState.mode, .estimatedRange)
+
+        restoredLaunch.toggleBatteryPrimaryReadout()
+        let restoredAgain = HorizonCockpitStore(defaults: defaults, batteryModeKey: key)
+        XCTAssertEqual(restoredAgain.batteryPrimaryReadoutState.mode, .percentage)
+    }
+
     func testHorizonV4PropulsionGeometryIsSymmetricRaisedAndFullyBounded() {
         for size in [
             CGSize(width: 640, height: 112),

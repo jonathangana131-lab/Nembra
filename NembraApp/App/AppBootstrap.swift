@@ -1,3 +1,4 @@
+import Dispatch
 import Foundation
 import NembraCore
 
@@ -142,25 +143,21 @@ final class AppRuntime {
             )
 
             guard simulatorAutoCompletesRide else { return }
+            guard let sessionID = await waitForActiveRideSessionID() else { return }
 
-            // The opt-in history fixture then advances a real Simulator ODO/trip
-            // delta through the production service/ride path. `elapsedSeconds`
-            // affects simulated distance only; packet timestamps still use the
-            // real monotonic arrival clock and never fabricate cadence.
-            try? await Task.sleep(nanoseconds: 250_000_000)
+            // Let the initial active-ride anchor age past the injected QA
+            // checkpoint cadence. The first screened route delta can then
+            // establish a partial GPS baseline before later deltas are counted;
+            // the ledger never backfills movement across an unavailable source.
+            try? await Task.sleep(nanoseconds: 550_000_000)
             guard !Task.isCancelled else { return }
-            await simulatorService.simulateRide(
-                speedKilometersPerHour: speed,
-                elapsedSeconds: 60
-            )
 
-            // The route fixture is also explicit Simulator-only evidence. It is
-            // written through RideRouteRecorder and the production route-store
-            // contract; it never mutates completed-history distance evidence and
-            // is classified partial because recording starts only after the ride
-            // has already reached confirmed active state.
-            if let sessionID = await waitForActiveRideSessionID(),
-               let simulatorRouteRecorder {
+            // The route fixture is also explicit Simulator-only evidence. Its
+            // geometry is written through RideRouteRecorder, while the same
+            // coordinates are screened independently below before any distance
+            // delta enters RideEngine. Coverage stays partial because this
+            // fixture begins only after the ride reaches confirmed active state.
+            if let simulatorRouteRecorder {
                 do {
                     try await simulatorRouteRecorder.begin(
                         sessionID: sessionID,
@@ -168,6 +165,31 @@ final class AppRuntime {
                     )
                     let now = Date()
                     let route = simulatorRouteCoordinates()
+
+#if DEBUG && targetEnvironment(simulator)
+                    var remainingQualityScreenedDistanceMeters: Double?
+                    // Keep the explicit QA route and the accepted daily-distance
+                    // ledger on the same truthful boundary as production: only
+                    // coordinate deltas accepted by RideLocationQualityScreen enter
+                    // RideApplicationStore. The screen's synthetic monotonic clock
+                    // exists only to evaluate this deterministic fixture; it is not
+                    // persisted and is not a claim about physical GPS cadence.
+                    if let distanceDeltas = simulatorQualityScreenedDistanceDeltas(
+                        route,
+                        receivedAtDate: now
+                    ) {
+                        await rideStore.ingestQualityScreenedGPSDistanceDelta(
+                            distanceDeltas[0],
+                            receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+                            receivedAtDate: .now,
+                            for: sessionID
+                        )
+                        remainingQualityScreenedDistanceMeters = distanceDeltas
+                            .dropFirst()
+                            .reduce(0, +)
+                    }
+#endif
+
                     for (index, coordinate) in route.enumerated() {
                         // The canonical four-point fixture keeps its historical
                         // one-second spacing. A long-route load fixture intentionally
@@ -185,6 +207,23 @@ final class AppRuntime {
                             horizontalAccuracyMeters: 4
                         )
                     }
+
+#if DEBUG && targetEnvironment(simulator)
+                    // Persisting the route points separates the two real receipt
+                    // dates without inventing an arbitrary wall-clock offset.
+                    // The second batch is the sum of only the remaining accepted
+                    // adjacent deltas; the unavailable pre-route interval stays
+                    // excluded and the daily result remains honestly partial.
+                    if let remainingQualityScreenedDistanceMeters {
+                        await rideStore.ingestQualityScreenedGPSDistanceDelta(
+                            remainingQualityScreenedDistanceMeters,
+                            receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+                            receivedAtDate: .now,
+                            for: sessionID
+                        )
+                    }
+#endif
+
                     _ = try await simulatorRouteRecorder.finish(requestedCoverage: .partial)
                 } catch {
                     // The UI test requires route evidence for this opt-in QA
@@ -192,6 +231,15 @@ final class AppRuntime {
                     // truthful no-route/error state instead of being fabricated.
                 }
             }
+
+            // The opt-in history fixture then advances a real Simulator ODO/trip
+            // delta through the production service/ride path. `elapsedSeconds`
+            // affects simulated distance only; packet timestamps still use the
+            // real monotonic arrival clock and never fabricate cadence.
+            await simulatorService.simulateRide(
+                speedKilometersPerHour: speed,
+                elapsedSeconds: 60
+            )
 
             // Explicit end-to-end history fixture used only when a UI/QA launch
             // opts in through the Simulator environment. It drives the real ride
@@ -247,6 +295,58 @@ final class AppRuntime {
             return (latitude, longitude)
         }
     }
+
+#if DEBUG && targetEnvironment(simulator)
+    private func simulatorQualityScreenedDistanceDeltas(
+        _ route: [(Double, Double)],
+        receivedAtDate: Date
+    ) -> [Double]? {
+        guard route.count > 2,
+              let policy = try? RideLocationQualityPolicy.simulatorQA() else {
+            return nil
+        }
+
+        var qualityScreen = RideLocationQualityScreen(policy: policy)
+        var distanceDeltas: [Double] = []
+        let baseUptimeNanoseconds: UInt64 = 1_000_000_000
+        // Four seconds keeps the canonical fixture below the injected QA
+        // policy's speed ceiling without crossing its five-second continuity
+        // gap. This clock is screening input only and is never persisted.
+        let screeningIntervalNanoseconds: UInt64 = 4_000_000_000
+
+        for (index, coordinate) in route.enumerated() {
+            guard let index = UInt64(exactly: index),
+                  index <= (UInt64.max - baseUptimeNanoseconds) / screeningIntervalNanoseconds,
+                  let sample = try? RideLocationSample(
+                      latitude: coordinate.0,
+                      longitude: coordinate.1,
+                      sourceMeasurementDate: receivedAtDate,
+                      receivedAtDate: receivedAtDate,
+                      receivedAtUptimeNanoseconds: baseUptimeNanoseconds
+                          + (index * screeningIntervalNanoseconds),
+                      horizontalAccuracyMeters: 4,
+                      isSimulatedBySoftware: true
+                  ) else {
+                return nil
+            }
+
+            switch qualityScreen.screen(sample) {
+            case .rejected:
+                return nil
+            case .accepted(let accepted):
+                if let distanceDeltaMeters = accepted.distanceDeltaMeters {
+                    distanceDeltas.append(distanceDeltaMeters)
+                }
+            }
+        }
+
+        guard distanceDeltas.count > 1,
+              distanceDeltas.allSatisfy({ $0.isFinite && $0 > 0 }) else {
+            return nil
+        }
+        return distanceDeltas
+    }
+#endif
 }
 
 enum AppBootstrap {

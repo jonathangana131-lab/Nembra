@@ -8,6 +8,7 @@ import UIKit
 /// It never owns a trip counter, promotes cached telemetry to live, or treats a
 /// tapped vehicle command as confirmed state.
 struct HomeView: View {
+    @AppStorage(NembraPreferenceKey.haptics) private var hapticsEnabled = true
     @Environment(VehicleStore.self) private var vehicle
     @Environment(RideApplicationStore.self) private var rides
     @Environment(RideHistoryPresentationStore.self) private var history
@@ -20,6 +21,8 @@ struct HomeView: View {
     @State private var pendingLockConfirmation: Bool?
     @State private var isModeSelectorPresented = false
 
+    let cockpit: HorizonCockpitStore
+    let adaptiveRangeEstimate: NembraCore.AdaptiveBatteryRangeLiveEstimate?
     let onOpenRides: () -> Void
     let onOpenDashboard: () -> Void
 
@@ -209,11 +212,30 @@ struct HomeView: View {
                     .accessibilityHint("This battery value may be stale until the scooter reconnects.")
             }
 
-            if dynamicTypeSize.isAccessibilitySize {
-                accessibilityEnergyHero
-            } else {
-                standardEnergyHero
+            Button {
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
+                    cockpit.toggleBatteryPrimaryReadout()
+                }
+            } label: {
+                Group {
+                    if dynamicTypeSize.isAccessibilitySize {
+                        accessibilityEnergyHero
+                    } else {
+                        standardEnergyHero
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .sensoryFeedback(.selection, trigger: batteryReadoutMode) { _, _ in
+                hapticsEnabled
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(batteryInstrumentAccessibilityLabel)
+            .accessibilityValue(batteryInstrumentAccessibilityValue)
+            .accessibilityHint(batteryInstrumentAccessibilityHint)
+            .accessibilityIdentifier("home.metric.battery")
         }
         .accessibilityIdentifier("home.energy-hero")
     }
@@ -240,6 +262,7 @@ struct HomeView: View {
                     .shadow(color: .black.opacity(0.75), radius: 22, y: 16)
                     .shadow(color: NembraColor.gold.opacity(0.13), radius: 20, y: 18)
                     .position(x: proxy.size.width * 0.54, y: 218)
+                    .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
         }
@@ -260,6 +283,7 @@ struct HomeView: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 220)
                     .shadow(color: .black.opacity(0.75), radius: 20, y: 14)
+                    .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
             .frame(height: 230)
@@ -271,19 +295,24 @@ struct HomeView: View {
             Text(batteryNumericText)
                 .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 54 : 72, weight: .light, design: .rounded))
                 .monospacedDigit()
-                .foregroundStyle(batteryValueColor)
+                .foregroundStyle(
+                    batteryReadoutMode == .percentage
+                        ? batteryValueColor
+                        : batteryValueColor.opacity(0.64)
+                )
                 .contentTransition(reduceMotion ? .identity : .numericText())
 
             if batteryPercent != nil {
                 Text("%")
                     .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 27 : 34, weight: .light, design: .rounded))
-                    .foregroundStyle(batteryValueColor)
+                    .foregroundStyle(
+                        batteryReadoutMode == .percentage
+                            ? batteryValueColor
+                            : batteryValueColor.opacity(0.64)
+                    )
             }
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Battery")
-        .accessibilityValue(batteryAccessibilityValue)
-        .accessibilityIdentifier("home.metric.battery")
+        .accessibilityHidden(true)
     }
 
     private var batteryBody: some View {
@@ -309,17 +338,31 @@ struct HomeView: View {
                         .animation(reduceMotion ? nil : .snappy(duration: 0.28), value: batteryFillFraction)
                 }
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("ESTIMATED RANGE")
-                        .font(.caption2.weight(.bold))
-                        .tracking(1.1)
-                    Text("Unavailable")
-                        .font(.subheadline.weight(.semibold))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(adaptiveRangeText)
+                        .font(
+                            .title3.weight(
+                                batteryReadoutMode == .estimatedRange ? .bold : .semibold
+                            )
+                        )
+                        .monospacedDigit()
+                        .contentTransition(reduceMotion ? .identity : .numericText())
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+
+                    Text(adaptiveRangeQualifier)
+                        .font(.caption2.weight(.semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
                 }
-                .foregroundStyle(rangeLabelColor)
+                .foregroundStyle(
+                    batteryReadoutMode == .estimatedRange
+                        ? rangeLabelColor
+                        : rangeLabelColor.opacity(0.72)
+                )
                 .padding(.leading, 17)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Estimated range unavailable")
+                .padding(.trailing, 24)
+                .accessibilityHidden(true)
 
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
                     .fill(Color.white.opacity(0.12))
@@ -1005,7 +1048,33 @@ struct HomeView: View {
 
     // MARK: - Truthful presentation values
 
-    private var batteryPercent: Int? { vehicle.batteryDisplayPercent }
+    private var batteryReadoutMode: NembraCore.BatteryPrimaryReadoutMode {
+        cockpit.batteryPrimaryReadoutState.mode
+    }
+
+    private var adaptiveRangeDecision: NembraCore.AdaptiveRangePrimaryPresentationDecision {
+        NembraCore.AdaptiveBatteryRangePrimaryPresentationPolicy()
+            .resolve(liveEstimate: adaptiveRangeEstimate)
+    }
+
+    private var adaptiveRangeDisplay: NembraCore.BatteryEstimatedRangeDisplay {
+        switch adaptiveRangeDecision {
+        case let .valueMeters(meters): .valueMeters(meters)
+        case .learning: .learning
+        case .unavailable: .unavailable
+        }
+    }
+
+    private var batteryPresentation: NembraCore.BatteryPrimaryReadoutPresentation {
+        cockpit.batteryPrimaryReadoutState.presentation(
+            for: NembraCore.BatteryPrimaryReadoutInputs(
+                displaySOCPercent: vehicle.batteryDisplayPercent,
+                estimatedRange: adaptiveRangeDisplay
+            )
+        )
+    }
+
+    private var batteryPercent: Int? { batteryPresentation.batteryFillPercent }
 
     private var batteryIsRetained: Bool { vehicle.batteryDataAvailability == .retained }
 
@@ -1032,6 +1101,70 @@ struct HomeView: View {
     private var rangeLabelColor: Color {
         guard let batteryPercent else { return NembraColor.secondaryText }
         return batteryPercent >= 27 ? Color.black.opacity(0.74) : NembraColor.secondaryText
+    }
+
+    private var adaptiveRangeText: String {
+        switch adaptiveRangeDisplay {
+        case let .valueMeters(meters):
+            VehicleDisplayFormatting.distance(kilometers: meters / 1_000, decimals: 1)
+        case .learning:
+            "Learning"
+        case .unavailable:
+            "Unavailable"
+        }
+    }
+
+    private var adaptiveRangeQualifier: String {
+        switch adaptiveRangeDecision {
+        case .valueMeters: "learned range"
+        case let .learning(reason), let .unavailable(reason):
+            adaptiveRangeReasonQualifier(reason)
+        }
+    }
+
+    private var adaptiveRangeAccessibilityValue: String {
+        switch adaptiveRangeDecision {
+        case let .valueMeters(meters):
+            let value = VehicleDisplayFormatting.distance(kilometers: meters / 1_000, decimals: 1)
+            return "\(value), learned from accepted evidence for this scooter"
+        case let .learning(reason):
+            return "Learning from accepted ride history, \(adaptiveRangeReasonQualifier(reason))"
+        case let .unavailable(reason):
+            return "Unavailable, \(adaptiveRangeReasonQualifier(reason))"
+        }
+    }
+
+    private func adaptiveRangeReasonQualifier(
+        _ reason: NembraCore.AdaptiveRangePrimaryPresentationReason
+    ) -> String {
+        switch reason {
+        case .provisionalSeed: "rides needed for range"
+        case .learningConfidence: "building range history"
+        case .lowConfidenceRequiresQualifier: "more rides for range"
+        case .noEstimate: "no learned range"
+        case .retainedEstimateRequiresQualifier: "fresh range evidence"
+        }
+    }
+
+    private var batteryInstrumentAccessibilityLabel: String {
+        switch batteryReadoutMode {
+        case .percentage: "Battery and estimated range"
+        case .estimatedRange: "Estimated range and battery"
+        }
+    }
+
+    private var batteryInstrumentAccessibilityValue: String {
+        let emphasis = switch batteryReadoutMode {
+        case .percentage: "Battery percentage emphasized"
+        case .estimatedRange: "Estimated range emphasized"
+        }
+        return [batteryAccessibilityValue, adaptiveRangeAccessibilityValue, emphasis]
+            .joined(separator: ". ")
+    }
+
+    private var batteryInstrumentAccessibilityHint: String {
+        let nextValue = batteryReadoutMode == .percentage ? "estimated range" : "battery percentage"
+        return "Double tap to emphasize \(nextValue). Both values remain visible. The battery fill always represents state of charge."
     }
 
     private var todayDistanceText: String {
@@ -1174,7 +1307,7 @@ struct HomeView: View {
 
     private var modeSymbol: String {
         guard let mode = vehicle.state.rideMode else { return "gauge.with.dots.needle.67percent" }
-        switch mode {
+        return switch mode {
         case .walk: "figure.walk"
         case .eco: "leaf.fill"
         case .drive: "d.circle.fill"

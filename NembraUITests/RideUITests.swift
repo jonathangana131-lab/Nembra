@@ -1,6 +1,11 @@
 import XCTest
 
 final class RideUITests: XCTestCase {
+    private struct ElementSemantics: Equatable {
+        let label: String
+        let value: String
+    }
+
     override func setUp() {
         super.setUp()
         continueAfterFailure = false
@@ -127,6 +132,106 @@ final class RideUITests: XCTestCase {
                 .trait,
                 .dynamicType
             ]
+        )
+    }
+
+    @MainActor
+    func testCompletedRideTodayAndLatestRideSurviveRelaunchWithoutDuplication() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        XCUIDevice.shared.orientation = .portrait
+
+        let storageNamespace = UUID().uuidString
+        let app = XCUIApplication()
+        app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = "riding"
+        app.launchEnvironment["NEMBRA_SIMULATION_STORAGE_NAMESPACE"] = storageNamespace
+        app.launchEnvironment["NEMBRA_SIMULATION_AUTOCOMPLETE_RIDE"] = "1"
+        app.launch()
+
+        let initialLatestRide = app.descendants(matching: .any)["home.latest-ride.open"]
+        XCTAssertTrue(
+            initialLatestRide.waitForExistence(timeout: 8),
+            "The explicit Simulator QA ride must complete through the durable history pipeline."
+        )
+
+        let initialTodayDistance = app.descendants(matching: .any)["home.metric.trip"]
+        let initialTodayDuration = app.descendants(matching: .any)["home.metric.duration"]
+        XCTAssertTrue(
+            waitForNonzeroMetric(initialTodayDistance, timeout: 5),
+            "Today's trip must expose nonzero accepted route distance after completion."
+        )
+        XCTAssertTrue(
+            waitForNonzeroMetric(initialTodayDuration, timeout: 5),
+            "Today's duration must expose nonzero accepted monotonic evidence after completion."
+        )
+
+        let distanceBeforeRelaunch = semantics(of: initialTodayDistance)
+        let durationBeforeRelaunch = semantics(of: initialTodayDuration)
+        let latestRideBeforeRelaunch = semantics(of: initialLatestRide)
+        XCTAssertEqual(distanceBeforeRelaunch.label, "Today's trip")
+        XCTAssertEqual(durationBeforeRelaunch.label, "Today's duration")
+        assertNonzeroMetric(distanceBeforeRelaunch, named: "Today's trip")
+        assertNonzeroMetric(durationBeforeRelaunch, named: "Today's duration")
+
+        XCTAssertTrue(
+            scrollFullyClearOfFloatingTabBar(initialLatestRide, in: app),
+            "The durable latest-ride continuation must scroll fully clear of the native floating tab bar."
+        )
+        assertFullyInsideWindowAndAboveTabBar(initialLatestRide, in: app)
+        keepScreenshot(named: "Durable Today Before Relaunch - Simulator QA Only")
+
+        app.terminate()
+        app.launchEnvironment.removeValue(forKey: "NEMBRA_SIMULATION_AUTOCOMPLETE_RIDE")
+        app.launch()
+
+        let relaunchedLatestRide = app.descendants(matching: .any)["home.latest-ride.open"]
+        XCTAssertTrue(
+            relaunchedLatestRide.waitForExistence(timeout: 8),
+            "Relaunching the same storage namespace must restore the latest completed ride."
+        )
+
+        let relaunchedTodayDistance = app.descendants(matching: .any)["home.metric.trip"]
+        let relaunchedTodayDuration = app.descendants(matching: .any)["home.metric.duration"]
+        XCTAssertTrue(
+            waitForSemantics(distanceBeforeRelaunch, element: relaunchedTodayDistance, timeout: 6),
+            "Relaunch must preserve Today's exact accepted distance display and provenance semantics."
+        )
+        XCTAssertTrue(
+            waitForNonzeroMetric(relaunchedTodayDuration, timeout: 6),
+            "A fresh current ride may advance duration, but it must not reset durable Today duration to zero."
+        )
+        XCTAssertTrue(
+            waitForSemantics(latestRideBeforeRelaunch, element: relaunchedLatestRide, timeout: 6),
+            "Relaunch must restore the exact same latest completed-ride identity and evidence summary."
+        )
+
+        XCTAssertEqual(semantics(of: relaunchedTodayDistance), distanceBeforeRelaunch)
+        XCTAssertEqual(semantics(of: relaunchedLatestRide), latestRideBeforeRelaunch)
+        let durationAfterRelaunch = semantics(of: relaunchedTodayDuration)
+        XCTAssertEqual(durationAfterRelaunch.label, "Today's duration")
+        assertNonzeroMetric(durationAfterRelaunch, named: "Today's duration")
+
+        XCTAssertTrue(
+            scrollFullyClearOfFloatingTabBar(relaunchedLatestRide, in: app),
+            "The restored latest-ride continuation must remain fully operable above floating tab chrome."
+        )
+        assertFullyInsideWindowAndAboveTabBar(relaunchedLatestRide, in: app)
+        keepScreenshot(named: "Durable Today After Relaunch - Simulator QA Only")
+
+        let ridesTab = app.tabBars.buttons["Rides"]
+        XCTAssertTrue(ridesTab.waitForExistence(timeout: 3))
+        ridesTab.tap()
+
+        let completedRows = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier == %@", "rides.completed-row")
+        )
+        XCTAssertTrue(
+            completedRows.firstMatch.waitForExistence(timeout: 6),
+            "The restored completed ride must remain available on Rides."
+        )
+        XCTAssertEqual(
+            completedRows.count,
+            1,
+            "Relaunch without Simulator auto-completion must not duplicate the accepted completed ride."
         )
     }
 
@@ -262,6 +367,118 @@ final class RideUITests: XCTestCase {
         let predicate = NSPredicate(format: "value == %@", value)
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private func waitForNonzeroMetric(
+        _ element: XCUIElement,
+        timeout: TimeInterval
+    ) -> Bool {
+        let predicate = NSPredicate(format: "value != nil AND value MATCHES %@", ".*[1-9].*")
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private func waitForSemantics(
+        _ semantics: ElementSemantics,
+        element: XCUIElement,
+        timeout: TimeInterval
+    ) -> Bool {
+        let predicate = NSPredicate(
+            format: "label == %@ AND value == %@",
+            semantics.label,
+            semantics.value
+        )
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private func semantics(of element: XCUIElement) -> ElementSemantics {
+        ElementSemantics(
+            label: element.label,
+            value: element.value as? String ?? ""
+        )
+    }
+
+    private func assertNonzeroMetric(
+        _ semantics: ElementSemantics,
+        named name: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertFalse(semantics.label.isEmpty, "\(name) must retain an accessibility label.", file: file, line: line)
+        XCTAssertTrue(
+            semantics.value.contains(where: { $0.isNumber && $0 != "0" }),
+            "\(name) must expose a nonzero accepted value, got '\(semantics.value)'.",
+            file: file,
+            line: line
+        )
+    }
+
+    @MainActor
+    private func scrollFullyClearOfFloatingTabBar(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        maximumGestures: Int = 4
+    ) -> Bool {
+        guard element.waitForExistence(timeout: 2) else { return false }
+        let scrollView = app.scrollViews.firstMatch
+        guard scrollView.waitForExistence(timeout: 2) else { return false }
+
+        for gesture in 0...maximumGestures {
+            if isFullyInsideWindowAndAboveTabBar(element, in: app) {
+                return true
+            }
+            guard gesture < maximumGestures else { break }
+            scrollView.swipeUp()
+            _ = element.waitForExistence(timeout: 1)
+        }
+
+        return isFullyInsideWindowAndAboveTabBar(element, in: app)
+    }
+
+    @MainActor
+    private func assertFullyInsideWindowAndAboveTabBar(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let window = app.windows.firstMatch
+        let tabBar = app.tabBars.firstMatch
+        XCTAssertTrue(element.isHittable, "The latest-ride row must be hittable.", file: file, line: line)
+        XCTAssertTrue(window.exists, "The application window must exist.", file: file, line: line)
+        XCTAssertTrue(tabBar.exists, "The native tab bar must exist.", file: file, line: line)
+        XCTAssertTrue(
+            window.frame.contains(element.frame),
+            "The full latest-ride row \(element.frame) must remain inside window \(window.frame).",
+            file: file,
+            line: line
+        )
+        XCTAssertLessThanOrEqual(
+            element.frame.maxY,
+            tabBar.frame.minY,
+            "The latest-ride row \(element.frame) must clear tab bar \(tabBar.frame).",
+            file: file,
+            line: line
+        )
+    }
+
+    @MainActor
+    private func isFullyInsideWindowAndAboveTabBar(
+        _ element: XCUIElement,
+        in app: XCUIApplication
+    ) -> Bool {
+        let window = app.windows.firstMatch
+        let tabBar = app.tabBars.firstMatch
+        guard element.exists,
+              element.isHittable,
+              window.exists,
+              tabBar.exists else { return false }
+        return window.frame.contains(element.frame)
+            && element.frame.maxY <= tabBar.frame.minY
     }
 
     @MainActor

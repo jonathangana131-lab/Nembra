@@ -16,6 +16,7 @@ struct AppRootView: View {
     @State private var selectedTab: NembraPrimaryTab = .home
     @State private var dashboardSession = DashboardSessionStore()
     @State private var horizonCockpit = HorizonCockpitStore()
+    var adaptiveRangeEstimate: NembraCore.AdaptiveBatteryRangeLiveEstimate? = nil
     var onOpenNavigation: () -> Void = {}
 
     var body: some View {
@@ -23,6 +24,7 @@ struct AppRootView: View {
             if dashboardSession.presentsDashboard {
                 DashboardView(
                     cockpit: horizonCockpit,
+                    adaptiveRangeEstimate: adaptiveRangeEstimate,
                     onHome: closeDashboard,
                     onNavigate: onOpenNavigation
                 )
@@ -30,6 +32,8 @@ struct AppRootView: View {
             } else if dashboardSession.canPresentPortraitContent {
                 PortraitRootView(
                     selectedTab: $selectedTab,
+                    cockpit: horizonCockpit,
+                    adaptiveRangeEstimate: adaptiveRangeEstimate,
                     onOpenNavigation: onOpenNavigation,
                     onOpenDashboard: openDashboard
                 )
@@ -187,6 +191,8 @@ private struct InactivePortraitRecoveryOverlay: View {
 private struct PortraitRootView: View {
     @Environment(RideApplicationStore.self) private var rides
     @Binding var selectedTab: NembraPrimaryTab
+    let cockpit: HorizonCockpitStore
+    let adaptiveRangeEstimate: NembraCore.AdaptiveBatteryRangeLiveEstimate?
     let onOpenNavigation: () -> Void
     let onOpenDashboard: () -> Void
 
@@ -194,6 +200,8 @@ private struct PortraitRootView: View {
         TabView(selection: $selectedTab) {
             NavigationStack {
                 HomeView(
+                    cockpit: cockpit,
+                    adaptiveRangeEstimate: adaptiveRangeEstimate,
                     onOpenRides: {
                         selectedTab = .rides
                     },

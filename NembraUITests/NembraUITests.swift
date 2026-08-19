@@ -107,6 +107,57 @@ final class NembraUITests: XCTestCase {
 
         XCTAssertTrue(app.descendants(matching: .any)["home.energy-hero"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Nembra Simulator"].waitForExistence(timeout: 3))
+
+        let battery = app.buttons["home.metric.battery"]
+        assertMinimumTouchTarget(battery, named: "Home battery and range")
+        var initialBatterySemantics = semantics(of: battery)
+        if !initialBatterySemantics.localizedCaseInsensitiveContains("Battery percentage emphasized") {
+            battery.tap()
+            XCTAssertTrue(
+                waitForSemanticChange(
+                    identifier: "home.metric.battery",
+                    from: initialBatterySemantics,
+                    in: app
+                )
+            )
+            initialBatterySemantics = semantics(of: app.buttons["home.metric.battery"])
+        }
+        XCTAssertTrue(initialBatterySemantics.localizedCaseInsensitiveContains("Battery percentage emphasized"))
+        XCTAssertTrue(initialBatterySemantics.localizedCaseInsensitiveContains("percent"))
+        XCTAssertTrue(initialBatterySemantics.localizedCaseInsensitiveContains("range"))
+        XCTAssertTrue(
+            initialBatterySemantics.localizedCaseInsensitiveContains("unavailable"),
+            "Simulator display-only battery evidence must not mint a learned numeric range."
+        )
+
+        battery.tap()
+        XCTAssertTrue(
+            waitForSemanticChange(
+                identifier: "home.metric.battery",
+                from: initialBatterySemantics,
+                in: app
+            ),
+            "Home must toggle battery/range emphasis while keeping both values visible."
+        )
+
+        let toggledBattery = app.buttons["home.metric.battery"]
+        let toggledBatterySemantics = semantics(of: toggledBattery)
+        XCTAssertTrue(toggledBatterySemantics.localizedCaseInsensitiveContains("percent"))
+        XCTAssertTrue(toggledBatterySemantics.localizedCaseInsensitiveContains("range"))
+        toggledBattery.tap()
+        XCTAssertTrue(
+            waitForSemanticChange(
+                identifier: "home.metric.battery",
+                from: toggledBatterySemantics,
+                in: app
+            ),
+            "The same Home control must return to its prior persisted emphasis."
+        )
+        XCTAssertEqual(
+            semantics(of: app.buttons["home.metric.battery"]),
+            initialBatterySemantics
+        )
+
         keepScreenshot(named: "Selected Portrait Home - Simulator QA Only")
 
         selectTab("Rides", destinationIdentifier: "rides.mileage-activity", in: app)

@@ -21,6 +21,40 @@ func homeStatusAndRecoveryReflowAtAccessibilityDynamicType() throws {
     #expect(source.contains("batteryAccessibilityValue"))
     #expect(source.contains("parts.append(\"low battery\")"))
 
+    // Home keeps the selected simultaneous percentage + range composition, but
+    // the whole energy instrument is one native control whose emphasis follows
+    // the same persisted presentation state as Horizon. Numeric range remains
+    // fenced behind the owner-bound adaptive-range presentation policy.
+    #expect(source.contains("Button {"))
+    #expect(source.contains("cockpit.toggleBatteryPrimaryReadout()"))
+    #expect(source.contains(".buttonStyle(.plain)"))
+    #expect(source.contains("AdaptiveBatteryRangePrimaryPresentationPolicy()"))
+    #expect(source.contains(".resolve(liveEstimate: adaptiveRangeEstimate)"))
+    #expect(source.contains("batteryPresentation.batteryFillPercent"))
+    #expect(source.contains("Both values remain visible"))
+    #expect(source.contains("The battery fill always represents state of charge"))
+    #expect(!source.contains("advertised"))
+
+    let standardHeroStart = try #require(source.range(of: "private var standardEnergyHero: some View"))
+    let accessibilityHeroStart = try #require(
+        source.range(
+            of: "private var accessibilityEnergyHero: some View",
+            range: standardHeroStart.upperBound..<source.endIndex
+        )
+    )
+    let batteryReadoutStart = try #require(
+        source.range(
+            of: "private var batteryReadout: some View",
+            range: accessibilityHeroStart.upperBound..<source.endIndex
+        )
+    )
+    let standardHero = String(source[standardHeroStart.lowerBound..<accessibilityHeroStart.lowerBound])
+    let accessibilityHero = String(source[accessibilityHeroStart.lowerBound..<batteryReadoutStart.lowerBound])
+    for hero in [standardHero, accessibilityHero] {
+        #expect(hero.contains("batteryReadout"))
+        #expect(hero.contains("batteryBody"))
+    }
+
     let statusPanelStart = try #require(source.range(of: "private var readinessAndToday: some View"))
     let controlsStart = try #require(source.range(of: "private var controlsRail: some View", range: statusPanelStart.upperBound..<source.endIndex))
     let statusPanel = String(source[statusPanelStart.lowerBound..<controlsStart.lowerBound])
