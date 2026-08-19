@@ -1,70 +1,75 @@
-# CAPTURE P0 AUTHORITY POINTER — V14
+# CAPTURE P0 AUTHORITY POINTER — CURRENT
 
-This file is a durable routing guard for fresh Nembra Capture workers. It is **not** a substitute for re-reading live GitHub state.
+This file is a durable Capture routing guard. It does **not** replace live GitHub inspection.
 
-## Historical freeze retired
+## Repository authority
 
-PR #833 / `a0f4a33451f61411d6e0541f2e70edea5438342d` is **CLOSED / SUPERSEDED** and must not be treated as the current Capture flagship, current field installer, or current physical GO authority.
+The root `AGENTS.md` on current `main` is the execution authority for Nembra development. The old swarm scheduler, worker/claim/lease model, recovery ladders, and historical V14/V15/V16/V17 routing packets are reference material only unless current product/safety code or docs explicitly preserve a fact from them.
 
-The historical C7D09A22 physical artifact was already collected. It established useful transport-family evidence and an approximately 29.93-second unauthenticated disconnect pattern, but it did **not** establish permanent CoreBluetooth identity, raw authenticated FD50 bytes, verified DP meanings, battery/current/power/speed telemetry semantics, command acknowledgement, or scooter-control authority.
+For every Capture run:
 
-Do not restore #833's old “first artifact not yet collected” or retained-IPA ceremony. Preserve it only as historical software/provenance evidence.
+1. refresh current `main`;
+2. refresh open Capture PRs and their exact heads;
+3. inspect exact-head checks/reviews/evidence;
+4. prefer finishing the strongest current candidate instead of reviving a historical branch;
+5. keep physical truth fail-closed.
 
-## Current flagship authority
+Do not treat a branch name, old protocol number, stale continuation note, ancestor green, queued run, skipped run, or historical PR body as current acceptance authority.
 
-At this file's update, the live P0 software-acceptance subject is PR #2178:
+## Current candidate
 
-- feature: Nembra Capture / authenticated stationary ES80 physical truth;
-- branch: `integration/v14-capture-final-stationary-convergence-sol`;
-- observed exact head: `df30de17a95c6df3e6bd2fda14b0de9ddb1d0d25`;
-- exact-head `Capture Field Build Provenance` run: `31366062131` — QUEUED at last observation;
-- exact-head `Xcode 27 PR Exact-Head QA` run: `31366062142` — QUEUED at last observation;
-- physical status: **NO-GO / DO NOT SCAN / DO NOT RUN / DO NOT REPEAT THE OLD 17-STEP RIDE**.
+At this update, the active integrated Capture/product candidate is PR #3675:
 
-**Always re-read live PR #2178 before acting.** If its head differs from the SHA above, this recorded SHA and every ancestor workflow result are stale for product acceptance. Queued/running/skipped/cancelled/ancestor results are non-evidence.
+- feature: Nembra Capture / authenticated stationary ES80 physical truth plus production Nembra surfaces;
+- branch: `product/capture-1-0-main-20260818`;
+- base: current `main` lineage beginning from `0bc188e41c10e4deb7e8c2d214e216f6ea5b24e6`;
+- physical status: **NO-GO**.
+
+This file intentionally does **not** pin a PR-head SHA. PR #3675 is still moving while exact-head acceptance is being earned. Always read the live PR head and require evidence for that exact immutable head. Ancestor success does not transfer across a moved head.
+
+If PR #3675 closes, merges, or is superseded, re-resolve the strongest current Capture candidate from GitHub instead of reviving the historical PRs named below.
+
+## Historical evidence that remains useful
+
+PR #833 / `a0f4a33451f61411d6e0541f2e70edea5438342d` is closed and superseded.
+
+The historical C7D09A22 physical artifact remains evidence only. It established useful Tuya/FD50 transport-family observations and an approximately 29.93-second unauthenticated disconnect pattern, but it did **not** establish authenticated application payloads, permanent CoreBluetooth identity, verified DP meanings, battery/current/power/speed telemetry semantics, command acknowledgement, or scooter-control authority.
+
+Historical PR #2178 and its V14 branch/head/check status are stale routing information and must not be used as the current field candidate.
+
+## Current physical procedure
 
 The canonical current physical procedure is:
+
 `docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md`
 
 The only current private field installer is:
+
 `scripts/field/install_one_time_capture.command`
 
-Supporting C7D09A22 documents are historical/supporting material. If they conflict with the canonical current procedure, the canonical current procedure wins.
+Supporting `docs/ES80_TODAY_*.md` files are retired/reference material. If they conflict with the canonical current procedure or current code, the canonical procedure and live code win.
 
-## Current product direction
+## Physical truth boundary
 
-The current accepted direction is an authenticated, stationary, read-only path:
+Physical status remains **NO-GO** until the final composed exact software candidate earns all required software/runtime gates and the private user-owned field prerequisites are present.
 
-1. exact authoritative field-build provenance must be present;
-2. official Tuya SDK login and exact same-account scooter membership must be current;
-3. with the scooter initially OFF, complete one package-owned fresh-manager `OFF1 → ON1 → OFF2 → ON2` target-correlation series using full CoreBluetooth peripheral identity;
-4. require exactly one repeatable package result with valid scan readiness and accepted receipt-bounded chronology;
-5. explicitly confirm that freshly correlated current-attempt target;
-6. historical C7D09A22 UUID/name/RSSI/FD50/Tuya-company/manufacturer hints cannot authorize or break a tie;
-7. Tuya SmartLife SDK becomes the sole authenticated BLE owner;
-8. require genuine same-generation structured application evidence plus canonical continuous authenticated observation;
-9. seal the package evidence and one complete immutable accepted export envelope before accepted UI/share;
-10. no arbitrary characteristic writes, no DP query/publish, no scooter control, no unbind/reset/OTA.
+The next physical rung remains a stationary, read-only authenticated attempt on the intended iPhone 12 / iOS 27 and intended scooter. It must preserve all of these boundaries:
 
-## Current critical path
+1. exact accepted source/build provenance;
+2. fresh official Tuya/SmartLife account and exact-device membership;
+3. deterministic fresh-attempt `OFF1 -> ON1 -> OFF2 -> ON2` target correlation using accepted CoreBluetooth identity evidence;
+4. explicit confirmation of the freshly correlated target;
+5. official SmartLife SDK authentication provenance for the current BLE generation;
+6. genuine same-generation application/notify evidence, not generic BLE liveness or Device Sharing alone;
+7. repeated authenticated application evidence surviving beyond the historical ~30-second rejection window;
+8. the retained >=45-second authenticated continuity requirement before stationary mapping can unlock;
+9. immutable accepted export/seal/integrity requirements;
+10. no arbitrary characteristic writes, no guessed DP semantics, no unbind/reset/OTA, and no scooter-control claim.
 
-Do not churn the flagship for non-blocking docs/tests/cleanup while an unchanged exact head is undergoing final acceptance. Move it only for a demonstrated product/truth/build blocker.
+Simulator values, public CI, source contracts, screenshots, package greens, and historical artifacts remain software/public evidence only. They cannot become physical ES80 proof.
 
-After terminal exact-head software acceptance on the unchanged current flagship head, the next legal rung is the private field candidate on the intended iPhone 12 / iOS 27:
+## Worker routing rule
 
-1. invoke the private Capture installer against the **exact software-accepted 40-hex source SHA**;
-2. require a clean checkout whose HEAD exactly equals that SHA;
-3. preserve and re-verify exact private Tuya SDK/app-identity input provenance around the signed build;
-4. mechanically admit exactly one intended device and require iPhone 12 product type `iPhone13,2` plus iOS 27;
-5. read back the built standalone app's exact build identifier/source SHA/bundle identity before install;
-6. install/launch only on that admitted device without substituting another source/build;
-7. complete the required runtime build/source/procedure rendezvous;
-8. only after the repository's explicit final GO boundary may the smallest stationary authenticated read-only ES80 session begin.
+A fresh worker should never start from this document alone. Read live `AGENTS.md`, current `main`, the live exact head of PR #3675 (or its strongest current successor), current checks/reviews, and the canonical physical procedure before changing code or authorizing any field step.
 
-Branch names, human-readable success messages, historical UUIDs, local names, RSSI, FD50/company hints, or old artifacts are not physical authority.
-
-## Current truth boundary
-
-The current Capture path may establish authenticated Tuya application-session evidence and structured SDK observations. It does **not** yet establish raw authenticated FD50 bytes, verified DP meanings, battery/current/power/speed telemetry semantics, command acknowledgement, or scooter-control authority.
-
-Only the final composed exact build plus the required private intended-device/runtime gates can authorize the next physical experiment. Simulator evidence remains software evidence.
+**Live GitHub exact-head truth wins. Physical status stays NO-GO until the current composed candidate earns it.**
