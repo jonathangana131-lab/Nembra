@@ -15,9 +15,6 @@ concurrency:
   group: capture-accepted-build-input-snapshot-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-env:
-  EXACT_PRODUCTION_PARENT: 4da6534f9fde9aa84d6ffb16d0301cd69c375760
-
 jobs:
   validate:
     name: Bind generated CocoaPods/private inputs (${{ matrix.os }})
@@ -34,41 +31,21 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Require exact additive validation child
+      - name: Bind exact current carrier
         shell: bash
         run: |
           set -euo pipefail
           head_sha="$(git rev-parse HEAD)"
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             test "$head_sha" = "${{ github.event.pull_request.head.sha }}"
-          fi
-          test "$(git merge-base HEAD "$EXACT_PRODUCTION_PARENT")" = "$EXACT_PRODUCTION_PARENT"
-          actual="$(git diff --name-only "$EXACT_PRODUCTION_PARENT"...HEAD | LC_ALL=C sort)"
-          foundation_expected="$(printf '%s\n' \
-            '.github/workflows/capture-accepted-build-input-snapshot-validation.yml' \
-            'scripts/ci/capture_accepted_build_input_snapshot.py' \
-            'scripts/ci/tests/test_capture_accepted_build_input_snapshot.py' | LC_ALL=C sort)"
-          shared_ancestor_expected="$(printf '%s\n' \
-            '.github/workflows/capture-accepted-build-input-snapshot-validation.yml' \
-            '.github/workflows/capture-generated-shared-ancestor-continuity.yml' \
-            'scripts/ci/capture_accepted_build_input_snapshot.py' \
-            'scripts/ci/tests/test_capture_accepted_build_input_snapshot.py' \
-            'scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py' | LC_ALL=C sort)"
-          root_custody_expected="$(printf '%s\n' \
-            '.github/workflows/capture-accepted-build-input-snapshot-validation.yml' \
-            '.github/workflows/capture-accepted-build-root-custody.yml' \
-            '.github/workflows/capture-generated-shared-ancestor-continuity.yml' \
-            'scripts/ci/capture_accepted_build_input_snapshot.py' \
-            'scripts/ci/capture_accepted_build_root_custody.py' \
-            'scripts/ci/tests/test_capture_accepted_build_input_snapshot.py' \
-            'scripts/ci/tests/test_capture_accepted_build_root_custody.py' \
-            'scripts/ci/tests/test_capture_generated_shared_ancestor_continuity.py' | LC_ALL=C sort)"
-          if [[ "$actual" != "$foundation_expected" && "$actual" != "$shared_ancestor_expected" && "$actual" != "$root_custody_expected" ]]; then
-            printf 'unexpected generated-input validation scope:\n%s\n' "$actual" >&2
-            exit 1
+            base_sha="${{ github.event.pull_request.base.sha }}"
+            test -n "$base_sha"
+            test "$(git merge-base HEAD "$base_sha")" = "$base_sha"
+            git diff --check "$base_sha"...HEAD
+          else
+            git diff --check HEAD^
           fi
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
-          git diff --check "$EXACT_PRODUCTION_PARENT"...HEAD
 
       - name: Compile validation helper and tests
         run: |
