@@ -11,22 +11,94 @@ PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export PATH
 unset BASH_ENV ENV CDPATH GLOBIGNORE || true
 
-SCRIPT_DIR="$(cd "$(/usr/bin/dirname "${BASH_SOURCE[0]}")" && /bin/pwd -P)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && /bin/pwd -P)"
-TUYA_PRIVATE_SDK="$REPO_ROOT/LocalSecrets/TuyaSDK"
-TUYA_PRIVATE_IDENTITY="$REPO_ROOT/LocalSecrets/TuyaRuntime"
-DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.txt"
-PROVENANCE_HELPER="$SCRIPT_DIR/capture_tuya_private_input_provenance.py"
 REVIEW_ONLY=0
+FIELD_MODE=0
+PROVENANCE_HELPER_SOURCE_B64=""
+EXPECTED_FIELD_SOURCE_SHA=""
 
 if [[ "${1:-}" == "--resolve-lock-for-review" ]]; then
   REVIEW_ONLY=1
   shift
+elif [[ "${1:-}" == "--field-repo-root" ]]; then
+  FIELD_MODE=1
+  [[ "$#" == "6" && "${3:-}" == "--field-source-sha" && "${5:-}" == "--field-provenance-helper-base64" ]] || {
+    echo "ERROR: internal field bootstrap arguments are malformed." >&2
+    exit 2
+  }
+  REPO_ROOT="${2:-}"
+  EXPECTED_FIELD_SOURCE_SHA="${4:-}"
+  PROVENANCE_HELPER_SOURCE_B64="${6:-}"
+  shift 6
 fi
+
+if [[ "$FIELD_MODE" == "1" ]]; then
+  [[ "$REPO_ROOT" == /* ]] || {
+    echo "ERROR: internal field bootstrap root must be absolute." >&2
+    exit 2
+  }
+  CANONICAL_REPO_ROOT="$(cd "$REPO_ROOT" 2>/dev/null && /bin/pwd -P)" || {
+    echo "ERROR: internal field bootstrap root is unavailable." >&2
+    exit 2
+  }
+  [[ "$CANONICAL_REPO_ROOT" == "$REPO_ROOT" ]] || {
+    echo "ERROR: internal field bootstrap root must already be canonical." >&2
+    exit 2
+  }
+  [[ "$EXPECTED_FIELD_SOURCE_SHA" =~ ^[0-9A-Fa-f]{40}$ ]] || {
+    echo "ERROR: internal field bootstrap source SHA is malformed." >&2
+    exit 2
+  }
+  EXPECTED_FIELD_SOURCE_SHA="$(printf '%s' "$EXPECTED_FIELD_SOURCE_SHA" | tr '[:upper:]' '[:lower:]')"
+  CURRENT_FIELD_SOURCE_SHA="$(GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null | tr '[:upper:]' '[:lower:]')" || {
+    echo "ERROR: internal field bootstrap could not resolve checkout HEAD." >&2
+    exit 2
+  }
+  [[ "$CURRENT_FIELD_SOURCE_SHA" == "$EXPECTED_FIELD_SOURCE_SHA" ]] || {
+    echo "ERROR: checkout HEAD changed before the accepted bootstrap started." >&2
+    exit 2
+  }
+  [[ -n "$PROVENANCE_HELPER_SOURCE_B64" ]] || {
+    echo "ERROR: accepted provenance-helper execution bytes are unavailable." >&2
+    exit 2
+  }
+  PROVENANCE_HELPER_PATH="Scripts/capture_tuya_private_input_provenance.py"
+  PROVENANCE_HELPER_BLOB="$(GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_ROOT" rev-parse "$EXPECTED_FIELD_SOURCE_SHA:$PROVENANCE_HELPER_PATH" 2>/dev/null)" || {
+    echo "ERROR: accepted provenance helper is missing from the exact Git tree." >&2
+    exit 2
+  }
+  [[ "$PROVENANCE_HELPER_BLOB" =~ ^[0-9a-f]{40}$ ]] || {
+    echo "ERROR: accepted provenance-helper Git identity is malformed." >&2
+    exit 2
+  }
+  CAPTURED_PROVENANCE_BLOB="$(printf '%s' "$PROVENANCE_HELPER_SOURCE_B64" | /usr/bin/base64 -D | GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_ROOT" hash-object --stdin 2>/dev/null)" || {
+    echo "ERROR: accepted provenance-helper execution bytes could not be authenticated." >&2
+    exit 2
+  }
+  [[ "$CAPTURED_PROVENANCE_BLOB" == "$PROVENANCE_HELPER_BLOB" ]] || {
+    echo "ERROR: provenance-helper execution bytes do not match the exact accepted Git object." >&2
+    exit 2
+  }
+  unset CANONICAL_REPO_ROOT CURRENT_FIELD_SOURCE_SHA CAPTURED_PROVENANCE_BLOB
+  SCRIPT_DIR="$REPO_ROOT/Scripts"
+  PROVENANCE_HELPER=""
+else
+  SCRIPT_DIR="$(cd "$(/usr/bin/dirname "${BASH_SOURCE[0]}")" && /bin/pwd -P)"
+  REPO_ROOT="$(cd "$SCRIPT_DIR/.." && /bin/pwd -P)"
+  PROVENANCE_HELPER="$SCRIPT_DIR/capture_tuya_private_input_provenance.py"
+fi
+
 [[ "$#" == "0" ]] || {
   echo "ERROR: usage: Scripts/bootstrap_capture_tuya_sdk.sh [--resolve-lock-for-review]" >&2
   exit 2
 }
+[[ "$FIELD_MODE" == "0" || "$REVIEW_ONLY" == "0" ]] || {
+  echo "ERROR: review mode and internal field mode cannot be combined." >&2
+  exit 2
+}
+
+TUYA_PRIVATE_SDK="$REPO_ROOT/LocalSecrets/TuyaSDK"
+TUYA_PRIVATE_IDENTITY="$REPO_ROOT/LocalSecrets/TuyaRuntime"
+DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.txt"
 
 cd "$REPO_ROOT"
 umask 077
@@ -55,10 +127,12 @@ command -v pod >/dev/null 2>&1 || {
   echo "ERROR: run this from an accepted Nembra checkout containing Podfile and NembraCapture.xcodeproj." >&2
   exit 5
 }
-[[ -f "$PROVENANCE_HELPER" ]] || {
-  echo "ERROR: private Tuya input provenance helper is missing from the accepted source." >&2
-  exit 5
-}
+if [[ "$FIELD_MODE" == "0" ]]; then
+  [[ -f "$PROVENANCE_HELPER" ]] || {
+    echo "ERROR: private Tuya input provenance helper is missing from the accepted source." >&2
+    exit 5
+  }
+fi
 
 if [[ ! -f "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" || ! -d "$TUYA_PRIVATE_SDK/Build" ]]; then
   cat >&2 <<EOF
@@ -85,13 +159,34 @@ fi
 
 run_private_input_provenance() {
   local operation="$1"
-  /usr/bin/python3 -I "$PROVENANCE_HELPER" "$operation" \
-    --lockfile "$REPO_ROOT/Podfile.lock" \
-    --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
-    --security-build "$TUYA_PRIVATE_SDK/Build" \
-    --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
-    --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
-    --record "$DEPENDENCY_PROVENANCE"
+  if [[ "$FIELD_MODE" == "1" ]]; then
+    /usr/bin/python3 -I -B - "$PROVENANCE_HELPER_SOURCE_B64" "$operation" \
+      --lockfile "$REPO_ROOT/Podfile.lock" \
+      --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
+      --security-build "$TUYA_PRIVATE_SDK/Build" \
+      --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
+      --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
+      --record "$DEPENDENCY_PROVENANCE" <<'PY'
+import base64
+import sys
+
+source = base64.b64decode(sys.argv[1], validate=True)
+sys.argv = ["<accepted-tuya-private-input-provenance>"] + sys.argv[2:]
+namespace = {
+    "__name__": "__main__",
+    "__file__": "<accepted-tuya-private-input-provenance>",
+}
+exec(compile(source, namespace["__file__"], "exec", dont_inherit=True), namespace)
+PY
+  else
+    /usr/bin/python3 -I "$PROVENANCE_HELPER" "$operation" \
+      --lockfile "$REPO_ROOT/Podfile.lock" \
+      --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
+      --security-build "$TUYA_PRIVATE_SDK/Build" \
+      --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
+      --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
+      --record "$DEPENDENCY_PROVENANCE"
+  fi
 }
 
 if [[ "$REVIEW_ONLY" == "1" ]]; then
@@ -208,6 +303,7 @@ fi
   exit 14
 }
 unset ACCEPTED_LOCK_SHA256 PREINSTALL_LOCK_SHA256 NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 || true
+unset PROVENANCE_HELPER_SOURCE_B64 EXPECTED_FIELD_SOURCE_SHA PROVENANCE_HELPER_BLOB || true
 
 printf 'Preaccepted Tuya dependency lock matched: %s\n' "$LOCK_SHA256"
 printf '%s\n' 'Private Tuya inputs matched the pre-existing review witness. Use NembraCapture.xcworkspace for the field build.'

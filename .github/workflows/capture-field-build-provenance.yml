@@ -18,6 +18,7 @@ on:
       - Scripts/provision_capture_tuya_identity.sh
       - scripts/ci/es80_signed_field_artifact_private_runner.py
       - scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+      - scripts/ci/tests/test_capture_field_nested_execution_subject_closure.py
       - scripts/field/install_one_time_capture.command
       - CAPTURE_HARD_FREEZE_ACTIVE.md
       - CAPTURE_TODAY_FIELD_READY_DIRECTIVE.md
@@ -76,8 +77,10 @@ jobs:
           bash -n scripts/field/install_one_time_capture.command
           /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
           /usr/bin/python3 -m py_compile scripts/ci/es80_signed_field_artifact_private_runner.py
+          /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_nested_execution_subject_closure.py
           /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
           /usr/bin/python3 -I scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          /usr/bin/python3 -I scripts/ci/tests/test_capture_field_nested_execution_subject_closure.py
           for historical in docs/ES80_TODAY_*.md; do
             head -n 1 "$historical" | grep -Fq '# RETIRED / DO NOT USE'
             sed -n '1,/^---$/p' "$historical" | grep -Fq 'docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md'
@@ -108,6 +111,7 @@ jobs:
           swift test --filter TuyaFieldSDKDependencyProvenanceSourceTests
           swift test --filter TuyaPrivateFieldInputProvenanceSourceTests
           swift test --filter TuyaFieldInstallerIntendedDeviceAuthoritySourceTests
+          swift test --filter TuyaFieldInstallerSourceCustodyOrderingSourceTests
           swift test --filter TuyaFieldInstallerSignedBundleVerificationSourceTests
           swift test --filter TuyaSignedAppleAppIdentityCustodySourceTests
           swift test --filter TuyaLegacyTodayExecutableAuthorityRetirementSourceTests

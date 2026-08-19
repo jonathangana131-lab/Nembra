@@ -37,6 +37,26 @@ SOURCE_SHA="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
 [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Working tree has local changes. Commit or stash them before the field build."
 say "Exact requested Capture source matched: $SOURCE_SHA"
 
+# Capture nested repository-authored executables from the accepted Git object,
+# never from a mutable checkout pathname after a check. A same-UID pathname swap
+# after this point therefore cannot replace the bytes that the installer runs.
+capture_accepted_git_source_base64() {
+  local path="$1"
+  local blob encoded decoded_blob
+  blob="$(GIT_NO_REPLACE_OBJECTS=1 git -C "$ROOT" rev-parse "$SOURCE_SHA:$path" 2>/dev/null)" || die "Accepted nested field tool is missing from the exact Git tree: $path"
+  [[ "$blob" =~ ^[0-9a-f]{40}$ ]] || die "Accepted nested field tool Git identity is malformed: $path"
+  encoded="$(GIT_NO_REPLACE_OBJECTS=1 git -C "$ROOT" cat-file blob "$blob" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')" || die "Could not capture accepted Git bytes for nested field tool: $path"
+  [[ -n "$encoded" ]] || die "Accepted nested field tool has no captured execution bytes: $path"
+  decoded_blob="$(printf '%s' "$encoded" | /usr/bin/base64 -D | GIT_NO_REPLACE_OBJECTS=1 git -C "$ROOT" hash-object --stdin 2>/dev/null)" || die "Could not authenticate captured nested field-tool bytes: $path"
+  [[ "$decoded_blob" == "$blob" ]] || die "Captured nested field-tool bytes do not match the exact accepted Git object: $path"
+  printf '%s' "$encoded"
+}
+
+CAPTURE_BOOTSTRAP_PATH="Scripts/bootstrap_capture_tuya_sdk.sh"
+TUYA_PROVENANCE_PATH="Scripts/capture_tuya_private_input_provenance.py"
+CAPTURE_BOOTSTRAP_SOURCE_B64="$(capture_accepted_git_source_base64 "$CAPTURE_BOOTSTRAP_PATH")"
+TUYA_PROVENANCE_SOURCE_B64="$(capture_accepted_git_source_base64 "$TUYA_PROVENANCE_PATH")"
+
 : "${NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256:?Set NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 to the reviewed Podfile.lock SHA-256 printed by the bootstrap review command.}"
 [[ "$NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256" =~ ^[0-9A-Fa-f]{64}$ ]] || die "NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 must be exactly 64 hex characters."
 NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256="$(printf '%s' "$NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256" | tr '[:upper:]' '[:lower:]')"
@@ -50,13 +70,10 @@ NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256="$(printf '%s' "$NEMBRA_INTENDED_FIELD_
 export NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256
 
 PRIVATE_DEVICE_RUNNER_PATH="scripts/ci/es80_signed_field_artifact_private_runner.py"
-PRIVATE_DEVICE_RUNNER_BLOB="$(GIT_NO_REPLACE_OBJECTS=1 git rev-parse "$SOURCE_SHA:$PRIVATE_DEVICE_RUNNER_PATH" 2>/dev/null)" || die "Private intended-device reader is missing from the exact accepted Git tree."
-[[ "$PRIVATE_DEVICE_RUNNER_BLOB" =~ ^[0-9a-f]{40}$ ]] || die "Private intended-device reader Git identity is malformed."
-[[ "$(GIT_NO_REPLACE_OBJECTS=1 git hash-object "$PRIVATE_DEVICE_RUNNER_PATH")" == "$PRIVATE_DEVICE_RUNNER_BLOB" ]] || die "Private intended-device reader differs from the accepted Git bytes."
+PRIVATE_DEVICE_RUNNER="$(capture_accepted_git_source_base64 "$PRIVATE_DEVICE_RUNNER_PATH")"
 # Base64 is only a transport encoding for these already-public, Git-authenticated
 # helper source bytes. It is not encryption and must never be treated as secret
 # protection for a UDID, credential, token, AppKey, or AppSecret.
-PRIVATE_DEVICE_RUNNER="$(/usr/bin/base64 < "$PRIVATE_DEVICE_RUNNER_PATH" | /usr/bin/tr -d '\r\n')"
 
 if ! DEVICE_UDID="$(/usr/bin/python3 -I -B - "$PRIVATE_DEVICE_RUNNER" "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" "$ROOT" <<'PY'
 import base64
@@ -86,32 +103,53 @@ PY
   die "The intended-device file failed private custody or digest validation."
 fi
 [[ -n "$DEVICE_UDID" ]] || die "The intended-device file produced no identifier."
-unset NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256 PRIVATE_DEVICE_RUNNER PRIVATE_DEVICE_RUNNER_BLOB PRIVATE_DEVICE_RUNNER_PATH || true
+unset NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256 PRIVATE_DEVICE_RUNNER PRIVATE_DEVICE_RUNNER_PATH || true
 say "Private intended-device admission validated"
 
-say "Preparing the official Tuya SDK workspace"
-"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"
+say "Preparing the official Tuya SDK workspace from captured accepted Git bytes"
+if ! printf '%s' "$CAPTURE_BOOTSTRAP_SOURCE_B64" | /usr/bin/base64 -D | /bin/bash -p -s -- \
+  --field-repo-root "$ROOT" \
+  --field-source-sha "$SOURCE_SHA" \
+  --field-provenance-helper-base64 "$TUYA_PROVENANCE_SOURCE_B64"
+then
+  die "The accepted Tuya SDK bootstrap failed. No mutable checkout bootstrap was executed."
+fi
 [[ -d "$ROOT/NembraCapture.xcworkspace" ]] || die "NembraCapture.xcworkspace was not generated. Do not use NembraCapture.xcodeproj for the authenticated field build."
 [[ "$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')" == "$SOURCE_SHA" ]] || die "Repository HEAD changed during private workspace bootstrap. Restart from the exact accepted source."
 [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Private workspace bootstrap changed tracked or unignored accepted-source inputs. Review and re-accept before building."
 [[ -f "$ROOT/Podfile.lock" ]] || die "Private workspace bootstrap produced no Podfile.lock."
 TUYA_DEPENDENCY_LOCK_SHA256="$(shasum -a 256 "$ROOT/Podfile.lock" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')"
 [[ "$TUYA_DEPENDENCY_LOCK_SHA256" == "$NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256" ]] || die "Resolved Tuya dependency lock no longer matches the reviewed fingerprint."
-unset NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 || true
+unset NEMBRA_CAPTURE_ACCEPTED_TUYA_LOCK_SHA256 CAPTURE_BOOTSTRAP_SOURCE_B64 CAPTURE_BOOTSTRAP_PATH || true
 
-TUYA_PROVENANCE_HELPER="$ROOT/Scripts/capture_tuya_private_input_provenance.py"
 TUYA_PRIVATE_SDK="$ROOT/LocalSecrets/TuyaSDK"
 TUYA_PRIVATE_IDENTITY="$ROOT/LocalSecrets/TuyaRuntime"
 TUYA_DEPENDENCY_PROVENANCE="$TUYA_PRIVATE_IDENTITY/ResolvedTuyaDependencyProvenance.txt"
-verify_private_tuya_inputs() {
-  /usr/bin/python3 -I "$TUYA_PROVENANCE_HELPER" verify \
+run_accepted_private_tuya_provenance() {
+  local operation="$1"
+  /usr/bin/python3 -I -B - "$TUYA_PROVENANCE_SOURCE_B64" "$operation" \
     --lockfile "$ROOT/Podfile.lock" \
     --security-podspec "$TUYA_PRIVATE_SDK/ThingSmartCryption.podspec" \
     --security-build "$TUYA_PRIVATE_SDK/Build" \
     --identity-podspec "$TUYA_PRIVATE_IDENTITY/NembraTuyaPrivateConfig.podspec" \
     --identity-sources "$TUYA_PRIVATE_IDENTITY/Sources/NembraTuyaPrivateConfig" \
-    --record "$TUYA_DEPENDENCY_PROVENANCE" >/dev/null || \
+    --record "$TUYA_DEPENDENCY_PROVENANCE" <<'PY'
+import base64
+import sys
+
+source = base64.b64decode(sys.argv[1], validate=True)
+sys.argv = ["<accepted-tuya-private-input-provenance>"] + sys.argv[2:]
+namespace = {
+    "__name__": "__main__",
+    "__file__": "<accepted-tuya-private-input-provenance>",
+}
+exec(compile(source, namespace["__file__"], "exec", dont_inherit=True), namespace)
+PY
+}
+verify_private_tuya_inputs() {
+  if ! run_accepted_private_tuya_provenance verify >/dev/null; then
     die "Private Tuya SDK/app-identity inputs no longer match the bootstrap fingerprint record. Restart from a freshly reviewed field-build candidate."
+  fi
 }
 
 unset NEMBRA_TUYA_APP_KEY NEMBRA_TUYA_APP_SECRET || true
@@ -394,7 +432,7 @@ if ! xcrun devicectl device process launch \
 then
   die "Capture installed, but could not launch on the intended iPhone. Do not start a physical attempt."
 fi
-unset DEVICE_UDID COREDEVICE_ID DEVICE_OS_VERSION
+unset DEVICE_UDID COREDEVICE_ID DEVICE_OS_VERSION TUYA_PROVENANCE_SOURCE_B64 TUYA_PROVENANCE_PATH
 
 cleanup_build_root
 BUILD_ROOT=""
