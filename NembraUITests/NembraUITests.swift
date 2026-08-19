@@ -707,7 +707,7 @@ final class NembraUITests: XCTestCase {
         // Keep each direction isolated and give only this exact evidence path a
         // bounded allowance; terminating first prevents cleanup from waiting on
         // another app-owned geometry correction.
-        executionTimeAllowance = 180
+        executionTimeAllowance = 110
 
         let app = launch(scenario: "connected-stopped", orientation: .portrait)
         defer {

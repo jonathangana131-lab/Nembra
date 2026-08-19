@@ -120,13 +120,14 @@ For the selected immutable SHA the Xcode job performs the same core acceptance w
 
 1. checkout exact SHA;
 2. assert checkout SHA equality;
-3. `plutil -lint Nembra.xcodeproj/project.pbxproj`;
+3. `plutil -lint Nembra.xcodeproj/project.pbxproj` and XML validation of the shared `Nembra Performance` scheme;
 4. `scripts/validate_pbxproj_references.py`;
-5. shell syntax check for `scripts/ci/xcode27_simulator_capture.sh`;
+5. shell syntax plus adversarial metric-validator fixture checks for `scripts/ci/xcode27_product_simulator_capture.sh`;
 6. `swift test` in `Packages/NembraCore`;
-7. `scripts/ci/xcode27_simulator_capture.sh` on the `xcode-27` runner;
-8. upload Simulator screenshots/log artifacts even when the gate fails;
-9. publish final success/failure/error status to the exact SHA.
+7. `scripts/ci/xcode27_product_simulator_capture.sh` on the `xcode-27` runner, with the full functional/screenshot matrix in Debug followed by the one sustained Dashboard metric in the debugger-free, coverage-free, Release-configured `Nembra Performance` scheme;
+8. require three six-second clock samples and three app hitch-time-ratio samples below 5 ms/s from that exact sustained test; these are Simulator regression evidence, not physical-device or display-refresh-rate proof;
+9. upload both xcresults, Simulator screenshots, and logs even when the gate fails;
+10. publish final success/failure/error status to the exact SHA.
 
 A green status is only software evidence for that commit. It is never physical AOVOPRO ES80 proof.
 

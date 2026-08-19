@@ -23,6 +23,7 @@ TEST_IDENTIFIER = (
 )
 EXPECTED_ITERATIONS = 3
 MINIMUM_INTERVAL_SECONDS = 5.5
+MAXIMUM_GOOD_HITCH_RATIO_MS_PER_SECOND = 5.0
 
 
 def load_json(path: Path) -> Any:
@@ -75,9 +76,9 @@ def is_monotonic_clock_metric(metric: dict[str, Any]) -> bool:
     )
 
 
-def is_hitch_metric(metric: dict[str, Any]) -> bool:
+def is_hitch_ratio_metric(metric: dict[str, Any]) -> bool:
     identity = metric_identity(metric).casefold()
-    return "xctmetric_hitch" in identity or "hitch" in identity
+    return "hitch" in identity and "ratio" in identity
 
 
 def validate(metrics_payload: Any, details_payload: Any) -> list[str]:
@@ -126,29 +127,28 @@ def validate(metrics_payload: Any, details_payload: Any) -> list[str]:
     )
 
     accepted: dict[str, tuple[str, list[float]]] = {}
-    for family, predicate in {
-        "monotonic clock": is_monotonic_clock_metric,
-        "app hitch": is_hitch_metric,
+    for family, (predicate, required_unit) in {
+        "monotonic clock": (is_monotonic_clock_metric, "s"),
+        "app hitch-time ratio": (is_hitch_ratio_metric, "ms/s"),
     }.items():
+        candidates: list[tuple[str, list[float]]] = []
         for metric in metrics:
             measurements = validated_measurements(metric)
             identity = metric_identity(metric)
-            has_required_unit = (
-                family != "monotonic clock"
-                or metric.get("unitOfMeasurement") == "s"
-            )
             if (
                 predicate(metric)
                 and identity
                 and measurements is not None
-                and has_required_unit
+                and metric.get("unitOfMeasurement") == required_unit
             ):
-                accepted[family] = (identity, measurements)
-                break
-        if family not in accepted:
+                candidates.append((identity, measurements))
+        if len(candidates) == 1:
+            accepted[family] = candidates[0]
+        else:
             errors.append(
-                f"missing {family} metric with {EXPECTED_ITERATIONS} finite, "
-                f"nonnegative measurements (found identities: {identities})"
+                f"expected exactly one {family} metric in {required_unit} with "
+                f"{EXPECTED_ITERATIONS} finite, nonnegative measurements; found "
+                f"{len(candidates)} candidates (all identities: {identities})"
             )
 
     clock = accepted.get("monotonic clock")
@@ -160,11 +160,23 @@ def validate(metrics_payload: Any, details_payload: Any) -> list[str]:
             f"lasted at least {MINIMUM_INTERVAL_SECONDS:.1f} seconds: {clock[1]}"
         )
 
+    hitch_ratio = accepted.get("app hitch-time ratio")
+    if hitch_ratio is not None and any(
+        value >= MAXIMUM_GOOD_HITCH_RATIO_MS_PER_SECOND
+        for value in hitch_ratio[1]
+    ):
+        errors.append(
+            "hitch-time ratio is outside Apple's good-experience range of less "
+            f"than {MAXIMUM_GOOD_HITCH_RATIO_MS_PER_SECOND:.1f} ms/s: "
+            f"{hitch_ratio[1]}"
+        )
+
     if not errors:
         for family, (identifier, measurements) in accepted.items():
             print(f"{family}: {identifier} = {measurements}")
         print(
-            "Accepted Simulator-only sustained Dashboard performance evidence; "
+            "Accepted Release-configured Simulator-only sustained Dashboard "
+            "performance evidence; "
             "this is not physical-device or display-refresh-rate proof."
         )
 
@@ -205,9 +217,9 @@ def run_self_tests() -> None:
         },
         {
             "identifier": "com.apple.dt.XCTMetric_Hitch.frameStats.renderTime.p90",
-            "displayName": "Render interval delay",
-            "unitOfMeasurement": "ms",
-            "measurements": [0.0, 1.0, 0.0],
+            "displayName": "Hitch Time Ratio",
+            "unitOfMeasurement": "ms/s",
+            "measurements": [0.0, 1.0, 4.9],
         },
     ])
     expect_accepted("identifier shape", accepted_identifier_shape)
@@ -236,7 +248,11 @@ def run_self_tests() -> None:
             "unitOfMeasurement": "s",
             "measurements": [5.4, 6.0, 6.0],
         },
-        {"displayName": "Hitch Time Ratio", "measurements": [0.0, 0.0, 0.0]},
+        {
+            "displayName": "Hitch Time Ratio",
+            "unitOfMeasurement": "ms/s",
+            "measurements": [0.0, 0.0, 0.0],
+        },
     ])
     expect_rejected("short clock", short_clock)
 
@@ -246,9 +262,55 @@ def run_self_tests() -> None:
             "unitOfMeasurement": "s",
             "measurements": [6.0, 6.0, 6.0],
         },
-        {"displayName": "Hitch Time Ratio", "measurements": [0.0, 0.0]},
+        {
+            "displayName": "Hitch Time Ratio",
+            "unitOfMeasurement": "ms/s",
+            "measurements": [0.0, 0.0],
+        },
     ])
     expect_rejected("incomplete hitch", incomplete_hitch)
+
+    distracting_hitch = fixture(metrics=[
+        {
+            "displayName": "Clock Monotonic Time",
+            "unitOfMeasurement": "s",
+            "measurements": [6.0, 6.0, 6.0],
+        },
+        {
+            "displayName": "Hitch Time Ratio",
+            "unitOfMeasurement": "ms/s",
+            "measurements": [4.9, 5.0, 100.0],
+        },
+    ])
+    expect_rejected("noticeable or distracting hitch", distracting_hitch)
+
+    wrong_hitch_unit = fixture(metrics=[
+        {
+            "displayName": "Clock Monotonic Time",
+            "unitOfMeasurement": "s",
+            "measurements": [6.0, 6.0, 6.0],
+        },
+        {
+            "displayName": "Hitch Time Ratio",
+            "unitOfMeasurement": "ms",
+            "measurements": [0.0, 0.0, 0.0],
+        },
+    ])
+    expect_rejected("wrong hitch unit", wrong_hitch_unit)
+
+    generic_hitch = fixture(metrics=[
+        {
+            "displayName": "Clock Monotonic Time",
+            "unitOfMeasurement": "s",
+            "measurements": [6.0, 6.0, 6.0],
+        },
+        {
+            "displayName": "Total Hitch Time",
+            "unitOfMeasurement": "ms/s",
+            "measurements": [0.0, 0.0, 0.0],
+        },
+    ])
+    expect_rejected("generic hitch metric", generic_hitch)
 
     wrong_test_metrics, wrong_test_details = accepted_display_name_shape
     wrong_test_details = dict(wrong_test_details)

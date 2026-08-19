@@ -63,7 +63,9 @@ jobs:
       group: nembra-xcode27-pr-command-${{ needs.resolve.outputs.pr_number }}
       cancel-in-progress: true
     runs-on: xcode-27
-    timeout-minutes: 30
+    timeout-minutes: 45
+    env:
+      EXPECTED_SOURCE_SHA: ${{ needs.resolve.outputs.head_sha }}
 
     steps:
       - name: Checkout immutable PR head
@@ -82,15 +84,17 @@ jobs:
       - name: Validate project structure
         run: |
           plutil -lint Nembra.xcodeproj/project.pbxproj
+          /usr/bin/xmllint --noout 'Nembra.xcodeproj/xcshareddata/xcschemes/Nembra Performance.xcscheme'
           scripts/validate_pbxproj_references.py
-          bash -n scripts/ci/xcode27_simulator_capture.sh
+          bash -n scripts/ci/xcode27_product_simulator_capture.sh
+          python3 scripts/ci/validate_xcode27_dashboard_performance.py --self-test
 
       - name: Validate core package
         working-directory: Packages/NembraCore
         run: swift test
 
       - name: Build, test, and capture Simulator states
-        run: scripts/ci/xcode27_simulator_capture.sh
+        run: scripts/ci/xcode27_product_simulator_capture.sh
 
       - name: Upload Simulator screenshots and logs
         if: always()
