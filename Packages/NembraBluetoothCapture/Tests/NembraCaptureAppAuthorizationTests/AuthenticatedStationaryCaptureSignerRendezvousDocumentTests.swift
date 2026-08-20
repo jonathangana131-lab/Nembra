@@ -30,9 +30,15 @@ struct AuthenticatedStationaryCaptureSignerRendezvousDocumentTests {
         )
         #expect(object["procedureID"] as? String == rendezvous.procedureID)
         #expect(object["attemptChallengeSHA256"] as? String == rendezvous.challengeSHA256)
-        #expect(object["attemptStartedAtUnixMilliseconds"] as? Int == start)
+        let attemptStartedAtUnixMilliseconds = try #require(
+            object["attemptStartedAtUnixMilliseconds"] as? Int64
+        )
+        #expect(attemptStartedAtUnixMilliseconds == start)
+        let authorizationMustExpireByUnixMilliseconds = try #require(
+            object["authorizationMustExpireByUnixMilliseconds"] as? Int64
+        )
         #expect(
-            object["authorizationMustExpireByUnixMilliseconds"] as? Int
+            authorizationMustExpireByUnixMilliseconds
                 == start
                     + AuthenticatedStationaryCaptureFieldAuthorizationVerifier
                         .maximumAuthorizationLifetimeMilliseconds
@@ -60,9 +66,12 @@ struct AuthenticatedStationaryCaptureSignerRendezvousDocumentTests {
         )
         let data = try AuthenticatedStationaryCaptureSignerRendezvousDocument.encode(rendezvous)
         let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let authorizationMustExpireByUnixMilliseconds = try #require(
+            object["authorizationMustExpireByUnixMilliseconds"] as? Int64
+        )
 
         #expect(
-            object["authorizationMustExpireByUnixMilliseconds"] as? Int
+            authorizationMustExpireByUnixMilliseconds
                 == start + 15 * 60 * 1_000
         )
     }
