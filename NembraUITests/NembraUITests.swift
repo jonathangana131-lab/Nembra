@@ -526,7 +526,9 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
-    func testHorizonV4DriveEntryTruthAndPortraitRestoration() {
+    /// The historical XCTest selector is retained as CI workflow ABI. This test
+    /// validates the post-V4 Cockpit Drive implementation; V4 visuals are rejected.
+    func testHorizonV4DriveEntryTruthAndScreenshot() {
         let previousAppearance = XCUIDevice.shared.appearance
         defer {
             if XCUIDevice.shared.orientation != .portrait {
@@ -545,7 +547,7 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(cockpit.waitForExistence(timeout: 8))
         XCTAssertTrue(
             waitForLandscapeWindow(in: app, timeout: 8),
-            "Horizon must appear only after the requested landscape geometry is observed."
+            "Cockpit must appear only after the requested landscape geometry is observed."
         )
 
         let qaDisclosure = app.descendants(matching: .any)["dashboard.qa-disclosure"]
@@ -565,8 +567,21 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(propulsion.waitForExistence(timeout: 3))
         XCTAssertTrue(
             (propulsion.value as? String ?? "").localizedCaseInsensitiveContains("accepted watts"),
-            "V4 Drive must expose accepted simulator power without relabeling it as throttle."
+            "Cockpit Drive must expose accepted simulator power without relabeling it as throttle."
         )
+        let propulsionSemantics = semantics(of: propulsion)
+        for required in ["NOW", "from zero", "positive propulsion", "QA scale"] {
+            XCTAssertTrue(
+                propulsionSemantics.localizedCaseInsensitiveContains(required),
+                "Power semantics must make \(required) explicit."
+            )
+        }
+        for rejected in ["throttle", "regen", "rated", "negative scale", "-18", "kW"] {
+            XCTAssertFalse(
+                propulsionSemantics.localizedCaseInsensitiveContains(rejected),
+                "Power semantics must not claim \(rejected)."
+            )
+        }
 
         for identifier in [
             "dashboard.today",
@@ -577,7 +592,7 @@ final class NembraUITests: XCTestCase {
         ] {
             XCTAssertTrue(
                 app.descendants(matching: .any)[identifier].waitForExistence(timeout: 3),
-                "Missing Horizon truth surface: \(identifier)"
+                "Missing Cockpit truth surface: \(identifier)"
             )
         }
 
@@ -589,20 +604,38 @@ final class NembraUITests: XCTestCase {
                 "\(identifier) must remain fully inside the iPhone 12 landscape window."
             )
         }
+        XCTAssertFalse(
+            speed.frame.intersects(propulsion.frame),
+            "The speed caption and accepted NOW power band must remain spatially distinct."
+        )
 
         let home = app.buttons["dashboard.control.home"]
         let navigate = app.buttons["dashboard.control.navigate"]
-        assertMinimumTouchTarget(home, named: "Horizon Home")
-        assertMinimumTouchTarget(navigate, named: "Horizon Navigate")
+        assertMinimumTouchTarget(home, named: "Cockpit Home")
+        assertMinimumTouchTarget(navigate, named: "Cockpit Navigate")
 
         let battery = app.buttons["dashboard.battery-range"]
         XCTAssertTrue(battery.waitForExistence(timeout: 3))
+        assertMinimumTouchTarget(battery, named: "Cockpit battery")
+        XCTAssertFalse(
+            app.descendants(matching: .any)["dashboard.adaptive-range"].exists,
+            "Cockpit must never duplicate a detached adaptive-range readout."
+        )
         if !battery.label.localizedCaseInsensitiveContains("Battery") {
             battery.tap()
             XCTAssertTrue(waitForLabelContaining("Battery", element: app.buttons["dashboard.battery-range"]))
         }
 
-        keepScreenshot(named: "Horizon V4 Drive - Simulator QA Only")
+        let percentageSemantics = semantics(of: app.buttons["dashboard.battery-range"])
+        XCTAssertTrue(percentageSemantics.localizedCaseInsensitiveContains("percent"))
+        XCTAssertFalse(percentageSemantics.localizedCaseInsensitiveContains(" mi"))
+        XCTAssertFalse(percentageSemantics.localizedCaseInsensitiveContains(" km"))
+
+        XCTAssertTrue(windowFrame.contains(battery.frame))
+        XCTAssertFalse(
+            battery.frame.intersects(speed.frame),
+            "The one-value battery instrument must not overlap the speed hero."
+        )
 
         let initialBatterySemantics = semantics(of: app.buttons["dashboard.battery-range"])
         app.buttons["dashboard.battery-range"].tap()
@@ -614,17 +647,132 @@ final class NembraUITests: XCTestCase {
             ),
             "The battery control must switch percentage/range semantics while its fill remains SOC."
         )
-
-        home.tap()
-        XCTAssertTrue(
-            waitForPortraitWindow(in: app, timeout: 8),
-            "The cockpit Home control must restore the owned portrait session."
+        let rangeSemantics = semantics(of: app.buttons["dashboard.battery-range"])
+        XCTAssertFalse(
+            rangeSemantics.localizedCaseInsensitiveContains("percent"),
+            "Range mode must expose exactly one primary readout, never a duplicated percentage."
         )
-        XCTAssertTrue(app.buttons["home.horizon-entry"].waitForExistence(timeout: 5))
-        XCTAssertFalse(cockpit.exists)
+        XCTAssertTrue(
+            rangeSemantics.localizedCaseInsensitiveContains("unavailable")
+                || rangeSemantics.localizedCaseInsensitiveContains("learning")
+                || rangeSemantics.localizedCaseInsensitiveContains(" mi")
+                || rangeSemantics.localizedCaseInsensitiveContains(" km"),
+            "Range mode must truthfully expose learned range, learning, or unavailable."
+        )
+
+        app.buttons["dashboard.battery-range"].tap()
+        XCTAssertTrue(
+            waitForSemanticChange(
+                identifier: "dashboard.battery-range",
+                from: rangeSemantics,
+                in: app
+            ),
+            "The same battery instrument must return to percentage mode."
+        )
+        let restoredPercentageSemantics = semantics(of: app.buttons["dashboard.battery-range"])
+        XCTAssertTrue(restoredPercentageSemantics.localizedCaseInsensitiveContains("percent"))
+        XCTAssertFalse(restoredPercentageSemantics.localizedCaseInsensitiveContains(" mi"))
+        XCTAssertFalse(restoredPercentageSemantics.localizedCaseInsensitiveContains(" km"))
+
+        // Exact Xcode 27 evidence showed that dispatching another XCUI event after
+        // a kept landscape screenshot can block on an animation-idle notification.
+        // Keep screenshot capture terminal here; the separate hitch test exercises
+        // the real Home control and exact-scene portrait restoration.
+        keepScreenshot(named: "Cockpit Drive Post-V4 - Simulator QA Only")
+        app.terminate()
     }
 
     @MainActor
+    func testCockpitDriveAtAccessibilityXXXLPassesProductionAudit() throws {
+        let previousAppearance = XCUIDevice.shared.appearance
+        defer {
+            if XCUIDevice.shared.orientation != .portrait {
+                XCUIDevice.shared.orientation = .portrait
+            }
+            if XCUIDevice.shared.appearance != previousAppearance {
+                XCUIDevice.shared.appearance = previousAppearance
+            }
+        }
+
+        XCUIDevice.shared.appearance = .dark
+        let app = launch(
+            scenario: "riding",
+            orientation: .portrait,
+            arguments: [
+                "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityXXXL"
+            ]
+        )
+        defer { app.terminate() }
+        enterHorizon(in: app)
+
+        XCTAssertTrue(app.descendants(matching: .any)["dashboard.cockpit"].waitForExistence(timeout: 8))
+        XCTAssertTrue(waitForLandscapeWindow(in: app, timeout: 8))
+
+        let window = app.windows.firstMatch
+        let battery = app.buttons["dashboard.battery-range"]
+        let home = app.buttons["dashboard.control.home"]
+        let navigate = app.buttons["dashboard.control.navigate"]
+        let speed = app.descendants(matching: .any)["dashboard.speed"]
+        let power = app.descendants(matching: .any)["dashboard.energy-rail"]
+        let identity = app.descendants(matching: .any)["dashboard.vehicle-identity"]
+
+        for (element, name) in [
+            (battery, "battery"),
+            (home, "Home"),
+            (navigate, "Navigate")
+        ] {
+            XCTAssertTrue(element.waitForExistence(timeout: 3), "Missing Cockpit \(name) control.")
+            assertMinimumTouchTarget(element, named: "Accessibility XXXL Cockpit \(name)")
+            XCTAssertTrue(window.frame.contains(element.frame), "Cockpit \(name) must remain inside the window.")
+        }
+        for (element, name) in [(speed, "speed"), (power, "power")] {
+            XCTAssertTrue(element.waitForExistence(timeout: 3), "Missing Cockpit \(name) instrument.")
+            XCTAssertTrue(window.frame.contains(element.frame), "Cockpit \(name) must remain inside the window.")
+        }
+
+        XCTAssertTrue(identity.waitForExistence(timeout: 3), "Missing Cockpit vehicle identity.")
+        XCTAssertTrue(window.frame.contains(identity.frame), "Cockpit identity must remain inside the window.")
+        XCTAssertFalse(identity.frame.intersects(speed.frame), "Cockpit identity must not cover the speed hero.")
+        XCTAssertFalse(speed.frame.intersects(power.frame), "Speed and accepted NOW power bands must not overlap.")
+
+        let ledgerElements = [
+            app.descendants(matching: .any)["dashboard.recording-status"],
+            app.descendants(matching: .any)["dashboard.today"],
+            app.descendants(matching: .any)["dashboard.ride-time"],
+            app.descendants(matching: .any)["dashboard.odometer"],
+            app.descendants(matching: .any)["dashboard.city-explored"]
+        ]
+        for element in ledgerElements {
+            XCTAssertTrue(element.waitForExistence(timeout: 3), "Missing accessibility ledger truth surface.")
+            XCTAssertFalse(element.frame.isEmpty, "Accessibility ledger truth surfaces need laid-out frames.")
+            XCTAssertTrue(window.frame.contains(element.frame), "Accessibility ledger must remain in the window.")
+            XCTAssertFalse(element.frame.intersects(speed.frame), "Accessibility ledger must not cover speed.")
+            XCTAssertFalse(element.frame.intersects(power.frame), "Accessibility ledger must not cover accepted power.")
+        }
+
+        XCTAssertTrue(semantics(of: battery).localizedCaseInsensitiveContains("percent"))
+        XCTAssertTrue(semantics(of: power).localizedCaseInsensitiveContains("positive propulsion"))
+
+        try app.performAccessibilityAudit(
+            for: [
+                .sufficientElementDescription,
+                .hitRegion,
+                .contrast,
+                .textClipped,
+                .trait,
+                .dynamicType
+            ]
+        )
+
+        // Keep capture terminal: exact hosted evidence shows a later XCUI event
+        // can otherwise block on the landscape animation-idle notification.
+        keepScreenshot(named: "Cockpit Drive Accessibility XXXL - Simulator QA Only")
+        app.terminate()
+    }
+
+    @MainActor
+    /// Historical workflow selector retained until the shared CI ABI is migrated.
     func testHorizonV4DriveBatteryToggleHitchEvidence() {
         let previousAppearance = XCUIDevice.shared.appearance
         defer {
@@ -661,10 +809,16 @@ final class NembraUITests: XCTestCase {
         }
 
         app.buttons["dashboard.control.home"].tap()
-        XCTAssertTrue(waitForPortraitWindow(in: app, timeout: 8))
+        XCTAssertTrue(
+            waitForPortraitWindow(in: app, timeout: 8),
+            "The cockpit Home control must restore the owned portrait session."
+        )
+        XCTAssertTrue(app.buttons["home.horizon-entry"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["dashboard.cockpit"].exists)
     }
 
     @MainActor
+    /// Historical workflow selector retained until the shared CI ABI is migrated.
     func testHorizonV4DriveSustainedRenderIslandHitchEvidence() {
         let previousAppearance = XCUIDevice.shared.appearance
         defer {
@@ -731,7 +885,7 @@ final class NembraUITests: XCTestCase {
             "Synthetic speed and accepted-power source updates must still advance after all measured intervals."
         )
 
-        keepScreenshot(named: "Horizon V4 Drive Render Stress - Simulator QA Only")
+        keepScreenshot(named: "Cockpit Drive Render Stress - Simulator QA Only")
 
         // The stress fixture intentionally keeps publishing source updates, so a
         // Home tap would wait for XCUI quiescence that can never arrive. Portrait
@@ -754,6 +908,13 @@ final class NembraUITests: XCTestCase {
         for (key, value) in environment {
             app.launchEnvironment[key] = value
         }
+        // Product persistence is covered by an isolated unit test. UI evidence
+        // starts from the documented default so retries/order cannot inherit a
+        // prior test's odd-numbered toggle through global UserDefaults.
+        app.launchArguments.append(contentsOf: [
+            "-horizon.batteryPrimaryReadout.v1",
+            "percentage"
+        ])
         app.launchArguments.append(contentsOf: arguments)
         app.launch()
         return app
@@ -764,7 +925,10 @@ final class NembraUITests: XCTestCase {
         let entry = app.buttons["home.horizon-entry"]
         XCTAssertTrue(entry.waitForExistence(timeout: 5))
         if !entry.isHittable {
-            app.swipeUp()
+            XCTAssertTrue(
+                swipeUpUntilHittable(entry, in: app),
+                "The Horizon entry must remain reachable at the active Dynamic Type size."
+            )
         }
         XCTAssertTrue(entry.isHittable)
         entry.tap()

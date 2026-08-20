@@ -36,7 +36,13 @@ remote branch `agent/cockpit-1-0-redesign`, targeting
 [#3676](https://github.com/jonathangana131-lab/Nembra/pull/3676).
 
 - Latest pushed Cockpit authority/audit checkpoint recorded here:
-  `8671b285061f62983a590f6a27cd0fed725cb8a1`
+  `71fe1c4cb2bf0c8ed3a1476eab75970ee7ab49b6`
+- Latest pushed Cockpit implementation checkpoint recorded here: pending the
+  coherent post-V4 Drive source commit currently being validated on the isolated
+  branch. The precommit six-file source/test candidate diff is
+  `c291e740a274b2deb5ab4c97fe719fbe961cb3ef4e2c36110543fb9b25e63458`;
+  it is not continuity-secured until the branch commit is pushed and the remote
+  ref is verified.
 - Cockpit recovery authority:
   `docs/continuity/COCKPIT_EXPERIENCE.md`
 - Typed truth matrix:
@@ -52,6 +58,15 @@ only evidence-backed typed contracts from that lane, while unknown/stale states
 stay explicit and Simulator QA stays visibly synthetic. A resumed Cockpit task
 must check the remote PR #3676 head and continue the exact next action in the
 Cockpit recovery file rather than restarting or reviving V2/V3/V4 visuals.
+
+The current isolated candidate replaces the V4 Drive composition with a post-V4
+vertical slice while keeping physical telemetry fail-closed: one in-instrument
+battery value with SOC-only fill, giant bounded rolling speed, an explicit
+accepted-watts NOW locator/zero/positive direction/peak, qualified durable facts,
+native control glass, static idle rendering, Accessibility XXXL reflow, and
+source/UI/performance tests. Navigation and Explore have not widened. Exact files,
+test truth, remaining physical-source blockers, and the next executable action are
+recorded in `docs/continuity/COCKPIT_EXPERIENCE.md`.
 
 ## Current focused aspect and production acceptance gate
 
@@ -124,6 +139,15 @@ Hosted evidence is in progress and is not yet transferable:
 - `Xcode 27 Simulator QA` run [`32310195339`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32310195339) is admitted/in progress for exact `245fb44a…`. This pull-request workflow uses the branch's product wrapper, including the separate Release performance scheme and fail-closed Hitch Time Ratio validator.
 - `Capture V16 Standalone Exact-Head` run [`32310195334`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32310195334), `Capture Field Handoff Provenance` run [`32310195368`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32310195368), and `Capture Standalone Visual Evidence` run [`32310195430`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32310195430) are running/queued at the same exact SHA.
 - `Capture TODAY Field Candidate Preflight QA` run [`32310195345`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32310195345) and `Capture TODAY Final GO QA` run [`32310195336`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32310195336) are green at exact `245fb44a…`; they remain nonphysical/non-authorizing contract evidence.
+
+Separately, the isolated Cockpit branch contains a compile-clean but not-yet-pushed
+Drive candidate in `AppBootstrap.swift`, the three Dashboard source files,
+`NembraAppTests.swift`, `NembraUITests.swift`, and the two continuity records.
+Local Xcode 26.1 diagnostic evidence: all Swift files parse; focused NembraCore
+truth suites pass 49/49; strict app build and strict app/unit/UI
+`build-for-testing` exit 0. Local test execution is unavailable because iOS 26.1
+is below the app's iOS 27 deployment. No exact candidate-head Xcode 27 screenshot,
+accessibility audit, or Release Hitch Time Ratio evidence exists yet.
 
 Do not call the Home correction visually accepted from source or local-build evidence. The first exact Xcode 27 runtime screenshots must be compared directly with the selected Home reference, and the current temporary ES80 asset still blocks final visual/provenance acceptance.
 

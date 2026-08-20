@@ -24,8 +24,13 @@ meaningful pushed checkpoint and before pausing or handing off.
 - Integration target: `product/capture-1-0-main-20260818`
 - Integration PR: [#3675](https://github.com/jonathangana131-lab/Nembra/pull/3675)
 - Branch base at worktree creation: `cf817a8b1c1f74640055af317671497a202e4f74`
-- Latest pushed cockpit checkpoint recorded here:
-  `8671b285061f62983a590f6a27cd0fed725cb8a1`
+- Latest pushed cockpit design/continuity checkpoint recorded here:
+  `71fe1c4cb2bf0c8ed3a1476eab75970ee7ab49b6`
+- Latest pushed cockpit implementation checkpoint recorded here: pending the
+  coherent Drive-source commit described under Work in progress. The current
+  compile-clean six-file source/test candidate diff is
+  `c291e740a274b2deb5ab4c97fe719fbe961cb3ef4e2c36110543fb9b25e63458`;
+  a diff hash is diagnostic only and is not a recoverable Git checkpoint.
 - Cockpit PR: [#3676](https://github.com/jonathangana131-lab/Nembra/pull/3676)
 
 A Git commit cannot embed its own SHA without changing that SHA. This file
@@ -112,16 +117,89 @@ meets this gate.
   copy, generic silver capsule battery, extreme raised 32-tick arc, uppercase
   metric strip, and ambiguous rail marker. Its truthful state and render-island
   foundations are reusable; its composition is not.
+- Replaced that inherited V4 Drive composition in the working tree with the
+  first post-V4 vertical slice while preserving the exact-scene session owner,
+  slow snapshot bridge, typed evidence domains, and stable public identifiers:
+  - `NembraApp/Features/Dashboard/DashboardView.swift` now provides a deep
+    black/floor field, quiet top chrome, one Home-derived engineered battery,
+    no detached range readout, honest recording/ledger language, and native
+    grouped Liquid Glass only for the Home/Navigate controls.
+  - The battery renders exactly one value (percentage by default, accepted
+    range/learning/unavailable after tap), keeps SOC as the sole fill meaning,
+    uses a graphite shell/rim/terminal, clipped gold or semantic-low ribs, a
+    dual-contrast label at the true SOC edge, persisted mode, Reduce Motion,
+    app-controlled haptics, VoiceOver alternate action, and normal/high accepted
+    range confidence without inventing the reference image's `8.4 mi`.
+  - `SpeedInstrumentModel.swift` now separates accepted NOW position from local
+    illumination settling and accepted recent peak, with an explicit zero,
+    positive direction, non-color-only diamond locator, hollow distinct peak,
+    source-bound accepted watts, and visibly synthetic `QA SCALE · 650 W` only
+    under the sealed Simulator authority. Retained/unavailable states expose no
+    live position or inferred zero.
+  - `RollingSpeedValueView.swift` uses licensed system SF, tabular rolling digits,
+    2/3-digit capacity, unit-independent canonical presentation bounds, and no
+    nested per-digit animation. Unit preference/locale are resolved outside the
+    render timeline. The high-frequency timeline is mounted only while accepted
+    speed or power presentation is settling and disappears at steady state.
+  - `AppBootstrap.swift` now compile-gates positive simulation selection to an
+    iOS Simulator runtime, including explicit launch arguments/environment;
+    Release Simulator performance fixtures remain possible while physical
+    iPhones cannot select synthetic vehicle authority.
+  - `NembraAppTests.swift` and `NembraUITests.swift` add source-to-store power
+    receipt custody, one-value battery, confidence, peak-visibility, retained/
+    unavailable, speed capacity/unit, bounded geometry, idle schedule, truth-
+    claim rejection, iPhone landscape frame, Accessibility XXXL, audit, screenshot,
+    and existing Release hitch-path coverage. Historical V4 XCTest selector names
+    remain only as workflow ABI and explicitly test the post-V4 implementation.
+  - The final precommit hardening adds a bounded `99:59:59` Drive duration
+    formatter, rejects huge/NaN/infinite values without integer conversion,
+    retires both speed and accepted-power Timeline windows under test, proves a
+    real Store `live -> retained` power transition removes every live locator,
+    gives Accessibility XXXL a genuine two-band footer, maintains an audit-safe
+    secondary-text contrast floor, and asserts identity/speed/power/ledger frame
+    separation at the real landscape accessibility size.
 
 ## Work in progress
 
-- Native Drive recomposition has not started. The audit/design inputs are
-  remotely recoverable at `8671b285…`. This continuity-only synchronization is
-  the sole local change before the next push.
+The Drive implementation above is currently uncommitted and unpushed in exactly
+these six source/test files plus the two recovery authorities:
+
+- `NembraApp/App/AppBootstrap.swift`
+- `NembraApp/Features/Dashboard/DashboardView.swift`
+- `NembraApp/Features/Dashboard/RollingSpeedValueView.swift`
+- `NembraApp/Features/Dashboard/SpeedInstrumentModel.swift`
+- `NembraAppTests/NembraAppTests.swift`
+- `NembraUITests/NembraUITests.swift`
+- `docs/continuity/COCKPIT_EXPERIENCE.md`
+- `DEVELOPMENT_CONTINUITY.md`
+
+No portrait implementation file, Navigation view, Explore view, Capture source,
+raw BLE decoder, package protocol mapping, or production telemetry authority has
+been changed. This work is not continuity-secured until the source commit and the
+follow-up exact-SHA continuity commit are both pushed and remote-verified.
 
 ## Validation and CI truth
 
-No cockpit-branch build/test has run yet. Local Xcode 26 is not release authority.
+Current working-tree static evidence:
+
+- `xcrun swiftc -frontend -parse` passes for all six changed Swift files;
+- `git diff --check` passes;
+- focused NembraCore battery, propulsion, rolling-number, speed telemetry, and
+  interpolation tests passed 49/49 across five suites with zero failures;
+- local Xcode 26.1 generic-Simulator app build exited 0 under
+  `SWIFT_STRICT_CONCURRENCY=complete` and the iOS 26 deployment override;
+- a fresh strict `build-for-testing` against the unchanged six-file source/test
+  candidate diff
+  `c291e740a274b2deb5ab4c97fe719fbe961cb3ef4e2c36110543fb9b25e63458`
+  exited 0 and compiled the app, `NembraAppTests`, and `NembraUITests` with no
+  Swift or strict-concurrency warnings/errors;
+- focused app-test execution did not run: local iOS 26.1 is below Nembra's iOS
+  27 deployment target and `test-without-building` exited 70 before test-body
+  execution. This is an environment limitation, not a passing test claim.
+
+Local Xcode 26 is diagnostic compile evidence only and is never release authority.
+No exact implementation-head Xcode 27 build, landscape screenshot, accessibility
+audit, or Release clock/Hitch Time Ratio evidence exists yet.
 
 The base integration head `cf817a8b…` has green Capture software lanes but a red
 main product run `32310434323`. That failure belongs to the shared base: portrait
@@ -133,15 +211,25 @@ It is baseline evidence only and does not validate this branch. Artifact:
 
 ### Code work
 
-- Current Dashboard composition must be replaced while preserving stable public
-  accessibility identifiers and slow/high-frequency observation separation.
-- The Simulator-only power adapter currently has no production physical power
-  source; physical UI must remain unavailable until the Capture lane publishes a
-  verified typed source.
-- Current battery UI duplicates detached adaptive-range copy and uses a generic
-  silver fill; it violates the new one-value Home-derived contract.
-- The base Drive test can wait indefinitely for SwiftUI animation quiescence;
-  the new render slice must prove its animation schedule unmounts at steady state.
+- A future physical `.scooterBluetooth` or `.gps` speed source must not be enabled
+  merely because it carries an absolute sample. It first needs a typed,
+  source-specific and tested plausibility/accuracy/latency/precision policy. The
+  current `999.94 km/h` bound is display capacity only, not vehicle validation.
+- A future numeric adaptive-range runtime must bind its live estimate and the SOC
+  fill to the same accepted/current battery owner (or define and test an explicit
+  value-with-fill-unavailable state). Root currently injects `nil`, so production
+  is safely unavailable.
+- The two/three micro-tick confidence treatment is typed and non-color-only but
+  its sighted glanceability is unaccepted until a hosted screenshot/audit proves
+  it; revise from visual evidence rather than adding an unexplained caption now.
+- The Simulator-only power adapter still has no production physical power source;
+  physical UI remains unavailable until Capture publishes a verified typed source,
+  source scale/envelope, receipt cadence, and currentness contract.
+- The power rail's tiny sighted microcopy is intentionally secondary and its full
+  meaning exists in one scalable accessibility value, but the exact hosted
+  Accessibility XXXL screenshot/audit must still prove that the simplified visual
+  hierarchy remains legible. Do not weaken frame/contrast/dynamic-type assertions
+  if it does not.
 
 ### External / evidence
 
@@ -154,17 +242,23 @@ It is baseline evidence only and does not validate this branch. Artifact:
 
 ## Exact next executable action
 
-1. Replace the current Drive slow layer and power geometry in
-   `NembraApp/Features/Dashboard/DashboardView.swift`,
-   `SpeedInstrumentModel.swift`, and `RollingSpeedValueView.swift` while retaining
-   typed truth boundaries and the narrow render island.
-2. Update focused app/UI/source tests for one-value battery semantics, zero/NOW/
-   peak power clarity, geometry bounds, idle timeline shutdown, and rejection of
-   detached range/fantasy scale.
-3. Run parsers, focused SwiftPM/app tests, `git diff --check`, and a scope/secret
-   audit; commit/push/verify, then request the exact-head Xcode 27 workflow.
-4. Inspect the retained iPhone 12 landscape screenshots and Release metrics before
-   widening into Navigation.
+1. Run the final scope/secret scan over the quiescent candidate, then commit the
+   six source/test files plus both truthful recovery records and push branch
+   `agent/cockpit-1-0-redesign`, and verify the exact remote ref. Then update this
+   file and `DEVELOPMENT_CONTINUITY.md` with that implementation SHA in a separate
+   continuity commit and remote-verify it.
+2. Fetch and merge the latest `origin/product/capture-1-0-main-20260818` without
+   force-pushing. Resolve shared `NembraUITests.swift` and continuity/design-doc
+   overlap by preserving both portrait fixes and the post-V4 Drive assertions;
+   rerun proportional checks and push the merge checkpoint.
+3. Trigger the draft-safe `/xcode27` PR workflow for PR #3676. Download its exact-
+   head artifact and verify source SHA, Xcode 27/iOS 27/iPhone 12 identity, Core/
+   app/UI results, Accessibility XXXL, one-value battery interaction, landscape
+   frame containment, three sustained render intervals, actual Release clock +
+   Hitch Time Ratio samples, and retained post-V4 screenshots.
+4. Put the same-state runtime Drive screenshot beside the refined internal study
+   in one comparison canvas, record visible mismatches, and iterate Drive. Do not
+   widen into Navigation or Explore until the Drive acceptance gate is met.
 
 ## Rejected designs and approaches
 

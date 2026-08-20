@@ -1,4 +1,5 @@
 import CoreGraphics
+import Dispatch
 import XCTest
 @testable import Nembra
 
@@ -56,38 +57,515 @@ final class NembraAppTests: XCTestCase {
         XCTAssertEqual(restoredAgain.batteryPrimaryReadoutState.mode, .percentage)
     }
 
-    func testHorizonV4PropulsionGeometryIsSymmetricRaisedAndFullyBounded() {
+    func testCockpitPowerRailGeometryIsShallowSymmetricMonotonicAndFullyBounded() {
         for size in [
-            CGSize(width: 640, height: 112),
-            CGSize(width: 720, height: 132),
-            CGSize(width: 896, height: 156)
+            CGSize(width: 640, height: 82),
+            CGSize(width: 720, height: 92),
+            CGSize(width: 896, height: 104)
         ] {
             let geometry = DashboardPropulsionGeometry(size: size)
             let apex = geometry.point(at: 0.5)
 
             XCTAssertEqual(geometry.start.y, geometry.end.y, accuracy: 0.001)
             XCTAssertEqual(apex.x, size.width / 2, accuracy: 0.001)
-            XCTAssertLessThanOrEqual(apex.y, size.height * 0.17)
-            XCTAssertGreaterThan(geometry.start.y - apex.y, size.height * 0.70)
+            XCTAssertGreaterThan(geometry.start.y - apex.y, 0)
+            XCTAssertLessThanOrEqual(geometry.start.y - apex.y, 10.001)
+            XCTAssertEqual(geometry.point(at: 0), geometry.start)
+            XCTAssertEqual(geometry.point(at: 1), geometry.end)
 
-            for index in 0...32 {
-                let progress = Double(index) / 32
+            var previousX = -CGFloat.infinity
+            for index in 0...64 {
+                let progress = Double(index) / 64
                 let mirror = geometry.point(at: 1 - progress)
                 let point = geometry.point(at: progress)
                 XCTAssertEqual(point.x + mirror.x, size.width, accuracy: 0.001)
                 XCTAssertEqual(point.y, mirror.y, accuracy: 0.001)
+                XCTAssertGreaterThan(point.x, previousX)
+                previousX = point.x
 
                 let normal = geometry.outwardNormal(at: progress)
-                let tickEnd = CGPoint(
-                    x: point.x + normal.dx * 15,
-                    y: point.y + normal.dy * 15
+                let locatorEdge = CGPoint(
+                    x: point.x + normal.dx * 8,
+                    y: point.y + normal.dy * 8
                 )
-                XCTAssertGreaterThanOrEqual(tickEnd.x, 0)
-                XCTAssertLessThanOrEqual(tickEnd.x, size.width)
-                XCTAssertGreaterThanOrEqual(tickEnd.y, 0)
-                XCTAssertLessThanOrEqual(tickEnd.y, size.height)
+                XCTAssertGreaterThanOrEqual(locatorEdge.x, 0)
+                XCTAssertLessThanOrEqual(locatorEdge.x, size.width)
+                XCTAssertGreaterThanOrEqual(locatorEdge.y, 0)
+                XCTAssertLessThanOrEqual(locatorEdge.y, size.height)
             }
         }
+    }
+
+    @MainActor
+    func testCockpitBatteryRenderStateShowsOnePrimaryValueAndKeepsSOCFillAcrossToggle() {
+        let suiteName = "NembraAppTests.cockpit-battery-render.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            return XCTFail("Could not create isolated defaults.")
+        }
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let cockpit = HorizonCockpitStore(
+            defaults: defaults,
+            batteryModeKey: "cockpit-battery-render"
+        )
+        let percentage = DashboardBatteryRenderState(
+            presentation: cockpit.batteryPrimaryReadoutState.presentation(
+                for: .init(
+                    displaySOCPercent: 73,
+                    estimatedRange: .valueMeters(13_518)
+                )
+            ),
+            dataAvailability: .live,
+            adaptiveRangeConfidence: nil
+        )
+        cockpit.toggleBatteryPrimaryReadout()
+        let range = DashboardBatteryRenderState(
+            presentation: cockpit.batteryPrimaryReadoutState.presentation(
+                for: .init(
+                    displaySOCPercent: 73,
+                    estimatedRange: .valueMeters(13_518)
+                )
+            ),
+            dataAvailability: .live,
+            adaptiveRangeConfidence: .normal
+        )
+        let unavailableRange = DashboardBatteryRenderState(
+            presentation: cockpit.batteryPrimaryReadoutState.presentation(
+                for: .init(
+                    displaySOCPercent: 73,
+                    estimatedRange: .unavailable
+                )
+            ),
+            dataAvailability: .live,
+            adaptiveRangeConfidence: nil
+        )
+
+        XCTAssertEqual(percentage.primaryText, "73%")
+        XCTAssertFalse(range.primaryText.contains("73%"))
+        XCTAssertEqual(unavailableRange.primaryText, "Unavailable")
+        XCTAssertEqual(percentage.fillFraction ?? -1, 0.73, accuracy: 0.0001)
+        XCTAssertEqual(range.fillFraction ?? -1, 0.73, accuracy: 0.0001)
+        XCTAssertEqual(range.adaptiveRangeConfidence, .normal)
+        XCTAssertEqual(unavailableRange.fillFraction ?? -1, 0.73, accuracy: 0.0001)
+        XCTAssertTrue(percentage.accessibilityHint.contains("adaptive range"))
+        XCTAssertTrue(range.accessibilityHint.contains("battery percentage"))
+        XCTAssertTrue(range.accessibilityValue.contains("Fill represents state of charge"))
+        XCTAssertTrue(range.accessibilityValue.contains("Normal confidence"))
+        XCTAssertFalse(range.accessibilityValue.localizedCaseInsensitiveContains("percent"))
+        XCTAssertFalse(unavailableRange.accessibilityValue.localizedCaseInsensitiveContains("percent"))
+        XCTAssertEqual(
+            percentage.accessibilityValue.components(separatedBy: "percent").count - 1,
+            1,
+            "Percentage mode must announce the numeric SOC exactly once."
+        )
+    }
+
+    func testCockpitPowerSemanticsKeepAcceptedNowSeparateFromIlluminationAndPeak() {
+        let state = DashboardEnergyRailVisualState(
+            currentness: .live,
+            acceptedWatts: 500,
+            acceptedCurrentFraction: 0.77,
+            illuminatedFraction: 0.43,
+            acceptedPeakFraction: 0.92,
+            scaleOrigin: .simulator,
+            scaleCeilingWatts: 650
+        )
+        let semantics = DashboardPowerInstrumentSemantics(state: state, isSimulatorQA: true)
+
+        XCTAssertEqual(state.acceptedCurrentFraction, 0.77)
+        XCTAssertEqual(state.illuminatedFraction, 0.43)
+        XCTAssertEqual(state.acceptedPeakFraction, 0.92)
+        XCTAssertEqual(semantics.scaleText, "QA SCALE · 650 W")
+        XCTAssertTrue(semantics.accessibilityValue.contains("NOW, 500 accepted watts"))
+        XCTAssertTrue(semantics.accessibilityValue.contains("positioned from zero toward positive propulsion"))
+        XCTAssertTrue(semantics.accessibilityValue.contains("hollow marker"))
+
+        for rejectedClaim in ["throttle", "regen", "rated", "motor capacity", "negative", "-18", "kW"] {
+            XCTAssertFalse(semantics.accessibilityValue.localizedCaseInsensitiveContains(rejectedClaim))
+            XCTAssertFalse(semantics.scaleText?.localizedCaseInsensitiveContains(rejectedClaim) == true)
+        }
+    }
+
+    func testCockpitRideDurationFormattingFailsClosedBeyondGlanceSurfaceCapacity() {
+        XCTAssertEqual(DashboardRideDurationFormatting.text(seconds: nil), "—")
+        XCTAssertEqual(DashboardRideDurationFormatting.text(seconds: .nan), "—")
+        XCTAssertEqual(DashboardRideDurationFormatting.text(seconds: .infinity), "—")
+        XCTAssertEqual(DashboardRideDurationFormatting.text(seconds: .greatestFiniteMagnitude), "—")
+        XCTAssertEqual(DashboardRideDurationFormatting.text(seconds: -0.1), "—")
+        XCTAssertEqual(DashboardRideDurationFormatting.text(seconds: 0), "0:00")
+        XCTAssertEqual(DashboardRideDurationFormatting.text(seconds: 59.99), "0:59")
+        XCTAssertEqual(DashboardRideDurationFormatting.text(seconds: 60), "1:00")
+        XCTAssertEqual(DashboardRideDurationFormatting.text(seconds: 3_661.8), "1:01:01")
+        XCTAssertEqual(DashboardRideDurationFormatting.text(seconds: 359_999.999), "99:59:59")
+        XCTAssertEqual(DashboardRideDurationFormatting.text(seconds: 360_000), "—")
+    }
+
+    func testCockpitPowerSemanticsMentionsPeakOnlyWhenMarkerIsRendered() {
+        let nearCurrent = DashboardEnergyRailVisualState(
+            currentness: .live,
+            acceptedWatts: 500,
+            acceptedCurrentFraction: 0.77,
+            illuminatedFraction: 0.70,
+            acceptedPeakFraction: 0.78,
+            scaleOrigin: .simulator,
+            scaleCeilingWatts: 650
+        )
+        let distinctPeak = DashboardEnergyRailVisualState(
+            currentness: .live,
+            acceptedWatts: 500,
+            acceptedCurrentFraction: 0.77,
+            illuminatedFraction: 0.70,
+            acceptedPeakFraction: 0.92,
+            scaleOrigin: .simulator,
+            scaleCeilingWatts: 650
+        )
+
+        XCTAssertNil(DashboardPowerPeakMarkerPolicy.visiblePeakFraction(
+            current: nearCurrent.acceptedCurrentFraction,
+            peak: nearCurrent.acceptedPeakFraction
+        ))
+        XCTAssertFalse(
+            DashboardPowerInstrumentSemantics(state: nearCurrent, isSimulatorQA: true)
+                .accessibilityValue.localizedCaseInsensitiveContains("peak")
+        )
+        XCTAssertEqual(DashboardPowerPeakMarkerPolicy.visiblePeakFraction(
+            current: distinctPeak.acceptedCurrentFraction,
+            peak: distinctPeak.acceptedPeakFraction
+        ), 0.92)
+        XCTAssertNil(
+            DashboardPowerPeakMarkerPolicy.visiblePeakFraction(
+                current: 0.77,
+                peak: 0.40
+            ),
+            "A lower historical sample cannot be presented as a peak ahead of NOW."
+        )
+        XCTAssertTrue(
+            DashboardPowerInstrumentSemantics(state: distinctPeak, isSimulatorQA: true)
+                .accessibilityValue.localizedCaseInsensitiveContains("hollow marker")
+        )
+    }
+
+#if targetEnvironment(simulator)
+    @MainActor
+    func testCockpitPowerModelBindsNOWToExactSourceReceiptWhileIlluminationSettles() async throws {
+        let service = Nembra.SimulatedScooterService(
+            initialState: Nembra.SimulatedScooterService.state(for: .riding),
+            commandLatencyNanoseconds: 0
+        )
+        let store = Nembra.VehicleStore(
+            service: service,
+            initialState: await service.snapshot(),
+            shouldAutoConnectOnStart: false,
+            speedInstrumentInterpolationPolicy: .simulatorQA
+        )
+        await store.start()
+
+        let initialProjectionArrived = await waitUntil {
+            store.simulatorPowerStoreProjection.currentness == .live
+        }
+        XCTAssertTrue(initialProjectionArrived)
+        let initialProjection = store.simulatorPowerStoreProjection
+        let initialReceipt = try XCTUnwrap(initialProjection.observation)
+
+        let model = DashboardEnergyRailModel()
+        model.synchronize(initialProjection, sourceCapabilityIsOwned: true)
+        let initial = model.presentation(
+            atUptimeNanoseconds: initialReceipt.receivedAtUptimeNanoseconds,
+            prefersReducedMotion: false
+        )
+        XCTAssertEqual(initial.currentness, .live)
+        XCTAssertEqual(initial.acceptedWatts, initialReceipt.watts)
+
+        await service.simulateRide(speedKilometersPerHour: 36, elapsedSeconds: 0)
+        let advancedReceiptArrived = await waitUntil {
+            guard let observation = store.simulatorPowerStoreProjection.observation else { return false }
+            return observation.receiptSequenceNumber > initialReceipt.receiptSequenceNumber
+        }
+        XCTAssertTrue(advancedReceiptArrived)
+
+        let advancedProjection = store.simulatorPowerStoreProjection
+        let advancedReceipt = try XCTUnwrap(advancedProjection.observation)
+        model.synchronize(advancedProjection, sourceCapabilityIsOwned: true)
+        let rising = model.presentation(
+            atUptimeNanoseconds: advancedReceipt.receivedAtUptimeNanoseconds,
+            prefersReducedMotion: false
+        )
+
+        XCTAssertEqual(rising.currentness, .live)
+        XCTAssertEqual(rising.acceptedWatts, advancedReceipt.watts)
+        XCTAssertEqual(
+            rising.acceptedCurrentFraction ?? -1,
+            advancedReceipt.watts / 650,
+            accuracy: 0.000_1
+        )
+        let illuminatedFraction = try XCTUnwrap(rising.illuminatedFraction)
+        let acceptedCurrentFraction = try XCTUnwrap(rising.acceptedCurrentFraction)
+        XCTAssertNotEqual(
+            illuminatedFraction,
+            acceptedCurrentFraction,
+            "The render-only illumination may settle, but NOW must move to the newly accepted receipt immediately."
+        )
+        XCTAssertTrue(model.shouldTick)
+
+        let reducedMotion = model.presentation(
+            atUptimeNanoseconds: advancedReceipt.receivedAtUptimeNanoseconds,
+            prefersReducedMotion: true
+        )
+        XCTAssertEqual(reducedMotion.illuminatedFraction, reducedMotion.acceptedCurrentFraction)
+
+        let renderWindowRetired = await waitUntil { !model.shouldTick }
+        XCTAssertTrue(renderWindowRetired, "Accepted power settling must retire its Timeline window.")
+
+        await service.disconnect()
+        let retainedProjectionArrived = await waitUntil {
+            store.simulatorPowerStoreProjection.currentness == .retained
+        }
+        XCTAssertTrue(retainedProjectionArrived)
+        model.synchronize(store.simulatorPowerStoreProjection, sourceCapabilityIsOwned: true)
+        let retained = model.presentation(
+            atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+            prefersReducedMotion: false
+        )
+        XCTAssertEqual(retained.currentness, .retained)
+        XCTAssertEqual(retained.acceptedWatts, advancedReceipt.watts)
+        XCTAssertNil(retained.acceptedCurrentFraction)
+        XCTAssertNil(retained.illuminatedFraction)
+        XCTAssertNil(retained.acceptedPeakFraction)
+        XCTAssertFalse(model.shouldTick)
+
+        model.synchronize(.unavailable, sourceCapabilityIsOwned: true)
+        XCTAssertEqual(
+            model.presentation(
+                atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+                prefersReducedMotion: false
+            ),
+            .unavailable
+        )
+
+        model.stop()
+    }
+
+    @MainActor
+    func testCockpitSpeedSettlingRetiresItsTimelineWindow() async throws {
+        let model = SpeedInstrumentModel()
+        model.configureInterpolationPolicy(.simulatorQA)
+        model.accept(try speedSample(kilometersPerHour: 10, uptimeNanoseconds: 1_000_000_000))
+        model.accept(try speedSample(kilometersPerHour: 20, uptimeNanoseconds: 1_200_000_000))
+
+        XCTAssertTrue(model.isAnimationActive)
+        let renderWindowRetired = await waitUntil { !model.isAnimationActive }
+        XCTAssertTrue(renderWindowRetired, "Speed settling must retire its Timeline window.")
+    }
+#endif
+
+    func testCockpitPowerRetainedAndUnavailableNeverInventLiveGeometryOrZero() {
+        let retained = DashboardEnergyRailVisualState(
+            currentness: .retained,
+            acceptedWatts: 280,
+            acceptedCurrentFraction: nil,
+            illuminatedFraction: nil,
+            acceptedPeakFraction: nil,
+            scaleOrigin: nil,
+            scaleCeilingWatts: nil
+        )
+        let unavailable = DashboardEnergyRailVisualState.unavailable
+
+        XCTAssertNil(retained.acceptedCurrentFraction)
+        XCTAssertNil(retained.illuminatedFraction)
+        XCTAssertNil(retained.acceptedPeakFraction)
+        XCTAssertTrue(
+            DashboardPowerInstrumentSemantics(state: retained, isSimulatorQA: false)
+                .accessibilityValue.contains("Last known")
+        )
+        XCTAssertNil(unavailable.acceptedWatts)
+        XCTAssertNil(unavailable.acceptedCurrentFraction)
+        XCTAssertTrue(
+            DashboardPowerInstrumentSemantics(state: unavailable, isSimulatorQA: false)
+                .accessibilityValue.contains("No zero value")
+        )
+    }
+
+    func testCockpitPowerPresentationFailsClosedForMalformedOrUnrenderableStates() {
+        let malformedStates = [
+            DashboardEnergyRailVisualState(
+                currentness: .live,
+                acceptedWatts: .greatestFiniteMagnitude,
+                acceptedCurrentFraction: 0.5,
+                illuminatedFraction: 0.5,
+                acceptedPeakFraction: nil,
+                scaleOrigin: .simulator,
+                scaleCeilingWatts: 650
+            ),
+            DashboardEnergyRailVisualState(
+                currentness: .live,
+                acceptedWatts: 320,
+                acceptedCurrentFraction: .nan,
+                illuminatedFraction: 0.5,
+                acceptedPeakFraction: nil,
+                scaleOrigin: .simulator,
+                scaleCeilingWatts: 650
+            ),
+            DashboardEnergyRailVisualState(
+                currentness: .live,
+                acceptedWatts: 320,
+                acceptedCurrentFraction: 0.5,
+                illuminatedFraction: .infinity,
+                acceptedPeakFraction: nil,
+                scaleOrigin: .simulator,
+                scaleCeilingWatts: 650
+            ),
+            DashboardEnergyRailVisualState(
+                currentness: .retained,
+                acceptedWatts: 280,
+                acceptedCurrentFraction: 0.4,
+                illuminatedFraction: nil,
+                acceptedPeakFraction: nil,
+                scaleOrigin: nil,
+                scaleCeilingWatts: nil
+            )
+        ]
+
+        for malformed in malformedStates {
+            XCTAssertEqual(malformed.validatedForPresentation, .unavailable)
+            let semantics = DashboardPowerInstrumentSemantics(
+                state: malformed,
+                isSimulatorQA: true
+            )
+            XCTAssertEqual(semantics.currentnessText, "POWER UNAVAILABLE")
+            XCTAssertTrue(semantics.accessibilityValue.contains("No zero value"))
+            XCTAssertFalse(semantics.accessibilityValue.contains("NOW"))
+        }
+
+        let invalidOptionalPeak = DashboardEnergyRailVisualState(
+            currentness: .live,
+            acceptedWatts: 320,
+            acceptedCurrentFraction: 0.5,
+            illuminatedFraction: 0.4,
+            acceptedPeakFraction: .nan,
+            scaleOrigin: .simulator,
+            scaleCeilingWatts: 650
+        ).validatedForPresentation
+        XCTAssertEqual(invalidOptionalPeak.currentness, .live)
+        XCTAssertNil(invalidOptionalPeak.acceptedPeakFraction)
+    }
+
+    func testCockpitRenderScheduleMountsTimelineOnlyForAcceptedLiveSettling() {
+        XCTAssertEqual(
+            DashboardInstrumentRenderSchedule.resolve(
+                prefersReducedMotion: false,
+                hasLiveSpeed: true,
+                speedIsSettling: true,
+                ownsLivePowerSource: false,
+                powerIsSettling: false
+            ),
+            .timeline
+        )
+        XCTAssertEqual(
+            DashboardInstrumentRenderSchedule.resolve(
+                prefersReducedMotion: false,
+                hasLiveSpeed: false,
+                speedIsSettling: false,
+                ownsLivePowerSource: true,
+                powerIsSettling: true
+            ),
+            .timeline
+        )
+
+        for reducedMotion in [false, true] {
+            XCTAssertEqual(
+                DashboardInstrumentRenderSchedule.resolve(
+                    prefersReducedMotion: reducedMotion,
+                    hasLiveSpeed: reducedMotion,
+                    speedIsSettling: false,
+                    ownsLivePowerSource: reducedMotion,
+                    powerIsSettling: false
+                ),
+                .staticFrame
+            )
+        }
+        XCTAssertEqual(
+            DashboardInstrumentRenderSchedule.resolve(
+                prefersReducedMotion: true,
+                hasLiveSpeed: true,
+                speedIsSettling: true,
+                ownsLivePowerSource: true,
+                powerIsSettling: true
+            ),
+            .staticFrame
+        )
+
+        for rejectedSettlingContext in [
+            DashboardInstrumentRenderSchedule.resolve(
+                prefersReducedMotion: false,
+                hasLiveSpeed: true,
+                speedIsSettling: false,
+                ownsLivePowerSource: true,
+                powerIsSettling: false
+            ),
+            DashboardInstrumentRenderSchedule.resolve(
+                prefersReducedMotion: false,
+                hasLiveSpeed: false,
+                speedIsSettling: true,
+                ownsLivePowerSource: false,
+                powerIsSettling: false
+            ),
+            DashboardInstrumentRenderSchedule.resolve(
+                prefersReducedMotion: false,
+                hasLiveSpeed: false,
+                speedIsSettling: false,
+                ownsLivePowerSource: false,
+                powerIsSettling: true
+            )
+        ] {
+            XCTAssertEqual(rejectedSettlingContext, .staticFrame)
+        }
+    }
+
+    @MainActor
+    func testCockpitRollingSpeedSupportsThreeDigitsAndFailsClosedBeyondCapacity() throws {
+        XCTAssertTrue(RollingSpeedValueView.supports(0))
+        XCTAssertTrue(RollingSpeedValueView.supports(18.7))
+        XCTAssertTrue(RollingSpeedValueView.supports(123.4))
+        XCTAssertFalse(RollingSpeedValueView.supports(999.95))
+        XCTAssertFalse(RollingSpeedValueView.supports(.infinity))
+        XCTAssertFalse(RollingSpeedValueView.supports(-0.1))
+        XCTAssertFalse(RollingSpeedValueView.supports(nil))
+        XCTAssertTrue(DashboardSpeedDisplayPolicy.admitsCanonicalKilometersPerHour(123.4))
+        XCTAssertFalse(DashboardSpeedDisplayPolicy.admitsCanonicalKilometersPerHour(999.95))
+        XCTAssertFalse(DashboardSpeedDisplayPolicy.admitsCanonicalKilometersPerHour(.infinity))
+        XCTAssertFalse(DashboardSpeedDisplayPolicy.admitsCanonicalKilometersPerHour(-0.1))
+
+        let overCapacity = try Nembra.SpeedTelemetrySample(
+            source: .scooterBluetooth,
+            provenance: .absoluteMeasurement,
+            metersPerSecond: 1_000 / 3.6,
+            receivedAtUptimeNanoseconds: 1,
+            receivedAtDate: Date(timeIntervalSince1970: 0)
+        )
+        XCTAssertEqual(
+            Nembra.SpeedEvidenceAvailability.live(overCapacity)
+                .dashboardPresentationAvailability,
+            .unavailable
+        )
+    }
+
+    func testCockpitSpeedUnitsResolveOnceFromPreferenceAndSystemPolicy() {
+        XCTAssertTrue(DashboardSpeedUnitPresentation.usesMetric(
+            preferenceRawValue: NembraUnitsPreference.system.rawValue,
+            systemUsesMetric: true
+        ))
+        XCTAssertFalse(DashboardSpeedUnitPresentation.usesMetric(
+            preferenceRawValue: NembraUnitsPreference.system.rawValue,
+            systemUsesMetric: false
+        ))
+        XCTAssertTrue(DashboardSpeedUnitPresentation.usesMetric(
+            preferenceRawValue: NembraUnitsPreference.metric.rawValue,
+            systemUsesMetric: false
+        ))
+        XCTAssertFalse(DashboardSpeedUnitPresentation.usesMetric(
+            preferenceRawValue: NembraUnitsPreference.miles.rawValue,
+            systemUsesMetric: true
+        ))
     }
 
     func testMaxshotIdentityIsHumanReadable() {
@@ -102,33 +580,8 @@ final class NembraAppTests: XCTestCase {
         XCTAssertTrue(capabilities.verifiedSpeedLimitSlotByRideMode.isEmpty)
     }
 
-    func testDashboardModePersonalityIsVisualOnlyAndDistinct() {
-        let unknown = DashboardModePersonality.resolved(for: nil)
-        let walk = DashboardModePersonality.resolved(for: .walk)
-        let eco = DashboardModePersonality.resolved(for: .eco)
-        let drive = DashboardModePersonality.resolved(for: .drive)
-        let sport = DashboardModePersonality.resolved(for: .sport)
-
-        XCTAssertNil(unknown.mode)
-        XCTAssertEqual(walk.mode, .walk)
-        XCTAssertEqual(eco.mode, .eco)
-        XCTAssertEqual(drive.mode, .drive)
-        XCTAssertEqual(sport.mode, .sport)
-
-        XCTAssertLessThan(walk.speedScale, eco.speedScale)
-        XCTAssertLessThan(eco.speedScale, drive.speedScale)
-        XCTAssertLessThan(drive.speedScale, sport.speedScale)
-        XCTAssertLessThan(walk.ambientOpacity, eco.ambientOpacity)
-        XCTAssertLessThan(eco.ambientOpacity, drive.ambientOpacity)
-        XCTAssertLessThan(drive.ambientOpacity, sport.ambientOpacity)
-
-        // Mode personality is presentation state only. The verified MAXSHOT
-        // protocol model must remain unmapped until real hardware proves a
-        // relationship between ride modes and the three speed-limit slots.
-        XCTAssertTrue(VehicleProfile.maxshotV1SPro.capabilities.verifiedSpeedLimitSlotByRideMode.isEmpty)
-    }
-
     func testSimulationScenarioLaunchArgumentParsing() {
+        XCTAssertTrue(AppBootstrap.simulationRuntimeIsAuthorized)
         let scenario = AppBootstrap.simulationScenario(
             arguments: ["Nembra", "--nembra-simulation=cold-disconnected"],
             environment: [:]
@@ -512,7 +965,7 @@ final class NembraAppTests: XCTestCase {
         model.accept(try speedSample(kilometersPerHour: 30, uptimeNanoseconds: 1_900_000_000))
         XCTAssertEqual(model.measurementRevision, 1)
 
-        let estimate = try SpeedTelemetrySample(
+        let estimate = try Nembra.SpeedTelemetrySample(
             source: .motionAssist,
             provenance: .shortHorizonEstimate,
             metersPerSecond: 9,
@@ -532,15 +985,15 @@ final class NembraAppTests: XCTestCase {
 
     @MainActor
     func testSimulatorQASpeedRequiresExplicitSimulatorPresentationProfile() throws {
-        let sample = try SpeedTelemetrySample(
+        let sample = try Nembra.SpeedTelemetrySample(
             source: .simulatorQA,
             provenance: .absoluteMeasurement,
             metersPerSecond: 5,
             receivedAtUptimeNanoseconds: 2_200_000_000,
             receivedAtDate: Date(timeIntervalSince1970: 0)
         )
-        let live = SpeedEvidenceAvailability.live(sample)
-        let retained = SpeedEvidenceAvailability.retained(sample)
+        let live = Nembra.SpeedEvidenceAvailability.live(sample)
+        let retained = Nembra.SpeedEvidenceAvailability.retained(sample)
 
         XCTAssertEqual(live.dashboardPresentationAvailability, .unavailable)
         XCTAssertEqual(retained.dashboardPresentationAvailability, .unavailable)
@@ -599,15 +1052,15 @@ final class NembraAppTests: XCTestCase {
         model.setSpeedEvidenceAvailability(.live(second))
         XCTAssertTrue(model.isAnimationActive)
 
-        let estimate = try SpeedTelemetrySample(
+        let estimate = try Nembra.SpeedTelemetrySample(
             source: .motionAssist,
             provenance: .shortHorizonEstimate,
             metersPerSecond: 9,
             receivedAtUptimeNanoseconds: 1_300_000_000,
             receivedAtDate: Date(timeIntervalSince1970: 0)
         )
-        let forgedLive: SpeedEvidenceAvailability = .live(estimate)
-        let forgedRetained: SpeedEvidenceAvailability = .retained(estimate)
+        let forgedLive: Nembra.SpeedEvidenceAvailability = .live(estimate)
+        let forgedRetained: Nembra.SpeedEvidenceAvailability = .retained(estimate)
 
         XCTAssertFalse(estimate.isAuthoritativeMeasurement)
         XCTAssertEqual(forgedLive.dashboardPresentationAvailability, .unavailable)
@@ -753,7 +1206,7 @@ final class NembraAppTests: XCTestCase {
         // source + monotonic receipt uptime + numeric speed key. Its wall-clock receipt
         // metadata differs, so whole-sample identity must prevent reuse of the old
         // interpolation target during the same-render-before-onChange race window.
-        let metadataDistinctSample = try SpeedTelemetrySample(
+        let metadataDistinctSample = try Nembra.SpeedTelemetrySample(
             source: second.source,
             provenance: second.provenance,
             metersPerSecond: second.metersPerSecond,
@@ -843,8 +1296,8 @@ final class NembraAppTests: XCTestCase {
     private func speedSample(
         kilometersPerHour: Double,
         uptimeNanoseconds: UInt64
-    ) throws -> SpeedTelemetrySample {
-        try SpeedTelemetrySample(
+    ) throws -> Nembra.SpeedTelemetrySample {
+        try Nembra.SpeedTelemetrySample(
             source: .scooterBluetooth,
             provenance: .absoluteMeasurement,
             metersPerSecond: kilometersPerHour / 3.6,
