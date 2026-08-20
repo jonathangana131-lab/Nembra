@@ -145,6 +145,7 @@ final class RideUITests: XCTestCase {
         app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = "riding"
         app.launchEnvironment["NEMBRA_SIMULATION_STORAGE_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["NEMBRA_SIMULATION_AUTOCOMPLETE_RIDE"] = "1"
+        app.launchEnvironment["NEMBRA_SIMULATION_APPEARANCE"] = "dark"
         app.launch()
 
         let ridesTab = app.tabBars.buttons["Rides"]
