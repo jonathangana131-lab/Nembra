@@ -1,20 +1,33 @@
 name: Capture app authorization race-safe GO
 # Carrier-native sole writer. Pull-request execution is intentional so same-repo
 # carrier updates create observable Xcode-27 runs; publication remains exact-head
-# and fail-closed across overlapping product/authority movement.
+# and fail-closed across overlapping product/authority movement. Re-run when the
+# canonical transform/controller/acceptance inputs move so tested app wiring cannot
+# remain stranded behind a stale one-file trigger.
 
 on:
+  workflow_dispatch:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     branches:
       - main
     paths:
       - .github/workflows/capture-app-authorization-race-safe-go.yml
+      - .github/workflows/capture-app-authorization-close-one-shot.yml
+      - NembraApp/App/NembraCaptureFieldAuthorizationController.swift
+      - Packages/NembraBluetoothCapture/Sources/NembraCaptureAppAuthorization/**
+      - scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
+      - NembraCapture.xcodeproj/**
   push:
     branches:
       - product/capture-1-0-main-20260818
     paths:
       - .github/workflows/capture-app-authorization-race-safe-go.yml
+      - .github/workflows/capture-app-authorization-close-one-shot.yml
+      - NembraApp/App/NembraCaptureFieldAuthorizationController.swift
+      - Packages/NembraBluetoothCapture/Sources/NembraCaptureAppAuthorization/**
+      - scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
+      - NembraCapture.xcodeproj/**
 
 permissions:
   contents: write
@@ -84,8 +97,20 @@ jobs:
 
           app = Path(os.environ["APP_SOURCE"])
           source = app.read_text(encoding="utf-8")
-          old = '''                            self.phase = .failed\n                            self.message = "The accepted evidence could not complete immutable artifact authorization sealing: \\(error.localizedDescription). Relaunch Capture before another attempt."\n                            self.log("field_authorization_or_artifact_freeze_rejected", [\n                                "generation": String(token.diagnosticGeneration),\n                                "error": error.localizedDescription\n                            ])\n                            return\n'''
-          new = '''                            self.failLocally(\n                                "The accepted evidence could not complete immutable artifact authorization sealing: \\(error.localizedDescription). Relaunch Capture before another attempt.",\n                                "field_authorization_or_artifact_freeze_rejected"\n                            )\n                            return\n'''
+          old = '''                            self.phase = .failed
+                            self.message = "The accepted evidence could not complete immutable artifact authorization sealing: \\(error.localizedDescription). Relaunch Capture before another attempt."
+                            self.log("field_authorization_or_artifact_freeze_rejected", [
+                                "generation": String(token.diagnosticGeneration),
+                                "error": error.localizedDescription
+                            ])
+                            return
+'''
+          new = '''                            self.failLocally(
+                                "The accepted evidence could not complete immutable artifact authorization sealing: \\(error.localizedDescription). Relaunch Capture before another attempt.",
+                                "field_authorization_or_artifact_freeze_rejected"
+                            )
+                            return
+'''
           if source.count(old) != 1:
               raise SystemExit(
                   f"accepted-artifact fail-closed correction anchor count was {source.count(old)}; refusing"
