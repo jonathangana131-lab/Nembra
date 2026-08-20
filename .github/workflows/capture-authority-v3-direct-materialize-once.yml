@@ -42,7 +42,7 @@ jobs:
           test -f "$SELF_WORKFLOW"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Materialize reviewed end-to-end app authorization transform
+      - name: Materialize reviewed app authorization with V3 fail-closed corrections
         shell: python
         run: |
           from pathlib import Path
@@ -60,6 +60,18 @@ jobs:
           script = "\n".join(line[10:] if line else "" for line in lines) + "\n"
           exec(compile(script, "capture-app-authorization-close-one-shot", "exec"), {"__name__": "__main__"})
 
+          source = app.read_text(encoding="utf-8")
+          armed_fence = '''            if phase == .failed {\n                if fieldAuthorization.stage != .armed {\n                    fieldAuthorization.revoke()\n                }\n'''
+          if source.count(armed_fence) != 1:
+              raise SystemExit(f"fresh-armed preservation fence count was {source.count(armed_fence)}; refusing")
+
+          old_seal = '''                        do {\n                            try self.freezeAcceptedArtifactForAuthorizationSeal()\n                            try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()\n                        } catch {\n                            self.fieldAuthorization.revoke()\n                            self.sealedAcceptedExport = nil\n                            self.sealedAcceptedArtifact = nil\n                            self.exportData = nil\n                            self.acceptedArtifactSHA256 = nil\n                            self.acceptedArtifactByteCount = nil\n                            self.exportName = "Nembra-Secure-Link-\\(deviceID.prefix(8))-Diagnostics.json"\n                            self.fieldAuthorizationStatus = "One-time field authorization was revoked before accepted-artifact promotion."\n                            self.currentConnectionToken = nil\n                            self.localBLESettlementToken = nil\n                            self.sdkLocalBLEOnline = false\n                            self.driver = nil\n                            self.phase = .failed\n                            self.message = "The accepted evidence could not complete immutable artifact authorization sealing: \\(error.localizedDescription). Relaunch Capture before another attempt."\n                            self.log("field_authorization_or_artifact_freeze_rejected", [\n                                "generation": String(token.diagnosticGeneration),\n                                "error": error.localizedDescription\n                            ])\n                            return\n                        }\n'''
+          new_seal = '''                        do {\n                            try self.freezeAcceptedArtifactForAuthorizationSeal()\n                        } catch {\n                            self.fieldAuthorization.revoke()\n                            self.sealedAcceptedExport = nil\n                            self.sealedAcceptedArtifact = nil\n                            self.exportData = nil\n                            self.acceptedArtifactSHA256 = nil\n                            self.acceptedArtifactByteCount = nil\n                            self.exportName = "Nembra-Secure-Link-\\(deviceID.prefix(8))-Diagnostics.json"\n                            self.fieldAuthorizationStatus = "One-time field authorization was revoked because accepted evidence could not freeze exactly."\n                            self.currentConnectionToken = nil\n                            self.localBLESettlementToken = nil\n                            self.sdkLocalBLEOnline = false\n                            self.driver = nil\n                            self.failLocally(\n                                "Accepted observation could not freeze one exact immutable artifact: \\(error.localizedDescription). Relaunch Capture before another attempt.",\n                                "field_authorization_exact_artifact_freeze_failed"\n                            )\n                            return\n                        }\n                        do {\n                            try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()\n                        } catch {\n                            self.fieldAuthorization.revoke()\n                            self.sealedAcceptedExport = nil\n                            self.sealedAcceptedArtifact = nil\n                            self.exportData = nil\n                            self.acceptedArtifactSHA256 = nil\n                            self.acceptedArtifactByteCount = nil\n                            self.exportName = "Nembra-Secure-Link-\\(deviceID.prefix(8))-Diagnostics.json"\n                            self.fieldAuthorizationStatus = "One-time field authorization was revoked before accepted-artifact promotion."\n                            self.currentConnectionToken = nil\n                            self.localBLESettlementToken = nil\n                            self.sdkLocalBLEOnline = false\n                            self.driver = nil\n                            self.failLocally(\n                                "Accepted observation was frozen exactly, but its one-attempt field authorization could not be sealed: \\(error.localizedDescription). Relaunch Capture before another attempt.",\n                                "field_authorization_exact_artifact_seal_failed"\n                            )\n                            return\n                        }\n'''
+          if source.count(old_seal) != 1:
+              raise SystemExit(f"combined freeze/seal failure block count was {source.count(old_seal)}; refusing")
+          source = source.replace(old_seal, new_seal, 1)
+          app.write_text(source, encoding="utf-8")
+
       - name: Enforce truth-preserving source shape
         shell: bash
         run: |
@@ -76,6 +88,8 @@ jobs:
           grep -Fq 'try self.fieldAuthorization.admitObservationStart()' "$APP_SOURCE"
           grep -Fq 'try self.freezeAcceptedArtifactForAuthorizationSeal()' "$APP_SOURCE"
           grep -Fq 'try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()' "$APP_SOURCE"
+          grep -Fq 'field_authorization_exact_artifact_freeze_failed' "$APP_SOURCE"
+          grep -Fq 'field_authorization_exact_artifact_seal_failed' "$APP_SOURCE"
           grep -Fq 'requirementRow("One-time field authorization", ready: test.fieldAuthorizationReady)' "$APP_SOURCE"
           test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE")" = 0
           test "$(grep -Fc 'AuthenticatedStationaryCaptureAttemptCapability' "$APP_SOURCE")" = 0
