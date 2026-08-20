@@ -96,6 +96,7 @@ def verify_cross_binding(
     external_build_record_data: bytes,
     signed_build_evidence_data: bytes,
     final_go_record_data: bytes,
+    accepted_install_manifest_sha256: str,
     accepted_retained_ipa_sha256: str,
     accepted_external_build_record_sha256: str,
     accepted_signed_build_evidence_sha256: str,
@@ -104,6 +105,13 @@ def verify_cross_binding(
     accepted_intended_device_pseudonym_sha256: str,
 ) -> dict[str, Any]:
     """Return the canonical manifest only when every stable exact-subject binding agrees."""
+    accepted_manifest_sha = _digest(
+        accepted_install_manifest_sha256, "accepted install-manifest digest"
+    )
+    if sha256_hex(install_manifest_data) != accepted_manifest_sha:
+        raise RetainedInstallCrossBindingError(
+            "independently accepted install-manifest digest mismatch"
+        )
     manifest = manifest_contract.verify_manifest_bytes(install_manifest_data)
     external = _closed_pretty_json(
         external_build_record_data, EXTERNAL_KEYS, "external build record"
