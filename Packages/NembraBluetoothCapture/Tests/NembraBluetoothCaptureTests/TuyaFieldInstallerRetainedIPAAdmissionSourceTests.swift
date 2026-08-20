@@ -4,24 +4,24 @@ import Testing
 
 @Suite("Capture retained-IPA installer admission checkpoint")
 struct TuyaFieldInstallerRetainedIPAAdmissionSourceTests {
-    @Test("legacy rebuild and device actions are unreachable before the missing contract blocker")
-    func missingCurrentProcedureContractFailsBeforeLegacyAuthority() throws {
+    @Test("legacy rebuild install and device actions are deleted before final authority exists")
+    func legacyAuthorityPathsAreAbsent() throws {
         let installer = try source()
-        let blocker = try #require(installer.range(of: "Installation remains blocked:"))
-        let legacyBuild = try #require(installer.range(of: "if ! xcodebuild"))
-        let legacyInstall = try #require(
-            installer.range(of: "xcrun devicectl device install app")
-        )
 
-        #expect(blocker.lowerBound < legacyBuild.lowerBound)
-        #expect(blocker.lowerBound < legacyInstall.lowerBound)
-        #expect(installer.contains("No app was rebuilt or installed"))
+        #expect(installer.contains("Installation remains blocked:"))
+        #expect(installer.contains("No app was rebuilt, contacted, installed, launched, or authorized for OFF1"))
+        #expect(!installer.contains("xcodebuild"))
+        #expect(!installer.contains("devicectl"))
+        #expect(!installer.contains("xctrace"))
+        #expect(!installer.contains("codesign"))
+        #expect(!installer.contains("security cms"))
     }
 
     @Test("all stable pre-install subjects require explicit path and digest inputs")
     func everyStablePreInstallSubjectHasExplicitPathAndHash() throws {
         let installer = try source()
         for prefix in [
+            "NEMBRA_RETAINED_INSTALL_MANIFEST",
             "NEMBRA_RETAINED_IPA",
             "NEMBRA_ACCEPTED_BUILD_SUBJECT",
             "NEMBRA_ACCEPTED_EVIDENCE_SUBJECT",
@@ -41,9 +41,11 @@ struct TuyaFieldInstallerRetainedIPAAdmissionSourceTests {
         #expect(!installer.contains("NEMBRA_CURRENT_PROCEDURE_AUTHORIZATION_ENVELOPE_PATH"))
         #expect(!installer.contains("NEMBRA_CURRENT_PROCEDURE_AUTHORIZATION_ENVELOPE_SHA256"))
         #expect(!installer.contains("current-procedure authorization envelope"))
+        #expect(installer.contains("post-install envelope can exist only after the running"))
+        #expect(installer.contains("fresh process-local challenge"))
     }
 
-    @Test("retained input admission is no-follow, bounded, stable, and mode constrained")
+    @Test("retained input admission is no-follow, bounded, stable, mode and link constrained")
     func retainedInputCustodyFailsClosed() throws {
         let installer = try source()
 
@@ -57,6 +59,31 @@ struct TuyaFieldInstallerRetainedIPAAdmissionSourceTests {
         #expect(installer.contains("identity(after) != identity(before)"))
         #expect(installer.contains("hmac.compare_digest(digest.hexdigest(), expected)"))
         #expect(installer.contains("before.st_size > maximum"))
+        #expect(installer.contains("Self-test accepted a multiply linked retained subject"))
+    }
+
+    @Test("stable subjects must cross-bind before the unconditional NO-GO stop")
+    func crossBindingRunsBeforeNoGo() throws {
+        let installer = try source()
+        let helper = try #require(
+            installer.range(of: "es80_retained_install_cross_binding.py")
+        )
+        let verifier = try #require(installer.range(of: "helper.verify_cross_binding("))
+        let accepted = try #require(
+            installer.range(of: "Retained manifest cross-bound the accepted stable install/evidence tuple")
+        )
+        let blocker = try #require(installer.range(of: "Installation remains blocked:"))
+
+        #expect(helper.lowerBound < verifier.lowerBound)
+        #expect(verifier.lowerBound < accepted.lowerBound)
+        #expect(accepted.lowerBound < blocker.lowerBound)
+        #expect(installer.contains("accepted_install_manifest_sha256="))
+        #expect(installer.contains("accepted_retained_ipa_sha256="))
+        #expect(installer.contains("accepted_external_build_record_sha256="))
+        #expect(installer.contains("accepted_signed_build_evidence_sha256="))
+        #expect(installer.contains("accepted_final_go_record_sha256="))
+        #expect(installer.contains("accepted_tuya_lock_sha256="))
+        #expect(installer.contains("accepted_intended_device_pseudonym_sha256="))
     }
 
     @Test("self-test and dry-run cannot inherit tracing or place private values on argv")
@@ -69,6 +96,7 @@ struct TuyaFieldInstallerRetainedIPAAdmissionSourceTests {
         #expect(installer.contains("private values and hashes must not be placed on argv"))
         #expect(!installer.contains("NEMBRA_FIELD_AUTHORIZATION_PRIVATE_KEY"))
         #expect(!installer.contains("PRIVATE_KEY_PATH"))
+        #expect(!installer.contains("publicKeyX963Representation"))
     }
 
     private func source() throws -> String {
