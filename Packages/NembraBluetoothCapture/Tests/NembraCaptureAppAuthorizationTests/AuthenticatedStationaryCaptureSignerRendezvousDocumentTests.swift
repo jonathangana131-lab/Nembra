@@ -67,7 +67,7 @@ struct AuthenticatedStationaryCaptureSignerRendezvousDocumentTests {
         )
     }
 
-    @Test("malformed challenge and impossible clocks fail before export")
+    @Test("malformed challenge, procedure, and impossible clocks fail before export")
     func invalidFactsFailClosed() {
         let validUptime: UInt64 = 10_000_000_000
         let procedure = AuthenticatedStationaryCaptureFieldAuthorizationVerifier.procedureID
@@ -89,6 +89,16 @@ struct AuthenticatedStationaryCaptureSignerRendezvousDocumentTests {
                     startedAtWallClockUnixMilliseconds: 0,
                     startedAtUptimeNanoseconds: validUptime,
                     procedureID: procedure
+                )
+            )
+        }
+        #expect(throws: AuthenticatedStationaryCaptureSignerRendezvousDocumentError.invalidProcedure) {
+            _ = try AuthenticatedStationaryCaptureSignerRendezvousDocument.encode(
+                .init(
+                    challengeSHA256: String(repeating: "a", count: 64),
+                    startedAtWallClockUnixMilliseconds: 1,
+                    startedAtUptimeNanoseconds: validUptime,
+                    procedureID: "wrong-procedure"
                 )
             )
         }
