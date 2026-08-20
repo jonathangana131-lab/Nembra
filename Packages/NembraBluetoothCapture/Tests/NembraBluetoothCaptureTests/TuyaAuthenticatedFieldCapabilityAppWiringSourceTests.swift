@@ -2,8 +2,10 @@ import Foundation
 import Testing
 @testable import NembraBluetoothCapture
 
+/// The type name deliberately carries the existing V16 exact-head filter so these app-wiring
+/// requirements cannot remain dormant while the standalone product advances.
 @Suite("Capture authenticated field-capability app wiring")
-struct TuyaAuthenticatedFieldCapabilityAppWiringSourceTests {
+struct CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring {
     @Test("standalone target compiles the app authorization coordinator")
     func standaloneTargetCompilesAuthorizationComposition() throws {
         let project = try repositoryFile("NembraCapture.xcodeproj/project.pbxproj")
