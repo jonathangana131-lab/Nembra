@@ -31,10 +31,12 @@ public enum AuthenticatedStationaryCaptureAppAuthorizerError: Error, Equatable, 
 /// App-owned composition seam for authenticated stationary Capture authorization.
 ///
 /// This adapter deliberately owns no Boolean field-authority switch. It can only:
-/// 1. ask `NembraBluetoothCapture` to create a live, runtime-bound attempt;
-/// 2. expose that attempt's random challenge to the independent signing workflow; and
-/// 3. cross-bind the retained install manifest to the running build and stable attempt bindings
-///    before presenting the post-install signed envelope to the package verifier.
+/// 1. prove the retained install manifest matches the application that is actually running;
+/// 2. ask `NembraBluetoothCapture` to create a live, runtime-bound attempt from those exact stable
+///    manifest bindings;
+/// 3. expose that attempt's random challenge to the independent signing workflow; and
+/// 4. re-check the retained manifest before presenting the post-install signed envelope to the
+///    package verifier.
 ///
 /// The retained install manifest intentionally cannot contain the signed authorization envelope:
 /// that envelope depends on the fresh process-local challenge created after installation. The
@@ -58,9 +60,26 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
         self.consumptionStore = consumptionStore
     }
 
-    /// Starts one live authorization attempt from the separately accepted external install/evidence
-    /// bindings. The app-generated challenge is needed before the signer can create the envelope.
-    /// This does not start OFF1, scan Bluetooth, authenticate Tuya, or grant physical GO.
+    /// Preferred production entry point. The signer rendezvous cannot begin until the exact retained
+    /// install manifest has been decoded and cross-bound to the running bundle/build identity.
+    /// Returning a challenge is not physical authority and does not consume replay state.
+    public func beginAttempt(
+        installManifestData: Data
+    ) throws -> AuthenticatedStationaryCapturePreparedAttempt {
+        let runtimeBuildIdentity = try PassiveBluetoothCaptureRuntimeBuildIdentityReader
+            .currentApplication()
+        let manifest = try validateInstallManifestForRunningApplication(
+            installManifestData,
+            currentBundleIdentifier: Bundle.main.bundleIdentifier,
+            runtimeBuildIdentity: runtimeBuildIdentity
+        )
+        return try beginAttempt(externalBindings: manifest.externalBindings())
+    }
+
+    /// Lower-level composition seam retained for callers that have already established the exact
+    /// stable external bindings through a separately accepted path. Normal app flow should prefer
+    /// `beginAttempt(installManifestData:)` so stale/caller-substituted retained subjects cannot even
+    /// obtain a signer challenge.
     public func beginAttempt(
         externalBindings: AuthenticatedStationaryCaptureExternalBindings
     ) throws -> AuthenticatedStationaryCapturePreparedAttempt {
@@ -93,21 +112,33 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
         )
     }
 
-    private func validateInstallManifest(
+    private func validateInstallManifestForRunningApplication(
         _ installManifestData: Data,
-        preparedAttempt: AuthenticatedStationaryCapturePreparedAttempt,
         currentBundleIdentifier: String?,
         runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity
-    ) throws {
+    ) throws -> AuthenticatedStationaryCaptureInstallManifest {
         let manifest = try AuthenticatedStationaryCaptureInstallManifestVerifier
             .decodeCanonical(installManifestData)
-
         guard currentBundleIdentifier == manifest.bundleIdentifier else {
             throw AuthenticatedStationaryCaptureAppAuthorizerError.manifestBundleMismatch
         }
         guard manifest.matches(runtimeBuildIdentity: runtimeBuildIdentity) else {
             throw AuthenticatedStationaryCaptureAppAuthorizerError.manifestRuntimeMismatch
         }
+        return manifest
+    }
+
+    private func validateInstallManifest(
+        _ installManifestData: Data,
+        preparedAttempt: AuthenticatedStationaryCapturePreparedAttempt,
+        currentBundleIdentifier: String?,
+        runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity
+    ) throws {
+        let manifest = try validateInstallManifestForRunningApplication(
+            installManifestData,
+            currentBundleIdentifier: currentBundleIdentifier,
+            runtimeBuildIdentity: runtimeBuildIdentity
+        )
         guard try manifest.externalBindings() == preparedAttempt.packageAttempt.externalBindings else {
             throw AuthenticatedStationaryCaptureAppAuthorizerError.manifestAttemptBindingsMismatch
         }
@@ -126,6 +157,31 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
             preparedAttempt: preparedAttempt,
             currentBundleIdentifier: currentBundleIdentifier,
             runtimeBuildIdentity: runtimeBuildIdentity
+        )
+    }
+
+    /// Deterministic pre-signing seam used only by package tests. It proves the exact manifest is
+    /// accepted for the supplied test runtime before creating the challenge-bound attempt.
+    package func prepareFromInstallManifestForTesting(
+        _ installManifestData: Data,
+        challenge: Data,
+        currentBundleIdentifier: String?,
+        runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity,
+        wallClockUnixMilliseconds: Int64,
+        uptimeNanoseconds: UInt64
+    ) throws -> AuthenticatedStationaryCapturePreparedAttempt {
+        let manifest = try validateInstallManifestForRunningApplication(
+            installManifestData,
+            currentBundleIdentifier: currentBundleIdentifier,
+            runtimeBuildIdentity: runtimeBuildIdentity
+        )
+        return try prepareForTesting(
+            externalBindings: manifest.externalBindings(),
+            challenge: challenge,
+            bundleIdentifier: try #requireBundleIdentifier(currentBundleIdentifier),
+            runtimeBuildIdentity: runtimeBuildIdentity,
+            wallClockUnixMilliseconds: wallClockUnixMilliseconds,
+            uptimeNanoseconds: uptimeNanoseconds
         )
     }
 
@@ -148,5 +204,12 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
             uptimeNanoseconds: uptimeNanoseconds
         )
         return AuthenticatedStationaryCapturePreparedAttempt(packageAttempt: attempt)
+    }
+
+    private func requireBundleIdentifier(_ value: String?) throws -> String {
+        guard let value else {
+            throw AuthenticatedStationaryCaptureAppAuthorizerError.manifestBundleMismatch
+        }
+        return value
     }
 }
