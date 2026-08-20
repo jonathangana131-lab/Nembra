@@ -54,6 +54,7 @@ struct AuthenticatedStationaryCaptureAppAuthorizerTests {
     private func manifestData(
         runtime: PassiveBluetoothCaptureRuntimeBuildIdentity,
         externalBindings: AuthenticatedStationaryCaptureExternalBindings,
+        retainedIPASHA256: String = String(repeating: "6", count: 64),
         bundleIdentifier: String? = nil
     ) throws -> Data {
         let object: [String: Any] = [
@@ -64,7 +65,7 @@ struct AuthenticatedStationaryCaptureAppAuthorizerTests {
             "bundleIdentifier": bundleIdentifier ?? self.bundleIdentifier,
             "buildIdentifier": runtime.buildIdentifier,
             "buildInstanceID": runtime.buildInstanceID,
-            "retainedIPASHA256": String(repeating: "6", count: 64),
+            "retainedIPASHA256": retainedIPASHA256,
             "executableSHA256": runtime.executableSHA256,
             "infoPlistSHA256": runtime.infoPlistSHA256,
             "tuyaDependencyLockSHA256": externalBindings.tuyaDependencyLockSHA256,
@@ -82,10 +83,18 @@ struct AuthenticatedStationaryCaptureAppAuthorizerTests {
     private func preparedAttempt(
         authorizer: AuthenticatedStationaryCaptureAppAuthorizer,
         externalBindings: AuthenticatedStationaryCaptureExternalBindings,
-        runtime: PassiveBluetoothCaptureRuntimeBuildIdentity
+        runtime: PassiveBluetoothCaptureRuntimeBuildIdentity,
+        manifestData: Data? = nil
     ) throws -> AuthenticatedStationaryCapturePreparedAttempt {
-        try authorizer.prepareForTesting(
+        let admittedManifestData = try manifestData ?? self.manifestData(
+            runtime: runtime,
+            externalBindings: externalBindings
+        )
+        let admittedManifest = try AuthenticatedStationaryCaptureInstallManifestVerifier
+            .decodeCanonical(admittedManifestData)
+        return try authorizer.prepareForTesting(
             externalBindings: externalBindings,
+            installManifestSHA256: admittedManifest.canonicalManifestSHA256,
             challenge: Data(repeating: 0xA5, count: 32),
             bundleIdentifier: bundleIdentifier,
             runtimeBuildIdentity: runtime,
@@ -98,16 +107,23 @@ struct AuthenticatedStationaryCaptureAppAuthorizerTests {
     func preparedAttemptExposesChallengeWithoutPhysicalAuthority() throws {
         let store = RecordingConsumptionStore()
         let authorizer = AuthenticatedStationaryCaptureAppAuthorizer(consumptionStore: store)
+        let runtime = try runtimeIdentity()
+        let externalBindings = try bindings()
+        let manifest = try manifestData(runtime: runtime, externalBindings: externalBindings)
+        let decodedManifest = try AuthenticatedStationaryCaptureInstallManifestVerifier
+            .decodeCanonical(manifest)
         let prepared = try preparedAttempt(
             authorizer: authorizer,
-            externalBindings: bindings(),
-            runtime: runtimeIdentity()
+            externalBindings: externalBindings,
+            runtime: runtime,
+            manifestData: manifest
         )
 
         #expect(prepared.challengeSHA256 == "fc8b64001c5fdd0f2f40fb67dae4a865a2c5bd17836676d6d5b58b7917e33717")
         #expect(prepared.procedureID == AuthenticatedStationaryCaptureFieldAuthorizationVerifier.procedureID)
         #expect(prepared.startedAtWallClockUnixMilliseconds == 2_000_000)
         #expect(prepared.startedAtUptimeNanoseconds == 1_000_000_000)
+        #expect(prepared.installManifestSHA256 == decodedManifest.canonicalManifestSHA256)
         #expect(store.requests.isEmpty)
     }
 
@@ -117,14 +133,12 @@ struct AuthenticatedStationaryCaptureAppAuthorizerTests {
         let authorizer = AuthenticatedStationaryCaptureAppAuthorizer(consumptionStore: store)
         let runtime = try runtimeIdentity()
         let externalBindings = try bindings()
+        let manifest = try manifestData(runtime: runtime, externalBindings: externalBindings)
         let prepared = try preparedAttempt(
             authorizer: authorizer,
             externalBindings: externalBindings,
-            runtime: runtime
-        )
-        let manifest = try manifestData(
             runtime: runtime,
-            externalBindings: externalBindings
+            manifestData: manifest
         )
 
         try authorizer.validateInstallManifestForTesting(
@@ -136,17 +150,49 @@ struct AuthenticatedStationaryCaptureAppAuthorizerTests {
         #expect(store.requests.isEmpty)
     }
 
+    @Test("same runtime and bindings cannot substitute a different retained IPA manifest")
+    func retainedIPASubstitutionFailsExactManifestContinuity() throws {
+        let authorizer = AuthenticatedStationaryCaptureAppAuthorizer(
+            consumptionStore: RecordingConsumptionStore()
+        )
+        let runtime = try runtimeIdentity()
+        let externalBindings = try bindings()
+        let admitted = try manifestData(
+            runtime: runtime,
+            externalBindings: externalBindings,
+            retainedIPASHA256: String(repeating: "6", count: 64)
+        )
+        let substituted = try manifestData(
+            runtime: runtime,
+            externalBindings: externalBindings,
+            retainedIPASHA256: String(repeating: "7", count: 64)
+        )
+        let prepared = try preparedAttempt(
+            authorizer: authorizer,
+            externalBindings: externalBindings,
+            runtime: runtime,
+            manifestData: admitted
+        )
+
+        #expect(
+            throws: AuthenticatedStationaryCaptureAppAuthorizerError
+                .manifestChangedSinceAttemptBegan
+        ) {
+            try authorizer.validateInstallManifestForTesting(
+                substituted,
+                preparedAttempt: prepared,
+                currentBundleIdentifier: bundleIdentifier,
+                runtimeBuildIdentity: runtime
+            )
+        }
+    }
+
     @Test("pre-install manifest rejects post-install authorization-envelope fields")
     func authorizationEnvelopeCannotEnterPreInstallManifest() throws {
         let runtime = try runtimeIdentity()
         let externalBindings = try bindings()
-        let canonical = try manifestData(
-            runtime: runtime,
-            externalBindings: externalBindings
-        )
-        var object = try #require(
-            JSONSerialization.jsonObject(with: canonical) as? [String: Any]
-        )
+        let canonical = try manifestData(runtime: runtime, externalBindings: externalBindings)
+        var object = try #require(JSONSerialization.jsonObject(with: canonical) as? [String: Any])
         object["authorizationEnvelopeSHA256"] = String(repeating: "a", count: 64)
         let withPostInstallField = try JSONSerialization.data(
             withJSONObject: object,
@@ -162,27 +208,28 @@ struct AuthenticatedStationaryCaptureAppAuthorizerTests {
         }
     }
 
-    @Test("runtime build and prepared-attempt binding drift fail closed")
-    func buildAndAttemptBindingDriftFailClosed() throws {
+    @Test("runtime build, manifest identity, and prepared-attempt bindings drift fail closed")
+    func buildManifestAndAttemptBindingDriftFailClosed() throws {
         let authorizer = AuthenticatedStationaryCaptureAppAuthorizer(
             consumptionStore: RecordingConsumptionStore()
         )
         let runtime = try runtimeIdentity()
         let acceptedBindings = try bindings()
-        let prepared = try preparedAttempt(
-            authorizer: authorizer,
-            externalBindings: acceptedBindings,
-            runtime: runtime
-        )
-
-        let driftedRuntime = try runtimeIdentity(executableData: Data("different-app".utf8))
-        let runtimeManifest = try manifestData(
+        let acceptedManifest = try manifestData(
             runtime: runtime,
             externalBindings: acceptedBindings
         )
+        let prepared = try preparedAttempt(
+            authorizer: authorizer,
+            externalBindings: acceptedBindings,
+            runtime: runtime,
+            manifestData: acceptedManifest
+        )
+
+        let driftedRuntime = try runtimeIdentity(executableData: Data("different-app".utf8))
         #expect(throws: AuthenticatedStationaryCaptureAppAuthorizerError.manifestRuntimeMismatch) {
             try authorizer.validateInstallManifestForTesting(
-                runtimeManifest,
+                acceptedManifest,
                 preparedAttempt: prepared,
                 currentBundleIdentifier: bundleIdentifier,
                 runtimeBuildIdentity: driftedRuntime
@@ -194,13 +241,24 @@ struct AuthenticatedStationaryCaptureAppAuthorizerTests {
             runtime: runtime,
             externalBindings: driftedBindings
         )
+        let bindingsManifestDecoded = try AuthenticatedStationaryCaptureInstallManifestVerifier
+            .decodeCanonical(bindingsManifest)
+        let bindingMismatchPrepared = try authorizer.prepareForTesting(
+            externalBindings: acceptedBindings,
+            installManifestSHA256: bindingsManifestDecoded.canonicalManifestSHA256,
+            challenge: Data(repeating: 0xA5, count: 32),
+            bundleIdentifier: bundleIdentifier,
+            runtimeBuildIdentity: runtime,
+            wallClockUnixMilliseconds: 2_000_000,
+            uptimeNanoseconds: 1_000_000_000
+        )
         #expect(
             throws: AuthenticatedStationaryCaptureAppAuthorizerError
                 .manifestAttemptBindingsMismatch
         ) {
             try authorizer.validateInstallManifestForTesting(
                 bindingsManifest,
-                preparedAttempt: prepared,
+                preparedAttempt: bindingMismatchPrepared,
                 currentBundleIdentifier: bundleIdentifier,
                 runtimeBuildIdentity: runtime
             )
@@ -214,14 +272,12 @@ struct AuthenticatedStationaryCaptureAppAuthorizerTests {
         )
         let runtime = try runtimeIdentity()
         let externalBindings = try bindings()
+        let manifest = try manifestData(runtime: runtime, externalBindings: externalBindings)
         let prepared = try preparedAttempt(
             authorizer: authorizer,
             externalBindings: externalBindings,
-            runtime: runtime
-        )
-        let manifest = try manifestData(
             runtime: runtime,
-            externalBindings: externalBindings
+            manifestData: manifest
         )
 
         #expect(throws: AuthenticatedStationaryCaptureAppAuthorizerError.manifestBundleMismatch) {
@@ -243,6 +299,7 @@ struct AuthenticatedStationaryCaptureAppAuthorizerTests {
         #expect(throws: AuthenticatedStationaryCaptureFieldAuthorizationError.invalidAttemptClock) {
             _ = try authorizer.prepareForTesting(
                 externalBindings: bindings(),
+                installManifestSHA256: String(repeating: "a", count: 64),
                 challenge: Data(repeating: 0xA5, count: 31),
                 bundleIdentifier: bundleIdentifier,
                 runtimeBuildIdentity: runtimeIdentity(),
@@ -263,9 +320,12 @@ struct AuthenticatedStationaryCaptureAppAuthorizerTests {
             )
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
+        #expect(source.contains("public func beginAttempt(\n        installManifestData: Data"))
+        #expect(!source.contains("public func beginAttempt(\n        externalBindings:"))
         #expect(source.contains("makeCurrentApplicationAttempt"))
         #expect(source.contains("AuthenticatedStationaryCaptureInstallManifestVerifier"))
         #expect(source.contains("manifest.matches(runtimeBuildIdentity:"))
+        #expect(source.contains("manifest.canonicalManifestSHA256 == preparedAttempt.installManifestSHA256"))
         #expect(source.contains("manifest.externalBindings() == preparedAttempt.packageAttempt.externalBindings"))
         #expect(source.contains("verifyForCurrentApplication"))
         #expect(source.contains("ThisDeviceAuthorizationConsumptionStore"))
