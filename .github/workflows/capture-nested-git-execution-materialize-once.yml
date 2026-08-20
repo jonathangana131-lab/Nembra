@@ -78,7 +78,8 @@ jobs:
           rm -f "$patched_installer" "$PATCHER" "$AUTHORING_WORKFLOW"
           git add -- "$INSTALLER" "$PATCHER" "$AUTHORING_WORKFLOW"
           permanent="$(git diff --cached --name-only | sort)"
-          test "$permanent" = "$INSTALLER"
+          expected_permanent="$(printf '%s\n%s\n%s\n' "$INSTALLER" "$PATCHER" "$AUTHORING_WORKFLOW" | sort)"
+          test "$permanent" = "$expected_permanent"
           git diff --check --cached
 
           git config user.name 'github-actions[bot]'
