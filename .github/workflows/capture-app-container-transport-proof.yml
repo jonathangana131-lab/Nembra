@@ -25,6 +25,7 @@ jobs:
     env:
       EXPECTED_PARENT: d635ae9d0460a41c1bed04ee340537d2c994d963
       CONTRACT: scripts/ci/xcode27_devicectl_manifest_transport_contract.sh
+      SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Checkout immutable PR head
         if: github.event_name == 'pull_request'
@@ -46,8 +47,8 @@ jobs:
         run: |
           set -euo pipefail
           actual="$(git rev-parse --verify HEAD^{commit})"
+          test "$actual" = "$SUBJECT_SHA"
           if [[ "${{ github.event_name }}" == 'pull_request' ]]; then
-            test "$actual" = "${{ github.event.pull_request.head.sha }}"
             git fetch --no-tags origin product/capture-1-0-main-20260818
             test "$(git merge-base "$actual" "$EXPECTED_PARENT")" = "$EXPECTED_PARENT"
           fi
@@ -55,27 +56,37 @@ jobs:
           test "$(grep -Ec 'devicectl help device copy (to|from)' "$CONTRACT")" = 2
           test "$(grep -Ec 'devicectl device copy (to|from)' "$CONTRACT" || true)" = 0
           test "$(grep -Ec -- '--device|--udid|--identifier' "$CONTRACT" || true)" = 0
+          artifacts_dir="$RUNNER_TEMP/capture-app-container-transport"
+          mkdir -p "$artifacts_dir"
+          printf 'subject_sha=%s\nphysicalAuthorityCreated=false\ndeviceContacted=false\n' "$actual" > "$artifacts_dir/subject.txt"
           printf 'NEMBRA_CAPTURE_APP_CONTAINER_TRANSPORT_SUBJECT=%s physicalAuthorityCreated=false deviceContacted=false\n' "$actual"
 
       - name: Prove bidirectional appDataContainer help contract on Xcode 27
         shell: bash
         run: |
           set -euo pipefail
-          xcodebuild -version
           export ARTIFACTS_DIR="$RUNNER_TEMP/capture-app-container-transport"
-          /bin/bash "$CONTRACT" | tee "$RUNNER_TEMP/capture-app-container-transport-result.txt"
+          xcodebuild -version | tee "$ARTIFACTS_DIR/xcodebuild-version.txt"
+          printf 'NEMBRA_CAPTURE_APP_CONTAINER_TRANSPORT_SUBJECT=%s physicalAuthorityCreated=false deviceContacted=false\n' "$SUBJECT_SHA" > "$RUNNER_TEMP/capture-app-container-transport-result.txt"
+          /bin/bash "$CONTRACT" | tee -a "$RUNNER_TEMP/capture-app-container-transport-result.txt"
+          test -s "$ARTIFACTS_DIR/subject.txt"
+          grep -Fxq "subject_sha=$SUBJECT_SHA" "$ARTIFACTS_DIR/subject.txt"
+          test -s "$ARTIFACTS_DIR/xcodebuild-version.txt"
           test -s "$ARTIFACTS_DIR/devicectl-device-copy-to-help.txt"
           test -s "$ARTIFACTS_DIR/devicectl-device-copy-from-help.txt"
+          grep -Fq "NEMBRA_CAPTURE_APP_CONTAINER_TRANSPORT_SUBJECT=$SUBJECT_SHA" "$RUNNER_TEMP/capture-app-container-transport-result.txt"
           grep -Fq 'DEVICECTL_BIDIRECTIONAL_APP_CONTAINER_RENDEZVOUS_PRESENT' "$RUNNER_TEMP/capture-app-container-transport-result.txt"
 
       - name: Retain exact Xcode help evidence
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: capture-app-container-transport-${{ github.sha }}
+          name: capture-app-container-transport-${{ env.SUBJECT_SHA }}
           if-no-files-found: error
           retention-days: 14
           path: |
+            ${{ runner.temp }}/capture-app-container-transport/subject.txt
+            ${{ runner.temp }}/capture-app-container-transport/xcodebuild-version.txt
             ${{ runner.temp }}/capture-app-container-transport/devicectl-device-copy-to-help.txt
             ${{ runner.temp }}/capture-app-container-transport/devicectl-device-copy-from-help.txt
             ${{ runner.temp }}/capture-app-container-transport-result.txt
@@ -84,5 +95,5 @@ jobs:
         if: success()
         shell: bash
         run: |
-          printf '%s\n' 'PROVEN: this exact Xcode 27 toolchain documents bidirectional appDataContainer copy controls.'
+          printf '%s\n' 'PROVEN: this exact retained Xcode toolchain documents bidirectional appDataContainer copy controls for the bound exact source subject.'
           printf '%s\n' 'NOT PROVEN: live iPhone transfer, installed-app identity, signing/install custody, authorization acceptance, Bluetooth/Tuya behavior, ES80 identity, telemetry, commands, or physical GO.'
