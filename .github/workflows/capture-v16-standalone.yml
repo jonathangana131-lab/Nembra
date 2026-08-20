@@ -100,6 +100,7 @@ jobs:
           swift test --filter CaptureSimulatorQAHarnessSourceTests
           swift test --filter ThisDeviceAuthorizationConsumptionStoreTests
           swift test --filter AuthenticatedStationaryCaptureCapabilityGateTests
+          swift test --filter AuthenticatedStationaryCaptureInstallManifestTests
 
       - name: Validate one-time field handoff without private inputs
         run: |
@@ -109,9 +110,13 @@ jobs:
           bash -n scripts/field/install_one_time_capture.command
           /usr/bin/python3 -m py_compile \
             Scripts/capture_tuya_private_input_provenance.py \
-            scripts/ci/es80_signed_field_artifact_private_runner.py
+            scripts/ci/es80_signed_field_artifact_private_runner.py \
+            scripts/ci/es80_retained_install_manifest.py \
+            scripts/ci/tests/test_es80_retained_install_manifest.py
           /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
+          /usr/bin/python3 -I scripts/ci/es80_retained_install_manifest.py --self-test
           /usr/bin/python3 -I scripts/ci/tests/test_capture_tuya_private_input_provenance.py
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_retained_install_manifest.py
           test ! -e LocalSecrets
           test ! -e Pods
           test ! -e NembraCapture.xcworkspace
