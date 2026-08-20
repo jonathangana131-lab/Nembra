@@ -13,6 +13,8 @@ on:
       - 'NembraApp/Resources/Localizable.strings'
       - 'Packages/NembraBluetoothCapture/**'
       - 'Packages/NembraCore/**'
+      - '.github/workflows/capture-app-authorization-close-one-shot.yml'
+      - '.github/workflows/capture-app-authorization-race-safe-go.yml'
       - '.github/workflows/capture-v16-standalone.yml'
   workflow_dispatch:
 
@@ -29,6 +31,10 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: xcode-27
     timeout-minutes: 45
+    env:
+      APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
+      SOURCE_WORKFLOW: .github/workflows/capture-app-authorization-close-one-shot.yml
+      MATERIALIZER_WORKFLOW: .github/workflows/capture-app-authorization-race-safe-go.yml
 
     steps:
       - name: Checkout immutable PR head
@@ -53,6 +59,10 @@ jobs:
           actual="$(git rev-parse --verify HEAD^{commit})"
           printf 'Expected exact head: %s\nActual checkout: %s\n' "$EXPECTED_HEAD_SHA" "$actual"
           test "$actual" = "$EXPECTED_HEAD_SHA"
+          test -f "$APP_SOURCE"
+          test -f "$SOURCE_WORKFLOW"
+          test -f "$MATERIALIZER_WORKFLOW"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
       - name: Record toolchain
         run: |
@@ -78,6 +88,54 @@ jobs:
         run: |
           set -euo pipefail
           swift build
+
+      - name: Materialize canonical lifecycle candidate in exact-head workspace
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path(os.environ["MATERIALIZER_WORKFLOW"]).read_text(encoding="utf-8")
+          marker = "      - name: Materialize canonical lifecycle transform\n"
+          section = workflow.index(marker)
+          run_marker = "        run: |\n"
+          start = workflow.index(run_marker, section) + len(run_marker)
+          end = workflow.index("\n      - name:", start)
+          program = textwrap.dedent(workflow[start:end])
+          required = [
+              "SOURCE_WORKFLOW",
+              "admitOFF1Start",
+              "admitAuthenticationStart",
+              "admitOfficialConnectionStart",
+              "admitObservationStart",
+              "freezeAcceptedArtifactForAuthorizationSeal",
+              "sealAfterAcceptedArtifactFreeze",
+              "app.write_text(source, encoding=\"utf-8\")",
+          ]
+          for token in required:
+              if token not in program:
+                  raise SystemExit(f"race-safe materializer missing required token: {token}")
+          namespace = {
+              "__name__": "__main__",
+              "__file__": "<capture-v16-exact-head-materializer>",
+          }
+          exec(compile(program, namespace["__file__"], "exec", dont_inherit=True), namespace)
+
+      - name: Verify materialized candidate remains software-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test "$(git status --porcelain=v1 | awk '{print $2}' | sort | tr '\n' ' ' | sed 's/ $//')" = "$APP_SOURCE"
+          grep -Fq 'fieldAuthorization.stage == .armed' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitOFF1Start()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitAuthenticationStart()' "$APP_SOURCE"
+          grep -Fq 'try fieldAuthorization.admitOfficialConnectionStart()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitObservationStart()' "$APP_SOURCE"
+          grep -Fq 'try self.freezeAcceptedArtifactForAuthorizationSeal()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()' "$APP_SOURCE"
+          test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE")" = 0
 
       - name: Run standalone-scope Capture truth tests
         working-directory: Packages/NembraBluetoothCapture
@@ -136,6 +194,7 @@ jobs:
       - name: Build standalone Capture for Simulator
         run: |
           set -euo pipefail
+          test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE")" = 0
           rm -rf "${RUNNER_TEMP}/NembraCaptureV16DerivedData"
           xcodebuild \
             -project NembraCapture.xcodeproj \
