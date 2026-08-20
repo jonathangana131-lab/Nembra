@@ -2,8 +2,14 @@ import Foundation
 import SwiftUI
 
 struct CapturePresentationDisclosureBanner: View {
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
     let text: String
     let accessibilityIdentifier: String
+
+    private var isCompactHeight: Bool {
+        verticalSizeClass == .compact
+    }
 
     var body: some View {
         Label {
@@ -16,7 +22,7 @@ struct CapturePresentationDisclosureBanner: View {
         }
         .foregroundStyle(Color.orange)
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.vertical, isCompactHeight ? 8 : 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.black.opacity(0.97))
         .overlay(alignment: .bottom) {
@@ -118,9 +124,15 @@ struct CaptureSimulatorQAHarness: View {
         }
     }
 
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
     @State private var scenario: CaptureSimulatorQAScenario
     @State private var presentedSheet: SheetDestination?
     @State private var shareAttemptCount = 0
+
+    private var isCompactHeight: Bool {
+        verticalSizeClass == .compact
+    }
 
     init(scenario: CaptureSimulatorQAScenario) {
         _scenario = State(initialValue: scenario)
@@ -139,14 +151,14 @@ struct CaptureSimulatorQAHarness: View {
                 .ignoresSafeArea()
 
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 22) {
+                    VStack(alignment: .leading, spacing: isCompactHeight ? 12 : 22) {
                         header
                         primarySurface
                     }
-                    .frame(maxWidth: 680, alignment: .leading)
-                    .padding(.horizontal, 20)
-                    .padding(.top, 18)
-                    .padding(.bottom, 44)
+                    .frame(maxWidth: isCompactHeight ? 760 : 680, alignment: .leading)
+                    .padding(.horizontal, isCompactHeight ? 16 : 20)
+                    .padding(.top, isCompactHeight ? 8 : 18)
+                    .padding(.bottom, isCompactHeight ? 24 : 44)
                     .frame(maxWidth: .infinity)
                 }
                 .scrollIndicators(.hidden)
@@ -179,16 +191,20 @@ struct CaptureSimulatorQAHarness: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: isCompactHeight ? 4 : 7) {
             Text("SYNTHETIC PRIMARY FLOW")
                 .font(.caption2.bold())
                 .tracking(1.3)
                 .foregroundStyle(.orange)
             Text(scenario.title)
-                .font(.largeTitle.bold())
+                .font(isCompactHeight ? .title2.bold() : .largeTitle.bold())
                 .fixedSize(horizontal: false, vertical: true)
-            Text("This finite screen exercises presentation and action routing only. It cannot authorize, observe, seal, or export a scooter capture.")
-                .font(.body)
+            Text(
+                isCompactHeight
+                    ? "Presentation and action routing only. It cannot authorize, observe, seal, or export a scooter capture."
+                    : "This finite screen exercises presentation and action routing only. It cannot authorize, observe, seal, or export a scooter capture."
+            )
+                .font(isCompactHeight ? .callout : .body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -484,7 +500,7 @@ struct CaptureSimulatorQAHarness: View {
 
     private func panel<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         content()
-            .padding(20)
+            .padding(isCompactHeight ? 16 : 20)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
             .overlay {
