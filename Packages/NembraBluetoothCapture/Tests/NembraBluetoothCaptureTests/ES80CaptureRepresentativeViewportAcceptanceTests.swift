@@ -81,6 +81,15 @@ struct ES80CaptureRepresentativeViewportAcceptanceTests {
             from: "private func reveal(",
             to: "private func waitForHittable("
         )
+        #expect(!revealHelper.contains("where !element.isHittable"))
+        let scrollLoop = try Self.section(
+            in: String(revealHelper),
+            from: "for _ in 0..<maximumSwipes {",
+            to: "XCTAssertTrue(waitForHittable(element, timeout: 2))"
+        )
+        #expect(scrollLoop.contains("scrollView.swipeUp()"))
+        #expect(scrollLoop.contains("app.swipeUp()"))
+        #expect(scrollLoop.contains("if waitForHittable(element, timeout: 0.5) { return }"))
         #expect(revealHelper.contains("XCTAssertTrue(waitForHittable(element, timeout: 2))"))
         #expect(source.contains("XCTAttachment(screenshot: XCUIScreen.main.screenshot())"))
         #expect(source.contains("screenshot.name = \"SYNTHETIC-QA-\\(name)\""))

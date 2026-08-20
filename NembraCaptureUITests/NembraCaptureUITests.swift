@@ -299,12 +299,16 @@ final class NembraCaptureUITests: XCTestCase {
         XCTAssertTrue(element.waitForExistence(timeout: 3))
         if waitForHittable(element, timeout: 0.5) { return }
 
-        for _ in 0..<maximumSwipes where !element.isHittable {
+        // Xcode 27 can report a transient direct `isHittable` value while a
+        // compact-orientation layout is settling. Once the stable wait fails,
+        // always perform a real scroll before checking again.
+        for _ in 0..<maximumSwipes {
             if let scrollView = app.scrollViews.allElementsBoundByIndex.reversed().first(where: { $0.isHittable }) {
                 scrollView.swipeUp()
             } else {
                 app.swipeUp()
             }
+            if waitForHittable(element, timeout: 0.5) { return }
         }
         XCTAssertTrue(waitForHittable(element, timeout: 2))
     }
