@@ -40,6 +40,41 @@ struct CaptureSimulatorQAHarnessSourceTests_AuthorizationInboxAppAdapter {
         #expect(!controller.contains("AuthenticatedStationaryCaptureCapabilityGate"))
     }
 
+    @Test("polling seam waits only for truly absent next files and never treats presence as authority")
+    func pollingSeamSeparatesWaitingFromVerificationFailure() throws {
+        let controller = try repositoryFile(
+            "NembraApp/App/NembraCaptureFieldAuthorizationController.swift"
+        )
+        let start = try #require(
+            controller.range(of: "func advanceInboxHandoffIfAvailable() throws -> HandoffProgress")
+        )
+        let end = try #require(
+            controller.range(
+                of: "func admitOFF1Start() throws",
+                range: start.upperBound..<controller.endIndex
+            )
+        )
+        let section = String(controller[start.lowerBound..<end.lowerBound])
+
+        #expect(section.contains("switch session.stage"))
+        #expect(section.contains("case .idle:"))
+        #expect(section.contains("prepareSignerRendezvousDocumentFromInbox()"))
+        #expect(section.contains("case .awaitingEnvelope:"))
+        #expect(section.contains("authorizeFromInbox()"))
+        #expect(section.contains("AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject"))
+        #expect(section.contains("AuthenticatedStationaryCaptureAuthorizationInbox.installManifestFilename"))
+        #expect(section.contains("AuthenticatedStationaryCaptureAuthorizationInbox.authorizationEnvelopeFilename"))
+        #expect(section.contains("return .waitingForManifest"))
+        #expect(section.contains("return .waitingForEnvelope"))
+        #expect(section.contains("return .armed"))
+
+        // The polling seam may swallow only the exact missing-subject cases. It must not add a
+        // catch-all that would convert malformed/custody/signature failures into a harmless wait.
+        #expect(!section.contains("catch {"))
+        #expect(!section.contains("try?"))
+        #expect(!section.contains("return .armed\n            } catch"))
+    }
+
     @Test("standalone target actually compiles the inbox-bound adapter")
     func adapterRemainsInStandaloneTarget() throws {
         let project = try repositoryFile("NembraCapture.xcodeproj/project.pbxproj")
