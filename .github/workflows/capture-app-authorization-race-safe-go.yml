@@ -4,6 +4,7 @@ name: Capture app authorization race-safe GO
 # and fail-closed across overlapping product/authority movement. Re-run when the
 # canonical transform/controller/acceptance inputs move so tested app wiring cannot
 # remain stranded behind a stale one-file trigger.
+# GO retrigger after parse-safe materializer repair at 05c91196; no authority change.
 
 on:
   workflow_dispatch:
