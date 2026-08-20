@@ -18,14 +18,164 @@ umask 077
 say() { builtin printf '\n==> %s\n' "$*"; }
 die() { builtin printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 
-[[ "$(/usr/bin/uname -s)" == "Darwin" ]] || die "Run this on the Mac with Xcode and the intended iPhone connected."
-for tool in xcodebuild xcrun security pod git shasum; do
-  command -v "$tool" >/dev/null 2>&1 || die "$tool is required for the one-time Capture field build."
-done
+[[ "$(/usr/bin/uname -s)" == "Darwin" ]] || die "Run this on the intended field Mac."
 [[ -x /usr/bin/python3 ]] || die "System Python 3 is required."
+[[ -x /usr/bin/shasum ]] || die "System shasum is required."
 [[ -x /usr/bin/plutil ]] || die "System plutil is required for exact app provenance readback."
 [[ -x /usr/bin/codesign ]] || die "System codesign is required for signed-bundle verification."
 [[ -x /usr/bin/security ]] || die "System security is required for embedded-profile verification."
+
+# Exact-retained-IPA installer migration checkpoint.
+#
+# The current-procedure envelope signer/verifier and evidence schema exist, but the independently
+# reviewed production trust root, app adapter, and install-manifest contract do not. Until those
+# remaining authority boundaries exist, this script may authenticate caller-supplied files but must
+# not interpret them, rebuild an app, contact a device, or install.
+# The unconditional stop below is deliberately before every legacy build/install statement.
+RETAINED_INSTALL_CONTRACT_STATUS="blocked-missing-pinned-trust-and-install-manifest"
+
+validate_retained_input() {
+  local label="$1"
+  local input_path="$2"
+  local expected_sha256="$3"
+  local access_policy="$4"
+  local maximum_bytes="$5"
+
+  [[ "$expected_sha256" =~ ^[0-9A-Fa-f]{64}$ ]] || die "$label expected SHA-256 must be 64 hex characters."
+  expected_sha256="$(printf '%s' "$expected_sha256" | /usr/bin/tr '[:upper:]' '[:lower:]')"
+
+  /usr/bin/env -i \
+    PATH=/usr/bin:/bin \
+    LC_ALL=C \
+    /usr/bin/python3 -I -B - \
+      "$label" "$input_path" "$expected_sha256" "$access_policy" "$maximum_bytes" <<'PY'
+import hashlib
+import hmac
+import os
+import stat
+import sys
+from pathlib import PurePath
+
+label, raw_path, expected, access_policy, maximum_raw = sys.argv[1:]
+if not raw_path.startswith("/") or "\x00" in raw_path:
+    raise SystemExit(2)
+path = PurePath(raw_path)
+if path.parts[0] != "/" or any(part in {"", ".", ".."} for part in path.parts[1:]):
+    raise SystemExit(3)
+if access_policy not in {"public", "private"}:
+    raise SystemExit(4)
+try:
+    maximum = int(maximum_raw, 10)
+except ValueError:
+    raise SystemExit(5)
+if maximum <= 0:
+    raise SystemExit(6)
+
+directory_flags = os.O_RDONLY | os.O_DIRECTORY
+no_follow = getattr(os, "O_NOFOLLOW", None)
+if no_follow is None:
+    raise SystemExit(7)
+directory_fd = os.open("/", directory_flags)
+try:
+    for component in path.parts[1:-1]:
+        next_fd = os.open(component, directory_flags | no_follow, dir_fd=directory_fd)
+        os.close(directory_fd)
+        directory_fd = next_fd
+    descriptor = os.open(path.parts[-1], os.O_RDONLY | no_follow, dir_fd=directory_fd)
+finally:
+    os.close(directory_fd)
+
+try:
+    before = os.fstat(descriptor)
+    if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+        raise SystemExit(8)
+    if hasattr(os, "geteuid") and before.st_uid != os.geteuid():
+        raise SystemExit(9)
+    forbidden_mode = 0o077 if access_policy == "private" else 0o022
+    if stat.S_IMODE(before.st_mode) & forbidden_mode:
+        raise SystemExit(10)
+    if before.st_size <= 0 or before.st_size > maximum:
+        raise SystemExit(11)
+
+    digest = hashlib.sha256()
+    byte_count = 0
+    while True:
+        block = os.read(descriptor, 1024 * 1024)
+        if not block:
+            break
+        digest.update(block)
+        byte_count += len(block)
+    after = os.fstat(descriptor)
+    identity = lambda value: (
+        value.st_dev, value.st_ino, value.st_mode, value.st_uid, value.st_nlink,
+        value.st_size, value.st_mtime_ns, value.st_ctime_ns,
+    )
+    if identity(after) != identity(before) or byte_count != before.st_size:
+        raise SystemExit(12)
+    if not hmac.compare_digest(digest.hexdigest(), expected):
+        raise SystemExit(13)
+finally:
+    os.close(descriptor)
+PY
+}
+
+run_retained_input_self_test() {
+  local test_root test_file test_digest
+  test_root="$(/usr/bin/mktemp -d "/private/tmp/nembra-retained-install-self-test.XXXXXX")"
+  [[ "$test_root" == "/private/tmp/nembra-retained-install-self-test."* ]] || die "Self-test temporary path is invalid."
+  /bin/chmod 700 "$test_root"
+  test_file="$test_root/subject.json"
+  builtin printf '%s\n' '{"selfTest":true}' > "$test_file"
+  /bin/chmod 600 "$test_file"
+  test_digest="$(/usr/bin/shasum -a 256 "$test_file" | /usr/bin/awk '{print $1}')"
+  validate_retained_input "self-test subject" "$test_file" "$test_digest" private 1024
+  /bin/ln -s "$test_file" "$test_root/substituted.json"
+  if validate_retained_input "self-test substituted subject" "$test_root/substituted.json" "$test_digest" private 1024 2>/dev/null; then
+    /bin/rm -rf -- "$test_root"
+    die "Self-test accepted a symlinked retained subject."
+  fi
+  /bin/rm -rf -- "$test_root"
+  say "Retained-input no-follow/hash/mode self-test passed"
+}
+
+case "${1:-}" in
+  --self-test)
+    [[ "$#" == 1 ]] || die "--self-test accepts no additional arguments."
+    run_retained_input_self_test
+    exit 0
+    ;;
+  --dry-run)
+    [[ "$#" == 1 ]] || die "--dry-run accepts no additional arguments."
+    ;;
+  "") ;;
+  *) die "Only --dry-run or --self-test is accepted; private values and hashes must not be placed on argv." ;;
+esac
+
+: "${NEMBRA_RETAINED_IPA_PATH:?Set NEMBRA_RETAINED_IPA_PATH to the absolute retained accepted signed IPA path.}"
+: "${NEMBRA_RETAINED_IPA_SHA256:?Set NEMBRA_RETAINED_IPA_SHA256 to its independently accepted SHA-256.}"
+: "${NEMBRA_ACCEPTED_BUILD_SUBJECT_PATH:?Set NEMBRA_ACCEPTED_BUILD_SUBJECT_PATH to the absolute accepted build subject path.}"
+: "${NEMBRA_ACCEPTED_BUILD_SUBJECT_SHA256:?Set NEMBRA_ACCEPTED_BUILD_SUBJECT_SHA256.}"
+: "${NEMBRA_ACCEPTED_EVIDENCE_SUBJECT_PATH:?Set NEMBRA_ACCEPTED_EVIDENCE_SUBJECT_PATH to the absolute accepted evidence subject path.}"
+: "${NEMBRA_ACCEPTED_EVIDENCE_SUBJECT_SHA256:?Set NEMBRA_ACCEPTED_EVIDENCE_SUBJECT_SHA256.}"
+: "${NEMBRA_ACCEPTED_FINAL_GO_SUBJECT_PATH:?Set NEMBRA_ACCEPTED_FINAL_GO_SUBJECT_PATH to the absolute accepted Final-GO subject path.}"
+: "${NEMBRA_ACCEPTED_FINAL_GO_SUBJECT_SHA256:?Set NEMBRA_ACCEPTED_FINAL_GO_SUBJECT_SHA256.}"
+: "${NEMBRA_ACCEPTED_TUYA_LOCK_SUBJECT_PATH:?Set NEMBRA_ACCEPTED_TUYA_LOCK_SUBJECT_PATH to the absolute accepted Tuya-lock subject path.}"
+: "${NEMBRA_ACCEPTED_TUYA_LOCK_SUBJECT_SHA256:?Set NEMBRA_ACCEPTED_TUYA_LOCK_SUBJECT_SHA256.}"
+: "${NEMBRA_INTENDED_DEVICE_PSEUDONYMOUS_BINDING_PATH:?Set NEMBRA_INTENDED_DEVICE_PSEUDONYMOUS_BINDING_PATH to its absolute private path.}"
+: "${NEMBRA_INTENDED_DEVICE_PSEUDONYMOUS_BINDING_SHA256:?Set NEMBRA_INTENDED_DEVICE_PSEUDONYMOUS_BINDING_SHA256.}"
+: "${NEMBRA_CURRENT_PROCEDURE_AUTHORIZATION_ENVELOPE_PATH:?Set NEMBRA_CURRENT_PROCEDURE_AUTHORIZATION_ENVELOPE_PATH to its absolute private path.}"
+: "${NEMBRA_CURRENT_PROCEDURE_AUTHORIZATION_ENVELOPE_SHA256:?Set NEMBRA_CURRENT_PROCEDURE_AUTHORIZATION_ENVELOPE_SHA256.}"
+
+validate_retained_input "retained accepted signed IPA" "$NEMBRA_RETAINED_IPA_PATH" "$NEMBRA_RETAINED_IPA_SHA256" public 1073741824
+validate_retained_input "accepted build subject" "$NEMBRA_ACCEPTED_BUILD_SUBJECT_PATH" "$NEMBRA_ACCEPTED_BUILD_SUBJECT_SHA256" public 16777216
+validate_retained_input "accepted evidence subject" "$NEMBRA_ACCEPTED_EVIDENCE_SUBJECT_PATH" "$NEMBRA_ACCEPTED_EVIDENCE_SUBJECT_SHA256" public 16777216
+validate_retained_input "accepted Final-GO subject" "$NEMBRA_ACCEPTED_FINAL_GO_SUBJECT_PATH" "$NEMBRA_ACCEPTED_FINAL_GO_SUBJECT_SHA256" private 16777216
+validate_retained_input "accepted Tuya-lock subject" "$NEMBRA_ACCEPTED_TUYA_LOCK_SUBJECT_PATH" "$NEMBRA_ACCEPTED_TUYA_LOCK_SUBJECT_SHA256" public 4194304
+validate_retained_input "intended-device pseudonymous binding" "$NEMBRA_INTENDED_DEVICE_PSEUDONYMOUS_BINDING_PATH" "$NEMBRA_INTENDED_DEVICE_PSEUDONYMOUS_BINDING_SHA256" private 1048576
+validate_retained_input "current-procedure authorization envelope" "$NEMBRA_CURRENT_PROCEDURE_AUTHORIZATION_ENVELOPE_PATH" "$NEMBRA_CURRENT_PROCEDURE_AUTHORIZATION_ENVELOPE_SHA256" private 16777216
+
+say "Exact retained input bytes passed bounded path/hash/mode admission"
+die "Installation remains blocked: the pinned production trust root, app adapter, and workflow artifact manifest contract are absent. No app was rebuilt or installed. Status: $RETAINED_INSTALL_CONTRACT_STATUS"
 
 # The only positional input is a public Git commit. Private values are read
 # from narrow local files or hidden prompts and never accepted on argv.
