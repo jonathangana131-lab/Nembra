@@ -23,14 +23,17 @@ public struct AuthenticatedStationaryCaptureSignerRendezvousOutbox: Sendable {
     private let applicationSupportURL: URL
 
     public init() throws {
-        guard let applicationSupportURL = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first else {
+        do {
+            applicationSupportURL = try FileManager.default.url(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: true
+            )
+        } catch {
             throw AuthenticatedStationaryCaptureSignerRendezvousOutboxError
                 .applicationSupportUnavailable
         }
-        self.applicationSupportURL = applicationSupportURL
     }
 
     package init(applicationSupportURL: URL) {
