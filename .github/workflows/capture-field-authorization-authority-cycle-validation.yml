@@ -8,6 +8,7 @@ on:
       - .github/workflows/capture-field-authorization-authority-cycle-validation.yml
       - scripts/ci/materialize_es80_field_authorization_authority_cycle_fix.py
       - scripts/ci/tests/test_es80_field_authorization_authority_cycle.py
+      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/*.swift
 
 permissions:
   contents: write
@@ -72,6 +73,7 @@ jobs:
           grep -Fq 'fieldAuthorization.advanceInboxHandoffIfAvailable()' "$APP_SOURCE"
           grep -Fq 'fieldAuthorization.admitOFF1Start()' "$APP_SOURCE"
           grep -Fq 'fieldAuthorization.admitOfficialConnectionStart()' "$APP_SOURCE"
+          test "$(grep -Fc 'fieldAuthorization.stage == .observationAdmitted' "$APP_SOURCE")" -ge 2
 
       - name: Run authority-cycle and lifecycle source contracts
         shell: bash
@@ -80,7 +82,7 @@ jobs:
           /usr/bin/python3 -I scripts/ci/tests/test_es80_field_authorization_authority_cycle.py
           /usr/bin/python3 -I scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
 
-      - name: Run focused package authorization contracts
+      - name: Run focused package authorization and product contracts
         working-directory: Packages/NembraBluetoothCapture
         run: |
           set -euo pipefail
@@ -88,6 +90,17 @@ jobs:
           swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthorizationInboxAppAdapter
           swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
           swift test --filter TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
+          swift test --filter TuyaFieldBuildPresentationAuthoritySourceTests
+          swift test --filter ES80CaptureFieldRuntimeRendezvousTests
+          swift test --filter CaptureP0RootVisualAcceptanceTests
+          swift test --filter TuyaCaptureRootProductSurfaceSourceTests
+          swift test --filter TuyaFailedPrerequisiteRecoverySourceTests
+          swift test --filter CaptureRootLargeTypeHierarchySourceTests
+          swift test --filter TuyaSecureLinkProductSurfaceSourceTests
+          swift test --filter TuyaFieldFinalAuthoritySourceTests
+          swift test --filter TuyaFieldGoPrerequisiteSourceTests
+          swift test --filter PassiveBluetoothExperimentOneAppAuthorityWiringTests
+          swift test --filter PassiveBluetoothExperimentOneVerifiedAdmissionTests
 
       - name: Build standalone Capture on Xcode 27
         shell: bash
