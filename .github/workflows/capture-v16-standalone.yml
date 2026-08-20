@@ -101,6 +101,8 @@ jobs:
           swift test --filter ThisDeviceAuthorizationConsumptionStoreTests
           swift test --filter AuthenticatedStationaryCaptureCapabilityGateTests
           swift test --filter AuthenticatedStationaryCaptureInstallManifestTests
+          swift test --filter AuthenticatedStationaryCaptureAppAuthorizerTests
+          swift test --filter AuthenticatedStationaryCaptureAppAuthorizerPreSigningTests
 
       - name: Validate one-time field handoff without private inputs
         run: |
