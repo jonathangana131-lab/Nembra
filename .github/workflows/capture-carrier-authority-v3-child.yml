@@ -36,20 +36,45 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Bind exact reviewed subject
+      - name: Bind exact reviewed subject or exact materialized descendant
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
           test "$(git rev-parse HEAD:"$AUTHORING_WORKFLOW")" = "$EXPECTED_AUTHORING_BLOB"
-          test "$(git rev-parse HEAD:"$APP_SOURCE")" = "$EXPECTED_SOURCE_BLOB"
-          test -f "$RECOVERY_MARKER"
+          if test -f "$RECOVERY_MARKER"; then
+            test "$(git rev-parse HEAD:"$APP_SOURCE")" = "$EXPECTED_SOURCE_BLOB"
+            printf 'CAPTURE_V3_MODE=materialize\n' >> "$GITHUB_ENV"
+          else
+            read -r head parent extra <<<"$(git rev-list --parents -n 1 HEAD)"
+            test -n "$parent"
+            test -z "${extra:-}"
+            test "$(git rev-parse "$parent:$AUTHORING_WORKFLOW")" = "$EXPECTED_AUTHORING_BLOB"
+            test "$(git rev-parse "$parent:$APP_SOURCE")" = "$EXPECTED_SOURCE_BLOB"
+            git cat-file -e "$parent:$RECOVERY_MARKER"
+            changed="$(git diff-tree --no-commit-id --name-only -r HEAD | sort)"
+            expected="$(printf '%s\n%s\n' "$APP_SOURCE" "$RECOVERY_MARKER" | sort)"
+            test "$changed" = "$expected"
+            printf 'CAPTURE_V3_MODE=verify\nCAPTURE_V3_PARENT=%s\n' "$parent" >> "$GITHUB_ENV"
+          fi
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Apply reviewed V2 transform plus V3 fail-closed corrections
+      - name: Apply or deterministically reconstruct reviewed V2 transform plus V3 corrections
         shell: python
         run: |
+          import os
+          import subprocess
           from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          mode = os.environ["CAPTURE_V3_MODE"]
+          final_bytes = None
+          if mode == "verify":
+              final_bytes = path.read_bytes()
+              parent = os.environ["CAPTURE_V3_PARENT"]
+              path.write_bytes(subprocess.check_output(["git", "show", f"{parent}:{path.as_posix()}"]))
+          elif mode != "materialize":
+              raise SystemExit(f"unexpected Capture V3 mode: {mode}")
 
           authoring = Path(".github/workflows/capture-carrier-authority-v2-materialize-once.yml").read_text(encoding="utf-8")
           start = '          cat > "${RUNNER_TEMP}/materialize_capture_authority_v2.py" <<\'PY\'\n'
@@ -63,7 +88,6 @@ jobs:
           script = "\n".join(line[10:] if line else "" for line in lines) + "\n"
           exec(compile(script, "capture-authority-v2", "exec"), {"__name__": "__main__"})
 
-          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           source = path.read_text(encoding="utf-8")
           old_failed = '''            if phase == .failed {\n                fieldAuthorization.revoke()\n                operatorSafetyAttemptID = nil\n'''
           new_failed = '''            if phase == .failed {\n                if fieldAuthorization.stage != .armed {\n                    fieldAuthorization.revoke()\n                }\n                operatorSafetyAttemptID = nil\n'''
@@ -78,21 +102,56 @@ jobs:
           source = source.replace(old_seal_failure, new_seal_failure, 1)
           path.write_text(source, encoding="utf-8")
 
-      - name: Verify exact fail-closed lifecycle contracts
+          if mode == "verify":
+              reconstructed = path.read_bytes()
+              if reconstructed != final_bytes:
+                  raise SystemExit("materialized app source does not exactly match deterministic transform of pinned parent")
+              path.write_bytes(final_bytes)
+
+      - name: Verify diagnostic source shape
         shell: bash
         run: |
           set -euo pipefail
           changed="$(git status --porcelain=v1 | awk '{print $2}' | sort)"
-          test "$changed" = "$APP_SOURCE"
+          if test "$CAPTURE_V3_MODE" = materialize; then
+            test "$changed" = "$APP_SOURCE"
+          else
+            test -z "$changed"
+          fi
           git diff --check
+
+      - name: Verify lifecycle Python contract
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
           /usr/bin/python3 -I scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
-          (
-            cd Packages/NembraBluetoothCapture
-            swift test --filter AuthenticatedStationaryCaptureAppSessionTests
-            swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
-            swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthorizationInboxAppAdapter
-            swift test --filter TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
-          )
+
+      - name: Verify package app-session contract
+        if: always()
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test --filter AuthenticatedStationaryCaptureAppSessionTests
+
+      - name: Verify app-wiring source contract
+        if: always()
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
+
+      - name: Verify inbox-adapter source contract
+        if: always()
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthorizationInboxAppAdapter
+
+      - name: Verify exact artifact-freeze source contract
+        if: always()
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test --filter TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
+
+      - name: Verify no authority bypasses
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
           grep -Fq 'advanceInboxHandoffIfAvailable()' "$APP_SOURCE"
           grep -Fq 'fieldAuthorization.stage == .armed' "$APP_SOURCE"
           grep -Fq 'fieldAuthorization.stage != .armed' "$APP_SOURCE"
@@ -116,6 +175,7 @@ jobs:
             build
 
       - name: Publish only the exact tested recovery descendant
+        if: env.CAPTURE_V3_MODE == 'materialize'
         shell: bash
         run: |
           set -euo pipefail
@@ -135,3 +195,12 @@ jobs:
           test "$(git rev-parse FETCH_HEAD)" = "${{ github.event.pull_request.head.sha }}"
           git push origin HEAD:"$TARGET_BRANCH"
           printf 'CAPTURE_AUTHORITY_V3_CHILD_MATERIALIZED=%s trigger=%s physicalAuthorityCreated=false\n' "$materialized" "${{ github.event.pull_request.head.sha }}"
+
+      - name: Confirm exact-head verification mode
+        if: env.CAPTURE_V3_MODE == 'verify'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf 'CAPTURE_AUTHORITY_V3_CHILD_EXACT_HEAD_VERIFIED=%s parent=%s physicalAuthorityCreated=false\n' "${{ github.event.pull_request.head.sha }}" "$CAPTURE_V3_PARENT"

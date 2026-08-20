@@ -57,7 +57,7 @@ jobs:
 
           replace_once(
               '''            if phase == .failed {\n                operatorSafetyAttemptID = nil\n                operatorSafetyAttemptStartedAtUptimeNanoseconds = nil\n            }\n''',
-              '''            if phase == .failed {\n                fieldAuthorization.revoke()\n                operatorSafetyAttemptID = nil\n                operatorSafetyAttemptStartedAtUptimeNanoseconds = nil\n            }\n''',
+              '''            if phase == .failed {\n                if fieldAuthorization.stage != .armed {\n                    fieldAuthorization.revoke()\n                }\n                operatorSafetyAttemptID = nil\n                operatorSafetyAttemptStartedAtUptimeNanoseconds = nil\n            }\n''',
               "failed-phase terminal authorization",
           )
 
@@ -172,6 +172,7 @@ jobs:
           git diff --check
           test "$(git status --porcelain=v1 | awk '{print $2}' | sort | tr '\n' ' ' | sed 's/ $//')" = "$APP_SOURCE"
           grep -Fq 'fieldAuthorization.stage == .armed' "$APP_SOURCE"
+          grep -Fq 'fieldAuthorization.stage != .armed' "$APP_SOURCE"
           grep -Fq 'try self.fieldAuthorization.admitOFF1Start()' "$APP_SOURCE"
           grep -Fq 'try self.fieldAuthorization.admitAuthenticationStart()' "$APP_SOURCE"
           grep -Fq 'try fieldAuthorization.admitOfficialConnectionStart()' "$APP_SOURCE"

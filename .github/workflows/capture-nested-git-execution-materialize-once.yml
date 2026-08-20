@@ -17,8 +17,10 @@ jobs:
     env:
       TARGET_BRANCH: product/capture-1-0-main-20260818
       AUTHORING_WORKFLOW: .github/workflows/capture-nested-git-execution-materialize-once.yml
+      PATCHER: .github/capture-nested-git-execution-patcher.py
       INSTALLER: scripts/field/install_one_time_capture.command
       EXPECTED_INSTALLER_BLOB: a42d9e9b93d9692ec61fbd714d5664d0a0afba67
+      EXPECTED_PATCHER_BLOB: 555bdb4fb7bd26d47bbc6ee087b9d10723092d49
     steps:
       - uses: actions/checkout@v6
         with:
@@ -26,112 +28,21 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Bind bounded authoring subject
+      - name: Bind bounded authoring subjects
         shell: bash
         run: |
           set -euo pipefail
           test "$(git branch --show-current)" = "$TARGET_BRANCH"
           test "$(git rev-parse HEAD:"$INSTALLER")" = "$EXPECTED_INSTALLER_BLOB"
+          test "$(git rev-parse HEAD:"$PATCHER")" = "$EXPECTED_PATCHER_BLOB"
+          test -n "$(git rev-parse HEAD:"$AUTHORING_WORKFLOW")"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
-          authoring_parent="$(git rev-parse HEAD^)"
-          changed="$(git diff --name-only "$authoring_parent"...HEAD | sort)"
-          test "$changed" = "$AUTHORING_WORKFLOW"
 
       - name: Materialize one authenticated capture primitive for nested repo tools
-        shell: python
+        shell: bash
         run: |
-          from pathlib import Path
-
-          path = Path("scripts/field/install_one_time_capture.command")
-          source = path.read_text(encoding="utf-8")
-          anchor = '''[[ "$NEMBRA_ACCEPTED_SOURCE_COMMIT_SHA" != "0000000000000000000000000000000000000000" ]] || die "NEMBRA_ACCEPTED_SOURCE_COMMIT_SHA cannot be the zero SHA."\n'''
-          if source.count(anchor) != 1:
-              raise SystemExit(f"accepted-source insertion anchor count was {source.count(anchor)}; refusing")
-
-          block = r'''
-SOURCE_SHA="$NEMBRA_ACCEPTED_SOURCE_COMMIT_SHA"
-
-# Capture every nested repository tool from the independently accepted Git commit before any
-# later authority-bearing execution. A mutable checkout pathname may provide product context, but
-# it can never select the bytes that execute. This seam creates no device/install/Bluetooth
-# authority; the PRE-INSTALL hard stop below remains authoritative until separately accepted.
-capture_accepted_git_source_base64() {
-  local relative_path="$1"
-  local resolved_source blob source_b64 measured_blob
-  [[ -n "$relative_path" && "$relative_path" != /* && "$relative_path" != *".."* ]] || die "Accepted Git source path is invalid."
-
-  resolved_source="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null git -C "$ROOT" rev-parse --verify "$SOURCE_SHA^{commit}" 2>/dev/null)" || \
-    die "Independently accepted source commit could not be resolved."
-  [[ "$resolved_source" == "$SOURCE_SHA" ]] || die "Accepted Git source resolved to a different commit."
-
-  blob="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null git -C "$ROOT" rev-parse "$SOURCE_SHA:$relative_path" 2>/dev/null)" || \
-    die "Accepted nested repository tool is missing from the exact source commit: $relative_path"
-  [[ "$blob" =~ ^[0-9a-f]{40}$ ]] || die "Accepted nested repository tool Git blob is malformed: $relative_path"
-
-  source_b64="$(GIT_NO_REPLACE_OBJECTS=1 git -C "$ROOT" cat-file blob "$blob" | /usr/bin/base64 | /usr/bin/tr -d '\n')" || \
-    die "Accepted nested repository tool could not be captured: $relative_path"
-  [[ -n "$source_b64" ]] || die "Accepted nested repository tool capture is empty: $relative_path"
-
-  measured_blob="$(
-    printf '%s' "$source_b64" |
-      /usr/bin/python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.buffer.read(), validate=True))' |
-      GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null git -C "$ROOT" hash-object --stdin
-  )" || die "Accepted nested repository tool capture could not be re-hashed: $relative_path"
-  [[ "$measured_blob" == "$blob" ]] || die "Captured nested repository tool bytes do not match the accepted Git object: $relative_path"
-  printf '%s' "$source_b64"
-}
-
-CAPTURE_BOOTSTRAP_PATH="Scripts/bootstrap_capture_tuya_sdk.sh"
-TUYA_PROVENANCE_PATH="Scripts/capture_tuya_private_input_provenance.py"
-PRIVATE_DEVICE_RUNNER_PATH="scripts/ci/es80_signed_field_artifact_private_runner.py"
-CAPTURE_BOOTSTRAP_SOURCE_B64="$(capture_accepted_git_source_base64 "$CAPTURE_BOOTSTRAP_PATH")"
-TUYA_PROVENANCE_SOURCE_B64="$(capture_accepted_git_source_base64 "$TUYA_PROVENANCE_PATH")"
-PRIVATE_DEVICE_RUNNER="$(capture_accepted_git_source_base64 "$PRIVATE_DEVICE_RUNNER_PATH")"
-
-# These execution adapters deliberately consume only the already captured bytes. The current
-# pre-install checkpoint does not invoke them; they are the closed handoff for the separately
-# reviewed field-build/install rung once that rung is allowed to exist again.
-run_accepted_capture_bootstrap() {
-  printf '%s' "$CAPTURE_BOOTSTRAP_SOURCE_B64" | /usr/bin/base64 -D | /bin/bash -p -s -- \
-    --field-repo-root "$ROOT" \
-    --field-source-sha "$SOURCE_SHA" \
-    --field-provenance-helper-base64 "$TUYA_PROVENANCE_SOURCE_B64"
-}
-
-run_accepted_tuya_provenance() {
-  local operation="$1"
-  shift
-  /usr/bin/python3 -I -B - "$TUYA_PROVENANCE_SOURCE_B64" "$operation" "$@" <<'PY'
-import base64
-import sys
-
-source = base64.b64decode(sys.argv[1], validate=True)
-operation = sys.argv[2]
-arguments = sys.argv[3:]
-namespace = {"__name__": "__main__", "__file__": "<accepted-tuya-provenance-helper>"}
-sys.argv = ["<accepted-tuya-provenance-helper>", operation, *arguments]
-exec(compile(source, namespace["__file__"], "exec", dont_inherit=True), namespace)
-PY
-}
-
-run_accepted_private_device_reader() {
-  /usr/bin/python3 -I -B - "$PRIVATE_DEVICE_RUNNER" "$@" <<'PY'
-import base64
-import sys
-
-source = base64.b64decode(sys.argv[1], validate=True)
-arguments = sys.argv[2:]
-namespace = {"__name__": "nembra_private_device_reader", "__file__": "<accepted-private-device-runner>"}
-exec(compile(source, namespace["__file__"], "exec", dont_inherit=True), namespace)
-reader = namespace.get("read_private_identifier")
-if not callable(reader):
-    raise RuntimeError("accepted private intended-device reader does not expose read_private_identifier")
-sys.argv = ["<accepted-private-device-runner>", *arguments]
-PY
-}
-'''
-          source = source.replace(anchor, anchor + block, 1)
-          path.write_text(source, encoding="utf-8")
+          set -euo pipefail
+          /usr/bin/python3 "$PATCHER"
 
       - name: Enforce execution-custody and NO-GO contracts
         shell: bash
@@ -147,21 +58,32 @@ PY
           test "$(grep -Fc 'device install app' "$INSTALLER")" = 0
           test "$(grep -Fc 'device process launch' "$INSTALLER")" = 0
 
-      - name: Publish tested installer and retire authoring workflow
+      - name: Publish tested installer and retire authoring files
         shell: bash
         run: |
           set -euo pipefail
           authoring_head="$(git rev-parse HEAD)"
-          authoring_parent="$(git rev-parse HEAD^)"
-          rm "$AUTHORING_WORKFLOW"
-          git add -- "$INSTALLER" "$AUTHORING_WORKFLOW"
-          permanent="$(git diff --name-only "$authoring_parent" --cached | sort)"
+          workflow_blob="$(git rev-parse HEAD:"$AUTHORING_WORKFLOW")"
+          patched_installer="$(mktemp)"
+          cp "$INSTALLER" "$patched_installer"
+
+          git fetch origin "$TARGET_BRANCH"
+          remote_head="$(git rev-parse FETCH_HEAD)"
+          test "$(git rev-parse FETCH_HEAD:"$INSTALLER")" = "$EXPECTED_INSTALLER_BLOB"
+          test "$(git rev-parse FETCH_HEAD:"$PATCHER")" = "$EXPECTED_PATCHER_BLOB"
+          test "$(git rev-parse FETCH_HEAD:"$AUTHORING_WORKFLOW")" = "$workflow_blob"
+
+          git reset --hard FETCH_HEAD
+          cp "$patched_installer" "$INSTALLER"
+          rm -f "$patched_installer" "$PATCHER" "$AUTHORING_WORKFLOW"
+          git add -- "$INSTALLER" "$PATCHER" "$AUTHORING_WORKFLOW"
+          permanent="$(git diff --cached --name-only | sort)"
           test "$permanent" = "$INSTALLER"
+          git diff --check --cached
+
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'fix(capture): capture nested field tools from accepted Git bytes'
           materialized="$(git rev-parse HEAD)"
-          git fetch origin "$TARGET_BRANCH"
-          test "$(git rev-parse FETCH_HEAD)" = "$authoring_head"
-          git push origin HEAD:"$TARGET_BRANCH"
-          printf 'NEMBRA_CAPTURE_NESTED_EXECUTION_CUSTODY materialized=%s parent=%s physicalAuthorityCreated=false\n' "$materialized" "$authoring_parent"
+          git push --force-with-lease="refs/heads/$TARGET_BRANCH:$remote_head" origin HEAD:"$TARGET_BRANCH"
+          printf 'NEMBRA_CAPTURE_NESTED_EXECUTION_CUSTODY materialized=%s absorbed=%s authoring=%s physicalAuthorityCreated=false\n' "$materialized" "$remote_head" "$authoring_head"
