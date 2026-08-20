@@ -4,6 +4,37 @@ import Testing
 
 @Suite("Authenticated stationary Capture signer rendezvous outbox")
 struct AuthenticatedStationaryCaptureSignerRendezvousOutboxTests {
+    @Test("transport bootstrap creates only protected empty directories and is idempotent")
+    func prepareAuthorizationTransferDirectory() throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let outbox = AuthenticatedStationaryCaptureSignerRendezvousOutbox(
+            applicationSupportURL: root
+        )
+
+        try outbox.prepareAuthorizationTransferDirectory()
+        try outbox.prepareAuthorizationTransferDirectory()
+
+        let nembraDirectory = root.appendingPathComponent("NembraCapture", isDirectory: true)
+        let transferDirectory = root.appendingPathComponent(
+            AuthenticatedStationaryCaptureAuthorizationInbox.directoryName,
+            isDirectory: true
+        )
+        var isDirectory: ObjCBool = false
+        #expect(FileManager.default.fileExists(
+            atPath: transferDirectory.path,
+            isDirectory: &isDirectory
+        ))
+        #expect(isDirectory.boolValue)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: transferDirectory.path).isEmpty)
+
+        for directory in [nembraDirectory, transferDirectory] {
+            let attributes = try FileManager.default.attributesOfItem(atPath: directory.path)
+            let permissions = try #require(attributes[.posixPermissions] as? NSNumber)
+            #expect(permissions.intValue & 0o022 == 0)
+        }
+    }
+
     @Test("publish is canonical owner-only no-replace and retirement is one-shot")
     func publishAndRetire() throws {
         let root = try temporaryDirectory()
