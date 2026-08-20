@@ -1,5 +1,6 @@
 name: Capture app authorization race-safe GO
 # Retriggered after writer convergence at carrier 203d4ffd07849f83c171d7e70b070f189a22548b.
+# GO retry after main-actor authorization-session construction fix at 728b8c1afa78186dc1077f5bd310a1c4999318b6.
 
 on:
   push:
