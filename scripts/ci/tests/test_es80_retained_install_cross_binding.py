@@ -81,6 +81,7 @@ class RetainedInstallCrossBindingTests(unittest.TestCase):
             "external_build_record_data": self.external,
             "signed_build_evidence_data": self.evidence,
             "final_go_record_data": self.final_go,
+            "accepted_source_commit_sha": self.source,
             "accepted_install_manifest_sha256": self.manifest_sha,
             "accepted_retained_ipa_sha256": self.ipa,
             "accepted_external_build_record_sha256": self.external_sha,
@@ -94,6 +95,7 @@ class RetainedInstallCrossBindingTests(unittest.TestCase):
 
     def test_exact_stable_subjects_cross_bind_without_authority(self) -> None:
         value = self.verify()
+        self.assertEqual(value["sourceCommitSHA"], self.source)
         self.assertEqual(value["retainedIPASHA256"], self.ipa)
         source = SCRIPT.read_text(encoding="utf-8")
         for forbidden in (
@@ -101,6 +103,14 @@ class RetainedInstallCrossBindingTests(unittest.TestCase):
             "publicKeyX963Representation", "authorizationEnvelopeSHA256",
         ):
             self.assertNotIn(forbidden, source)
+
+    def test_independently_accepted_source_commit_drift_fails_closed(self) -> None:
+        with self.assertRaises(cross.RetainedInstallCrossBindingError):
+            self.verify(accepted_source_commit_sha="a" * 40)
+        for malformed in ("A" * 40, "1" * 39, "0" * 40):
+            with self.subTest(malformed=malformed):
+                with self.assertRaises(cross.RetainedInstallCrossBindingError):
+                    self.verify(accepted_source_commit_sha=malformed)
 
     def test_independently_accepted_digest_drift_fails_closed(self) -> None:
         for key in (
