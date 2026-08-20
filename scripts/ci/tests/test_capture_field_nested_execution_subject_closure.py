@@ -43,7 +43,17 @@ class NestedFieldExecutionSubjectClosureTests(unittest.TestCase):
         installer = INSTALLER.read_text(encoding="utf-8")
         bootstrap = BOOTSTRAP.read_text(encoding="utf-8")
 
-        self.assertIn('GIT_NO_REPLACE_OBJECTS=1 git -C "$ROOT" cat-file blob "$blob"', installer)
+        capture_function = production_capture_function(installer)
+        self.assertIn(
+            'GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git -C "$ROOT" cat-file blob "$blob"',
+            capture_function,
+        )
+        self.assertNotIn(' git -C "$ROOT"', capture_function)
+        self.assertNotIn('\n  git -C "$ROOT"', capture_function)
+        self.assertIn('GIT_CONFIG_NOSYSTEM=1', capture_function)
+        self.assertIn('GIT_CONFIG_GLOBAL=/dev/null', capture_function)
+        self.assertIn('"GIT_CONFIG_NOSYSTEM": "1"', installer)
+        self.assertIn('"GIT_CONFIG_GLOBAL": "/dev/null"', installer)
         self.assertIn('CAPTURE_BOOTSTRAP_SOURCE_B64="$(capture_accepted_git_source_base64 "$CAPTURE_BOOTSTRAP_PATH")"', installer)
         self.assertIn('TUYA_PROVENANCE_SOURCE_B64="$(capture_accepted_git_source_base64 "$TUYA_PROVENANCE_PATH")"', installer)
         self.assertIn('PRIVATE_DEVICE_RUNNER="$(capture_accepted_git_source_base64 "$PRIVATE_DEVICE_RUNNER_PATH")"', installer)

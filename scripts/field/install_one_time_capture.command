@@ -167,22 +167,22 @@ capture_accepted_git_source_base64() {
   local resolved_source blob source_b64 measured_blob
   [[ -n "$relative_path" && "$relative_path" != /* && "$relative_path" != *".."* ]] || die "Accepted Git source path is invalid."
 
-  resolved_source="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null git -C "$ROOT" rev-parse --verify "$SOURCE_SHA^{commit}" 2>/dev/null)" || \
+  resolved_source="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git -C "$ROOT" rev-parse --verify "$SOURCE_SHA^{commit}" 2>/dev/null)" || \
     die "Independently accepted source commit could not be resolved."
   [[ "$resolved_source" == "$SOURCE_SHA" ]] || die "Accepted Git source resolved to a different commit."
 
-  blob="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null git -C "$ROOT" rev-parse "$SOURCE_SHA:$relative_path" 2>/dev/null)" || \
+  blob="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git -C "$ROOT" rev-parse "$SOURCE_SHA:$relative_path" 2>/dev/null)" || \
     die "Accepted nested repository tool is missing from the exact source commit: $relative_path"
   [[ "$blob" =~ ^[0-9a-f]{40}$ ]] || die "Accepted nested repository tool Git blob is malformed: $relative_path"
 
-  source_b64="$(GIT_NO_REPLACE_OBJECTS=1 git -C "$ROOT" cat-file blob "$blob" | /usr/bin/base64 | /usr/bin/tr -d '\n')" || \
+  source_b64="$(GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git -C "$ROOT" cat-file blob "$blob" | /usr/bin/base64 | /usr/bin/tr -d '\n')" || \
     die "Accepted nested repository tool could not be captured: $relative_path"
   [[ -n "$source_b64" ]] || die "Accepted nested repository tool capture is empty: $relative_path"
 
   measured_blob="$(
     printf '%s' "$source_b64" |
       /usr/bin/python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.buffer.read(), validate=True))' |
-      GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null git -C "$ROOT" hash-object --stdin
+      GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git -C "$ROOT" hash-object --stdin
   )" || die "Accepted nested repository tool capture could not be re-hashed: $relative_path"
   [[ "$measured_blob" == "$blob" ]] || die "Captured nested repository tool bytes do not match the accepted Git object: $relative_path"
   printf '%s' "$source_b64"
@@ -344,6 +344,8 @@ def git(*arguments: str, input_data: bytes | None = None) -> bytes:
         "PATH": "/usr/bin:/bin",
         "LC_ALL": "C",
         "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
     }
     completed = subprocess.run(
         ["/usr/bin/git", "-C", root_raw, *arguments],
