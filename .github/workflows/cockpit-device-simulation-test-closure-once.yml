@@ -1,0 +1,110 @@
+name: Cockpit physical simulation test closure one-shot
+
+on:
+  push:
+    branches:
+      - sol/cockpit-physical-simulation-authority-fence-20260820
+    paths:
+      - .github/workflows/cockpit-device-simulation-test-closure-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TARGET_BRANCH: sol/cockpit-physical-simulation-authority-fence-20260820
+      EXPECTED_PARENT: 7b11693a5ca3c804648ccbe018825c2be2260fd4
+      TEST_SOURCE: NembraAppTests/NembraAppTests.swift
+      SELF_WORKFLOW: .github/workflows/cockpit-device-simulation-test-closure-once.yml
+    steps:
+      - name: Checkout exact bounded authoring head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind one-shot authoring lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git branch --show-current)" = "$TARGET_BRANCH"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          changed="$(git diff --name-only "$EXPECTED_PARENT"...HEAD)"
+          test "$changed" = "$SELF_WORKFLOW"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Make app bootstrap expectations runtime-truthful
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("NembraAppTests/NembraAppTests.swift")
+          source = path.read_text(encoding="utf-8")
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one anchor, found {count}")
+              source = source.replace(old, new, 1)
+
+          replace_once(
+              '''    func testSimulationScenarioLaunchArgumentParsing() {\n        let scenario = AppBootstrap.simulationScenario(\n            arguments: ["Nembra", "--nembra-simulation=cold-disconnected"],\n            environment: [:]\n        )\n        XCTAssertEqual(scenario, .coldDisconnected)\n    }\n''',
+              '''    func testSimulationScenarioLaunchArgumentParsing() {\n        let scenario = AppBootstrap.simulationScenario(\n            arguments: ["Nembra", "--nembra-simulation=cold-disconnected"],\n            environment: [:]\n        )\n#if os(iOS) && !targetEnvironment(simulator)\n        XCTAssertNil(scenario)\n#else\n        XCTAssertEqual(scenario, .coldDisconnected)\n#endif\n    }\n''',
+              "launch-argument expectation",
+          )
+
+          replace_once(
+              '''    func testSimulationScenarioEnvironmentTakesPrecedence() {\n        let scenario = AppBootstrap.simulationScenario(\n            arguments: ["Nembra", "--nembra-simulation=riding"],\n            environment: ["NEMBRA_SIMULATION_SCENARIO": "low-battery"]\n        )\n        XCTAssertEqual(scenario, .lowBattery)\n    }\n''',
+              '''    func testSimulationScenarioEnvironmentTakesPrecedence() {\n        let scenario = AppBootstrap.simulationScenario(\n            arguments: ["Nembra", "--nembra-simulation=riding"],\n            environment: ["NEMBRA_SIMULATION_SCENARIO": "low-battery"]\n        )\n#if os(iOS) && !targetEnvironment(simulator)\n        XCTAssertNil(scenario)\n#else\n        XCTAssertEqual(scenario, .lowBattery)\n#endif\n    }\n''',
+              "environment expectation",
+          )
+
+          replace_once(
+              '''    func testBluetoothOffSimulationLaunchArgumentParsing() {\n        let scenario = AppBootstrap.simulationScenario(\n            arguments: ["Nembra", "--nembra-simulation=bluetooth-off"],\n            environment: [:]\n        )\n        XCTAssertEqual(scenario, .bluetoothOff)\n    }\n''',
+              '''    func testBluetoothOffSimulationLaunchArgumentParsing() {\n        let scenario = AppBootstrap.simulationScenario(\n            arguments: ["Nembra", "--nembra-simulation=bluetooth-off"],\n            environment: [:]\n        )\n#if os(iOS) && !targetEnvironment(simulator)\n        XCTAssertNil(scenario)\n#else\n        XCTAssertEqual(scenario, .bluetoothOff)\n#endif\n    }\n''',
+              "bluetooth-off expectation",
+          )
+
+          replace_once(
+              '''    @MainActor\n    func testExplicitSimulationInjectsQAInterpolationPolicy() {\n        let store = AppBootstrap.makeVehicleStore(\n            arguments: ["Nembra"],\n            environment: ["NEMBRA_SIMULATION_SCENARIO": "riding"]\n        )\n        XCTAssertEqual(store.speedInstrumentInterpolationPolicy, .simulatorQA)\n    }\n''',
+              '''    @MainActor\n    func testExplicitSimulationInjectsQAInterpolationPolicy() {\n        let store = AppBootstrap.makeVehicleStore(\n            arguments: ["Nembra"],\n            environment: ["NEMBRA_SIMULATION_SCENARIO": "riding"]\n        )\n#if os(iOS) && !targetEnvironment(simulator)\n        XCTAssertEqual(store.speedInstrumentInterpolationPolicy, .disabled)\n        XCTAssertNotEqual(store.profile, .simulatorQA)\n#else\n        XCTAssertEqual(store.speedInstrumentInterpolationPolicy, .simulatorQA)\n#endif\n    }\n''',
+              "interpolation-policy expectation",
+          )
+
+          path.write_text(source, encoding="utf-8")
+
+      - name: Enforce bounded truth contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          changed="$(git diff --name-only)"
+          test "$changed" = "$TEST_SOURCE"
+          test "$(grep -Fc '#if os(iOS) && !targetEnvironment(simulator)' "$TEST_SOURCE")" -ge 4
+          grep -Fq 'XCTAssertEqual(store.speedInstrumentInterpolationPolicy, .disabled)' "$TEST_SOURCE"
+          grep -Fq 'XCTAssertNotEqual(store.profile, .simulatorQA)' "$TEST_SOURCE"
+          grep -Fq 'XCTAssertEqual(store.speedInstrumentInterpolationPolicy, .simulatorQA)' "$TEST_SOURCE"
+
+      - name: Publish only if the branch is still this exact head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin "$TARGET_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          git rm -- "$SELF_WORKFLOW"
+          git add -- "$TEST_SOURCE"
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'test(cockpit): enforce physical simulation fence in app bootstrap'
+          final_head="$(git rev-parse HEAD)"
+          git fetch origin "$TARGET_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          git push origin HEAD:"$TARGET_BRANCH"
+          printf 'NEMBRA_COCKPIT_PHYSICAL_SIMULATION_TEST_CLOSURE final=%s trigger=%s physicalTelemetryAuthorityCreated=false\n' "$final_head" "$GITHUB_SHA" | tee -a "$GITHUB_STEP_SUMMARY"
