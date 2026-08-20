@@ -24,7 +24,7 @@ struct CaptureSimulatorQAHarnessSourceTests_AuthorizationInboxAppAdapter {
         #expect(controller.contains("session.acceptEnvelope(envelopeData)"))
 
         // Consumed-manifest validation failure, manifest custody failure, publication failure,
-        // outbound-rendezvous retirement failure, and any later app lifecycle revocation must kill
+        // envelope custody/verification failure, and any later app lifecycle revocation must kill
         // package authority. Normal revocation also retires the non-authorizing rendezvous
         // best-effort so an abandoned attempt cannot block the next field attempt; cleanup failure
         // remains fail-closed because publish is no-replace.
@@ -70,6 +70,35 @@ struct CaptureSimulatorQAHarnessSourceTests_AuthorizationInboxAppAdapter {
         // a replacement manifest in the same controller lifetime.
         #expect(section.components(separatedBy: "session.revoke()").count - 1 == 2)
         #expect(section.components(separatedBy: "catch {").count - 1 == 2)
+    }
+
+    @Test("rejected authorization envelope is terminal while exact absence remains retryable")
+    func rejectedEnvelopeCannotBeReplacedWithinControllerLifetime() throws {
+        let controller = try repositoryFile(
+            "NembraApp/App/NembraCaptureFieldAuthorizationController.swift"
+        )
+        let start = try #require(
+            controller.range(of: "func authorizeFromInbox() throws")
+        )
+        let end = try #require(
+            controller.range(
+                of: "func advanceInboxHandoffIfAvailable() throws -> HandoffProgress",
+                range: start.upperBound..<controller.endIndex
+            )
+        )
+        let section = String(controller[start.lowerBound..<end.lowerBound])
+
+        #expect(section.contains(".takeAuthorizationEnvelope()"))
+        #expect(section.contains("AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject"))
+        #expect(section.contains("AuthenticatedStationaryCaptureAuthorizationInbox.authorizationEnvelopeFilename"))
+        #expect(section.contains("throw AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(subject)"))
+        #expect(section.contains("outbox.retirePublishedRendezvous()"))
+        #expect(section.contains("session.acceptEnvelope(envelopeData)"))
+
+        // Only exact absence may leave the current challenge alive. Any other outbox/inbox custody,
+        // retirement, or envelope verification failure must hit the single terminal catch-all.
+        #expect(section.components(separatedBy: "session.revoke()").count - 1 == 1)
+        #expect(section.components(separatedBy: "catch {").count - 1 == 1)
     }
 
     @Test("polling seam waits only for truly absent next files and never treats presence as authority")
