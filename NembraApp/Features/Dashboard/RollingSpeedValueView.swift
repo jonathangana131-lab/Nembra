@@ -11,49 +11,73 @@ struct RollingSpeedValueView: View {
     let integerPointSize: CGFloat
     let fractionPointSize: CGFloat
 
-    private static let numberModel: RollingNumberModel? = {
+    private static let twoDigitNumberModel: RollingNumberModel? = {
         guard let layout = try? RollingNumberLayout(integerDigits: 2, fractionDigits: 1) else {
             return nil
         }
         return try? RollingNumberModel(layout: layout)
     }()
 
+    private static let threeDigitNumberModel: RollingNumberModel? = {
+        guard let layout = try? RollingNumberLayout(integerDigits: 3, fractionDigits: 1) else {
+            return nil
+        }
+        return try? RollingNumberModel(layout: layout)
+    }()
+
+    static func supports(_ value: Double?) -> Bool {
+        guard let value, value.isFinite, value >= 0, value < 999.95 else { return false }
+        return true
+    }
+
     private var validatedRenderValue: Double? {
-        guard let value, value.isFinite, value >= 0 else { return nil }
+        guard Self.supports(value), let value else { return nil }
         return value == 0 ? 0 : value
     }
 
     var body: some View {
         if let value = validatedRenderValue,
-           let numberModel = Self.numberModel,
+           let numberModel = value < 99.95
+                ? Self.twoDigitNumberModel
+                : Self.threeDigitNumberModel,
            let snapshot = try? numberModel.snapshot(for: value) {
+            let resolvedIntegerPointSize = snapshot.layout.integerDigits == 3
+                ? integerPointSize * 0.80
+                : integerPointSize
+            let visibleDigitKey = snapshot.digits.map(\.digit)
             HStack(alignment: .lastTextBaseline, spacing: 1) {
-                HStack(spacing: -5) {
+                HStack(spacing: -7) {
                     ForEach(0..<snapshot.layout.integerDigits, id: \.self) { index in
                         rollingDigit(
                             snapshot.digits[index],
                             transitionValue: value,
-                            pointSize: integerPointSize,
-                            weight: .thin
+                            pointSize: resolvedIntegerPointSize,
+                            weight: .ultraLight
                         )
                     }
                 }
 
                 Text(".")
-                    .font(.system(size: fractionPointSize, weight: .regular, design: .rounded))
+                    .font(.system(size: fractionPointSize, weight: .light, design: .default))
+                    .fontWidth(.expanded)
                     .padding(.horizontal, -2)
 
                 rollingDigit(
                     snapshot.digits[snapshot.layout.integerDigits],
                     transitionValue: value,
                     pointSize: fractionPointSize,
-                    weight: .regular
+                    weight: .light
                 )
             }
             .monospacedDigit()
+            .animation(
+                reduceMotion ? nil : .smooth(duration: 0.16),
+                value: visibleDigitKey
+            )
         } else {
             Text("—")
-                .font(.system(size: integerPointSize * 0.70, weight: .ultraLight, design: .rounded))
+                .font(.system(size: integerPointSize * 0.70, weight: .ultraLight, design: .default))
+                .fontWidth(.expanded)
                 .foregroundStyle(NembraColor.primaryText.opacity(0.60))
                 .frame(minWidth: integerPointSize * 0.92, alignment: .center)
         }
@@ -66,18 +90,11 @@ struct RollingSpeedValueView: View {
         weight: Font.Weight
     ) -> some View {
         Text(String(digit.digit))
-            .font(.system(size: pointSize, weight: weight, design: .rounded))
+            .font(.system(size: pointSize, weight: weight, design: .default))
+            .fontWidth(.expanded)
             .opacity(digit.isVisible ? 1 : 0)
             .contentTransition(
                 reduceMotion ? .identity : .numericText(value: transitionValue)
-            )
-            .animation(
-                reduceMotion ? nil : .snappy(duration: 0.15),
-                value: digit.digit
-            )
-            .animation(
-                reduceMotion ? nil : .easeOut(duration: 0.12),
-                value: digit.isVisible
             )
             .clipped()
     }

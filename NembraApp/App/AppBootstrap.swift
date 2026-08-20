@@ -369,6 +369,17 @@ enum AppBootstrap {
     static let simulationDashboardRenderStressEnvironmentKey = "NEMBRA_SIMULATION_DASHBOARD_RENDER_STRESS"
     static let simulationHomeStateFixtureEnvironmentKey = "NEMBRA_SIMULATION_HOME_STATE_FIXTURE"
 
+    /// Positive synthetic vehicle authority is a Simulator test/preview facility,
+    /// including Release-configured performance tests. An environment variable or
+    /// launch argument on a physical iPhone can never select the synthetic service.
+    static let simulationRuntimeIsAuthorized: Bool = {
+#if targetEnvironment(simulator)
+        true
+#else
+        false
+#endif
+    }()
+
     enum SimulatorHomeStateFixture: String, Equatable {
         case retainAfterLive = "retain-after-live"
         case commandPending = "command-pending"
@@ -566,6 +577,7 @@ enum AppBootstrap {
         arguments: [String],
         environment: [String: String]
     ) -> ScooterSimulationScenario? {
+        guard simulationRuntimeIsAuthorized else { return nil }
         switch ScooterSimulationConfiguration.resolve(
             arguments: arguments,
             environment: environment
