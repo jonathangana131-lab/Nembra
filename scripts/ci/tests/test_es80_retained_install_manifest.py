@@ -37,7 +37,6 @@ class RetainedInstallManifestTests(unittest.TestCase):
             "signedBuildEvidenceSHA256": "7" * 64,
             "finalGORecordSHA256": "8" * 64,
             "intendedDevicePseudonymSHA256": "9" * 64,
-            "authorizationEnvelopeSHA256": "a" * 64,
         }
 
     def test_round_trip_is_closed_compact_and_explicitly_nonauthorizing(self) -> None:
@@ -49,6 +48,10 @@ class RetainedInstallManifestTests(unittest.TestCase):
         self.assertNotIn(b'"decision"', data)
         self.assertNotIn(b'"GO"', data)
         self.assertNotIn(b'"manifestKind"', data)
+        # The retained install manifest is a pre-attempt subject. The authorization envelope is
+        # created only after the running app emits its random challenge, so it must not be part of
+        # this earlier closed schema or create a chronology cycle.
+        self.assertNotIn(b'"authorizationEnvelopeSHA256"', data)
 
     def test_python_contract_pins_package_owned_semantics(self) -> None:
         if not PACKAGE_VERIFIER.exists():
@@ -69,6 +72,7 @@ class RetainedInstallManifestTests(unittest.TestCase):
         self.assertIn("normalizedBuildInstanceID(wire.buildInstanceID) == wire.buildInstanceID", source)
         self.assertNotIn("bytes[14] == 0x34", source)
         self.assertNotIn('"signedInstallableSHA256"', source)
+        self.assertNotIn('"authorizationEnvelopeSHA256"', source)
 
     def test_every_exact_binding_drift_is_rejected(self) -> None:
         data = manifest.build_manifest(self.bindings)
@@ -118,7 +122,6 @@ class RetainedInstallManifestTests(unittest.TestCase):
             ("buildInstanceID", "12345678-1234-abcd-8def-123456789ab"),
             ("retainedIPASHA256", "0" * 64),
             ("retainedIPASHA256", "A" * 64),
-            ("authorizationEnvelopeSHA256", "0" * 64),
         )
         for key, value in cases:
             changed = dict(self.bindings)
