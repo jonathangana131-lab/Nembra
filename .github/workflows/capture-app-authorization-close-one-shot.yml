@@ -1,3 +1,4 @@
+# GO recovery trigger: materialize the stronger end-to-end app authorization closure.
 name: Capture app authorization close one-shot
 
 on:
