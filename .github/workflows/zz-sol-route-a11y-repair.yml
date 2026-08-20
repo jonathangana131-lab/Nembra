@@ -1,7 +1,7 @@
 name: Route exact accessibility repair
 
 on:
-  push:
+  pull_request:
     branches:
       - main
 
@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   patch-child:
-    if: contains(github.event.head_commit.message, 'route exact accessibility repair')
+    if: github.event.pull_request.head.ref == 'ops/sol-trigger-a11y-repair'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -97,7 +97,6 @@ jobs:
             NembraApp/Features/Dashboard/SpeedInstrumentModel.swift \
             NembraApp/Features/Home/HomeView.swift | sort)"
           test "$changed" = "$expected"
-          git diff -- NembraApp/Features/Dashboard/DashboardView.swift NembraApp/Features/Dashboard/SpeedInstrumentModel.swift NembraApp/Features/Home/HomeView.swift
 
       - name: Commit exact repair
         run: |
