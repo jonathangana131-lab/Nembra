@@ -156,24 +156,7 @@ public struct AuthenticatedStationaryCaptureSignerRendezvousOutbox: Sendable {
     }
 
     private func openFieldAuthorizationDirectory(createIfMissing: Bool) throws -> Int32 {
-        let baseFD = applicationSupportURL.withUnsafeFileSystemRepresentation { path -> Int32 in
-            guard let path else { return -1 }
-            return Darwin.open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-        }
-        guard baseFD >= 0 else {
-            throw AuthenticatedStationaryCaptureSignerRendezvousOutboxError
-                .applicationSupportUnavailable
-        }
-
-        var baseMetadata = stat()
-        guard Darwin.fstat(baseFD, &baseMetadata) == 0,
-              (baseMetadata.st_mode & S_IFMT) == S_IFDIR,
-              baseMetadata.st_uid == getuid(),
-              (baseMetadata.st_mode & mode_t(0o022)) == 0 else {
-            Darwin.close(baseFD)
-            throw AuthenticatedStationaryCaptureSignerRendezvousOutboxError
-                .directoryCustodyRejected("Application Support")
-        }
+        let baseFD = try openApplicationSupportDirectory(createIfMissing: createIfMissing)
 
         var currentFD = baseFD
         do {
@@ -192,6 +175,66 @@ public struct AuthenticatedStationaryCaptureSignerRendezvousOutbox: Sendable {
             Darwin.close(currentFD)
             throw error
         }
+    }
+
+    /// Opens the Foundation-provided Application Support location without assuming it already
+    /// exists in a fresh app container. Creation is descriptor-relative beneath the already-existing
+    /// parent so the bootstrap never relies on an absolute-path mkdir followed by a later custody
+    /// check. Both parent and base remain owner-controlled and non-group/world-writable.
+    private func openApplicationSupportDirectory(createIfMissing: Bool) throws -> Int32 {
+        let parentURL = applicationSupportURL.deletingLastPathComponent()
+        let component = applicationSupportURL.lastPathComponent
+        guard !component.isEmpty, component != ".", component != ".." else {
+            throw AuthenticatedStationaryCaptureSignerRendezvousOutboxError
+                .applicationSupportUnavailable
+        }
+
+        let parentFD = parentURL.withUnsafeFileSystemRepresentation { path -> Int32 in
+            guard let path else { return -1 }
+            return Darwin.open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        }
+        guard parentFD >= 0 else {
+            throw AuthenticatedStationaryCaptureSignerRendezvousOutboxError
+                .applicationSupportUnavailable
+        }
+        defer { Darwin.close(parentFD) }
+
+        var parentMetadata = stat()
+        guard Darwin.fstat(parentFD, &parentMetadata) == 0,
+              (parentMetadata.st_mode & S_IFMT) == S_IFDIR,
+              parentMetadata.st_uid == getuid(),
+              (parentMetadata.st_mode & mode_t(0o022)) == 0 else {
+            throw AuthenticatedStationaryCaptureSignerRendezvousOutboxError
+                .directoryCustodyRejected("Application Support parent")
+        }
+
+        if createIfMissing,
+           Darwin.mkdirat(parentFD, component, mode_t(0o700)) != 0,
+           errno != EEXIST {
+            throw AuthenticatedStationaryCaptureSignerRendezvousOutboxError
+                .directoryCustodyRejected("Application Support")
+        }
+
+        let baseFD = Darwin.openat(
+            parentFD,
+            component,
+            O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
+        )
+        guard baseFD >= 0 else {
+            throw AuthenticatedStationaryCaptureSignerRendezvousOutboxError
+                .applicationSupportUnavailable
+        }
+
+        var baseMetadata = stat()
+        guard Darwin.fstat(baseFD, &baseMetadata) == 0,
+              (baseMetadata.st_mode & S_IFMT) == S_IFDIR,
+              baseMetadata.st_uid == getuid(),
+              (baseMetadata.st_mode & mode_t(0o022)) == 0 else {
+            Darwin.close(baseFD)
+            throw AuthenticatedStationaryCaptureSignerRendezvousOutboxError
+                .directoryCustodyRejected("Application Support")
+        }
+        return baseFD
     }
 
     private func openOwnedDirectory(
