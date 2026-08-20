@@ -19,19 +19,25 @@ struct TuyaFieldFinalAuthoritySourceTests {
         #expect(seal.lowerBound < accepted.lowerBound)
     }
 
-    @Test("OFF1 correlation is mechanically downstream of exact build, current SDK account, membership, and identity lease authority")
+    @Test("OFF1 correlation is downstream of metadata, signed one-time authority, current SDK account, membership, and identity lease")
     func correlationCannotStartFromUIStateAlone() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let start = try section(in: source, from: "private func beginBaselineAfterCurrentOperatorAttestation()", to: "private func beginCorrelationSeries()")
         let begin = try section(in: source, from: "private func beginCorrelationSeries()", to: "func startNextCorrelationWindow()")
 
-        #expect(start.contains("buildIdentity.isAuthoritativeFieldBuild"))
+        #expect(start.contains("buildIdentity.hasCompleteFieldBuildMetadata"))
         #expect(start.contains("guard privateConfig, sdkAccountLoggedIn"))
         #expect(start.contains("operatorSafetyAttestationIsCurrent"))
         #expect(!start.contains("StationaryCaptureOperatorAttestation("))
         #expect(start.contains("verifySDKMembership"))
         #expect(start.contains("TuyaSDKAccountIdentityLeaseGate.verdict"))
+        #expect(start.contains("fieldAuthorization.admitOFF1Start()"))
         #expect(start.contains("beginCorrelationSeries()"))
+        let metadata = try #require(start.range(of: "buildIdentity.hasCompleteFieldBuildMetadata"))
+        let admission = try #require(start.range(of: "fieldAuthorization.admitOFF1Start()"))
+        let correlation = try #require(start.range(of: "beginCorrelationSeries()"))
+        #expect(metadata.lowerBound < admission.lowerBound)
+        #expect(admission.lowerBound < correlation.lowerBound)
 
         #expect(begin.contains("sdkAccountLoggedIn"))
         #expect(begin.contains("sdkDeviceMembershipVerified"))
@@ -40,6 +46,7 @@ struct TuyaFieldFinalAuthoritySourceTests {
         #expect(begin.contains("startCurrentCorrelationWindow()"))
         #expect(!source.contains("central.scanForPeripherals"))
         #expect(!source.contains("central.connect("))
+        #expect(!source.contains("buildIdentity.isAuthoritativeFieldBuild"))
     }
 
     @Test("only fresh repeated correlation can authorize a local candidate")
