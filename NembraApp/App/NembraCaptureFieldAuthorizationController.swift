@@ -101,13 +101,23 @@ final class NembraCaptureFieldAuthorizationController {
     /// not authority. Any present-but-invalid/custody-violating manifest or envelope is propagated
     /// to the caller; verification code remains responsible for terminal revocation where required.
     ///
-    /// This seam is intentionally idempotent while waiting: the manifest is consumed exactly once,
-    /// then only an envelope can advance the session. It never retries a rejected envelope against
-    /// the same challenge and never resets a revoked session.
+    /// This seam is intentionally idempotent while waiting: an idle authoritative handoff first
+    /// provisions the exact owner-controlled directory external `appDataContainer` transport may
+    /// target, the manifest is consumed exactly once, then only an envelope can advance the session.
+    /// It never retries a rejected envelope against the same challenge and never resets a revoked
+    /// session. Directory preparation failure is terminal for this controller lifetime.
     @discardableResult
     func advanceInboxHandoffIfAvailable() throws -> HandoffProgress {
         switch session.stage {
         case .idle:
+            do {
+                try AuthenticatedStationaryCaptureSignerRendezvousOutbox()
+                    .prepareAuthorizationTransferDirectory()
+            } catch {
+                session.revoke()
+                throw error
+            }
+
             do {
                 _ = try prepareSignerRendezvousDocumentFromInbox()
                 return .waitingForEnvelope
