@@ -12,15 +12,22 @@ import importlib.util
 import json
 from pathlib import Path
 import re
+import sys
 from typing import Any
 
-HERE = Path(__file__).resolve().parent
-MANIFEST_SCRIPT = HERE / "es80_retained_install_manifest.py"
-SPEC = importlib.util.spec_from_file_location("nembra_retained_install_manifest", MANIFEST_SCRIPT)
-if SPEC is None or SPEC.loader is None:
-    raise RuntimeError("retained-install manifest verifier is unavailable")
-manifest_contract = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(manifest_contract)
+# Normal CI/tool use resolves the sibling manifest verifier from the checked-out package. The field
+# preinstall checkpoint instead injects that verifier from immutable Git-object bytes before this
+# module is executed, eliminating a second mutable-path read at the privileged composition seam.
+if "nembra_retained_install_manifest" in sys.modules:
+    manifest_contract = sys.modules["nembra_retained_install_manifest"]
+else:
+    HERE = Path(__file__).resolve().parent
+    MANIFEST_SCRIPT = HERE / "es80_retained_install_manifest.py"
+    SPEC = importlib.util.spec_from_file_location("nembra_retained_install_manifest", MANIFEST_SCRIPT)
+    if SPEC is None or SPEC.loader is None:
+        raise RuntimeError("retained-install manifest verifier is unavailable")
+    manifest_contract = importlib.util.module_from_spec(SPEC)
+    SPEC.loader.exec_module(manifest_contract)
 
 SUBJECT_SCHEMA_VERSION = 1
 EVIDENCE_KIND = "signed-field-artifact-digests-not-authorization"
