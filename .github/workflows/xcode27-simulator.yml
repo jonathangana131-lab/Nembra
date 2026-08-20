@@ -127,7 +127,11 @@ jobs:
           /usr/bin/xmllint --noout 'Nembra.xcodeproj/xcshareddata/xcschemes/Nembra Performance.xcscheme'
           scripts/validate_pbxproj_references.py
           bash -n scripts/ci/xcode27_product_simulator_capture.sh
+          bash -n scripts/ci/xcode27_devicectl_manifest_transport_contract.sh
           python3 scripts/ci/validate_xcode27_dashboard_performance.py --self-test
+
+      - name: Probe devicectl app-container transfer contract
+        run: scripts/ci/xcode27_devicectl_manifest_transport_contract.sh
 
       - name: Validate core package
         working-directory: Packages/NembraCore
