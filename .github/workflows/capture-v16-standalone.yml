@@ -103,6 +103,10 @@ jobs:
           swift test --filter AuthenticatedStationaryCaptureInstallManifestTests
           swift test --filter AuthenticatedStationaryCaptureAppAuthorizerTests
           swift test --filter AuthenticatedStationaryCaptureAppAuthorizerPreSigningTests
+          swift test --filter AuthenticatedStationaryCaptureAppSessionTests
+          swift test --filter AuthenticatedStationaryCaptureAuthoritySurfaceSourceTests
+          swift test --filter TuyaAuthenticatedFieldCapabilityAppWiringSourceTests
+          swift test --filter TuyaFieldInstallerRetainedIPAAdmissionSourceTests
 
       - name: Validate one-time field handoff without private inputs
         run: |
@@ -114,11 +118,13 @@ jobs:
             Scripts/capture_tuya_private_input_provenance.py \
             scripts/ci/es80_signed_field_artifact_private_runner.py \
             scripts/ci/es80_retained_install_manifest.py \
-            scripts/ci/tests/test_es80_retained_install_manifest.py
+            scripts/ci/tests/test_es80_retained_install_manifest.py \
+            scripts/ci/tests/test_es80_retained_install_installer_chronology.py
           /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
           /usr/bin/python3 -I scripts/ci/es80_retained_install_manifest.py --self-test
           /usr/bin/python3 -I scripts/ci/tests/test_capture_tuya_private_input_provenance.py
           /usr/bin/python3 -I scripts/ci/tests/test_es80_retained_install_manifest.py
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_retained_install_installer_chronology.py
           test ! -e LocalSecrets
           test ! -e Pods
           test ! -e NembraCapture.xcworkspace

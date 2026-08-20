@@ -39,14 +39,7 @@ struct AuthenticatedStationaryCaptureAppSessionTests {
 
     @Test("session source keeps prepared bytes and opaque capability private")
     func sourceKeepsAuthorityPrivateAndSingleUse() throws {
-        let sourceURL = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent(
-                "Sources/NembraCaptureAppAuthorization/AuthenticatedStationaryCaptureAppSession.swift"
-            )
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let source = try sessionSource()
 
         #expect(source.contains("private var preparedAttempt:"))
         #expect(source.contains("private var retainedInstallManifestData: Data?"))
@@ -68,16 +61,26 @@ struct AuthenticatedStationaryCaptureAppSessionTests {
         #expect(!source.contains("reset()"))
     }
 
+    @Test("every post-authorization gate failure synchronizes the outer session to revoked")
+    func everyGateFailureRevokesOuterSession() throws {
+        let source = try sessionSource()
+        for function in [
+            "public func admitOFF1Start() throws",
+            "public func admitAuthenticationStart() throws",
+            "public func admitOfficialConnectionStart() throws",
+            "public func admitObservationStart() throws",
+            "public func sealAfterAcceptedArtifactFreeze() throws",
+        ] {
+            let body = try functionBody(function, in: source)
+            #expect(body.contains("catch {"), "Missing failure boundary in \(function)")
+            #expect(body.contains("revoke()"), "Gate failure can leave stale outer stage in \(function)")
+            #expect(body.contains("throw error"), "Gate failure must preserve the original cause in \(function)")
+        }
+    }
+
     @Test("signer rendezvous exposes no raw manifest or capability")
     func signerRendezvousIsMinimal() throws {
-        let sourceURL = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent(
-                "Sources/NembraCaptureAppAuthorization/AuthenticatedStationaryCaptureAppSession.swift"
-            )
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let source = try sessionSource()
         let start = try #require(source.range(of: "public struct SignerRendezvous"))
         let end = try #require(
             source.range(of: "public private(set) var stage", range: start.upperBound..<source.endIndex)
@@ -91,5 +94,24 @@ struct AuthenticatedStationaryCaptureAppSessionTests {
         #expect(!rendezvous.contains("manifest"))
         #expect(!rendezvous.contains("capability"))
         #expect(!rendezvous.contains("envelope"))
+    }
+
+    private func functionBody(_ marker: String, in source: String) throws -> String {
+        let start = try #require(source.range(of: marker))
+        let next = source.range(of: "\n    public func ", range: start.upperBound..<source.endIndex)
+            ?? source.range(of: "\n    /// Terminally retires", range: start.upperBound..<source.endIndex)
+            ?? source.endIndex..<source.endIndex
+        return String(source[start.lowerBound..<next.lowerBound])
+    }
+
+    private func sessionSource() throws -> String {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent(
+                "Sources/NembraCaptureAppAuthorization/AuthenticatedStationaryCaptureAppSession.swift"
+            )
+        return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 }

@@ -13,6 +13,7 @@
 		A10000000000000000000008 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000008 /* Localizable.strings */; };
 		A10000000000000000000009 /* NembraCaptureUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000009 /* NembraCaptureUITests.swift */; };
 		A1000000000000000000000A /* NembraCaptureSimulatorQAHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000B /* NembraCaptureSimulatorQAHarness.swift */; };
+		A1000000000000000000000D /* NembraCaptureFieldAuthorizationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000C /* NembraCaptureFieldAuthorizationController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -33,6 +34,7 @@
 		B10000000000000000000009 /* NembraCaptureUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NembraCaptureUITests.swift; sourceTree = "<group>"; };
 		B1000000000000000000000A /* Nembra Capture UI Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Nembra Capture UI Tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B1000000000000000000000B /* NembraCaptureSimulatorQAHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NembraCaptureSimulatorQAHarness.swift; path = NembraApp/App/NembraCaptureSimulatorQAHarness.swift; sourceTree = SOURCE_ROOT; };
+		B1000000000000000000000C /* NembraCaptureFieldAuthorizationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NembraCaptureFieldAuthorizationController.swift; path = NembraApp/App/NembraCaptureFieldAuthorizationController.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -68,6 +70,7 @@
 			isa = PBXGroup;
 			children = (
 				B10000000000000000000004 /* NembraCaptureEntrypoint.swift */,
+				B1000000000000000000000C /* NembraCaptureFieldAuthorizationController.swift */,
 				B1000000000000000000000B /* NembraCaptureSimulatorQAHarness.swift */,
 				B10000000000000000000007 /* NembraCaptureBuildIdentity.swift */,
 				B10000000000000000000008 /* Localizable.strings */,
@@ -193,6 +196,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000004 /* NembraCaptureEntrypoint.swift in Sources */,
+				A1000000000000000000000D /* NembraCaptureFieldAuthorizationController.swift in Sources */,
 				A1000000000000000000000A /* NembraCaptureSimulatorQAHarness.swift in Sources */,
 				A10000000000000000000007 /* NembraCaptureBuildIdentity.swift in Sources */,
 			);
