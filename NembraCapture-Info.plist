@@ -4,6 +4,10 @@
 <dict>
 	<key>NembraCaptureBuildIdentifier</key>
 	<string>$(NEMBRA_CAPTURE_BUILD_IDENTIFIER)</string>
+	<key>NembraCaptureBuildInstanceID</key>
+	<string>$(NEMBRA_CAPTURE_BUILD_INSTANCE_ID)</string>
+	<key>NembraCaptureBuildCommitSHA</key>
+	<string>$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)</string>
 	<key>NembraCaptureSourceCommitSHA</key>
 	<string>$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)</string>
 	<key>NembraCaptureTuyaDependencyLockSHA256</key>
