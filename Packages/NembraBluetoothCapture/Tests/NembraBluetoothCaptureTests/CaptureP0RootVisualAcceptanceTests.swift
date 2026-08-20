@@ -3,8 +3,8 @@ import Testing
 
 @Suite("Capture P0 root visual acceptance")
 struct CaptureP0RootVisualAcceptanceTests {
-    @Test("public root explains its lock and cannot start SDK authorization")
-    func publicRootIsExplanatoryAndFailClosed() throws {
+    @Test("root distinguishes incomplete metadata from later independent field authorization")
+    func rootMetadataGateIsTruthfulAndNonAuthorizing() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let root = String(try section(
             in: source,
@@ -13,31 +13,34 @@ struct CaptureP0RootVisualAcceptanceTests {
         ))
 
         #expect(root.contains("private let buildIdentity = NembraCaptureBuildIdentity.current"))
-        #expect(root.contains("private var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }"))
+        #expect(root.contains("private var fieldBuildMetadataReady: Bool { buildIdentity.hasCompleteFieldBuildMetadata }"))
         #expect(root.contains(".onAppear { synchronizeSDKSession() }"))
-        #expect(root.contains("guard fieldBuildIsAuthoritative else { return }\n        sdkAccount.bootstrap()"))
-        #expect(root.contains("if !fieldBuildIsAuthoritative {"))
+        #expect(root.contains("guard fieldBuildMetadataReady else { return }\n        sdkAccount.bootstrap()"))
+        #expect(root.contains("if !fieldBuildMetadataReady {"))
         #expect(root.contains("Label(\"Review field requirements\", systemImage: \"lock.shield\")"))
-        #expect(root.contains("Shows why this public build cannot start account or Bluetooth authorization."))
-        #expect(root.contains("Bluetooth stays locked until the reviewed field build is installed."))
+        #expect(root.contains("Build metadata ready"))
+        #expect(root.contains("one-time field authorization checks are still required before Bluetooth"))
+        #expect(root.contains("exact build metadata is complete and one-time field authorization is verified"))
         #expect(root.contains("This public build cannot authorize Bluetooth or collect physical evidence."))
-        #expect(root.contains(".accessibilityLabel(fieldBuildIsAuthoritative ? \"Field build ready\" : \"Physical capture locked\")"))
+        #expect(root.contains(".accessibilityLabel(fieldBuildMetadataReady ? \"Build metadata ready\" : \"Physical capture locked\")"))
         #expect(root.contains(".accessibilityIdentifier(\"nembra.capture.root.account-link-action\")"))
+        #expect(!root.contains("fieldBuildIsAuthoritative"))
+        #expect(!root.contains("Field build ready"))
 
-        let publicBranch = try #require(root.range(of: "if !fieldBuildIsAuthoritative {"))
+        let missingMetadataBranch = try #require(root.range(of: "if !fieldBuildMetadataReady {"))
         let loggedInBranch = try #require(root.range(
             of: "} else if sdkAccount.loggedIn {",
-            range: publicBranch.upperBound..<root.endIndex
+            range: missingMetadataBranch.upperBound..<root.endIndex
         ))
         let appleAction = try #require(root.range(
             of: "SignInWithAppleButton(.signIn)",
             range: loggedInBranch.upperBound..<root.endIndex
         ))
-        #expect(publicBranch.lowerBound < loggedInBranch.lowerBound)
+        #expect(missingMetadataBranch.lowerBound < loggedInBranch.lowerBound)
         #expect(loggedInBranch.lowerBound < appleAction.lowerBound)
     }
 
-    @Test("field root uses one official SDK Apple action with disclosed email or phone recovery")
+    @Test("metadata-ready root uses one official SDK Apple action with disclosed email or phone recovery")
     func officialSDKLoginIsSingleAndRecoverable() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let root = String(try section(
@@ -62,7 +65,7 @@ struct CaptureP0RootVisualAcceptanceTests {
         #expect(!root.contains("Paste user code"))
     }
 
-    @Test("large type keeps lock authority and the only safe public action in the first fold")
+    @Test("large type keeps metadata state and the shortest safe action ahead of details")
     func accessibilityRootKeepsSafeActionAheadOfDetails() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let root = String(try section(
