@@ -7,6 +7,8 @@ public enum AuthenticatedStationaryCaptureAuthorizationInboxError: Error, Equata
     case missingSubject(String)
     case symbolicLinkRejected(String)
     case nonRegularFile(String)
+    case multipleLinksRejected(String)
+    case ownershipRejected(String)
     case byteLimitExceeded(String)
     case subjectChangedDuringRead(String)
     case readFailed(String)
@@ -64,18 +66,30 @@ public struct AuthenticatedStationaryCaptureAuthorizationInbox: Sendable {
     }
 
     private func take(filename: String, maximumByteCount: Int) throws -> Data {
-        let fileURL = directoryURL.appendingPathComponent(filename, isDirectory: false)
-        let descriptor = try openNoFollow(fileURL: fileURL, filename: filename)
+        let directoryFD = try openDirectoryNoFollow(subjectFilename: filename)
+        defer { Darwin.close(directoryFD) }
+
+        let descriptor = try openSubjectNoFollow(
+            directoryFD: directoryFD,
+            filename: filename
+        )
         defer { Darwin.close(descriptor) }
 
         var before = stat()
         guard Darwin.fstat(descriptor, &before) == 0 else {
             throw AuthenticatedStationaryCaptureAuthorizationInboxError.readFailed(filename)
         }
-        guard (before.st_mode & S_IFMT) == S_IFREG, before.st_nlink == 1 else {
+        guard (before.st_mode & S_IFMT) == S_IFREG else {
             throw AuthenticatedStationaryCaptureAuthorizationInboxError.nonRegularFile(filename)
         }
-        guard before.st_size > 0, before.st_size <= maximumByteCount else {
+        guard before.st_nlink == 1 else {
+            throw AuthenticatedStationaryCaptureAuthorizationInboxError.multipleLinksRejected(filename)
+        }
+        guard before.st_uid == getuid() else {
+            throw AuthenticatedStationaryCaptureAuthorizationInboxError.ownershipRejected(filename)
+        }
+        guard before.st_size > 0,
+              before.st_size <= off_t(maximumByteCount) else {
             throw AuthenticatedStationaryCaptureAuthorizationInboxError.byteLimitExceeded(filename)
         }
 
@@ -83,7 +97,7 @@ public struct AuthenticatedStationaryCaptureAuthorizationInbox: Sendable {
         data.reserveCapacity(Int(before.st_size))
         var buffer = [UInt8](repeating: 0, count: min(64 * 1024, maximumByteCount))
         while true {
-            let count: Int = buffer.withUnsafeMutableBytes { rawBuffer in
+            let count = buffer.withUnsafeMutableBytes { rawBuffer in
                 Darwin.read(descriptor, rawBuffer.baseAddress, rawBuffer.count)
             }
             if count == 0 { break }
@@ -97,45 +111,56 @@ public struct AuthenticatedStationaryCaptureAuthorizationInbox: Sendable {
             data.append(contentsOf: buffer.prefix(count))
         }
 
-        var after = stat()
-        guard Darwin.fstat(descriptor, &after) == 0,
-              sameIdentity(before, after),
+        var afterRead = stat()
+        guard Darwin.fstat(descriptor, &afterRead) == 0,
+              sameSnapshot(before, afterRead),
               data.count == Int(before.st_size) else {
             throw AuthenticatedStationaryCaptureAuthorizationInboxError.subjectChangedDuringRead(filename)
         }
 
-        // Verify that the expected pathname still resolves to the exact descriptor-bound inode
-        // before retiring the handoff. Even if a final same-UID swap happens after this comparison,
-        // the bytes already returned above remain bound to the no-follow descriptor, so pathname
-        // mutation cannot substitute authority input.
-        var pathState = stat()
-        let lstatResult = fileURL.withUnsafeFileSystemRepresentation { path in
-            guard let path else { return -1 }
-            return Darwin.lstat(path, &pathState)
-        }
-        guard lstatResult == 0,
-              (pathState.st_mode & S_IFMT) == S_IFREG,
-              pathState.st_dev == before.st_dev,
-              pathState.st_ino == before.st_ino else {
-            throw AuthenticatedStationaryCaptureAuthorizationInboxError.subjectChangedDuringRead(filename)
+        // Retire the directory entry while the validated inode is still open. A same-UID rename or
+        // replacement cannot cause success: after unlinking the expected name, the descriptor-bound
+        // inode itself must have zero remaining links before its bytes can leave this custody layer.
+        guard Darwin.unlinkat(directoryFD, filename, 0) == 0 else {
+            throw AuthenticatedStationaryCaptureAuthorizationInboxError.readFailed(filename)
         }
 
-        do {
-            try FileManager.default.removeItem(at: fileURL)
-        } catch {
-            // A file that cannot be retired must not be treated as one-shot handoff state. The
-            // cryptographic replay store remains the final envelope replay boundary, but failing
-            // closed here avoids silently retaining sensitive signer material in the app container.
-            throw AuthenticatedStationaryCaptureAuthorizationInboxError.readFailed(filename)
+        var afterUnlink = stat()
+        guard Darwin.fstat(descriptor, &afterUnlink) == 0,
+              sameSnapshotExceptLinkCount(before, afterUnlink),
+              afterUnlink.st_nlink == 0 else {
+            throw AuthenticatedStationaryCaptureAuthorizationInboxError.subjectChangedDuringRead(filename)
         }
         return data
     }
 
-    private func openNoFollow(fileURL: URL, filename: String) throws -> Int32 {
-        let descriptor = fileURL.withUnsafeFileSystemRepresentation { path -> Int32 in
+    private func openDirectoryNoFollow(subjectFilename: String) throws -> Int32 {
+        let descriptor = directoryURL.withUnsafeFileSystemRepresentation { path -> Int32 in
             guard let path else { return -1 }
-            return Darwin.open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+            return Darwin.open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         }
+        guard descriptor >= 0 else {
+            switch errno {
+            case ELOOP:
+                throw AuthenticatedStationaryCaptureAuthorizationInboxError
+                    .symbolicLinkRejected(Self.directoryName)
+            case ENOENT, ENOTDIR:
+                throw AuthenticatedStationaryCaptureAuthorizationInboxError
+                    .missingSubject(subjectFilename)
+            default:
+                throw AuthenticatedStationaryCaptureAuthorizationInboxError
+                    .readFailed(subjectFilename)
+            }
+        }
+        return descriptor
+    }
+
+    private func openSubjectNoFollow(directoryFD: Int32, filename: String) throws -> Int32 {
+        let descriptor = Darwin.openat(
+            directoryFD,
+            filename,
+            O_RDONLY | O_NOFOLLOW | O_CLOEXEC
+        )
         guard descriptor >= 0 else {
             switch errno {
             case ELOOP:
@@ -150,11 +175,16 @@ public struct AuthenticatedStationaryCaptureAuthorizationInbox: Sendable {
         return descriptor
     }
 
-    private func sameIdentity(_ lhs: stat, _ rhs: stat) -> Bool {
+    private func sameSnapshot(_ lhs: stat, _ rhs: stat) -> Bool {
+        sameSnapshotExceptLinkCount(lhs, rhs) && lhs.st_nlink == rhs.st_nlink
+    }
+
+    private func sameSnapshotExceptLinkCount(_ lhs: stat, _ rhs: stat) -> Bool {
         lhs.st_dev == rhs.st_dev
             && lhs.st_ino == rhs.st_ino
             && lhs.st_mode == rhs.st_mode
-            && lhs.st_nlink == rhs.st_nlink
+            && lhs.st_uid == rhs.st_uid
+            && lhs.st_gid == rhs.st_gid
             && lhs.st_size == rhs.st_size
             && lhs.st_mtimespec.tv_sec == rhs.st_mtimespec.tv_sec
             && lhs.st_mtimespec.tv_nsec == rhs.st_mtimespec.tv_nsec
