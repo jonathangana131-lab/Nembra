@@ -1,3 +1,4 @@
+import hashlib
 import importlib.util
 import json
 import os
@@ -170,13 +171,51 @@ class RetainedInstallManifestTests(unittest.TestCase):
             with self.assertRaises(manifest.RetainedInstallManifestError):
                 manifest._read_manifest(Path("relative-manifest.json"))
 
+    def test_manifest_digest_is_checked_on_the_same_descriptor_read(self) -> None:
+        data = manifest.build_manifest(self.bindings)
+        expected = hashlib.sha256(data).hexdigest()
+        with tempfile.TemporaryDirectory() as name:
+            path = Path(name).resolve() / "manifest.json"
+            path.write_bytes(data)
+
+            self.assertEqual(manifest._read_manifest(path, expected), data)
+            with self.assertRaisesRegex(
+                manifest.RetainedInstallManifestError,
+                "independently accepted SHA-256",
+            ):
+                manifest._read_manifest(path, "f" * 64)
+            with self.assertRaises(manifest.RetainedInstallManifestError):
+                manifest._read_manifest(path, expected.upper())
+
     def test_cli_validation_never_reports_install_or_physical_authority(self) -> None:
         with tempfile.TemporaryDirectory() as name:
             path = Path(name).resolve() / "manifest.json"
-            path.write_bytes(manifest.build_manifest(self.bindings))
+            data = manifest.build_manifest(self.bindings)
+            path.write_bytes(data)
+            expected = hashlib.sha256(data).hexdigest()
             result = subprocess.run(
-                [sys.executable, str(SCRIPT), "--validate", str(path)],
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--validate",
+                    str(path),
+                    "--expected-sha256",
+                    expected,
+                ],
                 check=True,
+                capture_output=True,
+                text=True,
+            )
+            mismatch = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--validate",
+                    str(path),
+                    "--expected-sha256",
+                    "f" * 64,
+                ],
+                check=False,
                 capture_output=True,
                 text=True,
             )
@@ -186,6 +225,8 @@ class RetainedInstallManifestTests(unittest.TestCase):
         )
         self.assertNotIn("physical", result.stdout.lower())
         self.assertNotIn(" go", result.stdout.lower())
+        self.assertEqual(mismatch.returncode, 1)
+        self.assertIn("independently accepted SHA-256", mismatch.stderr)
 
     def test_cross_binding_suite_is_part_of_required_manifest_validation(self) -> None:
         result = subprocess.run(

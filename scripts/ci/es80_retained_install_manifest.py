@@ -13,6 +13,8 @@ record would create an impossible chronology cycle.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
@@ -190,8 +192,19 @@ def verify_manifest_against_expected(
     return value
 
 
-def _read_manifest(path: Path) -> bytes:
-    """Read one exact manifest through no-follow descriptors, never a reopened pathname."""
+def _read_manifest(path: Path, expected_sha256: str | None = None) -> bytes:
+    """Read one exact manifest through no-follow descriptors, never a reopened pathname.
+
+    When an independently accepted digest is supplied, compare it against the same descriptor read
+    that produces the bytes returned to the canonical parser. This keeps the digest check and
+    semantic validation on one immutable read rather than creating a pathname TOCTOU gap.
+    """
+    expected_digest: str | None = None
+    if expected_sha256 is not None:
+        expected_digest = _canonical_nonzero_sha256(
+            expected_sha256, "expected manifest SHA-256"
+        )
+
     candidate = path.expanduser()
     raw_path = os.fspath(candidate)
     if not os.path.isabs(raw_path) or "\x00" in raw_path:
@@ -231,12 +244,14 @@ def _read_manifest(path: Path) -> bytes:
             raise RetainedInstallManifestError("manifest file size is invalid")
 
         blocks: list[bytes] = []
+        digest = hashlib.sha256()
         byte_count = 0
         while True:
             block = os.read(descriptor, min(4096, MAX_MANIFEST_BYTES + 1 - byte_count))
             if not block:
                 break
             blocks.append(block)
+            digest.update(block)
             byte_count += len(block)
             if byte_count > MAX_MANIFEST_BYTES:
                 raise RetainedInstallManifestError("manifest exceeds the byte limit")
@@ -254,6 +269,12 @@ def _read_manifest(path: Path) -> bytes:
         )
         if identity(after) != identity(before) or byte_count != before.st_size:
             raise RetainedInstallManifestError("manifest changed during descriptor read")
+        if expected_digest is not None and not hmac.compare_digest(
+            digest.hexdigest(), expected_digest
+        ):
+            raise RetainedInstallManifestError(
+                "manifest bytes do not match the independently accepted SHA-256"
+            )
         return b"".join(blocks)
     finally:
         os.close(descriptor)
@@ -288,15 +309,25 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--validate", type=Path, metavar="MANIFEST")
+    parser.add_argument(
+        "--expected-sha256",
+        metavar="SHA256",
+        help=(
+            "independently accepted canonical manifest digest; when supplied, it is checked "
+            "against the same no-follow descriptor read that is semantically validated"
+        ),
+    )
     args = parser.parse_args(argv)
     if args.self_test == bool(args.validate):
         parser.error("choose exactly one of --self-test or --validate")
+    if args.self_test and args.expected_sha256 is not None:
+        parser.error("--expected-sha256 is only valid with --validate")
     try:
         if args.self_test:
             _self_test()
             print("PASS_NOT_INSTALL_AUTHORITY: retained-install manifest mirror self-test")
         else:
-            verify_manifest_bytes(_read_manifest(args.validate))
+            verify_manifest_bytes(_read_manifest(args.validate, args.expected_sha256))
             print("VALID_NOT_INSTALL_AUTHORITY: retained-install manifest structure")
     except RetainedInstallManifestError as error:
         print(f"INVALID_NOT_INSTALL_AUTHORITY: {error}", file=sys.stderr)
