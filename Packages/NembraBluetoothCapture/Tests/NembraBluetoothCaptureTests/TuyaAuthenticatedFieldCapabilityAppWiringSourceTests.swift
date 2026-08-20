@@ -86,19 +86,47 @@ struct CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWirin
         #expect(hasFailClosedAuthorizationHandling(around: admission.lowerBound, in: section))
     }
 
-    @Test("accepted artifact promotion seals session only after package accepted-prefix freeze")
-    func acceptedArtifactSealsSessionAfterPackageFreeze() throws {
+    @Test("accepted promotion freezes and verifies exact bytes before session authority seals")
+    func acceptedArtifactSealsSessionAfterExactByteFreeze() throws {
         let section = try appSection(
             from: "private func startWatchdog(token: TuyaReadOnlyConnectionToken)",
             through: "private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken)"
         )
         let packageSeal = try #require(section.range(of: "sealAcceptedObservation(for: token)"))
-        let capabilitySeal = try #require(
-            section.range(of: "sealAfterAcceptedArtifactFreeze()")
+        let byteFreeze = try #require(section.range(of: "ExactByteArtifactSeal(sealing:"))
+        let byteIntegrity = try #require(
+            section.range(of: ".verifies(", range: byteFreeze.upperBound..<section.endIndex)
         )
-        let acceptedPromotion = try #require(section.range(of: "self.phase = .accepted"))
+        let canonicalVerification = try #require(
+            section.range(
+                of: "verifiedCanonicalValue(",
+                range: byteIntegrity.upperBound..<section.endIndex
+            )
+        )
+        let schemaVerification = try #require(
+            section.range(
+                of: "validateAcceptedExport(",
+                range: canonicalVerification.upperBound..<section.endIndex
+            )
+        )
+        let capabilitySeal = try #require(
+            section.range(
+                of: "sealAfterAcceptedArtifactFreeze()",
+                range: schemaVerification.upperBound..<section.endIndex
+            )
+        )
+        let acceptedPromotion = try #require(
+            section.range(
+                of: "self.phase = .accepted",
+                range: capabilitySeal.upperBound..<section.endIndex
+            )
+        )
 
-        #expect(packageSeal.lowerBound < capabilitySeal.lowerBound)
+        #expect(packageSeal.lowerBound < byteFreeze.lowerBound)
+        #expect(byteFreeze.lowerBound < byteIntegrity.lowerBound)
+        #expect(byteIntegrity.lowerBound < canonicalVerification.lowerBound)
+        #expect(canonicalVerification.lowerBound < schemaVerification.lowerBound)
+        #expect(schemaVerification.lowerBound < capabilitySeal.lowerBound)
         #expect(capabilitySeal.lowerBound < acceptedPromotion.lowerBound)
         #expect(hasFailClosedAuthorizationHandling(
             around: capabilitySeal.lowerBound,
