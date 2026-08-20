@@ -1,4 +1,4 @@
-# retrigger after current-source lifecycle boundary + exact-preflight repair
+# retrigger after structural inbox guard landed on current carrier
 name: Capture carrier authority v3 GO trigger
 
 on:
