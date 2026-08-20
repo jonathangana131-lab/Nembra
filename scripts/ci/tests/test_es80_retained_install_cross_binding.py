@@ -87,6 +87,7 @@ class RetainedInstallCrossBindingTests(unittest.TestCase):
             "finalGORecordSHA256": self.final_go_sha,
             "intendedDevicePseudonymSHA256": self.pseudonym,
         })
+        self.manifest_sha = cross.sha256_hex(self.manifest)
 
     def verify(self, **overrides):
         args = {
@@ -94,6 +95,7 @@ class RetainedInstallCrossBindingTests(unittest.TestCase):
             "external_build_record_data": self.external,
             "signed_build_evidence_data": self.evidence,
             "final_go_record_data": self.final_go,
+            "accepted_install_manifest_sha256": self.manifest_sha,
             "accepted_retained_ipa_sha256": self.ipa,
             "accepted_external_build_record_sha256": self.external_sha,
             "accepted_signed_build_evidence_sha256": self.evidence_sha,
@@ -116,6 +118,7 @@ class RetainedInstallCrossBindingTests(unittest.TestCase):
 
     def test_independently_accepted_digest_drift_fails_closed(self) -> None:
         for key in (
+            "accepted_install_manifest_sha256",
             "accepted_retained_ipa_sha256",
             "accepted_external_build_record_sha256",
             "accepted_signed_build_evidence_sha256",
