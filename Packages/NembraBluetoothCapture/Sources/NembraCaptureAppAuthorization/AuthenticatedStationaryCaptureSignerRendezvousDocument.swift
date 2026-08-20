@@ -58,7 +58,7 @@ public enum AuthenticatedStationaryCaptureSignerRendezvousDocument {
             version: schemaVersion,
             procedureID: rendezvous.procedureID,
             attemptChallengeSHA256: rendezvous.challengeSHA256,
-            attemptStartedAtWallClockUnixMilliseconds: rendezvous.startedAtWallClockUnixMilliseconds,
+            attemptStartedAtUnixMilliseconds: rendezvous.startedAtWallClockUnixMilliseconds,
             authorizationMustExpireByUnixMilliseconds: deadline
         )
         let encoder = JSONEncoder()
