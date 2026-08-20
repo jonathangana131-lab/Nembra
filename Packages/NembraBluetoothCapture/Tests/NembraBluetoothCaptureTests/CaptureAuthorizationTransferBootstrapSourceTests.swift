@@ -3,7 +3,26 @@ import Testing
 @testable import NembraBluetoothCapture
 
 extension CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring {
-    @Test("controller bootstrap creates only transfer custody before authority-gated handoff")
+    @Test("root-safe bootstrap seam creates only transfer custody")
+    func rootSafeBootstrapIsNonAuthorizing() throws {
+        let coordinator = try repositorySource(
+            "NembraApp/App/NembraCaptureFieldAuthorizationController.swift"
+        )
+        let bootstrap = try sourceSlice(
+            coordinator,
+            from: "static func prepareAuthorizationTransferDirectoryForFieldTransport() throws",
+            through: "init() {"
+        )
+
+        #expect(bootstrap.contains("prepareAuthorizationTransferDirectory()"))
+        #expect(!bootstrap.contains("takeInstallManifest()"))
+        #expect(!bootstrap.contains("prepareSignerRendezvousDocumentFromInbox()"))
+        #expect(!bootstrap.contains("authorizeFromInbox()"))
+        #expect(!bootstrap.contains("acceptEnvelope"))
+        #expect(!bootstrap.contains("admitOFF1Start()"))
+    }
+
+    @Test("controller construction rechecks only the root-safe custody bootstrap")
     func controllerBootstrapIsNonAuthorizing() throws {
         let coordinator = try repositorySource(
             "NembraApp/App/NembraCaptureFieldAuthorizationController.swift"
@@ -14,7 +33,7 @@ extension CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWi
             through: "init(session: AuthenticatedStationaryCaptureAppSession)"
         )
 
-        #expect(initializer.contains("prepareAuthorizationTransferDirectory()"))
+        #expect(initializer.contains("prepareAuthorizationTransferDirectoryForFieldTransport()"))
         #expect(!initializer.contains("takeInstallManifest()"))
         #expect(!initializer.contains("prepareSignerRendezvousDocumentFromInbox()"))
         #expect(!initializer.contains("authorizeFromInbox()"))
@@ -34,6 +53,7 @@ extension CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWi
         )
 
         #expect(!handoff.contains("prepareAuthorizationTransferDirectory()"))
+        #expect(!handoff.contains("prepareAuthorizationTransferDirectoryForFieldTransport()"))
         #expect(handoff.contains("transferDirectoryPreparationError"))
         #expect(handoff.contains("session.revoke()"))
         #expect(handoff.contains("prepareSignerRendezvousDocumentFromInbox()"))
