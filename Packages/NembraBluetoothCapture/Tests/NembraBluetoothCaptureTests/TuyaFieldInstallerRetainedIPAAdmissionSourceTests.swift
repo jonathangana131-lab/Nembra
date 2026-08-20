@@ -9,7 +9,7 @@ struct TuyaFieldInstallerRetainedIPAAdmissionSourceTests {
         let installer = try source()
 
         #expect(installer.contains("Installation remains blocked:"))
-        #expect(installer.contains("No app was rebuilt, contacted, installed, launched, or authorized for OFF1"))
+        #expect(installer.contains("No device was contacted and no app was installed"))
         #expect(!installer.contains("xcodebuild"))
         #expect(!installer.contains("devicectl"))
         #expect(!installer.contains("xctrace"))
@@ -56,7 +56,7 @@ struct TuyaFieldInstallerRetainedIPAAdmissionSourceTests {
         #expect(installer.contains("before.st_nlink != 1"))
         #expect(installer.contains("before.st_uid != os.geteuid()"))
         #expect(installer.contains("0o077 if access_policy == \"private\" else 0o022"))
-        #expect(installer.contains("identity(after) != identity(before)"))
+        #expect(installer.contains("identity(after) != identity(before"))
         #expect(installer.contains("hmac.compare_digest(digest.hexdigest(), expected)"))
         #expect(installer.contains("before.st_size > maximum"))
         #expect(installer.contains("Self-test accepted a multiply linked retained subject"))
@@ -70,7 +70,7 @@ struct TuyaFieldInstallerRetainedIPAAdmissionSourceTests {
         )
         let verifier = try #require(installer.range(of: "helper.verify_cross_binding("))
         let accepted = try #require(
-            installer.range(of: "Retained manifest cross-bound the accepted stable install/evidence tuple")
+            installer.range(of: "Stable retained-install subjects cross-bound to one canonical manifest")
         )
         let blocker = try #require(installer.range(of: "Installation remains blocked:"))
 
@@ -84,6 +84,23 @@ struct TuyaFieldInstallerRetainedIPAAdmissionSourceTests {
         #expect(installer.contains("accepted_final_go_record_sha256="))
         #expect(installer.contains("accepted_tuya_lock_sha256="))
         #expect(installer.contains("accepted_intended_device_pseudonym_sha256="))
+    }
+
+    @Test("nested semantic verifier bytes come from immutable Git objects, not mutable checkout paths")
+    func nestedVerifierSourceCustodyIsGitBound() throws {
+        let installer = try source()
+
+        #expect(installer.contains("GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git -C \"$ROOT\" rev-parse"))
+        #expect(installer.contains("GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git -C \"$ROOT\" cat-file blob"))
+        #expect(installer.contains("GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git -C \"$ROOT\" hash-object"))
+        #expect(installer.contains("Capture checkout has local changes"))
+        #expect(installer.contains("NESTED_TOOL_ROOT=\"$(/usr/bin/mktemp -d"))
+        #expect(installer.contains("capture_accepted_git_tool \\\n  \"scripts/ci/es80_retained_install_cross_binding.py\""))
+        #expect(installer.contains("capture_accepted_git_tool \\\n  \"scripts/ci/es80_retained_install_manifest.py\""))
+        #expect(installer.contains("helper_path = tool_root / \"es80_retained_install_cross_binding.py\""))
+        #expect(!installer.contains("helper_path = root / \"scripts/ci/es80_retained_install_cross_binding.py\""))
+        #expect(installer.contains("verified_manifest.get(\"sourceCommitSHA\") != source_sha"))
+        #expect(installer.contains("retained manifest source commit does not match the accepted installer checkout"))
     }
 
     @Test("self-test and dry-run cannot inherit tracing or place private values on argv")
