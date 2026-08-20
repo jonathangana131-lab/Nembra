@@ -12,6 +12,26 @@ BUNDLE_ID="com.jonathangana131.nembra"
 mkdir -p "$ARTIFACTS_DIR/screenshots" "$ARTIFACTS_DIR/logs" "$ATTACHMENTS_DIR"
 rm -rf "$RESULT_BUNDLE"
 
+python3 - <<'PY'
+from pathlib import Path
+
+source = Path("NembraApp/App/NembraApp.swift").read_text(encoding="utf-8")
+property_anchor = "private var simulatorQAPreferredColorScheme: ColorScheme?"
+start = source.index(property_anchor)
+fence = source.index("#if DEBUG && targetEnvironment(simulator)", start)
+else_index = source.index("#else", fence)
+end = source.index("#endif", else_index)
+env_index = source.index('ProcessInfo.processInfo.environment["NEMBRA_SIMULATION_APPEARANCE"]', fence)
+if not fence < env_index < else_index:
+    raise SystemExit("Simulator appearance environment authority escaped its DEBUG Simulator fence")
+production_branch = source[else_index:end]
+if "return nil" not in production_branch:
+    raise SystemExit("Non-Simulator/Release appearance branch must remain system-owned (nil)")
+if source.index(".preferredColorScheme(simulatorQAPreferredColorScheme)") < start:
+    pass
+print("Simulator QA appearance override is compile-time fenced; production remains system-owned.")
+PY
+
 {
   echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "runner_arch=$(uname -m)"
@@ -128,7 +148,7 @@ set_appearance() {
     echo "Could not set Simulator appearance to '$appearance': $output" >&2
     exit 8
   fi
-  printf '%s\n' "appearance=$appearance output=${output:-<none>}" \
+  printf '%s\n' "system_appearance=$appearance output=${output:-<none>} qa_app_override=$appearance" \
     >> "$ARTIFACTS_DIR/logs/simulator-appearance.log"
 }
 
@@ -140,6 +160,7 @@ capture_state() {
   local launch_output pid screenshot_path
   launch_output="$(
     SIMCTL_CHILD_NEMBRA_SIMULATION_SCENARIO="$state" \
+    SIMCTL_CHILD_NEMBRA_SIMULATION_APPEARANCE="$appearance" \
       xcrun simctl launch "$UDID" "$BUNDLE_ID" \
       | tee "$ARTIFACTS_DIR/logs/launch-${state}-${appearance}.log"
   )"
