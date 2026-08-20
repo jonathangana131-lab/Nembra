@@ -1,11 +1,11 @@
-import Foundation
 import NembraCaptureAppAuthorization
 
 /// Standalone-app adapter around the package-owned authenticated Capture session.
 ///
 /// This type intentionally owns no parallel authority state. The package session remains the
 /// single source of truth for manifest validation, signer rendezvous, opaque capability custody,
-/// ordered lifecycle admission, sealing, and terminal revocation.
+/// ordered lifecycle admission, sealing, and terminal revocation. Stable manifest and later
+/// envelope bytes enter only through the descriptor-bound one-shot app-container inbox.
 @MainActor
 final class NembraCaptureFieldAuthorizationController {
     private let session: AuthenticatedStationaryCaptureAppSession
@@ -17,13 +17,17 @@ final class NembraCaptureFieldAuthorizationController {
     var stage: AuthenticatedStationaryCaptureAppSession.Stage { session.stage }
 
     @discardableResult
-    func prepareAttempt(
-        retainedInstallManifestData: Data
-    ) throws -> AuthenticatedStationaryCaptureAppSession.SignerRendezvous {
-        try session.prepare(installManifestData: retainedInstallManifestData)
+    func prepareAttemptFromInbox()
+        throws -> AuthenticatedStationaryCaptureAppSession.SignerRendezvous
+    {
+        let manifestData = try AuthenticatedStationaryCaptureAuthorizationInbox()
+            .takeInstallManifest()
+        return try session.prepare(installManifestData: manifestData)
     }
 
-    func authorize(envelopeData: Data) throws {
+    func authorizeFromInbox() throws {
+        let envelopeData = try AuthenticatedStationaryCaptureAuthorizationInbox()
+            .takeAuthorizationEnvelope()
         try session.acceptEnvelope(envelopeData)
     }
 
