@@ -33,6 +33,7 @@ SUBJECT_SCHEMA_VERSION = 1
 EVIDENCE_KIND = "signed-field-artifact-digests-not-authorization"
 SIGNED_INSTALLABLE_KIND = "ipa"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
+GIT_COMMIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 MAX_JSON_BYTES = 1024 * 1024
 
 EXTERNAL_KEYS = {
@@ -94,6 +95,14 @@ def _digest(value: str, label: str) -> str:
     return value
 
 
+def _source_commit(value: str, label: str) -> str:
+    if not isinstance(value, str) or not GIT_COMMIT_SHA.fullmatch(value) or value == "0" * 40:
+        raise RetainedInstallCrossBindingError(
+            f"{label} is not a canonical nonzero full Git commit SHA"
+        )
+    return value
+
+
 def _require_common_subject(
     value: dict[str, Any], manifest: dict[str, Any], label: str
 ) -> None:
@@ -117,6 +126,7 @@ def verify_cross_binding(
     external_build_record_data: bytes,
     signed_build_evidence_data: bytes,
     final_go_record_data: bytes,
+    accepted_source_commit_sha: str,
     accepted_install_manifest_sha256: str,
     accepted_retained_ipa_sha256: str,
     accepted_external_build_record_sha256: str,
@@ -126,6 +136,9 @@ def verify_cross_binding(
     accepted_intended_device_pseudonym_sha256: str,
 ) -> dict[str, Any]:
     """Return the canonical manifest only when every stable exact-subject binding agrees."""
+    accepted_source = _source_commit(
+        accepted_source_commit_sha, "independently accepted source commit"
+    )
     accepted_manifest_sha = _digest(
         accepted_install_manifest_sha256, "accepted install-manifest digest"
     )
@@ -134,6 +147,10 @@ def verify_cross_binding(
             "independently accepted install-manifest digest mismatch"
         )
     manifest = manifest_contract.verify_manifest_bytes(install_manifest_data)
+    if manifest.get("sourceCommitSHA") != accepted_source:
+        raise RetainedInstallCrossBindingError(
+            "manifest source commit does not match independently accepted source commit"
+        )
     external = _closed_pretty_json(
         external_build_record_data, EXTERNAL_KEYS, "external build record"
     )
