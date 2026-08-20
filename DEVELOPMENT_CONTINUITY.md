@@ -27,12 +27,45 @@ This repository file is the recovery authority. Chat/task summaries are suppleme
 
 The file cannot self-embed the SHA of the commit containing its own changed bytes. Therefore the SHAs above name the latest pushed implementation and meaningful continuity checkpoints this document has audited; the remote branch HEAD is the authority for any later continuity-only commit.
 
+### Parallel Cockpit workstream
+
+Landscape Cockpit/Drive, later Navigation/Explore, their measurement/motion
+pipeline, tests, evidence, and truthful feature lab now live on the isolated
+remote branch `agent/cockpit-1-0-redesign`, targeting
+`product/capture-1-0-main-20260818` in draft PR
+[#3676](https://github.com/jonathangana131-lab/Nembra/pull/3676).
+
+- Latest pushed Cockpit authority/audit checkpoint recorded here:
+  `8671b285061f62983a590f6a27cd0fed725cb8a1`
+- Cockpit recovery authority:
+  `docs/continuity/COCKPIT_EXPERIENCE.md`
+- Typed truth matrix:
+  `docs/continuity/COCKPIT_CAPABILITY_MATRIX.md`
+- Truthful feature backlog:
+  `docs/continuity/COCKPIT_FEATURE_LAB.md`
+- Internal post-V4 studies and provenance:
+  `docs/design/references/COCKPIT_DRIVE_STUDIES.md`
+
+The original integration workstream remains the sole Capture/BLE discovery
+owner. Cockpit must not decode raw packets or infer physical fields. It consumes
+only evidence-backed typed contracts from that lane, while unknown/stale states
+stay explicit and Simulator QA stays visibly synthetic. A resumed Cockpit task
+must check the remote PR #3676 head and continue the exact next action in the
+Cockpit recovery file rather than restarting or reviving V2/V3/V4 visuals.
+
 ## Current focused aspect and production acceptance gate
 
 The active goal is to finish two bounded aspects, merge them, and then hand off the next focused prompt:
 
 1. **Nembra Capture 1.0 software checkpoint** — safe, fail-closed, one-time Bluetooth evidence utility. Software acceptance requires exact-head Capture source/provenance suites, standalone public/synthetic UI matrix, iPhone 12/iOS 27 visual evidence, artifact custody, and truthful nonphysical authority boundaries. Physical/private status remains **NO-GO** until the separate documented intended-account/intended-scooter field procedure has authorized prerequisites and a real device run.
-2. **Portrait Home + current requirements-driven cockpit checkpoint** — selected Home composition, native functional glass, truthful telemetry/range/currentness, automatic-ride/durable-Today continuity, exact-scene orientation restoration, accessibility, idle animation shutdown, and Release performance evidence. Horizon V4 is requirements-only and visually rejected; no cockpit pixel target is currently selected. Acceptance requires a new internally studied/refined production direction plus exact-head Xcode 27, iPhone 12/iOS 27 functional/UI suites, screenshot comparison, accessibility audits, and validated Release clock/hitch metrics.
+2. **Portrait Home + requirements-driven Cockpit checkpoint** — the portrait
+   workstream owns selected Home composition; isolated Cockpit PR #3676 owns
+   landscape Drive/Nav/Explore. Horizon V4 is requirements-only and visually
+   rejected. Four repository-held internal studies now exist and the refined
+   Energy Chamber is the current implementation skeleton, not a selected pixel
+   authority. Acceptance still requires native implementation plus exact-head
+   Xcode 27, iPhone 12/iOS 27 functional/UI suites, same-state screenshot
+   comparison, accessibility audits, and validated Release clock/hitch metrics.
 
 The current Home screenshot is a functional checkpoint only and is explicitly **not visually accepted**. Home visual acceptance additionally requires one fresh exact-head Xcode 27 iPhone 12 screenshot placed side-by-side with `docs/design-reference/nembra-1.0-gold-glass/selected-home-gold-glass.png` and proving all of the following together:
 
