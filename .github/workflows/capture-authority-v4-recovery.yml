@@ -1,3 +1,4 @@
+# V4 retry subject: exact reviewed source remains fail-closed; physical authority is not created.
 name: Capture authority V4 recovery materializer
 
 on:
