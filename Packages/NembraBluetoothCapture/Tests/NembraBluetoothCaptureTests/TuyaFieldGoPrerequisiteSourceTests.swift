@@ -4,14 +4,19 @@ import Testing
 
 @Suite("Capture field GO prerequisite consumption")
 struct TuyaFieldGoPrerequisiteSourceTests {
-    @Test("field app consumes exact compiled build provenance before physical authority")
-    func buildProvenanceIsProductAuthority() throws {
+    @Test("field app keeps compiled build provenance as a prerequisite and signed session as authority")
+    func buildProvenanceIsPrerequisiteNotAuthority() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let identity = try readRepositoryFile("NembraApp/App/NembraCaptureBuildIdentity.swift")
         let project = try readRepositoryFile("NembraCapture.xcodeproj/project.pbxproj")
         let plist = try readRepositoryFile("NembraCapture-Info.plist")
 
         #expect(app.contains("NembraCaptureBuildIdentity.current"))
-        #expect(app.contains("isAuthoritativeFieldBuild"))
+        #expect(app.contains("hasCompleteFieldBuildMetadata"))
+        #expect(app.contains("fieldAuthorization.stage == .armed"))
+        #expect(app.contains("fieldAuthorization.admitOFF1Start()"))
+        #expect(!app.contains("buildIdentity.isAuthoritativeFieldBuild"))
+        #expect(identity.contains("var isAuthoritativeFieldBuild: Bool {\n        false\n    }"))
         #expect(app.contains("buildIdentifier"))
         #expect(app.contains("sourceCommitSHA"))
         #expect(project.contains("NembraCaptureBuildIdentity.swift in Sources"))
@@ -35,13 +40,15 @@ struct TuyaFieldGoPrerequisiteSourceTests {
         #expect(app.contains("PassiveBluetoothPowerCycleObservationSession(minimumWindowDuration: 10)"))
 
         guard let baseline = app.range(of: "private func beginBaselineAfterCurrentOperatorAttestation()"),
-              let correlationStart = app.range(of: "self.beginCorrelationSeries()", range: baseline.upperBound..<app.endIndex),
-              let baselineLease = app.range(of: "TuyaSDKAccountIdentityLeaseGate.verdict", range: baseline.upperBound..<correlationStart.lowerBound) else {
-            Issue.record("OFF1 correlation must revalidate the account-bound membership lease before the package-owned correlation series starts.")
+              let admission = app.range(of: "fieldAuthorization.admitOFF1Start()", range: baseline.upperBound..<app.endIndex),
+              let correlationStart = app.range(of: "self.beginCorrelationSeries()", range: admission.upperBound..<app.endIndex),
+              let baselineLease = app.range(of: "TuyaSDKAccountIdentityLeaseGate.verdict", range: baseline.upperBound..<admission.lowerBound) else {
+            Issue.record("OFF1 correlation must revalidate the account-bound membership lease and consume signed session authority before package correlation starts.")
             return
         }
         #expect(baseline.lowerBound < baselineLease.lowerBound)
-        #expect(baselineLease.lowerBound < correlationStart.lowerBound)
+        #expect(baselineLease.lowerBound < admission.lowerBound)
+        #expect(admission.lowerBound < correlationStart.lowerBound)
     }
 
     @Test("account authority loss has a dedicated terminal instead of masquerading as continuity or disconnect")
@@ -52,6 +59,7 @@ struct TuyaFieldGoPrerequisiteSourceTests {
         #expect(ledger.contains("markSourceAuthorityInvalidated"))
         #expect(ledger.contains("Tuya SDK source authority was invalidated."))
         #expect(app.contains("markSourceAuthorityInvalidated"))
+        #expect(app.contains("fieldAuthorization.revoke()"))
 
         guard let invalidationHelper = app.range(of: "invalidateSourceAuthority"),
               let terminalCall = app.range(
@@ -86,26 +94,34 @@ struct TuyaFieldGoPrerequisiteSourceTests {
         guard let authenticated = app.range(of: "private func authenticated(token:"),
               let nextFunction = app.range(of: "private func authenticationFailed", range: authenticated.upperBound..<app.endIndex),
               let settlement = app.range(of: "TuyaLocalBLEAcquisitionWindow.verdict", range: authenticated.upperBound..<nextFunction.lowerBound),
-              let markAuthenticated = app.range(of: "sessionLedger.markAuthenticated", range: authenticated.upperBound..<nextFunction.lowerBound) else {
-            Issue.record("Tuya transport-success handling must use the bounded local-BLE settlement window before marking authenticated.")
+              let markAuthenticated = app.range(of: "sessionLedger.markAuthenticated", range: authenticated.upperBound..<nextFunction.lowerBound),
+              let observationAdmission = app.range(of: "fieldAuthorization.admitObservationStart()", range: authenticated.upperBound..<nextFunction.lowerBound) else {
+            Issue.record("Tuya transport-success handling must settle local BLE and consume one-time observation authority before observing.")
             return
         }
         #expect(settlement.lowerBound < markAuthenticated.lowerBound)
+        #expect(markAuthenticated.lowerBound < observationAdmission.lowerBound)
         #expect(app.contains("TuyaLocalBLEAcquisitionWindow.maximumWaitNanoseconds"))
     }
 
-    @Test("canonical acceptance is impossible when compiled build provenance is not authoritative")
-    func acceptanceChecksBuildIdentityAtTheSealBoundary() throws {
+    @Test("canonical acceptance rechecks metadata and live observation authority at both seal boundaries")
+    func acceptanceChecksIndependentAuthorityAtSealBoundary() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
         guard let ready = app.range(of: "case .readyForStationaryMapping:"),
-              let accepted = app.range(of: "phase = .accepted", range: ready.upperBound..<app.endIndex),
-              let buildCheck = app.range(of: "isAuthoritativeFieldBuild", range: ready.upperBound..<accepted.lowerBound) else {
-            Issue.record("The canonical-ready path must re-check exact compiled build provenance before UI acceptance.")
+              let accepted = app.range(of: "self.phase = .accepted", range: ready.upperBound..<app.endIndex) else {
+            Issue.record("Could not isolate canonical-ready acceptance path.")
             return
         }
-        #expect(ready.lowerBound < buildCheck.lowerBound)
-        #expect(buildCheck.lowerBound < accepted.lowerBound)
+        let acceptance = String(app[ready.lowerBound..<accepted.lowerBound])
+        #expect(acceptance.occurrenceCount(of: "buildIdentity.hasCompleteFieldBuildMetadata") >= 2)
+        #expect(acceptance.occurrenceCount(of: "fieldAuthorization.stage == .observationAdmitted") >= 2)
+        #expect(acceptance.contains("freezeAcceptedArtifactForAuthorizationSeal()"))
+        #expect(acceptance.contains("fieldAuthorization.sealAfterAcceptedArtifactFreeze()"))
+        let live = try #require(acceptance.range(of: "fieldAuthorization.stage == .observationAdmitted"))
+        let seal = try #require(acceptance.range(of: "fieldAuthorization.sealAfterAcceptedArtifactFreeze()"))
+        #expect(live.lowerBound < seal.lowerBound)
+        #expect(!acceptance.contains("isAuthoritativeFieldBuild"))
     }
 
     private func readRepositoryFile(_ relativePath: String) throws -> String {
@@ -116,5 +132,18 @@ struct TuyaFieldGoPrerequisiteSourceTests {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
+    }
+}
+
+private extension String {
+    func occurrenceCount(of needle: String) -> Int {
+        var count = 0
+        var searchStart = startIndex
+        while searchStart < endIndex,
+              let match = range(of: needle, range: searchStart..<endIndex) {
+            count += 1
+            searchStart = match.upperBound
+        }
+        return count
     }
 }
