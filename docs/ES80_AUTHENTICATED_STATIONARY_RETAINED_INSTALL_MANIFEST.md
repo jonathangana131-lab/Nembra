@@ -6,13 +6,18 @@ Procedure: `ES80-AUTHENTICATED-STATIONARY-v1`
 
 ## Purpose
 
-`scripts/ci/es80_retained_install_manifest.py` defines one small, closed, canonical record that
-cross-binds the exact subjects required by the retained-IPA handoff:
+`AuthenticatedStationaryCaptureInstallManifestVerifier` in Swift and
+`scripts/ci/es80_retained_install_manifest.py` now define **one byte-identical closed canonical
+record** for the retained-IPA handoff. The installer and running Capture app must not maintain two
+incompatible meanings of “canonical manifest.”
 
-- procedure and bundle identity;
+The shared record binds:
+
+- schema/version and procedure identity;
+- exact Capture bundle identity;
 - full source commit;
 - build identifier and build-instance ID;
-- retained signed IPA SHA-256;
+- retained signed IPA SHA-256 (`retainedIPASHA256`);
 - executable and raw `Info.plist` SHA-256;
 - reviewed Tuya dependency lock SHA-256;
 - external build record SHA-256;
@@ -21,8 +26,12 @@ cross-binds the exact subjects required by the retained-IPA handoff:
 - intended-device pseudonymous binding SHA-256;
 - current-procedure authorization-envelope SHA-256.
 
-The manifest has no `decision` or `GO` field. Its kind is
-`retained-install-exact-subject-bindings-not-authorization`.
+Canonical bytes use the same contract as Swift `JSONEncoder` with `.sortedKeys` and
+`.withoutEscapingSlashes`: compact UTF-8 JSON with no trailing newline. The schema is
+`nembra.es80-authenticated-stationary-install-manifest`, version `1`.
+
+The manifest intentionally has no `decision`, `GO`, `authorized`, or caller-selected trust-root
+field. Structural validation remains non-authorizing.
 
 ## Authority boundary
 
@@ -30,14 +39,15 @@ The manifest is deliberately **not** a trust root, signature verifier, Final-GO 
 Bluetooth capability, or physical authorization. Structural validation cannot make independently
 untrusted inputs trustworthy.
 
-A future installer integration must obtain expected values from separately accepted subjects and use
-`verify_manifest_against_expected` semantics before any existing retained-input admission can advance.
-That future integration remains blocked until the repository's pinned trust root, app authorization
-adapter, runtime/build identity handoff, accepted signed-install provenance, and applicable exact-source
-execution evidence are independently closed.
+A future installer/app integration must obtain expected values from separately accepted subjects,
+verify the exact manifest bytes and retained IPA, verify the current-procedure authorization through
+the independently reviewed pinned public key, and only then allow the verifier-minted opaque
+one-attempt capability to advance through the app lifecycle gate.
 
-Do not weaken or self-repin an independently accepted workflow/build-graph custody boundary merely
-because this manifest or another Capture source file changes.
+The production trust root remains absent and the app authorization adapter is not yet wired, so
+physical Capture remains **NO-GO**. Do not weaken or self-repin an independently accepted
+workflow/build-graph custody boundary merely because this manifest or another Capture source file
+changes.
 
 ## Validation
 
@@ -47,8 +57,12 @@ Focused contract checks:
 python3 -m unittest scripts/ci/tests/test_es80_retained_install_manifest.py
 python3 scripts/ci/es80_retained_install_manifest.py --self-test
 python3 -m py_compile scripts/ci/es80_retained_install_manifest.py scripts/ci/tests/test_es80_retained_install_manifest.py
+swift test --package-path Packages/NembraBluetoothCapture --filter AuthenticatedStationaryCaptureInstallManifest
 ```
 
-Passing these checks proves only the software manifest grammar and exact-binding comparison behavior.
-It does not prove Xcode, signing, installation, an intended iPhone, Tuya authentication, BLE continuity,
+The Python regression suite also pins the shared schema/field/canonicalization contract against the
+Swift verifier source so future format drift fails loudly.
+
+Passing these checks proves only the software manifest grammar and exact-binding behavior. It does
+not prove Xcode, signing, installation, an intended iPhone, Tuya authentication, BLE continuity,
 ES80 identity, telemetry semantics, command safety, or physical readiness.
