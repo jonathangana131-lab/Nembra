@@ -148,6 +148,11 @@ struct AuthenticatedStationaryCaptureSignerRendezvousOutboxTests {
             encoding: .utf8
         )
 
+        // The production initializer must create the standard base on first install before the
+        // descriptor-relative Nembra-owned chain is opened. `urls(for:in:)` only locates it.
+        #expect(source.contains("applicationSupportURL = try FileManager.default.url("))
+        #expect(source.contains("appropriateFor: nil,\n                create: true"))
+        #expect(!source.contains("FileManager.default.urls("))
         #expect(source.contains("O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC"))
         #expect(source.contains("Darwin.mkdirat"))
         #expect(source.contains("Darwin.open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)"))
