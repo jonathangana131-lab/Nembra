@@ -654,6 +654,7 @@ final class NembraAppTests: XCTestCase {
         XCTAssertTrue(capabilities.verifiedSpeedLimitSlotByRideMode.isEmpty)
     }
 
+#if targetEnvironment(simulator)
     func testSimulationScenarioLaunchArgumentParsing() {
         XCTAssertTrue(AppBootstrap.simulationRuntimeIsAuthorized)
         let scenario = AppBootstrap.simulationScenario(
@@ -678,6 +679,15 @@ final class NembraAppTests: XCTestCase {
         )
         XCTAssertEqual(scenario, .bluetoothOff)
     }
+#else
+    func testSimulationScenarioFailsClosedOnPhysicalDevice() {
+        XCTAssertFalse(AppBootstrap.simulationRuntimeIsAuthorized)
+        XCTAssertNil(AppBootstrap.simulationScenario(
+            arguments: ["Nembra", "--nembra-simulation=riding"],
+            environment: ["NEMBRA_SIMULATION_SCENARIO": "low-battery"]
+        ))
+    }
+#endif
 
     func testDashboardRenderStressAuthorizationFailsClosed() {
         let key = AppBootstrap.simulationDashboardRenderStressEnvironmentKey
