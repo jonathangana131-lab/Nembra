@@ -3,6 +3,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 WRAPPER = ROOT / "scripts/ci/es80_sign_field_authorization_from_rendezvous.py"
+V16_WORKFLOW = ROOT / ".github/workflows/capture-v16-standalone.yml"
 PRODUCTION_SURFACES = (
     ROOT / "scripts/field/install_one_time_capture.command",
     ROOT / "docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md",
@@ -55,6 +56,21 @@ class RendezvousSignerPrivateCustodyBoundaryTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, self.wrapper)
         self.assertIn("--signed-evidence", self.wrapper)
+
+    def test_v16_exact_head_gate_explicitly_runs_container_rendezvous_contracts(self) -> None:
+        workflow = V16_WORKFLOW.read_text(encoding="utf-8")
+        for required_filter in (
+            "AuthenticatedStationaryCaptureAuthorizationInboxTests",
+            "AuthenticatedStationaryCaptureSignerRendezvousDocumentTests",
+            "AuthenticatedStationaryCaptureSignerRendezvousOutboxTests",
+        ):
+            with self.subTest(required_filter=required_filter):
+                self.assertIn(
+                    f"swift test --filter {required_filter}",
+                    workflow,
+                    "Exact-head V16 acceptance must visibly exercise the app-container "
+                    "authorization/rendezvous boundary, not rely on incidental test-target compilation.",
+                )
 
 
 if __name__ == "__main__":
