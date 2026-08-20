@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
+import os
+from pathlib import Path, PurePath
 import re
+import stat
 import sys
 from typing import Any
 
@@ -80,13 +82,83 @@ def verify_rendezvous_bytes(data: bytes) -> dict[str, Any]:
 
 
 def _read_exact(path: Path) -> bytes:
-    candidate = path.expanduser()
-    if not candidate.is_absolute() or not candidate.is_file() or candidate.is_symlink():
-        raise SignerRendezvousError("rendezvous path must be one absolute regular non-symlink file")
-    data = candidate.read_bytes()
-    if not data or len(data) > MAX_DOCUMENT_BYTES:
-        raise SignerRendezvousError("rendezvous size is invalid")
-    return data
+    raw_path = str(path.expanduser())
+    candidate = PurePath(raw_path)
+    if not raw_path.startswith("/") or "\x00" in raw_path:
+        raise SignerRendezvousError("rendezvous path must be absolute")
+    if candidate.parts[0] != "/" or any(
+        part in {"", ".", ".."} for part in candidate.parts[1:]
+    ):
+        raise SignerRendezvousError("rendezvous path is not canonical")
+
+    no_follow = getattr(os, "O_NOFOLLOW", None)
+    if no_follow is None:
+        raise SignerRendezvousError("no-follow rendezvous reads are unavailable")
+    cloexec = getattr(os, "O_CLOEXEC", 0)
+    directory_fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY | no_follow | cloexec)
+    try:
+        for component in candidate.parts[1:-1]:
+            next_fd = os.open(
+                component,
+                os.O_RDONLY | os.O_DIRECTORY | no_follow | cloexec,
+                dir_fd=directory_fd,
+            )
+            os.close(directory_fd)
+            directory_fd = next_fd
+        try:
+            descriptor = os.open(
+                candidate.parts[-1],
+                os.O_RDONLY | no_follow | cloexec,
+                dir_fd=directory_fd,
+            )
+        except OSError as error:
+            raise SignerRendezvousError(
+                "rendezvous is not one regular non-symlink file"
+            ) from error
+    except OSError as error:
+        raise SignerRendezvousError("rendezvous path could not be opened safely") from error
+    finally:
+        os.close(directory_fd)
+
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+            raise SignerRendezvousError("rendezvous is not one regular single-link file")
+        if hasattr(os, "geteuid") and before.st_uid != os.geteuid():
+            raise SignerRendezvousError("rendezvous owner is not the current user")
+        if stat.S_IMODE(before.st_mode) & 0o022:
+            raise SignerRendezvousError("rendezvous must not be group/world writable")
+        if before.st_size <= 0 or before.st_size > MAX_DOCUMENT_BYTES:
+            raise SignerRendezvousError("rendezvous size is invalid")
+
+        data = bytearray()
+        while len(data) <= MAX_DOCUMENT_BYTES:
+            block = os.read(
+                descriptor,
+                min(4_096, MAX_DOCUMENT_BYTES + 1 - len(data)),
+            )
+            if not block:
+                break
+            data.extend(block)
+        after = os.fstat(descriptor)
+        identity = lambda value: (
+            value.st_dev,
+            value.st_ino,
+            value.st_mode,
+            value.st_uid,
+            value.st_gid,
+            value.st_nlink,
+            value.st_size,
+            value.st_mtime_ns,
+            value.st_ctime_ns,
+        )
+        if identity(before) != identity(after) or len(data) != before.st_size:
+            raise SignerRendezvousError("rendezvous changed during read")
+        if not data or len(data) > MAX_DOCUMENT_BYTES:
+            raise SignerRendezvousError("rendezvous size is invalid")
+        return bytes(data)
+    finally:
+        os.close(descriptor)
 
 
 def _self_test() -> None:
