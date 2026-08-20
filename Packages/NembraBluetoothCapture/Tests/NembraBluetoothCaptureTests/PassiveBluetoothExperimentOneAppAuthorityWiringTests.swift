@@ -24,7 +24,7 @@ struct PassiveBluetoothExperimentOneAppAuthorityWiringTests {
         #expect(!installer.contains("NEMBRA_ES80_TODAY_RESEARCH"))
     }
 
-    @Test("standalone entrypoint requires exact field provenance and current Tuya authority before correlation")
+    @Test("standalone entrypoint requires exact metadata plus one-time signed authority before Bluetooth correlation")
     func authenticatedEntrypointFailsClosedBeforeBluetoothCorrelation() throws {
         let source = try Self.repositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let startBaseline = String(try Self.section(
@@ -40,11 +40,18 @@ struct PassiveBluetoothExperimentOneAppAuthorityWiringTests {
 
         #expect(source.contains("@main @MainActor\nstruct NembraCaptureApp: App"))
         #expect(source.contains("private let buildIdentity = NembraCaptureBuildIdentity.current"))
-        #expect(startBaseline.contains("guard buildIdentity.isAuthoritativeFieldBuild else"))
+        #expect(source.contains("private let fieldAuthorization = NembraCaptureFieldAuthorizationController()"))
+        #expect(startBaseline.contains("guard buildIdentity.hasCompleteFieldBuildMetadata else"))
         #expect(startBaseline.contains("guard privateConfig, sdkAccountLoggedIn else"))
         #expect(startBaseline.contains("verifySDKMembership"))
         #expect(startBaseline.contains("TuyaSDKAccountIdentityLeaseGate.verdict"))
+        #expect(startBaseline.contains("try self.fieldAuthorization.admitOFF1Start()"))
         #expect(startBaseline.contains("self.beginCorrelationSeries()"))
+        let metadata = try #require(startBaseline.range(of: "guard buildIdentity.hasCompleteFieldBuildMetadata else"))
+        let admission = try #require(startBaseline.range(of: "try self.fieldAuthorization.admitOFF1Start()"))
+        let correlation = try #require(startBaseline.range(of: "self.beginCorrelationSeries()"))
+        #expect(metadata.lowerBound < admission.lowerBound)
+        #expect(admission.lowerBound < correlation.lowerBound)
 
         #expect(beginCorrelation.contains("sdkDeviceMembershipVerified"))
         #expect(beginCorrelation.contains("accountIdentityLeaseIsAuthorized"))
@@ -52,6 +59,7 @@ struct PassiveBluetoothExperimentOneAppAuthorityWiringTests {
         #expect(beginCorrelation.contains("OfficialTuyaFactory.acquirePackageCorrelationLease()"))
         #expect(beginCorrelation.contains("PassiveBluetoothPowerCycleObservationSession(minimumWindowDuration: 10)"))
 
+        #expect(!source.contains("buildIdentity.isAuthoritativeFieldBuild"))
         #expect(!source.contains("makeResearchAuthorizedES80ForCurrentApplication()"))
         #expect(!source.contains("PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()"))
         #expect(!source.contains("verifiedAdmission:"))
@@ -90,6 +98,7 @@ struct PassiveBluetoothExperimentOneAppAuthorityWiringTests {
 
         #expect(start.contains("verifySDKMembership { [weak self] authorized in"))
         #expect(start.contains("TuyaSDKAccountIdentityLeaseGate.verdict"))
+        #expect(start.contains("try self.fieldAuthorization.admitOFF1Start()"))
         #expect(start.contains("self.beginCorrelationSeries()"))
 
         #expect(authenticate.contains("// Membership is re-proven immediately before granting Tuya BLE ownership."))
@@ -97,6 +106,7 @@ struct PassiveBluetoothExperimentOneAppAuthorityWiringTests {
         #expect(authenticate.contains("self.phase == .selected"))
         #expect(authenticate.contains("self.targetCorrelationOperatorConfirmed"))
         #expect(authenticate.contains("self.selectedID == candidate.id"))
+        #expect(authenticate.contains("try self.fieldAuthorization.admitAuthenticationStart()"))
         #expect(authenticate.contains("self.beginOfficialConnection(candidate: candidate)"))
 
         #expect(membership.contains("let requestID = UUID()"))
@@ -114,14 +124,21 @@ struct PassiveBluetoothExperimentOneAppAuthorityWiringTests {
         let correlation = try #require(
             source.range(of: "PassiveBluetoothPowerCycleObservationSession(minimumWindowDuration: 10)")
         )
-        let officialSDKOwnership = try #require(
+        let officialAdmission = try #require(
             source.range(
-                of: "OfficialTuyaFactory.make()",
+                of: "fieldAuthorization.admitOfficialConnectionStart()",
                 range: correlation.upperBound..<source.endIndex
             )
         )
+        let officialSDKOwnership = try #require(
+            source.range(
+                of: "OfficialTuyaFactory.make()",
+                range: officialAdmission.upperBound..<source.endIndex
+            )
+        )
         #expect(lease.lowerBound < correlation.lowerBound)
-        #expect(correlation.lowerBound < officialSDKOwnership.lowerBound)
+        #expect(correlation.lowerBound < officialAdmission.lowerBound)
+        #expect(officialAdmission.lowerBound < officialSDKOwnership.lowerBound)
 
         #expect(source.contains("private var processCorrelationLease: UUID?"))
         #expect(source.contains("private var currentConnectionToken: TuyaReadOnlyConnectionToken?"))
@@ -136,6 +153,7 @@ struct PassiveBluetoothExperimentOneAppAuthorityWiringTests {
             to: "    var canRestartFromFreshOFF1: Bool"
         ))
         #expect(restart.contains("phase == .failed"))
+        #expect(restart.contains("fieldAuthorization.stage == .armed"))
         #expect(restart.contains("currentConnectionToken == nil"))
         #expect(restart.contains("localBLESettlementToken == nil"))
         #expect(restart.contains("driver == nil"))
@@ -155,6 +173,7 @@ struct PassiveBluetoothExperimentOneAppAuthorityWiringTests {
         #expect(identity.contains("procedureIdentifier == Self.requiredFieldProcedureIdentifier"))
         #expect(identity.contains("let expectedIdentifier = \"Capture Build V14-\\(sourceCommitSHA.prefix(12))\""))
         #expect(identity.contains("return buildIdentifier == expectedIdentifier"))
+        #expect(identity.contains("var isAuthoritativeFieldBuild: Bool {\n        false\n    }"))
         #expect(!identity.contains("PassiveBluetoothCaptureRuntimeBuildIdentityReader"))
         #expect(!identity.contains("Task.detached"))
     }
