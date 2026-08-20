@@ -82,15 +82,24 @@ class AppAuthorizationLifecycleWiringTests(unittest.TestCase):
         self.assertLess(admission, section.index("phase = .observing"))
         self.assert_fail_closed_near(section, "admitObservationStart()")
 
-    def test_capability_seals_only_after_package_artifact_freeze(self) -> None:
+    def test_capability_seals_only_after_exact_artifact_is_frozen_and_verified(self) -> None:
         section = self.section(
             "private func startWatchdog(token: TuyaReadOnlyConnectionToken)",
             "private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken)",
         )
         package_seal = section.index("sealAcceptedObservation(for: token)")
+        byte_freeze = section.index("ExactByteArtifactSeal(sealing:")
+        byte_integrity = section.index(".verifies(", byte_freeze)
+        canonical_verification = section.index("verifiedCanonicalValue(", byte_integrity)
+        schema_verification = section.index("validateAcceptedExport(", canonical_verification)
         authority_seal = section.index("sealAfterAcceptedArtifactFreeze()")
         accepted = section.index("self.phase = .accepted")
-        self.assertLess(package_seal, authority_seal)
+
+        self.assertLess(package_seal, byte_freeze)
+        self.assertLess(byte_freeze, byte_integrity)
+        self.assertLess(byte_integrity, canonical_verification)
+        self.assertLess(canonical_verification, schema_verification)
+        self.assertLess(schema_verification, authority_seal)
         self.assertLess(authority_seal, accepted)
         self.assert_fail_closed_near(section, "sealAfterAcceptedArtifactFreeze()")
 
