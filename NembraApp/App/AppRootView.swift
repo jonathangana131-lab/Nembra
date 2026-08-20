@@ -1183,30 +1183,17 @@ private struct RideHistoryDetailView: View {
 
     @ViewBuilder
     private func timelineRow(title: String, date: Date) -> some View {
-        // Keep the preferred row intrinsically sized so its semantic fonts can
-        // grow and make ViewThatFits select the stacked alternative.
-        // Keep both alternatives as ordinary Text children in reading order:
-        // assigning one labeled-pair identity across both candidates can make
-        // size audits follow the inactive candidate instead of the visible Text.
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) {
-                Text(title)
-                    .font(.subheadline.weight(.medium))
-                Spacer(minLength: 12)
-                Text(timestamp(date))
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.subheadline.weight(.medium))
-                Text(timestamp(date))
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+        // Keep one native semantic Text pair in the accessibility tree. Xcode
+        // 27 audited inactive ViewThatFits candidates, alternating failures
+        // between the title and timestamp even though both used text styles.
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.subheadline.weight(.medium))
+                .fixedSize(horizontal: false, vertical: true)
+            Text(timestamp(date))
+                .font(.subheadline.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.leading, 20)
         .padding(.trailing, 72)

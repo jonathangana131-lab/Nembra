@@ -13,6 +13,15 @@ enum NembraColor {
     static let baseBlack = Color(red: 0x06 / 255, green: 0x07 / 255, blue: 0x06 / 255)
     static let primaryText = Color(red: 0xF4 / 255, green: 0xF7 / 255, blue: 0xFB / 255)
     static let secondaryText = Color(red: 0x8D / 255, green: 0x98 / 255, blue: 0xAA / 255)
+    /// Opaque cool copy for small measurements rendered across graphite and
+    /// energy materials. Do not recreate this role with alpha on a variable
+    /// Canvas background: the hosted contrast audit evaluates the composite.
+    static let instrumentSecondaryText = Color(
+        red: 0xC8 / 255,
+        green: 0xD0 / 255,
+        blue: 0xDC / 255
+    )
+    static let warningRed = Color(red: 1.00, green: 0.38, blue: 0.34)
     static let quietLine = Color.white.opacity(0.10)
     static let quietSurface = Color.white.opacity(0.045)
 }

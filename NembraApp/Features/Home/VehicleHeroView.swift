@@ -1,225 +1,701 @@
+import Foundation
+import NembraCore
 import SwiftUI
 
-struct VehicleHeroView: View {
-    let profile: VehicleProfile
-    let state: VehicleState
-
-    var body: some View {
-        VStack(spacing: 12) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(profile.identity.displayName)
-                        .font(.title2.weight(.bold))
-                    Text(statusLine)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .contentTransition(.numericText())
-                }
-                Spacer()
-                if state.isLocked == true {
-                    Image(systemName: "lock.fill")
-                        .font(.headline)
-                        .padding(10)
-                        .background(.thinMaterial, in: Circle())
-                        .accessibilityLabel("Scooter locked")
-                }
-            }
-
-            vehicleArtwork
-                .frame(height: 168)
-                .accessibilityHidden(true)
-        }
-        .padding(.top, 6)
+/// The exact user-facing connection projection shared by the compact Home
+/// header and Home's automatic-ride accessibility summary. It reads only the
+/// authority-bearing store projections required to form visible connection
+/// truth; raw cached speed never becomes live through this type.
+struct HomeVehicleStatusPresentation: Equatable {
+    enum Indicator: Equatable {
+        case connected
+        case transitional
+        case offline
     }
 
-    @ViewBuilder
-    private var vehicleArtwork: some View {
-        if profile.identity.manufacturer == "MAXSHOT" && profile.identity.model == "V1S Pro" {
-            MaxshotV1SProSideArtwork(
-                headlightOn: state.isHeadlightOn == true,
-                connected: state.connection == .connected
-            )
-        } else {
-            GenericScooterArtwork(connected: state.connection == .connected)
-        }
-    }
+    let text: String
+    let accessibilityValue: String
+    let indicator: Indicator
 
-    private var statusLine: String {
-        switch state.connection {
+    @MainActor
+    init(vehicle: VehicleStore) {
+        let text = Self.statusText(vehicle: vehicle)
+        self.text = text
+        accessibilityValue = vehicle.profile == .simulatorQA
+            ? "\(text). SIM, QA only, synthetic evidence"
+            : text
+
+        switch vehicle.state.connection {
         case .connected:
-            guard state.dataAvailability == .live else {
+            indicator = .connected
+        case .connecting, .reconnecting:
+            indicator = .transitional
+        case .disconnected:
+            indicator = .offline
+        }
+    }
+
+    @MainActor
+    private static func statusText(vehicle: VehicleStore) -> String {
+        if let issue = vehicle.state.connectionIssue {
+            switch issue {
+            case .bluetoothPoweredOff: return "Bluetooth Off"
+            case .bluetoothPermissionDenied: return "Permission Needed"
+            case .scooterUnavailable: return "Not Found"
+            case .unsupportedConfiguration: return "Unsupported Configuration"
+            }
+        }
+
+        switch vehicle.state.connection {
+        case .connected:
+            guard vehicle.state.dataAvailability == .live else {
                 return "Connected · waiting for data"
             }
-            if let speed = state.speedKilometersPerHour, speed > 0.5 {
+            if let speed = vehicle.simulatorQualifiedLiveSpeedKilometersPerHour,
+               speed > 0.5 {
                 return "Riding · \(VehicleDisplayFormatting.speed(kilometersPerHour: speed))"
             }
-            return state.isLocked == true ? "Connected · secured" : "Connected · ready"
+            return "Connected"
         case .connecting:
-            return "Connecting…"
+            return "Connecting"
         case .reconnecting:
-            return "Reconnecting…"
+            return vehicle.state.dataAvailability == .retained
+                ? "Reconnecting · last known data"
+                : "Reconnecting"
         case .disconnected:
-            return "Scooter offline"
+            return vehicle.state.dataAvailability == .retained
+                ? "Offline · last known data"
+                : "Offline"
         }
     }
 }
 
-private struct MaxshotV1SProSideArtwork: View {
-    let headlightOn: Bool
-    let connected: Bool
+/// Value-only inputs for the Home identity header. Unrelated battery, power,
+/// odometer, command, and ride-store updates do not enter this render value.
+struct HomeVehicleHeaderSnapshot: Equatable {
+    let displayName: String
+    let status: HomeVehicleStatusPresentation
+    let showsSimulatorBadge: Bool
+
+    @MainActor
+    init(vehicle: VehicleStore) {
+        showsSimulatorBadge = vehicle.profile == .simulatorQA
+        displayName = showsSimulatorBadge
+            ? VehicleProfile.aovoproES80.identity.displayName
+            : vehicle.profile.identity.displayName
+        status = HomeVehicleStatusPresentation(vehicle: vehicle)
+    }
+}
+
+/// Observation stays at this narrow bridge. The actual header receives an
+/// Equatable value so parent Home recomputation cannot redraw it for unrelated
+/// vehicle fields.
+@MainActor
+struct HomeVehicleHeaderBridge: View {
+    let vehicle: VehicleStore
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
+        HomeVehicleHeaderContent(
+            snapshot: HomeVehicleHeaderSnapshot(vehicle: vehicle),
+            usesAccessibilityLayout: dynamicTypeSize.isAccessibilitySize
+        )
+        .equatable()
+    }
+}
+
+private struct HomeVehicleHeaderContent: View, @MainActor Equatable {
+    let snapshot: HomeVehicleHeaderSnapshot
+    let usesAccessibilityLayout: Bool
+
+    var body: some View {
+        Group {
+            if usesAccessibilityLayout {
+                VStack(alignment: .leading, spacing: 12) {
+                    vehicleIdentity
+                    vehicleControlsLink
+                }
+            } else {
+                HStack(alignment: .center, spacing: 12) {
+                    vehicleIdentity
+                    Spacer(minLength: 8)
+                    vehicleControlsLink
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var vehicleIdentity: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(snapshot.displayName)
+                .font(
+                    usesAccessibilityLayout
+                        ? .title3.weight(.bold)
+                        : .headline.weight(.semibold)
+                )
+                .tracking(0.2)
+                .foregroundStyle(NembraColor.primaryText)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(indicatorColor)
+                    .frame(width: 7, height: 7)
+                    .accessibilityHidden(true)
+
+                Text(snapshot.status.text)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(NembraColor.secondaryText)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if snapshot.showsSimulatorBadge {
+                    Text("SIM · QA")
+                        .font(.caption2.weight(.bold))
+                        .tracking(0.5)
+                        .foregroundStyle(NembraColor.gold)
+                        .padding(.horizontal, 6)
+                        .frame(minHeight: 20)
+                        .background(NembraColor.quietSurface, in: Capsule(style: .continuous))
+                        .overlay {
+                            Capsule(style: .continuous)
+                                .strokeBorder(NembraColor.gold.opacity(0.22))
+                        }
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Vehicle connection")
+            .accessibilityValue(snapshot.status.accessibilityValue)
+            .accessibilityIdentifier("home.connection-status")
+        }
+    }
+
+    private var vehicleControlsLink: some View {
+        NavigationLink {
+            VehicleControlsView()
+        } label: {
+            Label("Vehicle controls", systemImage: "slider.horizontal.3")
+                .labelStyle(.iconOnly)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(NembraColor.baseBlack)
+                .frame(
+                    width: usesAccessibilityLayout ? 44 : 36,
+                    height: usesAccessibilityLayout ? 44 : 36
+                )
+        }
+        .buttonStyle(.glassProminent)
+        .buttonBorderShape(.circle)
+        .tint(NembraColor.instrumentSecondaryText)
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(Rectangle())
+        .accessibilityHint("Opens detailed vehicle controls and verified settings.")
+    }
+
+    private var indicatorColor: Color {
+        switch snapshot.status.indicator {
+        case .connected: .green
+        case .transitional: NembraColor.gold
+        case .offline: NembraColor.secondaryText
+        }
+    }
+}
+
+enum HomeBatteryFreshness: Equatable {
+    case unavailable
+    case live
+    case retained(observedAt: Date?)
+}
+
+/// Everything that can legitimately change the Home energy instrument. Speed,
+/// power, odometer, trip, mode, locks, lights, and connection-copy fields are
+/// intentionally absent so high-frequency telemetry cannot redraw its Canvases.
+struct HomeEnergyHeroSnapshot: Equatable {
+    let batteryPresentation: NembraCore.BatteryPrimaryReadoutPresentation
+    let adaptiveRangeDecision: NembraCore.AdaptiveRangePrimaryPresentationDecision
+    let freshness: HomeBatteryFreshness
+
+    init(
+        batteryPresentation: NembraCore.BatteryPrimaryReadoutPresentation,
+        adaptiveRangeDecision: NembraCore.AdaptiveRangePrimaryPresentationDecision,
+        freshness: HomeBatteryFreshness
+    ) {
+        self.batteryPresentation = batteryPresentation
+        self.adaptiveRangeDecision = adaptiveRangeDecision
+        self.freshness = freshness
+    }
+
+    @MainActor
+    init(
+        vehicle: VehicleStore,
+        cockpit: HorizonCockpitStore,
+        adaptiveRangeEstimate: NembraCore.AdaptiveBatteryRangeLiveEstimate?
+    ) {
+        let decision = NembraCore.AdaptiveBatteryRangePrimaryPresentationPolicy()
+            .resolve(liveEstimate: adaptiveRangeEstimate)
+        let rangeDisplay: NembraCore.BatteryEstimatedRangeDisplay = switch decision {
+        case let .valueMeters(meters): .valueMeters(meters)
+        case .learning: .learning
+        case .unavailable: .unavailable
+        }
+
+        batteryPresentation = cockpit.batteryPrimaryReadoutState.presentation(
+            for: NembraCore.BatteryPrimaryReadoutInputs(
+                displaySOCPercent: vehicle.batteryDisplayPercent,
+                estimatedRange: rangeDisplay
+            )
+        )
+        adaptiveRangeDecision = decision
+
+        switch vehicle.batteryDataAvailability {
+        case .unavailable:
+            freshness = .unavailable
+        case .live:
+            freshness = .live
+        case .retained:
+            freshness = .retained(observedAt: vehicle.retainedBatteryObservedAt)
+        }
+    }
+
+    var batteryReadoutMode: NembraCore.BatteryPrimaryReadoutMode {
+        batteryPresentation.mode
+    }
+
+    var batteryPercent: Int? {
+        batteryPresentation.batteryFillPercent
+    }
+
+    var batteryFillFraction: Double {
+        Double(batteryPercent ?? 0) / 100
+    }
+
+    var isLowBattery: Bool {
+        guard let batteryPercent else { return false }
+        return batteryPercent <= 15
+    }
+
+    var isRetained: Bool {
+        if case .retained = freshness { return true }
+        return false
+    }
+
+    var retainedObservedAt: Date? {
+        guard case let .retained(observedAt) = freshness else { return nil }
+        return observedAt
+    }
+
+    var adaptiveRangeDisplay: NembraCore.BatteryEstimatedRangeDisplay {
+        switch adaptiveRangeDecision {
+        case let .valueMeters(meters): .valueMeters(meters)
+        case .learning: .learning
+        case .unavailable: .unavailable
+        }
+    }
+
+    var adaptiveRangeText: String {
+        switch adaptiveRangeDisplay {
+        case let .valueMeters(meters):
+            VehicleDisplayFormatting.distance(kilometers: meters / 1_000, decimals: 1)
+        case .learning:
+            "Learning"
+        case .unavailable:
+            "Unavailable"
+        }
+    }
+
+    var adaptiveRangeQualifier: String {
+        switch adaptiveRangeDecision {
+        case .valueMeters:
+            "learned range"
+        case let .learning(reason), let .unavailable(reason):
+            adaptiveRangeReasonQualifier(reason)
+        }
+    }
+
+    var retainedBatteryFreshnessAccessibilityValue: String {
+        guard let observedAt = retainedObservedAt else {
+            return "Observation time unavailable"
+        }
+        return "Observed \(observedAt.formatted(date: .complete, time: .shortened))"
+    }
+
+    var batteryInstrumentAccessibilityLabel: String {
+        switch batteryReadoutMode {
+        case .percentage: "Battery and estimated range"
+        case .estimatedRange: "Estimated range and battery"
+        }
+    }
+
+    var batteryInstrumentAccessibilityValue: String {
+        let emphasis = switch batteryReadoutMode {
+        case .percentage: "Battery percentage emphasized"
+        case .estimatedRange: "Estimated range emphasized"
+        }
+        return [batteryAccessibilityValue, adaptiveRangeAccessibilityValue, emphasis]
+            .joined(separator: ". ")
+    }
+
+    var batteryInstrumentAccessibilityHint: String {
+        let nextValue = batteryReadoutMode == .percentage
+            ? "estimated range"
+            : "battery percentage"
+        return "Double tap to emphasize \(nextValue). Both values remain visible. The battery fill always represents state of charge."
+    }
+
+    private var batteryAccessibilityValue: String {
+        guard let batteryPercent else { return "Unavailable" }
+        var parts = ["\(batteryPercent) percent"]
+        if isLowBattery { parts.append("low battery") }
+        if isRetained {
+            if let observedAt = retainedObservedAt {
+                parts.append(
+                    "last known, observed \(observedAt.formatted(date: .complete, time: .shortened))"
+                )
+            } else {
+                parts.append("last known, observation time unavailable")
+            }
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    private var adaptiveRangeAccessibilityValue: String {
+        switch adaptiveRangeDecision {
+        case let .valueMeters(meters):
+            let value = VehicleDisplayFormatting.distance(
+                kilometers: meters / 1_000,
+                decimals: 1
+            )
+            return "\(value), learned from accepted evidence for this scooter"
+        case let .learning(reason):
+            return "Learning from accepted ride history, \(adaptiveRangeReasonQualifier(reason))"
+        case let .unavailable(reason):
+            return "Unavailable, \(adaptiveRangeReasonQualifier(reason))"
+        }
+    }
+
+    private func adaptiveRangeReasonQualifier(
+        _ reason: NembraCore.AdaptiveRangePrimaryPresentationReason
+    ) -> String {
+        switch reason {
+        case .provisionalSeed: "rides needed for range"
+        case .learningConfidence: "building range history"
+        case .lowConfidenceRequiresQualifier: "more rides for range"
+        case .noEstimate: "no learned range"
+        case .retainedEstimateRequiresQualifier: "fresh range evidence"
+        }
+    }
+}
+
+/// The only observing layer for Home's energy instrument. Its child render
+/// island is value-only and Equatable; the persisted toggle remains owned by
+/// the shared cockpit store and cannot mutate battery or range evidence.
+@MainActor
+struct HomeEnergyHeroBridge: View {
+    @AppStorage(NembraPreferenceKey.haptics) private var hapticsEnabled = true
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @ScaledMetric(relativeTo: .largeTitle) private var batteryNumericFontSize: CGFloat = 62
+    @ScaledMetric(relativeTo: .title2) private var batteryPercentFontSize: CGFloat = 30
+
+    let vehicle: VehicleStore
+    let cockpit: HorizonCockpitStore
+    let adaptiveRangeEstimate: NembraCore.AdaptiveBatteryRangeLiveEstimate?
+
+    private var usesStackedEnergyHeroLayout: Bool {
+        dynamicTypeSize.isAccessibilitySize || batteryNumericFontSize > 68
+    }
+
+    var body: some View {
+        let snapshot = HomeEnergyHeroSnapshot(
+            vehicle: vehicle,
+            cockpit: cockpit,
+            adaptiveRangeEstimate: adaptiveRangeEstimate
+        )
+
+        VStack(alignment: .leading, spacing: 10) {
+            if snapshot.isRetained {
+                Label {
+                    if let observedAt = snapshot.retainedObservedAt {
+                        HStack(spacing: 3) {
+                            Text("Last confirmed")
+                            Text(observedAt, style: .relative)
+                        }
+                    } else {
+                        Text("Last confirmed · age unavailable")
+                    }
+                } icon: {
+                    Image(systemName: "clock.arrow.circlepath")
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(NembraColor.secondaryText)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Last confirmed battery")
+                .accessibilityValue(snapshot.retainedBatteryFreshnessAccessibilityValue)
+                .accessibilityHint("This battery value may be stale until the scooter reconnects.")
+                .accessibilityIdentifier("home.battery.retained-freshness")
+            }
+
+            if snapshot.isLowBattery {
+                Label("Low battery", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(NembraColor.warningRed)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Low battery")
+                    .accessibilityIdentifier("home.battery.low-warning")
+            }
+
+            Button {
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
+                    cockpit.toggleBatteryPrimaryReadout()
+                }
+            } label: {
+                HomeEnergyHeroScene(
+                    snapshot: snapshot,
+                    usesStackedLayout: usesStackedEnergyHeroLayout,
+                    reduceMotion: reduceMotion,
+                    reduceTransparency: reduceTransparency,
+                    batteryNumericFontSize: batteryNumericFontSize,
+                    batteryPercentFontSize: batteryPercentFontSize
+                )
+                .equatable()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .sensoryFeedback(.selection, trigger: snapshot.batteryReadoutMode) { _, _ in
+                hapticsEnabled
+            }
+            .accessibilityLabel(snapshot.batteryInstrumentAccessibilityLabel)
+            .accessibilityValue(snapshot.batteryInstrumentAccessibilityValue)
+            .accessibilityHint(snapshot.batteryInstrumentAccessibilityHint)
+            .accessibilityIdentifier("home.metric.battery")
+        }
+    }
+}
+
+/// Expensive passive visuals live below this value equality boundary. A speed
+/// or power receipt can update the rest of Home without redrawing the battery
+/// and grounding Canvases when these inputs are unchanged.
+private struct HomeEnergyHeroScene: View, @MainActor Equatable {
+    let snapshot: HomeEnergyHeroSnapshot
+    let usesStackedLayout: Bool
+    let reduceMotion: Bool
+    let reduceTransparency: Bool
+    let batteryNumericFontSize: CGFloat
+    let batteryPercentFontSize: CGFloat
+
+    var body: some View {
+        Group {
+            if usesStackedLayout {
+                accessibilityEnergyHero
+            } else {
+                standardEnergyHero
+            }
+        }
+    }
+
+    private var standardEnergyHero: some View {
         GeometryReader { proxy in
-            let w = proxy.size.width
-            let h = proxy.size.height
-            let frontWheel = CGPoint(x: w * 0.22, y: h * 0.76)
-            let rearWheel = CGPoint(x: w * 0.79, y: h * 0.76)
-            let wheelSize = min(h * 0.34, w * 0.17)
+            let scooterSize = min(
+                proxy.size.width * HomeHeroLayout.scooterWidthFraction,
+                HomeHeroLayout.scooterMaximumSize
+            )
 
-            ZStack {
-                if connected {
-                    Ellipse()
-                        .fill(.primary.opacity(0.028))
-                        .frame(width: w * 0.72, height: h * 0.22)
-                        .position(x: w * 0.51, y: h * 0.83)
+            ZStack(alignment: .topLeading) {
+                batteryReadout
+                    .padding(.top, 2)
+
+                batteryBody
+                    .frame(height: HomeHeroLayout.batteryHeight)
+                    .offset(y: HomeHeroLayout.batteryTop)
+
+                HomeHeroGroundingScene(layout: .standard)
+                    .equatable()
+                    .frame(width: proxy.size.width, height: HomeHeroLayout.standardHeight)
+
+                Image("ES80Side")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: scooterSize, height: scooterSize)
+                    .shadow(color: .black.opacity(0.75), radius: 22, y: 16)
+                    .shadow(color: NembraColor.gold.opacity(0.13), radius: 20, y: 18)
+                    .position(
+                        x: proxy.size.width * HomeHeroLayout.scooterCenterXFraction,
+                        y: HomeHeroLayout.scooterCenterY
+                    )
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+        .frame(height: HomeHeroLayout.standardHeight)
+        .clipped()
+    }
+
+    private var accessibilityEnergyHero: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            batteryReadout
+            batteryBody
+            ZStack(alignment: .bottom) {
+                HomeHeroGroundingScene(layout: .accessibility)
+                    .equatable()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                Image("ES80Side")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 220)
+                    .shadow(color: .black.opacity(0.75), radius: 20, y: 14)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+            .frame(height: 230)
+        }
+    }
+
+    private var batteryReadout: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(snapshot.batteryPercent.map(String.init) ?? "—")
+                .font(.system(size: batteryNumericFontSize, weight: .light, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(batteryValueColor)
+                .contentTransition(reduceMotion ? .identity : .numericText())
+
+            if snapshot.batteryPercent != nil {
+                Text("%")
+                    .font(.system(size: batteryPercentFontSize, weight: .regular, design: .rounded))
+                    .foregroundStyle(batteryValueColor)
+            }
+        }
+        .frame(
+            maxWidth: usesStackedLayout
+                ? .infinity
+                : HomeHeroLayout.batteryNumericSafeWidth,
+            alignment: .leading
+        )
+        .lineLimit(1)
+        .minimumScaleFactor(0.82)
+        .accessibilityHidden(true)
+    }
+
+    private var batteryBody: some View {
+        Group {
+            if usesStackedLayout {
+                VStack(alignment: .leading, spacing: 12) {
+                    batteryMaterial
+                        .frame(height: 94)
+                    accessibilityBatteryRangeCopy
                 }
-
-                Path { path in
-                    path.move(to: CGPoint(x: w * 0.30, y: h * 0.72))
-                    path.addLine(to: CGPoint(x: w * 0.70, y: h * 0.72))
-                    path.addLine(to: CGPoint(x: w * 0.76, y: h * 0.68))
-                }
-                .stroke(.primary.opacity(0.90), style: StrokeStyle(lineWidth: 12, lineCap: .round, lineJoin: .round))
-
-                Path { path in
-                    path.move(to: CGPoint(x: w * 0.29, y: h * 0.68))
-                    path.addLine(to: CGPoint(x: w * 0.34, y: h * 0.54))
-                    path.addLine(to: CGPoint(x: w * 0.39, y: h * 0.48))
-                    path.addLine(to: CGPoint(x: w * 0.33, y: h * 0.66))
-                    path.closeSubpath()
-                }
-                .fill(.secondary.opacity(0.58))
-
-                Path { path in
-                    path.move(to: CGPoint(x: w * 0.29, y: h * 0.58))
-                    path.addLine(to: CGPoint(x: frontWheel.x - wheelSize * 0.08, y: frontWheel.y - wheelSize * 0.05))
-                    path.move(to: CGPoint(x: w * 0.32, y: h * 0.59))
-                    path.addLine(to: CGPoint(x: frontWheel.x + wheelSize * 0.08, y: frontWheel.y - wheelSize * 0.05))
-                }
-                .stroke(.primary.opacity(0.82), style: StrokeStyle(lineWidth: 5, lineCap: .round))
-
-                Path { path in
-                    path.move(to: CGPoint(x: w * 0.35, y: h * 0.54))
-                    path.addLine(to: CGPoint(x: w * 0.43, y: h * 0.14))
-                }
-                .stroke(.primary.opacity(0.92), style: StrokeStyle(lineWidth: 10, lineCap: .round))
-
-                Capsule(style: .continuous)
-                    .fill(.primary.opacity(0.82))
-                    .frame(width: w * 0.055, height: 9)
-                    .rotationEffect(.degrees(-8))
-                    .position(x: w * 0.35, y: h * 0.52)
-
-                Path { path in
-                    path.move(to: CGPoint(x: w * 0.34, y: h * 0.13))
-                    path.addLine(to: CGPoint(x: w * 0.52, y: h * 0.13))
-                }
-                .stroke(.primary.opacity(0.92), style: StrokeStyle(lineWidth: 7, lineCap: .round))
-
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(.primary.opacity(0.88))
-                    .frame(width: 18, height: 10)
-                    .position(x: w * 0.425, y: h * 0.145)
-
-                Path { path in
-                    path.move(to: CGPoint(x: rearWheel.x - wheelSize * 0.36, y: rearWheel.y - wheelSize * 0.34))
-                    path.addQuadCurve(
-                        to: CGPoint(x: rearWheel.x + wheelSize * 0.42, y: rearWheel.y - wheelSize * 0.20),
-                        control: CGPoint(x: rearWheel.x + wheelSize * 0.06, y: rearWheel.y - wheelSize * 0.61)
+            } else {
+                ZStack(alignment: .leading) {
+                    batteryMaterial
+                    batteryRangeCopy(
+                        primaryColor: batteryRangePrimaryColor,
+                        secondaryColor: NembraColor.instrumentSecondaryText
                     )
                 }
-                .stroke(.primary.opacity(0.72), style: StrokeStyle(lineWidth: 5, lineCap: .round))
-
-                wheel(at: frontWheel, size: wheelSize, front: true)
-                wheel(at: rearWheel, size: wheelSize, front: false)
-
-                Capsule(style: .continuous)
-                    .fill(.red.opacity(0.72))
-                    .frame(width: 5, height: 13)
-                    .rotationEffect(.degrees(-8))
-                    .position(x: w * 0.337, y: h * 0.50)
-
-                Capsule(style: .continuous)
-                    .fill(.red.opacity(0.72))
-                    .frame(width: w * 0.055, height: 4)
-                    .position(x: w * 0.70, y: h * 0.70)
-
-                if headlightOn {
-                    Circle()
-                        .fill(.yellow)
-                        .frame(width: 7, height: 7)
-                        .position(x: w * 0.355, y: h * 0.18)
-                        .shadow(color: .yellow.opacity(0.65), radius: 9, x: -6, y: 0)
-                }
             }
         }
+        .accessibilityHidden(true)
     }
 
-    private func wheel(at point: CGPoint, size: CGFloat, front: Bool) -> some View {
-        ZStack {
-            Circle()
-                .fill(.primary.opacity(0.92))
-            Circle()
-                .stroke(.secondary.opacity(0.42), lineWidth: 2)
-                .padding(size * 0.15)
-            Circle()
-                .stroke(.red.opacity(front ? 0.58 : 0.24), lineWidth: front ? 2 : 1)
-                .padding(size * 0.23)
-            Circle()
-                .fill(.secondary.opacity(0.28))
-                .padding(size * 0.40)
+    private var batteryMaterial: some View {
+        HomeBatteryMaterial(
+            fillFraction: CGFloat(snapshot.batteryFillFraction),
+            isLowBattery: snapshot.isLowBattery,
+            reduceTransparency: reduceTransparency
+        )
+        .animation(
+            reduceMotion ? nil : .snappy(duration: 0.28),
+            value: snapshot.batteryFillFraction
+        )
+    }
+
+    private var accessibilityBatteryRangeCopy: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(snapshot.adaptiveRangeText)
+                .font(.system(.headline, design: .rounded, weight: batteryRangePrimaryWeight))
+                .tracking(0.15)
+                .monospacedDigit()
+                .foregroundStyle(batteryRangePrimaryColor)
+                .contentTransition(reduceMotion ? .identity : .numericText())
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(snapshot.adaptiveRangeQualifier)
+                .font(.caption.weight(.regular))
+                .tracking(0.28)
+                .foregroundStyle(NembraColor.instrumentSecondaryText)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(width: size, height: size)
-        .position(point)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 4)
     }
-}
 
-private struct GenericScooterArtwork: View {
-    let connected: Bool
+    private func batteryRangeCopy(
+        primaryColor: Color,
+        secondaryColor: Color
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(snapshot.adaptiveRangeText)
+                .font(.system(.headline, design: .rounded, weight: batteryRangePrimaryWeight))
+                .tracking(0.15)
+                .monospacedDigit()
+                .foregroundStyle(primaryColor)
+                .contentTransition(reduceMotion ? .identity : .numericText())
+                .lineLimit(1)
+                .minimumScaleFactor(0.76)
 
-    var body: some View {
-        GeometryReader { proxy in
-            let w = proxy.size.width
-            let h = proxy.size.height
-            ZStack {
-                if connected {
-                    Ellipse()
-                        .fill(.primary.opacity(0.03))
-                        .frame(width: w * 0.66, height: h * 0.20)
-                        .position(x: w * 0.5, y: h * 0.82)
-                }
+            Text(snapshot.adaptiveRangeQualifier)
+                .font(.caption.weight(.regular))
+                .tracking(0.28)
+                .foregroundStyle(secondaryColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.74)
+        }
+        .frame(
+            maxWidth: HomeHeroLayout.batteryCopySafeWidth,
+            alignment: .leading
+        )
+        .padding(.leading, 16)
+        .padding(.trailing, HomeHeroLayout.batteryTerminalWidth + 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
 
-                Path { path in
-                    path.move(to: CGPoint(x: w * 0.27, y: h * 0.72))
-                    path.addLine(to: CGPoint(x: w * 0.74, y: h * 0.72))
-                    path.move(to: CGPoint(x: w * 0.32, y: h * 0.70))
-                    path.addLine(to: CGPoint(x: w * 0.40, y: h * 0.18))
-                    path.move(to: CGPoint(x: w * 0.33, y: h * 0.18))
-                    path.addLine(to: CGPoint(x: w * 0.49, y: h * 0.18))
-                }
-                .stroke(.primary.opacity(0.85), style: StrokeStyle(lineWidth: 9, lineCap: .round, lineJoin: .round))
+    private var batteryValueColor: Color {
+        if snapshot.isLowBattery {
+            return NembraColor.warningRed
+        }
 
-                wheel(at: CGPoint(x: w * 0.23, y: h * 0.76), size: h * 0.30)
-                wheel(at: CGPoint(x: w * 0.78, y: h * 0.76), size: h * 0.30)
-            }
+        switch (snapshot.isRetained, snapshot.batteryReadoutMode) {
+        case (false, .percentage):
+            return NembraColor.primaryText
+        case (false, .estimatedRange):
+            return NembraColor.instrumentSecondaryText
+        case (true, .percentage), (true, .estimatedRange):
+            return NembraColor.primaryText
         }
     }
 
-    private func wheel(at point: CGPoint, size: CGFloat) -> some View {
-        Circle()
-            .stroke(.primary.opacity(0.85), lineWidth: 8)
-            .overlay(Circle().stroke(.secondary.opacity(0.3), lineWidth: 2).padding(7))
-            .frame(width: size, height: size)
-            .position(point)
+    private var batteryRangePrimaryWeight: Font.Weight {
+        switch snapshot.adaptiveRangeDisplay {
+        case .valueMeters:
+            snapshot.batteryReadoutMode == .estimatedRange ? .semibold : .medium
+        case .learning:
+            .medium
+        case .unavailable:
+            .regular
+        }
+    }
+
+    private var batteryRangePrimaryColor: Color {
+        switch snapshot.adaptiveRangeDisplay {
+        case .valueMeters:
+            NembraColor.primaryText.opacity(snapshot.isRetained ? 0.90 : 0.96)
+        case .learning:
+            NembraColor.primaryText.opacity(snapshot.isRetained ? 0.88 : 0.92)
+        case .unavailable:
+            NembraColor.primaryText.opacity(snapshot.isRetained ? 0.86 : 0.90)
+        }
     }
 }

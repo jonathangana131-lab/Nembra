@@ -9,42 +9,45 @@ func homeStatusAndRecoveryReflowAtAccessibilityDynamicType() throws {
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
-    let sourceURL = repositoryRoot
+    let homeSourceURL = repositoryRoot
         .appendingPathComponent("NembraApp/Features/Home/HomeView.swift")
-    let source = try String(contentsOf: sourceURL, encoding: .utf8)
+    let heroSourceURL = repositoryRoot
+        .appendingPathComponent("NembraApp/Features/Home/VehicleHeroView.swift")
+    let homeSource = try String(contentsOf: homeSourceURL, encoding: .utf8)
+    let heroSource = try String(contentsOf: heroSourceURL, encoding: .utf8)
     let appRootSource = try String(
         contentsOf: repositoryRoot.appendingPathComponent("NembraApp/App/AppRootView.swift"),
         encoding: .utf8
     )
 
-    #expect(source.contains("@Environment(\\.dynamicTypeSize) private var dynamicTypeSize"))
-    #expect(source.contains("home.metric.battery"))
-    #expect(source.contains("home.metric.trip"))
-    #expect(source.contains("home.metric.duration"))
-    #expect(source.contains("home.horizon-entry"))
-    #expect(source.contains("home.mode.selector"))
-    #expect(source.contains("home.battery.retained-freshness"))
-    #expect(source.contains("Text(\"Last confirmed\")"))
-    #expect(source.contains("vehicle.retainedBatteryObservedAt"))
-    #expect(source.contains("Text(observedAt, style: .relative)"))
-    #expect(source.contains(".formatted(date: .complete, time: .shortened)"))
-    #expect(source.contains("home.battery.low-warning"))
-    #expect(source.contains("Label(\"Low battery\", systemImage: \"exclamationmark.triangle.fill\")"))
-    #expect(source.contains(".accessibilityLabel(\"Low battery\")"))
-    #expect(source.contains("batteryAccessibilityValue"))
-    #expect(source.contains("parts.append(\"low battery\")"))
-    #expect(!source.contains(".accessibilityIdentifier(\"home.energy-hero\")"))
-    #expect(!source.contains(".accessibilityIdentifier(\"home.controls\")"))
-    #expect(source.contains("Text(\"SIM · QA\")"))
-    #expect(source.contains(".accessibilityIdentifier(\"home.connection-status\")"))
-    #expect(source.contains(".accessibilityValue(vehicleStatusAccessibilityValue)"))
-    #expect(source.contains("SIM, QA only, synthetic evidence"))
-    #expect(!source.contains("Text(\"Nembra Simulator\")"))
+    #expect(homeSource.contains("@Environment(\\.dynamicTypeSize) private var dynamicTypeSize"))
+    #expect(heroSource.contains("home.metric.battery"))
+    #expect(homeSource.contains("home.metric.trip"))
+    #expect(homeSource.contains("home.metric.duration"))
+    #expect(homeSource.contains("home.horizon-entry"))
+    #expect(homeSource.contains("home.mode.selector"))
+    #expect(heroSource.contains("home.battery.retained-freshness"))
+    #expect(heroSource.contains("Text(\"Last confirmed\")"))
+    #expect(heroSource.contains("vehicle.retainedBatteryObservedAt"))
+    #expect(heroSource.contains("Text(observedAt, style: .relative)"))
+    #expect(heroSource.contains(".formatted(date: .complete, time: .shortened)"))
+    #expect(heroSource.contains("home.battery.low-warning"))
+    #expect(heroSource.contains("Label(\"Low battery\", systemImage: \"exclamationmark.triangle.fill\")"))
+    #expect(heroSource.contains(".accessibilityLabel(\"Low battery\")"))
+    #expect(heroSource.contains("batteryAccessibilityValue"))
+    #expect(heroSource.contains("parts.append(\"low battery\")"))
+    #expect(!heroSource.contains(".accessibilityIdentifier(\"home.energy-hero\")"))
+    #expect(!homeSource.contains(".accessibilityIdentifier(\"home.controls\")"))
+    #expect(heroSource.contains("Text(\"SIM · QA\")"))
+    #expect(heroSource.contains(".accessibilityIdentifier(\"home.connection-status\")"))
+    #expect(heroSource.contains(".accessibilityValue(snapshot.status.accessibilityValue)"))
+    #expect(heroSource.contains("SIM, QA only, synthetic evidence"))
+    #expect(!heroSource.contains("Text(\"Nembra Simulator\")"))
 
     // Automatic-ride state is integrated into the compact Horizon readiness
     // control instead of consuming a second top strip.
-    #expect(source.contains("rides.statusText"))
-    #expect(source.contains("readinessAccessibilityValue"))
+    #expect(homeSource.contains("rides.statusText"))
+    #expect(homeSource.contains("readinessAccessibilityValue"))
     #expect(!appRootSource.contains("private struct RideStatusStrip"))
     #expect(!appRootSource.contains("home.ride-status"))
     #expect(!appRootSource.contains(".safeAreaInset(edge: .top"))
@@ -53,38 +56,49 @@ func homeStatusAndRecoveryReflowAtAccessibilityDynamicType() throws {
     // the whole energy instrument is one native control whose emphasis follows
     // the same persisted presentation state as Horizon. Numeric range remains
     // fenced behind the owner-bound adaptive-range presentation policy.
-    #expect(source.contains("Button {"))
-    #expect(source.contains("cockpit.toggleBatteryPrimaryReadout()"))
-    #expect(source.contains(".buttonStyle(.plain)"))
-    #expect(source.contains("AdaptiveBatteryRangePrimaryPresentationPolicy()"))
-    #expect(source.contains(".resolve(liveEstimate: adaptiveRangeEstimate)"))
-    #expect(source.contains("batteryPresentation.batteryFillPercent"))
-    #expect(source.contains("Both values remain visible"))
-    #expect(source.contains("The battery fill always represents state of charge"))
-    #expect(!source.contains("advertised"))
+    #expect(heroSource.contains("Button {"))
+    #expect(heroSource.contains("cockpit.toggleBatteryPrimaryReadout()"))
+    #expect(heroSource.contains(".buttonStyle(.plain)"))
+    #expect(heroSource.contains("AdaptiveBatteryRangePrimaryPresentationPolicy()"))
+    #expect(heroSource.contains(".resolve(liveEstimate: adaptiveRangeEstimate)"))
+    #expect(heroSource.contains("batteryPresentation.batteryFillPercent"))
+    #expect(heroSource.contains("Both values remain visible"))
+    #expect(heroSource.contains("The battery fill always represents state of charge"))
+    #expect(!heroSource.contains("advertised"))
 
-    let standardHeroStart = try #require(source.range(of: "private var standardEnergyHero: some View"))
-    let energyHeroStart = try #require(source.range(of: "private var energyHero: some View"))
-    let energyHero = String(source[energyHeroStart.lowerBound..<standardHeroStart.lowerBound])
+    let energyHeroStart = try #require(heroSource.range(of: "struct HomeEnergyHeroBridge: View"))
+    let sceneStart = try #require(
+        heroSource.range(
+            of: "private struct HomeEnergyHeroScene: View, @MainActor Equatable",
+            range: energyHeroStart.upperBound..<heroSource.endIndex
+        )
+    )
+    let standardHeroStart = try #require(
+        heroSource.range(
+            of: "private var standardEnergyHero: some View",
+            range: sceneStart.upperBound..<heroSource.endIndex
+        )
+    )
+    let energyHero = String(heroSource[energyHeroStart.lowerBound..<sceneStart.lowerBound])
     let batteryControlStart = try #require(energyHero.range(of: "Button {"))
     let batteryControl = String(energyHero[batteryControlStart.lowerBound...])
     #expect(batteryControl.contains(".accessibilityIdentifier(\"home.metric.battery\")"))
     #expect(!batteryControl.contains(".accessibilityElement(children: .ignore)"))
 
     let accessibilityHeroStart = try #require(
-        source.range(
+        heroSource.range(
             of: "private var accessibilityEnergyHero: some View",
-            range: standardHeroStart.upperBound..<source.endIndex
+            range: standardHeroStart.upperBound..<heroSource.endIndex
         )
     )
     let batteryReadoutStart = try #require(
-        source.range(
+        heroSource.range(
             of: "private var batteryReadout: some View",
-            range: accessibilityHeroStart.upperBound..<source.endIndex
+            range: accessibilityHeroStart.upperBound..<heroSource.endIndex
         )
     )
-    let standardHero = String(source[standardHeroStart.lowerBound..<accessibilityHeroStart.lowerBound])
-    let accessibilityHero = String(source[accessibilityHeroStart.lowerBound..<batteryReadoutStart.lowerBound])
+    let standardHero = String(heroSource[standardHeroStart.lowerBound..<accessibilityHeroStart.lowerBound])
+    let accessibilityHero = String(heroSource[accessibilityHeroStart.lowerBound..<batteryReadoutStart.lowerBound])
     for hero in [standardHero, accessibilityHero] {
         #expect(hero.contains("batteryReadout"))
         #expect(hero.contains("batteryBody"))
@@ -101,21 +115,21 @@ func homeStatusAndRecoveryReflowAtAccessibilityDynamicType() throws {
     #expect(standardHero.contains(".clipped()"))
     #expect(accessibilityHero.contains("HomeHeroGroundingScene(layout: .accessibility)"))
     #expect(accessibilityHero.contains(".equatable()"))
-    #expect(energyHero.contains("if usesStackedEnergyHeroLayout"))
-    #expect(source.contains("dynamicTypeSize.isAccessibilitySize || batteryNumericFontSize > 68"))
-    #expect(source.contains("@ScaledMetric(relativeTo: .largeTitle) private var batteryNumericFontSize"))
-    #expect(source.contains("@ScaledMetric(relativeTo: .title2) private var batteryPercentFontSize"))
+    #expect(energyHero.contains("usesStackedLayout: usesStackedEnergyHeroLayout"))
+    #expect(heroSource.contains("dynamicTypeSize.isAccessibilitySize || batteryNumericFontSize > 68"))
+    #expect(heroSource.contains("@ScaledMetric(relativeTo: .largeTitle) private var batteryNumericFontSize"))
+    #expect(heroSource.contains("@ScaledMetric(relativeTo: .title2) private var batteryPercentFontSize"))
 
     // The selected Home hero preserves a named copy-safe zone rather than
     // allowing the temporary scooter silhouette to cross battery text.
-    #expect(source.contains("static let batteryCopySafeWidth"))
-    #expect(source.contains("HomeHeroLayout.batteryCopySafeWidth"))
-    #expect(source.contains("static let scooterCenterXFraction"))
-    #expect(source.contains("static let batteryNumericSafeWidth: CGFloat = 120"))
-    #expect(source.contains("static let batteryCopySafeWidth: CGFloat = 108"))
-    #expect(source.contains("static let scooterWidthFraction: CGFloat = 0.80"))
-    #expect(source.contains("static let scooterMaximumSize: CGFloat = 278"))
-    #expect(source.contains("static let scooterCenterXFraction: CGFloat = 0.65"))
+    #expect(homeSource.contains("static let batteryCopySafeWidth"))
+    #expect(heroSource.contains("HomeHeroLayout.batteryCopySafeWidth"))
+    #expect(homeSource.contains("static let scooterCenterXFraction"))
+    #expect(homeSource.contains("static let batteryNumericSafeWidth: CGFloat = 120"))
+    #expect(homeSource.contains("static let batteryCopySafeWidth: CGFloat = 108"))
+    #expect(homeSource.contains("static let scooterWidthFraction: CGFloat = 0.80"))
+    #expect(homeSource.contains("static let scooterMaximumSize: CGFloat = 278"))
+    #expect(homeSource.contains("static let scooterCenterXFraction: CGFloat = 0.65"))
 
     // iPhone 12 supplies a 390-point portrait window and Home takes 20 points
     // per side. These conservative row-specific alpha bounds were measured on
@@ -129,9 +143,9 @@ func homeStatusAndRecoveryReflowAtAccessibilityDynamicType() throws {
     #expect(numericSpriteMinX - 120.0 >= 20.0)
     #expect(batterySpriteMinX - (16.0 + 108.0) >= 20.0)
 
-    let statusPanelStart = try #require(source.range(of: "private var readinessAndToday: some View"))
-    let controlsStart = try #require(source.range(of: "private var controlsRail: some View", range: statusPanelStart.upperBound..<source.endIndex))
-    let statusPanel = String(source[statusPanelStart.lowerBound..<controlsStart.lowerBound])
+    let statusPanelStart = try #require(homeSource.range(of: "private var readinessAndToday: some View"))
+    let controlsStart = try #require(homeSource.range(of: "private var controlsRail: some View", range: statusPanelStart.upperBound..<homeSource.endIndex))
+    let statusPanel = String(homeSource[statusPanelStart.lowerBound..<controlsStart.lowerBound])
 
     #expect(statusPanel.contains("if dynamicTypeSize.isAccessibilitySize"))
     #expect(statusPanel.contains("spacing: dynamicTypeSize.isAccessibilitySize ? 18 : 7"))
@@ -141,7 +155,7 @@ func homeStatusAndRecoveryReflowAtAccessibilityDynamicType() throws {
     #expect(statusPanel.contains(".fixedSize(horizontal: false, vertical: true)"))
     #expect(statusPanel.contains(".accessibilityIdentifier(\"home.horizon-entry\")"))
     #expect(statusPanel.contains("if let todayEvidenceDetail"))
-    #expect(source.contains(".padding(.top, dynamicTypeSize.isAccessibilitySize ? 14 : 5)"))
+    #expect(homeSource.contains(".padding(.top, dynamicTypeSize.isAccessibilitySize ? 14 : 5)"))
     #expect(statusPanel.contains(".accessibilityValue(readinessAccessibilityValue)"))
     #expect(!statusPanel.contains("detail: todayDistanceDetail"))
     #expect(!statusPanel.contains("detail: todayDurationDetail"))
@@ -155,35 +169,76 @@ func homeStatusAndRecoveryReflowAtAccessibilityDynamicType() throws {
     let readiness = String(statusPanel[readinessStart.lowerBound..<todayMetricStart.lowerBound])
     #expect(!readiness.contains(".accessibilityElement(children: .ignore)"))
 
-    let headerStart = try #require(source.range(of: "private var vehicleHeader: some View"))
-    let panelStart = try #require(source.range(of: "private var energyHero: some View", range: headerStart.upperBound..<source.endIndex))
-    let header = String(source[headerStart.lowerBound..<panelStart.lowerBound])
-    #expect(header.contains("if dynamicTypeSize.isAccessibilitySize"))
+    let headerStart = try #require(heroSource.range(of: "struct HomeVehicleHeaderBridge: View"))
+    let panelStart = try #require(heroSource.range(of: "enum HomeBatteryFreshness: Equatable", range: headerStart.upperBound..<heroSource.endIndex))
+    let header = String(heroSource[headerStart.lowerBound..<panelStart.lowerBound])
+    #expect(header.contains("usesAccessibilityLayout: dynamicTypeSize.isAccessibilitySize"))
+    #expect(header.contains("if usesAccessibilityLayout"))
     #expect(header.contains("VStack(alignment: .leading, spacing: 12)"))
-    #expect(header.contains("NembraColor.primaryText.opacity(0.44)"))
-    #expect(header.contains(".accessibilityHidden(true)"))
+    #expect(header.contains("Label(\"Vehicle controls\", systemImage: \"slider.horizontal.3\")"))
+    #expect(header.contains(".labelStyle(.iconOnly)"))
+    #expect(header.contains(".buttonStyle(.glassProminent)"))
+    #expect(header.contains(".buttonBorderShape(.circle)"))
+    #expect(header.contains(".foregroundStyle(NembraColor.baseBlack)"))
+    #expect(header.contains(".tint(NembraColor.instrumentSecondaryText)"))
+    #expect(!header.contains(".buttonStyle(.glass)"))
+    #expect(!header.contains(".tint(NembraColor.warmGraphite)"))
+    let vehicleControlsStart = try #require(
+        header.range(of: "private var vehicleControlsLink: some View")
+    )
+    let indicatorStart = try #require(
+        header.range(
+            of: "private var indicatorColor: Color",
+            range: vehicleControlsStart.upperBound..<header.endIndex
+        )
+    )
+    let vehicleControls = String(
+        header[vehicleControlsStart.lowerBound..<indicatorStart.lowerBound]
+    )
+    #expect(!vehicleControls.contains(".overlay"))
+    #expect(!vehicleControls.contains("strokeBorder"))
 
     let batteryReadoutEnd = try #require(
-        source.range(
+        heroSource.range(
             of: "private var batteryBody: some View",
-            range: batteryReadoutStart.upperBound..<source.endIndex
+            range: batteryReadoutStart.upperBound..<heroSource.endIndex
         )
     )
     let batteryReadout = String(
-        source[batteryReadoutStart.lowerBound..<batteryReadoutEnd.lowerBound]
+        heroSource[batteryReadoutStart.lowerBound..<batteryReadoutEnd.lowerBound]
     )
     #expect(
         batteryReadout.components(separatedBy: ".foregroundStyle(batteryValueColor)").count == 3
     )
     #expect(!batteryReadout.contains("batteryValueColor.opacity"))
-    #expect(source.contains("Color(red: 1.00, green: 0.36, blue: 0.32)"))
-    #expect(source.contains("case (true, .percentage), (true, .estimatedRange):"))
-    #expect(source.contains("NembraColor.primaryText.opacity(0.82)"))
-    #expect(!source.contains("NembraColor.secondaryText.opacity(batteryIsRetained"))
+    #expect(heroSource.contains("return NembraColor.warningRed"))
+    #expect(heroSource.contains("case (true, .percentage), (true, .estimatedRange):"))
+    #expect(heroSource.contains("NembraColor.instrumentSecondaryText"))
+    #expect(
+        heroSource.contains(
+            "Text(\"%\")\n                    .font(.system(size: batteryPercentFontSize, weight: .regular, design: .rounded))"
+        )
+    )
+    #expect(!heroSource.contains("NembraColor.secondaryText.opacity(snapshot.isRetained"))
 
-    let recoveryStart = try #require(source.range(of: "private var connectionRecovery: some View"))
-    let recoveryEnd = try #require(source.range(of: "private enum ConnectionRecoveryAction", range: recoveryStart.upperBound..<source.endIndex))
-    let recovery = String(source[recoveryStart.lowerBound..<recoveryEnd.lowerBound])
+    let readinessSeparatorStart = try #require(
+        statusPanel.range(of: "Text(\"·\")")
+    )
+    let modeReadoutStart = try #require(
+        statusPanel.range(
+            of: "Text(modeReadoutText)",
+            range: readinessSeparatorStart.upperBound..<statusPanel.endIndex
+        )
+    )
+    let readinessSeparator = String(
+        statusPanel[readinessSeparatorStart.lowerBound..<modeReadoutStart.lowerBound]
+    )
+    #expect(readinessSeparator.contains(".foregroundStyle(NembraColor.instrumentSecondaryText)"))
+    #expect(!readinessSeparator.contains(".foregroundStyle(NembraColor.secondaryText)"))
+
+    let recoveryStart = try #require(homeSource.range(of: "private var connectionRecovery: some View"))
+    let recoveryEnd = try #require(homeSource.range(of: "private enum ConnectionRecoveryAction", range: recoveryStart.upperBound..<homeSource.endIndex))
+    let recovery = String(homeSource[recoveryStart.lowerBound..<recoveryEnd.lowerBound])
     #expect(recovery.contains("if dynamicTypeSize.isAccessibilitySize"))
     #expect(recovery.contains(".frame(minWidth: 44, minHeight: 44)"))
     #expect(recovery.contains(".accessibilityHidden(true)"))
@@ -197,32 +252,39 @@ func homeEnergyMaterialRetainsSemanticAndScheduleBoundaries() throws {
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
-    let source = try String(
+    let homeSource = try String(
         contentsOf: repositoryRoot.appendingPathComponent("NembraApp/Features/Home/HomeView.swift"),
         encoding: .utf8
     )
+    let heroSource = try String(
+        contentsOf: repositoryRoot.appendingPathComponent("NembraApp/Features/Home/VehicleHeroView.swift"),
+        encoding: .utf8
+    )
 
-    let batteryBodyStart = try #require(source.range(of: "private var batteryBody: some View"))
+    let batteryBodyStart = try #require(heroSource.range(of: "private var batteryBody: some View"))
     let rangeCopyStart = try #require(
-        source.range(
+        heroSource.range(
             of: "private func batteryRangeCopy(",
-            range: batteryBodyStart.upperBound..<source.endIndex
+            range: batteryBodyStart.upperBound..<heroSource.endIndex
         )
     )
     let readinessStart = try #require(
-        source.range(
-            of: "// MARK: - Readiness and durable Today",
-            range: rangeCopyStart.upperBound..<source.endIndex
+        heroSource.range(
+            of: "private var batteryValueColor: Color",
+            range: rangeCopyStart.upperBound..<heroSource.endIndex
         )
     )
-    let batteryBody = String(source[batteryBodyStart.lowerBound..<rangeCopyStart.lowerBound])
-    let rangeCopy = String(source[rangeCopyStart.lowerBound..<readinessStart.lowerBound])
+    let batteryBody = String(heroSource[batteryBodyStart.lowerBound..<rangeCopyStart.lowerBound])
+    let rangeCopy = String(heroSource[rangeCopyStart.lowerBound..<readinessStart.lowerBound])
 
     #expect(batteryBody.contains("HomeBatteryMaterial("))
-    #expect(batteryBody.contains("fillFraction: CGFloat(batteryFillFraction)"))
-    #expect(batteryBody.contains("isLowBattery: isBatteryLow"))
+    #expect(batteryBody.contains("fillFraction: CGFloat(snapshot.batteryFillFraction)"))
+    #expect(batteryBody.contains("isLowBattery: snapshot.isLowBattery"))
+    #expect(batteryBody.contains("if usesStackedLayout"))
+    #expect(batteryBody.contains("accessibilityBatteryRangeCopy"))
+    #expect(batteryBody.contains("batteryMaterial"))
     #expect(batteryBody.contains("batteryRangePrimaryColor"))
-    #expect(batteryBody.contains("batteryRangeSecondaryColor"))
+    #expect(batteryBody.contains("NembraColor.instrumentSecondaryText"))
     #expect(!batteryBody.contains(".mask"))
     #expect(rangeCopy.contains("HomeHeroLayout.batteryCopySafeWidth"))
     #expect(
@@ -233,22 +295,22 @@ func homeEnergyMaterialRetainsSemanticAndScheduleBoundaries() throws {
     #expect(rangeCopy.contains(".font(.caption.weight(.regular))"))
 
     let materialStart = try #require(
-        source.range(of: "private struct HomeBatteryMaterial: View, @MainActor Animatable")
+        homeSource.range(of: "struct HomeBatteryMaterial: View, @MainActor Animatable")
     )
     let groundingStart = try #require(
-        source.range(
-            of: "private struct HomeHeroGroundingScene: View",
-            range: materialStart.upperBound..<source.endIndex
+        homeSource.range(
+            of: "struct HomeHeroGroundingScene: View",
+            range: materialStart.upperBound..<homeSource.endIndex
         )
     )
     let glassStart = try #require(
-        source.range(
+        homeSource.range(
             of: "private struct HomeControlIconGlassModifier: ViewModifier",
-            range: groundingStart.upperBound..<source.endIndex
+            range: groundingStart.upperBound..<homeSource.endIndex
         )
     )
-    let material = String(source[materialStart.lowerBound..<groundingStart.lowerBound])
-    let grounding = String(source[groundingStart.lowerBound..<glassStart.lowerBound])
+    let material = String(homeSource[materialStart.lowerBound..<groundingStart.lowerBound])
+    let grounding = String(homeSource[groundingStart.lowerBound..<glassStart.lowerBound])
 
     // The battery is a passive Canvas with a bounded SOC animation input. It
     // must never gain a TimelineView, display link, or glass material.
@@ -259,12 +321,12 @@ func homeEnergyMaterialRetainsSemanticAndScheduleBoundaries() throws {
     #expect(material.contains("chargeContext.clip(to: fillPath)"))
     #expect(material.contains("HomeHeroLayout.batteryCopySafeWidth + 34"))
     #expect(material.contains("copyWellRect.minX + fullCopyWellWidth"))
-    #expect(material.contains("location: 0.84"))
+    #expect(material.contains("location: 0.90"))
     #expect(material.contains("copyWellPath"))
     #expect(material.contains("reservoirPath"))
     #expect(material.contains("terminalPath"))
     #expect(material.contains("shoulderPath"))
-    #expect(material.contains("isLowBattery ? .red : NembraColor.gold"))
+    #expect(material.contains("isLowBattery ? NembraColor.warningRed : NembraColor.gold"))
     #expect(material.contains("guard fillFraction > 0 else { return 0 }"))
     #expect(!material.contains("TimelineView"))
     #expect(!material.contains("glassEffect"))
@@ -287,16 +349,66 @@ func homeEnergyMaterialRetainsSemanticAndScheduleBoundaries() throws {
     #expect(!grounding.contains("TimelineView"))
 
     let continuationStart = try #require(
-        source.range(of: "private var latestRideContinuation: some View")
+        homeSource.range(of: "private var latestRideContinuation: some View")
     )
     let continuationLabelStart = try #require(
-        source.range(
+        homeSource.range(
             of: "private func latestRideLabel(",
-            range: continuationStart.upperBound..<source.endIndex
+            range: continuationStart.upperBound..<homeSource.endIndex
         )
     )
-    let continuation = String(source[continuationStart.lowerBound..<continuationLabelStart.lowerBound])
+    let continuation = String(homeSource[continuationStart.lowerBound..<continuationLabelStart.lowerBound])
     #expect(continuation.contains(".nembraGlassControl()"))
+
+    // Observation is resolved once at the narrow bridges. Require both actual
+    // equality boundaries so a future extraction cannot silently turn the
+    // snapshots back into ordinary recomputed children.
+    let headerBridgeStart = try #require(
+        heroSource.range(of: "struct HomeVehicleHeaderBridge: View")
+    )
+    let headerContentStart = try #require(
+        heroSource.range(
+            of: "private struct HomeVehicleHeaderContent: View, @MainActor Equatable",
+            range: headerBridgeStart.upperBound..<heroSource.endIndex
+        )
+    )
+    let headerBridge = String(
+        heroSource[headerBridgeStart.lowerBound..<headerContentStart.lowerBound]
+    )
+    #expect(headerBridge.contains("HomeVehicleHeaderContent("))
+    #expect(headerBridge.contains(".equatable()"))
+
+    let energyBridgeStart = try #require(
+        heroSource.range(of: "struct HomeEnergyHeroBridge: View")
+    )
+    let sceneStart = try #require(
+        heroSource.range(
+            of: "private struct HomeEnergyHeroScene: View, @MainActor Equatable",
+            range: energyBridgeStart.upperBound..<heroSource.endIndex
+        )
+    )
+    let energyBridge = String(
+        heroSource[energyBridgeStart.lowerBound..<sceneStart.lowerBound]
+    )
+    #expect(energyBridge.contains("HomeEnergyHeroScene("))
+    #expect(energyBridge.contains(".equatable()"))
+
+    // The expensive renderer receives only an Equatable value and environment
+    // primitives; it must not retain stores, callbacks, or state that could
+    // freeze truth or widen the invalidation boundary.
+    let scene = String(heroSource[sceneStart.lowerBound...])
+    let sceneBodyStart = try #require(scene.range(of: "var body: some View"))
+    let sceneDeclaration = String(scene[..<sceneBodyStart.lowerBound])
+    #expect(scene.contains("let snapshot: HomeEnergyHeroSnapshot"))
+    #expect(!scene.contains("VehicleStore"))
+    #expect(!scene.contains("HorizonCockpitStore"))
+    #expect(!scene.contains("@Environment"))
+    #expect(!scene.contains("@Bindable"))
+    #expect(!scene.contains("@State"))
+    #expect(!scene.contains("TimelineView"))
+    #expect(!sceneDeclaration.contains("->"))
+    #expect(homeSource.contains("HomeVehicleHeaderBridge(vehicle: vehicle)"))
+    #expect(homeSource.contains("HomeEnergyHeroBridge("))
 }
 
 @Test("Home UI tests retain standard audits and Accessibility XXXL runtime evidence")
@@ -375,6 +487,7 @@ func homeRuntimeAccessibilityCoverageRemainsProductionStrength() throws {
         #expect(accessibilityXXXL.contains(requiredSemantic))
     }
     #expect(accessibilityXXXL.contains("assertMinimumTouchTarget"))
+    #expect(accessibilityXXXL.contains("performAccessibilityAudit(for: [.contrast, .textClipped])"))
     #expect(accessibilityXXXL.contains("scrollFullyInsideWindowAndAboveTabBar"))
     #expect(
         accessibilityXXXL.contains(

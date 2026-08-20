@@ -56,6 +56,80 @@ final class NembraAppTests: XCTestCase {
         XCTAssertEqual(restoredAgain.batteryPrimaryReadoutState.mode, .percentage)
     }
 
+    @MainActor
+    func testHomeEnergyHeroSnapshotIgnoresUnrelatedVehicleTelemetry() {
+        let store = AppBootstrap.makeVehicleStore(
+            arguments: ["Nembra"],
+            environment: ["NEMBRA_SIMULATION_SCENARIO": "connected-stopped"]
+        )
+        let suiteName = "NembraAppTests.energy-snapshot.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            return XCTFail("Could not create isolated defaults.")
+        }
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let cockpit = HorizonCockpitStore(defaults: defaults)
+
+        let baseline = HomeEnergyHeroSnapshot(
+            vehicle: store,
+            cockpit: cockpit,
+            adaptiveRangeEstimate: nil
+        )
+        XCTAssertEqual(baseline.batteryPercent, 92)
+
+        store.state.speedKilometersPerHour = 21.4
+        store.state.powerWatts = 512
+        store.state.currentAmps = 13.1
+        store.state.odometerKilometers = 999.4
+        store.state.tripKilometers = 19.2
+        store.state.lastUpdated = Date(timeIntervalSince1970: 1_800_000_000)
+
+        let afterUnrelatedTelemetry = HomeEnergyHeroSnapshot(
+            vehicle: store,
+            cockpit: cockpit,
+            adaptiveRangeEstimate: nil
+        )
+        XCTAssertEqual(afterUnrelatedTelemetry, baseline)
+
+        store.state.batteryPercent = 91
+        let afterBatteryChange = HomeEnergyHeroSnapshot(
+            vehicle: store,
+            cockpit: cockpit,
+            adaptiveRangeEstimate: nil
+        )
+        XCTAssertNotEqual(afterBatteryChange, baseline)
+
+        cockpit.toggleBatteryPrimaryReadout()
+        let afterReadoutModeChange = HomeEnergyHeroSnapshot(
+            vehicle: store,
+            cockpit: cockpit,
+            adaptiveRangeEstimate: nil
+        )
+        XCTAssertNotEqual(afterReadoutModeChange, afterBatteryChange)
+    }
+
+    @MainActor
+    func testHomeVehicleHeaderSnapshotIgnoresPowerButTracksConnectionTruth() {
+        let store = AppBootstrap.makeVehicleStore(
+            arguments: ["Nembra"],
+            environment: ["NEMBRA_SIMULATION_SCENARIO": "connected-stopped"]
+        )
+
+        let baseline = HomeVehicleHeaderSnapshot(vehicle: store)
+        XCTAssertEqual(baseline.displayName, "AOVOPRO ES80")
+        XCTAssertTrue(baseline.showsSimulatorBadge)
+
+        store.state.powerWatts = 640
+        store.state.currentAmps = 16.4
+        store.state.odometerKilometers = 444.8
+        XCTAssertEqual(HomeVehicleHeaderSnapshot(vehicle: store), baseline)
+
+        store.state.connectionIssue = .scooterUnavailable
+        let unavailable = HomeVehicleHeaderSnapshot(vehicle: store)
+        XCTAssertNotEqual(unavailable, baseline)
+        XCTAssertEqual(unavailable.status.text, "Not Found")
+        XCTAssertTrue(unavailable.status.accessibilityValue.contains("SIM, QA only"))
+    }
+
     func testHorizonV4PropulsionGeometryIsSymmetricRaisedAndFullyBounded() {
         for size in [
             CGSize(width: 640, height: 112),
