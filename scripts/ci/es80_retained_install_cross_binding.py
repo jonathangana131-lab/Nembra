@@ -8,10 +8,13 @@ It only proves that already-authenticated pre-install bytes describe one identic
 from __future__ import annotations
 
 import hashlib
+import hmac
 import importlib.util
 import json
-from pathlib import Path
+import os
+from pathlib import Path, PurePath
 import re
+import stat
 from typing import Any
 
 HERE = Path(__file__).resolve().parent
@@ -87,6 +90,97 @@ def _digest(value: str, label: str) -> str:
     return value
 
 
+def _read_exact_subject(
+    path: Path,
+    expected_sha256: str,
+    *,
+    label: str,
+    access_policy: str,
+    maximum_bytes: int,
+) -> bytes:
+    """Read one accepted subject once under no-follow custody and bind that read to its digest."""
+    expected = _digest(expected_sha256, f"accepted {label} digest")
+    if access_policy not in {"public", "private"} or maximum_bytes <= 0:
+        raise RetainedInstallCrossBindingError(f"{label} custody policy is invalid")
+
+    raw_path = os.fspath(path.expanduser())
+    if not os.path.isabs(raw_path) or "\x00" in raw_path:
+        raise RetainedInstallCrossBindingError(f"{label} path must be absolute and NUL-free")
+    pure = PurePath(raw_path)
+    if pure.parts[0] != "/" or any(part in {"", ".", ".."} for part in pure.parts[1:]):
+        raise RetainedInstallCrossBindingError(f"{label} path is not canonical")
+
+    no_follow = getattr(os, "O_NOFOLLOW", None)
+    directory_only = getattr(os, "O_DIRECTORY", None)
+    if no_follow is None or directory_only is None:
+        raise RetainedInstallCrossBindingError(
+            "platform cannot guarantee no-follow retained-subject custody"
+        )
+
+    directory_fd = os.open("/", os.O_RDONLY | directory_only)
+    descriptor: int | None = None
+    try:
+        for component in pure.parts[1:-1]:
+            next_fd = os.open(
+                component,
+                os.O_RDONLY | directory_only | no_follow,
+                dir_fd=directory_fd,
+            )
+            os.close(directory_fd)
+            directory_fd = next_fd
+        descriptor = os.open(pure.parts[-1], os.O_RDONLY | no_follow, dir_fd=directory_fd)
+    except OSError as error:
+        raise RetainedInstallCrossBindingError(f"{label} failed no-follow admission") from error
+    finally:
+        os.close(directory_fd)
+
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+            raise RetainedInstallCrossBindingError(f"{label} must be one regular single-link file")
+        if hasattr(os, "geteuid") and before.st_uid != os.geteuid():
+            raise RetainedInstallCrossBindingError(f"{label} must be owned by the invoking user")
+        forbidden_mode = 0o077 if access_policy == "private" else 0o022
+        if stat.S_IMODE(before.st_mode) & forbidden_mode:
+            raise RetainedInstallCrossBindingError(f"{label} permissions are too broad")
+        if before.st_size <= 0 or before.st_size > maximum_bytes:
+            raise RetainedInstallCrossBindingError(f"{label} file size is invalid")
+
+        blocks: list[bytes] = []
+        digest = hashlib.sha256()
+        byte_count = 0
+        while True:
+            block = os.read(descriptor, min(64 * 1024, maximum_bytes + 1 - byte_count))
+            if not block:
+                break
+            blocks.append(block)
+            digest.update(block)
+            byte_count += len(block)
+            if byte_count > maximum_bytes:
+                raise RetainedInstallCrossBindingError(f"{label} exceeds the byte limit")
+
+        after = os.fstat(descriptor)
+        identity = lambda value: (
+            value.st_dev,
+            value.st_ino,
+            value.st_mode,
+            value.st_uid,
+            value.st_nlink,
+            value.st_size,
+            value.st_mtime_ns,
+            value.st_ctime_ns,
+        )
+        if identity(after) != identity(before) or byte_count != before.st_size:
+            raise RetainedInstallCrossBindingError(f"{label} changed during descriptor read")
+        if not hmac.compare_digest(digest.hexdigest(), expected):
+            raise RetainedInstallCrossBindingError(
+                f"independently accepted {label} digest mismatch"
+            )
+        return b"".join(blocks)
+    finally:
+        os.close(descriptor)
+
+
 def _require_common_subject(
     value: dict[str, Any], manifest: dict[str, Any], label: str
 ) -> None:
@@ -122,7 +216,7 @@ def verify_cross_binding(
     accepted_manifest_sha = _digest(
         accepted_install_manifest_sha256, "accepted install-manifest digest"
     )
-    if sha256_hex(install_manifest_data) != accepted_manifest_sha:
+    if not hmac.compare_digest(sha256_hex(install_manifest_data), accepted_manifest_sha):
         raise RetainedInstallCrossBindingError(
             "independently accepted install-manifest digest mismatch"
         )
@@ -163,7 +257,7 @@ def verify_cross_binding(
         "finalGORecordSHA256": sha256_hex(final_go_record_data),
     }
     for key, actual in actual_subject_digests.items():
-        if actual != independently_accepted[key]:
+        if not hmac.compare_digest(actual, independently_accepted[key]):
             raise RetainedInstallCrossBindingError(
                 f"independently accepted subject digest mismatch at {key}"
             )
@@ -205,3 +299,61 @@ def verify_cross_binding(
             raise RetainedInstallCrossBindingError(f"Final-GO exact-subject mismatch at {key}")
 
     return manifest
+
+
+def verify_cross_binding_paths(
+    *,
+    install_manifest_path: Path,
+    external_build_record_path: Path,
+    signed_build_evidence_path: Path,
+    final_go_record_path: Path,
+    accepted_install_manifest_sha256: str,
+    accepted_retained_ipa_sha256: str,
+    accepted_external_build_record_sha256: str,
+    accepted_signed_build_evidence_sha256: str,
+    accepted_final_go_record_sha256: str,
+    accepted_tuya_lock_sha256: str,
+    accepted_intended_device_pseudonym_sha256: str,
+) -> dict[str, Any]:
+    """Cross-bind exact retained paths without reopening a pathname after digest admission."""
+    install_manifest_data = _read_exact_subject(
+        install_manifest_path,
+        accepted_install_manifest_sha256,
+        label="install manifest",
+        access_policy="private",
+        maximum_bytes=manifest_contract.MAX_MANIFEST_BYTES,
+    )
+    external_build_record_data = _read_exact_subject(
+        external_build_record_path,
+        accepted_external_build_record_sha256,
+        label="external build record",
+        access_policy="public",
+        maximum_bytes=MAX_JSON_BYTES,
+    )
+    signed_build_evidence_data = _read_exact_subject(
+        signed_build_evidence_path,
+        accepted_signed_build_evidence_sha256,
+        label="signed build evidence",
+        access_policy="public",
+        maximum_bytes=MAX_JSON_BYTES,
+    )
+    final_go_record_data = _read_exact_subject(
+        final_go_record_path,
+        accepted_final_go_record_sha256,
+        label="Final-GO record",
+        access_policy="private",
+        maximum_bytes=MAX_JSON_BYTES,
+    )
+    return verify_cross_binding(
+        install_manifest_data=install_manifest_data,
+        external_build_record_data=external_build_record_data,
+        signed_build_evidence_data=signed_build_evidence_data,
+        final_go_record_data=final_go_record_data,
+        accepted_install_manifest_sha256=accepted_install_manifest_sha256,
+        accepted_retained_ipa_sha256=accepted_retained_ipa_sha256,
+        accepted_external_build_record_sha256=accepted_external_build_record_sha256,
+        accepted_signed_build_evidence_sha256=accepted_signed_build_evidence_sha256,
+        accepted_final_go_record_sha256=accepted_final_go_record_sha256,
+        accepted_tuya_lock_sha256=accepted_tuya_lock_sha256,
+        accepted_intended_device_pseudonym_sha256=accepted_intended_device_pseudonym_sha256,
+    )
