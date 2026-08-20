@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import NembraBluetoothCapture
 
@@ -27,7 +26,6 @@ public enum AuthenticatedStationaryCaptureAppAuthorizerError: Error, Equatable, 
     case manifestBundleMismatch
     case manifestRuntimeMismatch
     case manifestAttemptBindingsMismatch
-    case manifestAuthorizationEnvelopeMismatch
 }
 
 /// App-owned composition seam for authenticated stationary Capture authorization.
@@ -35,8 +33,13 @@ public enum AuthenticatedStationaryCaptureAppAuthorizerError: Error, Equatable, 
 /// This adapter deliberately owns no Boolean field-authority switch. It can only:
 /// 1. ask `NembraBluetoothCapture` to create a live, runtime-bound attempt;
 /// 2. expose that attempt's random challenge to the independent signing workflow; and
-/// 3. require the final canonical retained-install manifest to cross-bind the running build,
-///    attempt bindings, and exact returned envelope before presenting it to the package verifier.
+/// 3. cross-bind the retained install manifest to the running build and stable attempt bindings
+///    before presenting the post-install signed envelope to the package verifier.
+///
+/// The retained install manifest intentionally cannot contain the signed authorization envelope:
+/// that envelope depends on the fresh process-local challenge created after installation. The
+/// package verifier instead binds the envelope itself to this exact prepared attempt, runtime build,
+/// external evidence bindings, time window, and one-time replay-consumption request.
 ///
 /// With the package production trust root still unset, `authorize` remains mechanically NO-GO.
 /// Pinning that root later is a separate independently reviewed change; this type must not grow a
@@ -56,9 +59,8 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
     }
 
     /// Starts one live authorization attempt from the separately accepted external install/evidence
-    /// bindings. The app-generated challenge is needed before the signer can create the envelope,
-    /// so the final manifest cannot exist yet at this step. This does not start OFF1, scan Bluetooth,
-    /// authenticate Tuya, or grant physical GO.
+    /// bindings. The app-generated challenge is needed before the signer can create the envelope.
+    /// This does not start OFF1, scan Bluetooth, authenticate Tuya, or grant physical GO.
     public func beginAttempt(
         externalBindings: AuthenticatedStationaryCaptureExternalBindings
     ) throws -> AuthenticatedStationaryCapturePreparedAttempt {
@@ -67,9 +69,9 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
         return AuthenticatedStationaryCapturePreparedAttempt(packageAttempt: attempt)
     }
 
-    /// Verifies the final retained-install manifest against the running app, the exact prepared
-    /// attempt, and the exact signed envelope bytes before the package-pinned signature verifier can
-    /// consume replay state or mint the opaque one-attempt capability.
+    /// Verifies the retained install manifest against the running app and the exact prepared
+    /// attempt's stable evidence bindings before the package-pinned signature verifier evaluates
+    /// the post-install envelope and may consume replay state or mint the opaque capability.
     public func authorize(
         envelopeData: Data,
         installManifestData: Data,
@@ -77,9 +79,8 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
     ) throws -> AuthenticatedStationaryCaptureAttemptCapability {
         let runtimeBuildIdentity = try PassiveBluetoothCaptureRuntimeBuildIdentityReader
             .currentApplication()
-        try validateFinalManifest(
+        try validateInstallManifest(
             installManifestData,
-            envelopeData: envelopeData,
             preparedAttempt: preparedAttempt,
             currentBundleIdentifier: Bundle.main.bundleIdentifier,
             runtimeBuildIdentity: runtimeBuildIdentity
@@ -92,9 +93,8 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
         )
     }
 
-    private func validateFinalManifest(
+    private func validateInstallManifest(
         _ installManifestData: Data,
-        envelopeData: Data,
         preparedAttempt: AuthenticatedStationaryCapturePreparedAttempt,
         currentBundleIdentifier: String?,
         runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity
@@ -111,24 +111,18 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
         guard try manifest.externalBindings() == preparedAttempt.packageAttempt.externalBindings else {
             throw AuthenticatedStationaryCaptureAppAuthorizerError.manifestAttemptBindingsMismatch
         }
-        guard manifest.authorizationEnvelopeSHA256 == Self.sha256Hex(envelopeData) else {
-            throw AuthenticatedStationaryCaptureAppAuthorizerError
-                .manifestAuthorizationEnvelopeMismatch
-        }
     }
 
     /// Deterministic manifest-cross-binding seam used only by tests in this Swift package. It does
     /// not invoke the production trust root, consume replay state, or mint a capability.
-    package func validateFinalManifestForTesting(
+    package func validateInstallManifestForTesting(
         _ installManifestData: Data,
-        envelopeData: Data,
         preparedAttempt: AuthenticatedStationaryCapturePreparedAttempt,
         currentBundleIdentifier: String?,
         runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity
     ) throws {
-        try validateFinalManifest(
+        try validateInstallManifest(
             installManifestData,
-            envelopeData: envelopeData,
             preparedAttempt: preparedAttempt,
             currentBundleIdentifier: currentBundleIdentifier,
             runtimeBuildIdentity: runtimeBuildIdentity
@@ -154,11 +148,5 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
             uptimeNanoseconds: uptimeNanoseconds
         )
         return AuthenticatedStationaryCapturePreparedAttempt(packageAttempt: attempt)
-    }
-
-    private static func sha256Hex(_ data: Data) -> String {
-        SHA256.hash(data: data)
-            .map { String(format: "%02x", $0) }
-            .joined()
     }
 }
