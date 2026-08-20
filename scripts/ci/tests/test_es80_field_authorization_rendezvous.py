@@ -112,7 +112,7 @@ class SignerRendezvousTests(unittest.TestCase):
 
     def test_reader_source_never_reopens_validated_path(self) -> None:
         source = SCRIPT.read_text(encoding="utf-8")
-        self.assertIn("os.O_NOFOLLOW", source)
+        self.assertIn('getattr(os, "O_NOFOLLOW", None)', source)
         self.assertIn("os.fstat(descriptor)", source)
         self.assertIn("before.st_nlink != 1", source)
         self.assertNotIn("candidate.read_bytes()", source)
