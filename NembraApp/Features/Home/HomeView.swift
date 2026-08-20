@@ -1,36 +1,65 @@
 import SwiftUI
 import UIKit
 
+private enum HomePalette {
+    static let base = Color(red: 0.025, green: 0.029, blue: 0.034)
+    static let graphite = Color(red: 0.075, green: 0.083, blue: 0.095)
+    static let raised = Color(red: 0.105, green: 0.114, blue: 0.128)
+    static let line = Color.white.opacity(0.10)
+    static let primary = Color.white.opacity(0.96)
+    static let secondary = Color.white.opacity(0.62)
+    static let gold = Color(red: 0.96, green: 0.69, blue: 0.20)
+    static let deepGold = Color(red: 0.58, green: 0.34, blue: 0.06)
+    static let danger = Color(red: 1.0, green: 0.31, blue: 0.27)
+}
+
+private enum HomeBatteryReadout: Equatable {
+    case charge
+    case learnedRange
+}
+
+/// Mainline Home built only from vehicle facts that already exist on `VehicleStore`.
+///
+/// The surface deliberately keeps retained/unavailable data explicit, never derives
+/// learned range from battery percentage, and never turns a requested vehicle command
+/// into confirmed state. It is a product projection, not an evidence authority.
 struct HomeView: View {
     @Environment(VehicleStore.self) private var vehicle
     @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+
     @State private var pendingLockConfirmation: Bool?
+    @State private var batteryReadout: HomeBatteryReadout = .charge
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: NembraMetrics.section) {
-                vehicleHeader
+            VStack(alignment: .leading, spacing: sectionSpacing) {
+                machineHeader
 
                 if vehicle.state.connection != .connected {
                     connectionRecovery
                 }
 
-                statusPanel
-                controlsSection
+                energyHero
+                rideReadiness
+                controlsRail
 
                 if !supportedModes.isEmpty {
-                    modeSection
+                    modeRail
                 }
 
-                vehicleSection
+                vehicleDetails
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 18)
             .padding(.top, 8)
-            .padding(.bottom, 24)
+            .padding(.bottom, dynamicTypeSize.isAccessibilitySize ? 112 : 86)
         }
-        .padding(.bottom, homeViewportBottomClearance)
-        .background(Color(uiColor: .systemBackground))
+        .scrollIndicators(.hidden)
+        .background(HomePalette.base.ignoresSafeArea())
+        .foregroundStyle(HomePalette.primary)
         .navigationTitle("Nembra")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -40,10 +69,13 @@ struct HomeView: View {
                 } label: {
                     Image(systemName: "slider.horizontal.3")
                         .fontWeight(.semibold)
+                        .foregroundStyle(HomePalette.gold)
+                        .frame(minWidth: 44, minHeight: 44)
                 }
                 .accessibilityLabel("Vehicle controls")
             }
         }
+        .toolbarBackground(HomePalette.base.opacity(0.96), for: .navigationBar)
         .alert("Command not confirmed", isPresented: errorPresented) {
             Button("OK", role: .cancel) { vehicle.lastErrorMessage = nil }
         } message: {
@@ -70,8 +102,8 @@ struct HomeView: View {
         }
     }
 
-    private var homeViewportBottomClearance: CGFloat {
-        dynamicTypeSize.isAccessibilitySize ? 100 : 76
+    private var sectionSpacing: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 24 : 16
     }
 
     private var errorPresented: Binding<Bool> {
@@ -88,182 +120,311 @@ struct HomeView: View {
         )
     }
 
-    private var vehicleHeader: some View {
+    // MARK: - Machine identity
+
+    private var machineHeader: some View {
         Group {
             if dynamicTypeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: 12) {
                     vehicleIdentity
-                    lockStatus
+                    lockBadge
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                HStack(alignment: .center, spacing: 16) {
+                HStack(alignment: .center, spacing: 14) {
                     vehicleIdentity
                     Spacer(minLength: 12)
-                    lockStatus
+                    lockBadge
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("home.vehicle-header")
     }
 
     private var vehicleIdentity: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(vehicle.profile.identity.displayName)
                 .font(.title2.weight(.bold))
-                .foregroundStyle(.primary)
+                .foregroundStyle(HomePalette.primary)
+                .lineLimit(2)
 
-            Label {
-                Text(vehicleStatusText)
-            } icon: {
+            HStack(spacing: 7) {
                 Circle()
                     .fill(connectionIndicatorColor)
                     .frame(width: 7, height: 7)
+                    .accessibilityHidden(true)
+
+                Text(vehicleStatusText)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(HomePalette.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(.secondary)
         }
     }
 
     @ViewBuilder
-    private var lockStatus: some View {
+    private var lockBadge: some View {
         if let isLocked = vehicle.state.isLocked {
-            Label(isLocked ? "Locked" : "Unlocked", systemImage: isLocked ? "lock.fill" : "lock.open")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(isLocked ? .primary : .secondary)
-                .padding(.horizontal, 11)
-                .padding(.vertical, 8)
-                .background(Color.primary.opacity(0.055), in: Capsule())
+            Label(
+                isLocked ? "Locked" : "Unlocked",
+                systemImage: isLocked ? "lock.fill" : "lock.open"
+            )
+            .font(.caption.weight(.bold))
+            .foregroundStyle(isLocked ? HomePalette.gold : HomePalette.secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                isLocked ? HomePalette.gold.opacity(0.11) : Color.white.opacity(0.05),
+                in: Capsule()
+            )
+            .overlay {
+                Capsule()
+                    .strokeBorder(
+                        isLocked ? HomePalette.gold.opacity(0.24) : HomePalette.line,
+                        lineWidth: 1
+                    )
+            }
         }
     }
 
-    private var statusPanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if vehicle.state.connection != .connected && hasRetainedSummaryData {
-                Label("Last known vehicle data", systemImage: "clock.arrow.circlepath")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .accessibilityHint("These values may be stale until the scooter reconnects.")
-            }
+    // MARK: - Energy hero
 
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(spacing: 0) {
-                    statusMetric(
-                        title: "Battery",
-                        value: batteryText,
-                        icon: batteryIcon,
-                        accessibilityIdentifier: "home.metric.battery",
-                        accessibilityValue: batteryAccessibilityValue,
-                        valueStyle: batteryValueStyle
+    private var energyHero: some View {
+        Button {
+            batteryReadout = batteryReadout == .charge ? .learnedRange : .charge
+        } label: {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(batteryReadout == .charge ? "ENERGY" : "LEARNED RANGE")
+                            .font(.caption2.weight(.bold))
+                            .tracking(2.0)
+                            .foregroundStyle(HomePalette.secondary)
+
+                        energyPrimaryValue
+                    }
+
+                    Spacer(minLength: 10)
+
+                    Image(systemName: "arrow.left.arrow.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(HomePalette.gold)
+                        .frame(width: 34, height: 34)
+                        .background(HomePalette.gold.opacity(0.10), in: Circle())
+                        .accessibilityHidden(true)
+                }
+
+                HomeBatterySilhouette(
+                    fillFraction: batteryFillFraction,
+                    isLowBattery: isBatteryLow,
+                    retained: isRetainedBatteryData,
+                    reduceTransparency: reduceTransparency,
+                    increasedContrast: colorSchemeContrast == .increased
+                )
+                .frame(height: dynamicTypeSize.isAccessibilitySize ? 78 : 68)
+
+                HStack(alignment: .top, spacing: 12) {
+                    energyTruthCopy
+                    Spacer(minLength: 8)
+                    Text("Tap to switch")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(HomePalette.secondary)
+                }
+            }
+            .padding(dynamicTypeSize.isAccessibilitySize ? 20 : 18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                LinearGradient(
+                    colors: [HomePalette.raised, HomePalette.graphite, HomePalette.base],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: RoundedRectangle(cornerRadius: 30, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 30, style: .continuous)
+                    .strokeBorder(
+                        isBatteryLow ? HomePalette.danger.opacity(0.30) : HomePalette.gold.opacity(0.16),
+                        lineWidth: colorSchemeContrast == .increased ? 1.5 : 1
                     )
-                    accessibilityMetricDivider
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(batteryReadout == .charge ? "Battery" : "Learned range")
+        .accessibilityValue(energyAccessibilityValue)
+        .accessibilityHint(
+            batteryReadout == .charge
+                ? "Double tap to show learned range availability."
+                : "Double tap to show battery charge."
+        )
+        .accessibilityIdentifier("home.energy-hero")
+    }
+
+    @ViewBuilder
+    private var energyPrimaryValue: some View {
+        switch batteryReadout {
+        case .charge:
+            Text(batteryText)
+                .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 46 : 58, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(isBatteryLow ? HomePalette.danger : HomePalette.primary)
+                .contentTransition(reduceMotion ? .identity : .numericText())
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+        case .learnedRange:
+            Text("Unavailable")
+                .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 31 : 36, weight: .semibold, design: .rounded))
+                .foregroundStyle(HomePalette.primary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var energyTruthCopy: some View {
+        Group {
+            switch batteryReadout {
+            case .charge:
+                if vehicle.state.batteryPercent == nil {
+                    Text("No accepted battery value")
+                } else if isRetainedBatteryData {
+                    Label("Last known charge", systemImage: "clock.arrow.circlepath")
+                } else {
+                    Text(isBatteryLow ? "Low battery" : "Charge")
+                }
+            case .learnedRange:
+                Text("No learned range model is wired yet")
+            }
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(
+            isBatteryLow && batteryReadout == .charge
+                ? HomePalette.danger
+                : HomePalette.secondary
+        )
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var batteryFillFraction: CGFloat? {
+        guard let battery = vehicle.state.batteryPercent,
+              (0...100).contains(battery) else { return nil }
+        return CGFloat(battery) / 100
+    }
+
+    private var energyAccessibilityValue: String {
+        switch batteryReadout {
+        case .charge:
+            guard let battery = vehicle.state.batteryPercent else {
+                return "Unavailable. No accepted battery value."
+            }
+            let currentness = isRetainedBatteryData ? "Last known" : "Current"
+            let low = isBatteryLow ? ", low battery" : ""
+            return "\(currentness), \(battery) percent\(low). Battery fill represents charge."
+        case .learnedRange:
+            return "Unavailable. Nembra does not have a learned range model wired to this surface. Battery fill still represents charge."
+        }
+    }
+
+    // MARK: - Readiness
+
+    private var rideReadiness: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 14) {
+                    readinessIdentity
+                    Divider().overlay(HomePalette.line)
                     statusMetric(
-                        title: "Trip",
+                        title: "Scooter trip",
                         value: tripDistanceText,
                         icon: "point.bottomleft.forward.to.point.topright.scurvepath",
-                        accessibilityTitle: "Scooter Trip",
-                        accessibilityIdentifier: "home.metric.trip"
+                        accessibilityValue: tripDistanceText
                     )
-                    accessibilityMetricDivider
+                    Divider().overlay(HomePalette.line)
                     statusMetric(
                         title: "Mode",
-                        value: vehicle.state.rideMode?.displayName ?? "—",
+                        value: vehicle.state.rideMode?.displayName ?? "Unavailable",
                         icon: "gauge.with.dots.needle.67percent",
-                        accessibilityIdentifier: "home.metric.mode"
+                        accessibilityValue: modeAccessibilityValue
                     )
                 }
             } else {
-                HStack(spacing: 0) {
-                    statusMetric(
-                        title: "Battery",
-                        value: batteryText,
-                        icon: batteryIcon,
-                        accessibilityIdentifier: "home.metric.battery",
-                        accessibilityValue: batteryAccessibilityValue,
-                        valueStyle: batteryValueStyle
-                    )
-                    metricDivider
+                HStack(alignment: .top, spacing: 14) {
+                    readinessIdentity
+                    Spacer(minLength: 8)
                     statusMetric(
                         title: "Trip",
                         value: tripDistanceText,
                         icon: "point.bottomleft.forward.to.point.topright.scurvepath",
-                        accessibilityTitle: "Scooter Trip",
-                        accessibilityIdentifier: "home.metric.trip"
+                        accessibilityValue: tripDistanceText
                     )
-                    metricDivider
                     statusMetric(
                         title: "Mode",
                         value: vehicle.state.rideMode?.displayName ?? "—",
                         icon: "gauge.with.dots.needle.67percent",
-                        accessibilityIdentifier: "home.metric.mode"
+                        accessibilityValue: modeAccessibilityValue
                     )
                 }
             }
         }
         .padding(16)
-        .background(
-            Color(uiColor: .secondarySystemBackground),
-            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
-        )
+        .background(HomePalette.graphite, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(.primary.opacity(0.045))
+                .strokeBorder(HomePalette.line, lineWidth: colorSchemeContrast == .increased ? 1.5 : 1)
         }
+        .accessibilityIdentifier("home.readiness")
     }
 
-    private var metricDivider: some View {
-        Divider()
-            .frame(height: 44)
-            .padding(.horizontal, 12)
-    }
-
-    private var accessibilityMetricDivider: some View {
-        Divider()
-            .padding(.vertical, 12)
+    private var readinessIdentity: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(readinessTitle)
+                .font(.headline.weight(.bold))
+                .foregroundStyle(HomePalette.primary)
+            Text(readinessDetail)
+                .font(.caption)
+                .foregroundStyle(HomePalette.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Ride readiness")
+        .accessibilityValue("\(readinessTitle). \(readinessDetail)")
     }
 
     private func statusMetric(
         title: String,
         value: String,
         icon: String,
-        accessibilityTitle: String? = nil,
-        accessibilityIdentifier: String,
-        accessibilityValue: String? = nil,
-        valueStyle: Color = .primary
+        accessibilityValue: String
     ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 5) {
             Label(title, systemImage: icon)
-                .font(.caption)
-                .foregroundStyle(title == "Battery" && isBatteryLow ? valueStyle : .secondary)
-                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
-                .fixedSize(horizontal: false, vertical: true)
-
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(HomePalette.secondary)
+                .lineLimit(1)
             Text(value)
-                .font(.title3.weight(.semibold).monospacedDigit())
-                .foregroundStyle(valueStyle)
-                .contentTransition(.numericText())
-                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
-                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.72)
-                .fixedSize(horizontal: false, vertical: true)
+                .font(.headline.weight(.semibold).monospacedDigit())
+                .foregroundStyle(HomePalette.primary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.72)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : 116, alignment: .leading)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityTitle ?? title)
-        .accessibilityValue(accessibilityValue ?? value)
-        .accessibilityIdentifier(accessibilityIdentifier)
+        .accessibilityLabel(title)
+        .accessibilityValue(accessibilityValue)
     }
 
-    private var controlsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader(title: "Controls")
+    // MARK: - Controls
 
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(spacing: 12) {
-                    actionControls
-                }
-            } else {
-                HStack(spacing: 12) {
-                    actionControls
+    private var controlsRail: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("CONTROLS")
+
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(spacing: 10) { actionControls }
+                } else {
+                    HStack(spacing: 10) { actionControls }
                 }
             }
         }
@@ -313,82 +474,68 @@ struct HomeView: View {
         action: @escaping () -> Void
     ) -> some View {
         let displayedState = available ? subtitle : "Unavailable"
+        let isInteractive = vehicle.state.connection == .connected
+            && !vehicle.isVehicleCommandPending
+            && available
+            && enabled
 
         return Button(action: action) {
-            HStack(spacing: 11) {
+            HStack(spacing: 12) {
                 ZStack {
                     Circle()
-                        .fill(active ? Color.primary.opacity(0.10) : Color.primary.opacity(0.055))
-                        .frame(width: 36, height: 36)
-
+                        .fill(active ? HomePalette.gold.opacity(0.13) : Color.white.opacity(0.055))
+                        .frame(width: 44, height: 44)
                     if pending {
                         ProgressView()
                             .controlSize(.small)
+                            .tint(HomePalette.gold)
                             .accessibilityHidden(true)
                     } else {
                         Image(systemName: icon)
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(active ? HomePalette.gold : HomePalette.primary)
                     }
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
                     Text(displayedState)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                        .foregroundStyle(isInteractive ? HomePalette.secondary : HomePalette.secondary.opacity(0.72))
                         .fixedSize(horizontal: false, vertical: true)
                 }
-
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 13)
+            .padding(.horizontal, 14)
             .padding(.vertical, 11)
-            .frame(minHeight: 58)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, minHeight: 66)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .nembraGlassControl()
-        .disabled(
-            vehicle.state.connection != .connected ||
-            vehicle.isVehicleCommandPending ||
-            !available ||
-            !enabled
-        )
+        .background(HomePalette.graphite, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(active ? HomePalette.gold.opacity(0.18) : HomePalette.line)
+        }
+        .disabled(!isInteractive)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title), \(displayedState)")
         .accessibilityValue(pending ? "Requesting confirmation" : "")
     }
 
-    private var modeSection: some View {
+    private var modeRail: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeader(title: "Ride Mode")
+            sectionHeader("RIDE MODE")
 
             if dynamicTypeSize.isAccessibilitySize {
                 VStack(spacing: 8) {
-                    ForEach(supportedModes, id: \.self) { mode in
-                        modeChoice(mode)
-                    }
+                    ForEach(supportedModes, id: \.self) { mode in modeChoice(mode) }
                 }
-                .padding(4)
-                .background(
-                    Color.primary.opacity(0.055),
-                    in: RoundedRectangle(cornerRadius: 17, style: .continuous)
-                )
             } else {
-                HStack(spacing: 4) {
-                    ForEach(supportedModes, id: \.self) { mode in
-                        modeChoice(mode)
-                    }
+                HStack(spacing: 8) {
+                    ForEach(supportedModes, id: \.self) { mode in modeChoice(mode) }
                 }
-                .padding(4)
-                .background(
-                    Color.primary.opacity(0.055),
-                    in: RoundedRectangle(cornerRadius: 17, style: .continuous)
-                )
             }
         }
     }
@@ -400,30 +547,24 @@ struct HomeView: View {
         return Button {
             Task { await vehicle.setMode(mode) }
         } label: {
-            ZStack {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 13, style: .continuous)
-                        .fill(Color(uiColor: .systemBackground))
-                        .shadow(color: .black.opacity(0.05), radius: 3, y: 1)
+            HStack(spacing: 6) {
+                Text(mode.displayName)
+                    .font(.subheadline.weight(isSelected ? .bold : .semibold))
+                if isPending {
+                    ProgressView().controlSize(.mini).tint(HomePalette.gold)
                 }
-
-                HStack(spacing: 5) {
-                    Text(mode.displayName)
-                        .font(.subheadline.weight(isSelected ? .semibold : .medium))
-                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    if isPending {
-                        ProgressView()
-                            .controlSize(.mini)
-                    }
-                }
-                .foregroundStyle(isSelected ? .primary : .secondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 12 : 0)
             }
-            .frame(maxWidth: .infinity)
-            .frame(minHeight: dynamicTypeSize.isAccessibilitySize ? 48 : 42)
+            .foregroundStyle(isSelected ? Color.black : HomePalette.secondary)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .background(
+                isSelected ? HomePalette.gold : HomePalette.graphite,
+                in: RoundedRectangle(cornerRadius: 15, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .strokeBorder(isSelected ? HomePalette.gold : HomePalette.line)
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -434,22 +575,22 @@ struct HomeView: View {
         .accessibilityIdentifier("home.mode.\(mode.displayName.lowercased())")
     }
 
-    private var vehicleSection: some View {
+    // MARK: - Vehicle detail
+
+    private var vehicleDetails: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeader(title: "Vehicle")
+            sectionHeader("VEHICLE")
 
             VStack(spacing: 0) {
                 ForEach(vehicleDetailItems.indices, id: \.self) { index in
-                    let item = vehicleDetailItems[index]
-                    detailRow(title: item.title, value: item.value, icon: item.icon)
-
-                    if index < vehicleDetailItems.index(before: vehicleDetailItems.endIndex) {
-                        Divider().padding(.leading, 42)
+                    detailRow(vehicleDetailItems[index])
+                    if index < vehicleDetailItems.count - 1 {
+                        Divider().overlay(HomePalette.line).padding(.leading, 48)
                     }
                 }
 
                 if !vehicleDetailItems.isEmpty {
-                    Divider().padding(.leading, 42)
+                    Divider().overlay(HomePalette.line).padding(.leading, 48)
                 }
 
                 NavigationLink {
@@ -457,68 +598,63 @@ struct HomeView: View {
                 } label: {
                     HStack(spacing: 12) {
                         Image(systemName: "slider.horizontal.3")
-                            .frame(width: 26)
-                            .foregroundStyle(.secondary)
+                            .frame(width: 30)
+                            .foregroundStyle(HomePalette.gold)
                         Text("All Vehicle Controls")
-                            .foregroundStyle(.primary)
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(HomePalette.primary)
                         Spacer()
                         Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.tertiary)
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(HomePalette.secondary)
                     }
-                    .frame(minHeight: 48)
+                    .frame(minHeight: 54)
+                    .contentShape(Rectangle())
                 }
             }
             .padding(.horizontal, 14)
-            .background(
-                Color(uiColor: .secondarySystemBackground),
-                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-            )
+            .background(HomePalette.graphite, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .strokeBorder(HomePalette.line)
+            }
         }
     }
 
-    private func sectionHeader(title: String) -> some View {
+    private func sectionHeader(_ title: String) -> some View {
         Text(title)
-            .font(.headline)
-            .foregroundStyle(.primary)
+            .font(.caption.weight(.bold))
+            .tracking(1.8)
+            .foregroundStyle(HomePalette.secondary)
     }
 
-    @ViewBuilder
-    private func detailRow(title: String, value: String, icon: String) -> some View {
-        if dynamicTypeSize.isAccessibilitySize {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: icon)
-                    .frame(width: 26)
-                    .foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                    Text(value)
-                        .foregroundStyle(.secondary)
+    private func detailRow(_ item: VehicleDetailItem) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: item.icon)
+                .frame(width: 30)
+                .foregroundStyle(HomePalette.secondary)
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.title).foregroundStyle(HomePalette.primary)
+                    Text(item.value)
+                        .foregroundStyle(HomePalette.secondary)
                         .monospacedDigit()
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer(minLength: 0)
-            }
-            .font(.body)
-            .padding(.vertical, 8)
-            .frame(minHeight: 48)
-            .accessibilityElement(children: .combine)
-        } else {
-            HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .frame(width: 26)
-                    .foregroundStyle(.secondary)
-                Text(title)
+            } else {
+                Text(item.title).foregroundStyle(HomePalette.primary)
                 Spacer()
-                Text(value)
-                    .foregroundStyle(.secondary)
+                Text(item.value)
+                    .foregroundStyle(HomePalette.secondary)
                     .monospacedDigit()
             }
-            .font(.body)
-            .frame(minHeight: 48)
-            .accessibilityElement(children: .combine)
         }
+        .font(.body)
+        .frame(minHeight: 52)
+        .accessibilityElement(children: .combine)
     }
+
+    // MARK: - Connection recovery
 
     private var connectionRecovery: some View {
         let presentation = connectionRecoveryPresentation
@@ -526,55 +662,52 @@ struct HomeView: View {
         return Group {
             if dynamicTypeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: 12) {
-                    connectionRecoveryText(presentation)
+                    connectionRecoveryText(presentation, includesIcon: true)
                     connectionRecoveryAction(presentation)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 HStack(spacing: 12) {
                     Image(systemName: presentation.icon)
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(connectionRecoveryColor)
                         .frame(width: 28)
-
-                    connectionRecoveryText(presentation)
+                        .accessibilityHidden(true)
+                    connectionRecoveryText(presentation, includesIcon: false)
                     Spacer(minLength: 8)
                     connectionRecoveryAction(presentation)
                 }
             }
         }
         .padding(14)
-        .background(
-            Color(uiColor: .secondarySystemBackground),
-            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-        )
+        .background(connectionRecoveryColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(connectionRecoveryColor.opacity(0.22))
+        }
     }
 
-    @ViewBuilder
-    private func connectionRecoveryText(_ presentation: ConnectionRecoveryPresentation) -> some View {
+    private func connectionRecoveryText(
+        _ presentation: ConnectionRecoveryPresentation,
+        includesIcon: Bool
+    ) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            if dynamicTypeSize.isAccessibilitySize {
+            if includesIcon {
                 Image(systemName: presentation.icon)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(connectionRecoveryColor)
                     .frame(width: 28)
+                    .accessibilityHidden(true)
             }
-
             VStack(alignment: .leading, spacing: 2) {
-                switch presentation.action {
-                case .progress:
-                    Text(presentation.message)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                default:
+                if presentation.action != .progress {
                     Text(presentation.title)
                         .font(.subheadline.weight(.semibold))
-                    Text(presentation.message)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .foregroundStyle(HomePalette.primary)
                 }
+                Text(presentation.message)
+                    .font(.caption)
+                    .foregroundStyle(HomePalette.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -583,9 +716,7 @@ struct HomeView: View {
     private func connectionRecoveryAction(_ presentation: ConnectionRecoveryPresentation) -> some View {
         switch presentation.action {
         case .progress:
-            ProgressView()
-                .controlSize(.small)
-                .accessibilityHidden(true)
+            ProgressView().controlSize(.small).tint(HomePalette.gold).accessibilityHidden(true)
         case .reconnect:
             Button {
                 Task { await vehicle.connect() }
@@ -593,8 +724,7 @@ struct HomeView: View {
                 if vehicle.pendingCommands.contains(.connect) {
                     ProgressView().controlSize(.small)
                 } else {
-                    Image(systemName: "arrow.clockwise")
-                        .fontWeight(.semibold)
+                    Image(systemName: "arrow.clockwise").fontWeight(.semibold)
                 }
             }
             .frame(minWidth: 44, minHeight: 44)
@@ -606,8 +736,7 @@ struct HomeView: View {
                 guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
                 openURL(url)
             } label: {
-                Image(systemName: "gear")
-                    .fontWeight(.semibold)
+                Image(systemName: "gear").fontWeight(.semibold)
             }
             .frame(minWidth: 44, minHeight: 44)
             .buttonStyle(.glass)
@@ -617,7 +746,7 @@ struct HomeView: View {
         }
     }
 
-    private enum ConnectionRecoveryAction {
+    private enum ConnectionRecoveryAction: Equatable {
         case progress
         case reconnect
         case settings
@@ -635,28 +764,28 @@ struct HomeView: View {
         if let issue = vehicle.state.connectionIssue {
             switch issue {
             case .bluetoothPoweredOff:
-                return ConnectionRecoveryPresentation(
+                return .init(
                     title: "Bluetooth is off",
                     message: "Turn on Bluetooth to reconnect to your scooter.",
                     icon: "antenna.radiowaves.left.and.right.slash",
                     action: .none
                 )
             case .bluetoothPermissionDenied:
-                return ConnectionRecoveryPresentation(
+                return .init(
                     title: "Bluetooth access is off",
                     message: "Allow Bluetooth access in Settings to connect to your scooter.",
                     icon: "hand.raised.fill",
                     action: .settings
                 )
             case .scooterUnavailable:
-                return ConnectionRecoveryPresentation(
+                return .init(
                     title: "Scooter not found",
                     message: "Make sure it’s powered on and nearby, then try again.",
                     icon: "antenna.radiowaves.left.and.right.slash",
                     action: .reconnect
                 )
             case .unsupportedConfiguration:
-                return ConnectionRecoveryPresentation(
+                return .init(
                     title: "Scooter software not recognized",
                     message: "Controls stay unavailable until this hardware or firmware is verified.",
                     icon: "exclamationmark.shield.fill",
@@ -667,28 +796,28 @@ struct HomeView: View {
 
         switch vehicle.state.connection {
         case .connecting:
-            return ConnectionRecoveryPresentation(
+            return .init(
                 title: "Connecting",
                 message: "Establishing a confirmed vehicle connection.",
                 icon: "antenna.radiowaves.left.and.right",
                 action: .progress
             )
         case .reconnecting:
-            return ConnectionRecoveryPresentation(
+            return .init(
                 title: "Reconnecting",
                 message: "Last confirmed values stay read-only until the scooter returns.",
                 icon: "antenna.radiowaves.left.and.right",
                 action: .progress
             )
         case .disconnected:
-            return ConnectionRecoveryPresentation(
+            return .init(
                 title: "Scooter offline",
                 message: "Controls stay read-only until the vehicle connection is confirmed.",
                 icon: "bolt.horizontal.circle",
                 action: .reconnect
             )
         case .connected:
-            return ConnectionRecoveryPresentation(
+            return .init(
                 title: "Connected",
                 message: "Vehicle connection confirmed.",
                 icon: "checkmark.circle",
@@ -696,6 +825,8 @@ struct HomeView: View {
             )
         }
     }
+
+    // MARK: - Truth helpers
 
     private struct VehicleDetailItem {
         let title: String
@@ -705,31 +836,27 @@ struct HomeView: View {
 
     private var vehicleDetailItems: [VehicleDetailItem] {
         var items: [VehicleDetailItem] = []
-
         if vehicle.profile.capabilities.supportsOdometer {
-            items.append(VehicleDetailItem(
+            items.append(.init(
                 title: "Odometer",
                 value: VehicleDisplayFormatting.distance(kilometers: vehicle.state.odometerKilometers),
                 icon: "road.lanes"
             ))
         }
-
         if vehicle.profile.capabilities.supportsStartMode {
-            items.append(VehicleDetailItem(
+            items.append(.init(
                 title: "Start",
                 value: vehicle.state.startMode?.displayName ?? "—",
                 icon: "figure.walk.motion"
             ))
         }
-
         if vehicle.profile.capabilities.supportsCruise {
-            items.append(VehicleDetailItem(
+            items.append(.init(
                 title: "Cruise",
                 value: cruiseText,
                 icon: "gauge.open.with.lines.needle.33percent"
             ))
         }
-
         return items
     }
 
@@ -742,11 +869,8 @@ struct HomeView: View {
         return selected ? "Selected" : "Not selected"
     }
 
-    private var hasRetainedSummaryData: Bool {
-        guard vehicle.state.dataAvailability == .retained else { return false }
-        return vehicle.state.batteryPercent != nil ||
-            vehicle.state.tripKilometers != nil ||
-            vehicle.state.rideMode != nil
+    private var isRetainedBatteryData: Bool {
+        vehicle.state.dataAvailability == .retained && vehicle.state.batteryPercent != nil
     }
 
     private var batteryText: String {
@@ -754,13 +878,13 @@ struct HomeView: View {
         return "\(value)%"
     }
 
-    private var batteryAccessibilityValue: String {
-        guard let value = vehicle.state.batteryPercent else { return "Unavailable" }
-        return isBatteryLow ? "\(value) percent, low battery" : "\(value) percent"
-    }
-
     private var tripDistanceText: String {
         VehicleDisplayFormatting.distance(kilometers: vehicle.state.tripKilometers)
+    }
+
+    private var modeAccessibilityValue: String {
+        let mode = vehicle.state.rideMode?.displayName ?? "Unavailable"
+        return vehicle.state.dataAvailability == .retained ? "Last known, \(mode)" : mode
     }
 
     private var cruiseText: String {
@@ -792,9 +916,7 @@ struct HomeView: View {
 
     private func isLockConfirmationStillValid(_ requestedLocked: Bool) -> Bool {
         guard vehicle.state.connection == .connected,
-              !vehicle.isVehicleCommandPending else {
-            return false
-        }
+              !vehicle.isVehicleCommandPending else { return false }
         if requestedLocked {
             return vehicle.state.isLocked == false && vehicle.canLockFromCurrentSpeedEvidence
         }
@@ -806,19 +928,24 @@ struct HomeView: View {
         return battery <= 15
     }
 
-    private var batteryIcon: String {
-        guard let battery = vehicle.state.batteryPercent else { return "battery.0percent" }
-        switch battery {
-        case ...15: return "battery.0percent"
-        case ...35: return "battery.25percent"
-        case ...60: return "battery.50percent"
-        case ...85: return "battery.75percent"
-        default: return "battery.100percent"
+    private var readinessTitle: String {
+        switch vehicle.state.connection {
+        case .connected:
+            return vehicle.state.dataAvailability == .live ? "Ready" : "Waiting for live data"
+        case .connecting: return "Connecting"
+        case .reconnecting: return "Recovering connection"
+        case .disconnected: return "Vehicle offline"
         }
     }
 
-    private var batteryValueStyle: Color {
-        isBatteryLow ? .red : .primary
+    private var readinessDetail: String {
+        if vehicle.state.dataAvailability == .retained {
+            return "Last known values are preserved but not promoted to live."
+        }
+        if vehicle.state.connection == .connected && vehicle.state.dataAvailability == .live {
+            return "Vehicle connection and current data are available."
+        }
+        return "Ride controls stay fail-closed until required current evidence is available."
     }
 
     private var vehicleStatusText: String {
@@ -848,9 +975,80 @@ struct HomeView: View {
 
     private var connectionIndicatorColor: Color {
         switch vehicle.state.connection {
-        case .connected: .green
-        case .connecting, .reconnecting: .orange
-        case .disconnected: .secondary
+        case .connected: return HomePalette.gold
+        case .connecting, .reconnecting: return .orange
+        case .disconnected: return HomePalette.secondary
         }
+    }
+
+    private var connectionRecoveryColor: Color {
+        switch vehicle.state.connectionIssue {
+        case .bluetoothPermissionDenied, .unsupportedConfiguration:
+            return HomePalette.danger
+        case .bluetoothPoweredOff, .scooterUnavailable:
+            return .orange
+        case .none:
+            return HomePalette.gold
+        }
+    }
+}
+
+/// Battery fill is always charge. The surrounding Home may toggle text to learned
+/// range availability, but this shape never repurposes its fill for miles.
+private struct HomeBatterySilhouette: View {
+    let fillFraction: CGFloat?
+    let isLowBattery: Bool
+    let retained: Bool
+    let reduceTransparency: Bool
+    let increasedContrast: Bool
+
+    var body: some View {
+        GeometryReader { proxy in
+            let terminalWidth: CGFloat = 12
+            let bodyWidth = max(0, proxy.size.width - terminalWidth - 2)
+            let bodyRect = CGRect(x: 0, y: 0, width: bodyWidth, height: proxy.size.height)
+            let inset: CGFloat = increasedContrast ? 4 : 3
+            let reservoir = bodyRect.insetBy(dx: inset, dy: inset)
+
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(HomePalette.base)
+                    .frame(width: bodyRect.width, height: bodyRect.height)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .strokeBorder(
+                                Color.white.opacity(increasedContrast ? 0.55 : 0.24),
+                                lineWidth: increasedContrast ? 2 : 1
+                            )
+                    }
+
+                if let fillFraction {
+                    let clamped = min(max(fillFraction, 0), 1)
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: isLowBattery
+                                    ? [HomePalette.danger.opacity(0.70), HomePalette.danger]
+                                    : [HomePalette.deepGold, HomePalette.gold],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .opacity(retained ? 0.52 : 1)
+                        .frame(
+                            width: max(clamped > 0 ? 2 : 0, reservoir.width * clamped),
+                            height: reservoir.height
+                        )
+                        .offset(x: reservoir.minX, y: reservoir.minY)
+                }
+
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(Color.white.opacity(reduceTransparency ? 0.32 : 0.20))
+                    .frame(width: terminalWidth, height: proxy.size.height * 0.38)
+                    .offset(x: bodyWidth + 1)
+            }
+        }
+        .accessibilityHidden(true)
+        .allowsHitTesting(false)
     }
 }
