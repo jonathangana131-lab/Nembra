@@ -37,13 +37,12 @@ def main() -> None:
 
     # The old name described a Boolean that is intentionally hard false. Once the independently
     # verified one-time app session exists, self-described build metadata is only a prerequisite.
-    source = replace_exact(
-        source,
-        "fieldBuildIsAuthoritative",
-        "fieldBuildMetadataReady",
-        "rename legacy build-authority presentation seam",
-        expected=12,
-    )
+    legacy_name_count = source.count("fieldBuildIsAuthoritative")
+    if legacy_name_count < 8:
+        raise SystemExit(
+            f"legacy build-authority presentation seam unexpectedly sparse: {legacy_name_count}"
+        )
+    source = source.replace("fieldBuildIsAuthoritative", "fieldBuildMetadataReady")
 
     source = replace_exact(
         source,
@@ -124,6 +123,8 @@ def main() -> None:
     for old, new, label in copy_replacements:
         source = replace_exact(source, old, new, label)
 
+    if "fieldBuildIsAuthoritative" in source:
+        raise SystemExit("legacy fieldBuildIsAuthoritative presentation name survived migration")
     if "buildIdentity.isAuthoritativeFieldBuild" in source:
         raise SystemExit("legacy hard-false build authority still participates in app runtime")
 
