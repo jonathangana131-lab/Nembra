@@ -5,6 +5,10 @@ This helper is deliberately non-authorizing. It does not verify a signature, ins
 contact a device, grant OFF1, or establish Bluetooth/physical truth. It exists so offline installer
 tooling can validate the same canonical bytes as AuthenticatedStationaryCaptureInstallManifestVerifier
 without inventing a second manifest schema.
+
+Only stable pre-attempt subjects belong here. A signed authorization envelope is created later from
+the running app's fresh process-local challenge, so binding its digest into this retained pre-install
+record would create an impossible chronology cycle.
 """
 from __future__ import annotations
 
@@ -41,7 +45,6 @@ BINDING_KEYS = (
     "signedBuildEvidenceSHA256",
     "finalGORecordSHA256",
     "intendedDevicePseudonymSHA256",
-    "authorizationEnvelopeSHA256",
 )
 MANIFEST_KEYS = {"schema", "version", *BINDING_KEYS}
 DIGEST_KEYS = (
@@ -53,7 +56,6 @@ DIGEST_KEYS = (
     "signedBuildEvidenceSHA256",
     "finalGORecordSHA256",
     "intendedDevicePseudonymSHA256",
-    "authorizationEnvelopeSHA256",
 )
 
 
@@ -216,10 +218,11 @@ def _self_test() -> None:
         "signedBuildEvidenceSHA256": "7" * 64,
         "finalGORecordSHA256": "8" * 64,
         "intendedDevicePseudonymSHA256": "9" * 64,
-        "authorizationEnvelopeSHA256": "a" * 64,
     }
     data = build_manifest(example)
     verify_manifest_against_expected(data, example)
+    if b"authorizationEnvelopeSHA256" in data:
+        raise AssertionError("pre-install manifest must not bind a future attempt envelope")
 
 
 def main(argv: list[str] | None = None) -> int:
