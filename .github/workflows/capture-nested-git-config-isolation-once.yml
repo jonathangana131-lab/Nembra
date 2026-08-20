@@ -1,0 +1,114 @@
+name: Capture nested Git custody isolation one-shot
+
+on:
+  push:
+    branches:
+      - capture/nested-git-config-isolation-gpt56sol-20260820
+    paths:
+      - .github/workflows/capture-nested-git-config-isolation-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TARGET_BRANCH: capture/nested-git-config-isolation-gpt56sol-20260820
+      AUTHORING_WORKFLOW: .github/workflows/capture-nested-git-config-isolation-once.yml
+      INSTALLER: scripts/field/install_one_time_capture.command
+      TEST: scripts/ci/tests/test_capture_field_nested_execution_subject_closure.py
+      EXPECTED_INSTALLER_BLOB: 014e58b1a01f8828ef9a160ee7e5ffa6fe94ad3f
+      EXPECTED_TEST_BLOB: dd4366431dbf46ddcb9f7b31399303c6a629b39c
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: capture/nested-git-config-isolation-gpt56sol-20260820
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact reviewed subjects
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git branch --show-current)" = "$TARGET_BRANCH"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD:"$INSTALLER")" = "$EXPECTED_INSTALLER_BLOB"
+          test "$(git rev-parse HEAD:"$TEST")" = "$EXPECTED_TEST_BLOB"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Harden accepted Git-object execution custody
+        shell: python
+        run: |
+          from pathlib import Path
+
+          installer_path = Path("scripts/field/install_one_time_capture.command")
+          installer = installer_path.read_text(encoding="utf-8")
+
+          replacements = {
+              'GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null git -C "$ROOT" rev-parse --verify':
+                  'GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git -C "$ROOT" rev-parse --verify',
+              'GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null git -C "$ROOT" rev-parse "$SOURCE_SHA:$relative_path"':
+                  'GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git -C "$ROOT" rev-parse "$SOURCE_SHA:$relative_path"',
+              'GIT_NO_REPLACE_OBJECTS=1 git -C "$ROOT" cat-file blob "$blob"':
+                  'GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git -C "$ROOT" cat-file blob "$blob"',
+              'GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null git -C "$ROOT" hash-object --stdin':
+                  'GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git -C "$ROOT" hash-object --stdin',
+          }
+          for old, new in replacements.items():
+              count = installer.count(old)
+              if count != 1:
+                  raise SystemExit(f"installer anchor count for {old!r} was {count}; refusing")
+              installer = installer.replace(old, new, 1)
+
+          old_environment = '''    environment = {\n        "PATH": "/usr/bin:/bin",\n        "LC_ALL": "C",\n        "GIT_NO_REPLACE_OBJECTS": "1",\n    }\n'''
+          new_environment = '''    environment = {\n        "PATH": "/usr/bin:/bin",\n        "LC_ALL": "C",\n        "GIT_NO_REPLACE_OBJECTS": "1",\n        "GIT_CONFIG_NOSYSTEM": "1",\n        "GIT_CONFIG_GLOBAL": "/dev/null",\n    }\n'''
+          if installer.count(old_environment) != 1:
+              raise SystemExit("inner immutable-Git environment anchor was not unique")
+          installer = installer.replace(old_environment, new_environment, 1)
+          installer_path.write_text(installer, encoding="utf-8")
+
+          test_path = Path("scripts/ci/tests/test_capture_field_nested_execution_subject_closure.py")
+          tests = test_path.read_text(encoding="utf-8")
+          old_assertion = '''        self.assertIn('GIT_NO_REPLACE_OBJECTS=1 git -C "$ROOT" cat-file blob "$blob"', installer)\n'''
+          new_assertions = '''        capture_function = production_capture_function(installer)\n        self.assertIn(\n            'GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git -C "$ROOT" cat-file blob "$blob"',\n            capture_function,\n        )\n        self.assertNotIn(' git -C "$ROOT"', capture_function)\n        self.assertNotIn('\\n  git -C "$ROOT"', capture_function)\n        self.assertIn('GIT_CONFIG_NOSYSTEM=1', capture_function)\n        self.assertIn('GIT_CONFIG_GLOBAL=/dev/null', capture_function)\n        self.assertIn('"GIT_CONFIG_NOSYSTEM": "1"', installer)\n        self.assertIn('"GIT_CONFIG_GLOBAL": "/dev/null"', installer)\n'''
+          if tests.count(old_assertion) != 1:
+              raise SystemExit("nested custody test anchor was not unique")
+          tests = tests.replace(old_assertion, new_assertions, 1)
+          test_path.write_text(tests, encoding="utf-8")
+
+      - name: Run bounded custody regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          bash -n "$INSTALLER"
+          python3 "$TEST"
+          capture_section="$(sed -n '/^capture_accepted_git_source_base64()/,/^CAPTURE_BOOTSTRAP_PATH=/p' "$INSTALLER")"
+          test "$(printf '%s' "$capture_section" | grep -Fc '/usr/bin/git -C "$ROOT"')" = 4
+          if printf '%s' "$capture_section" | grep -Eq '(^|[[:space:]])git -C '; then
+            echo 'ERROR: accepted Git capture still contains a PATH-selected git invocation.' >&2
+            exit 1
+          fi
+          test "$(printf '%s' "$capture_section" | grep -Fc 'GIT_CONFIG_NOSYSTEM=1')" = 4
+          test "$(printf '%s' "$capture_section" | grep -Fc 'GIT_CONFIG_GLOBAL=/dev/null')" = 4
+
+      - name: Publish hardened source and retire authoring workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          trigger_head="$(git rev-parse HEAD)"
+          git fetch origin "$TARGET_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$trigger_head"
+          rm "$AUTHORING_WORKFLOW"
+          git add -- "$INSTALLER" "$TEST" "$AUTHORING_WORKFLOW"
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): isolate accepted Git tool lookup'
+          materialized="$(git rev-parse HEAD)"
+          git fetch origin "$TARGET_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$trigger_head"
+          git push origin HEAD:"$TARGET_BRANCH"
+          printf 'NEMBRA_CAPTURE_NESTED_GIT_ISOLATION materialized=%s trigger=%s physicalAuthorityCreated=false\n' "$materialized" "$trigger_head"
