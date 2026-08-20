@@ -1,13 +1,13 @@
 # Capture + Bluetooth continuity
 
-Status: active dedicated recovery record for the Capture/Bluetooth-truth workstream. `DEVELOPMENT_CONTINUITY.md` remains the repository-wide authority; this file supplies the Capture-specific evidence ledger and executable next steps.
+Status: consolidation handoff for the stopped Capture/Bluetooth-truth workstream. `DEVELOPMENT_CONTINUITY.md` remains the repository-wide authority; this file supplies the Capture-specific evidence ledger and executable next steps for a new unified owner.
 
 ## Recovery coordinates
 
 - Repository: `jonathangana131-lab/Nembra`
 - Branch: `product/capture-1-0-main-20260818`
 - Draft PR: [#3675 — Finish Capture checkpoint and production Nembra surfaces](https://github.com/jonathangana131-lab/Nembra/pull/3675)
-- Latest pushed implementation checkpoint: `5c32d29d5327e4c54d0f3a70b548da6eeeb537a5`
+- Latest pushed implementation checkpoint: `6d3a6f78abe6ec87455fd49f193edbe53ba6ef35`
 - Last fully completed hosted Capture baseline: `3f0814ac70211f68b7af1a6913c78c91a810f663`
 - Physical status: **NO-GO**. CI and Simulator evidence are not hardware evidence or field authorization.
 - Current physical procedure: `ES80-AUTHENTICATED-STATIONARY-v1` in `docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md`
@@ -43,7 +43,7 @@ Do not replace working evidence machinery while closing the missing mapping path
 | Authenticated read-only session gates | `TuyaAuthenticatedReadOnlySessionLedger.swift`, `TuyaAuthenticatedReadOnlyPreflight.swift`, `TuyaLocalBLEAcquisitionWindow.swift`, `TuyaSDKAccountDeviceMembershipGate.swift`, `TuyaSDKAccountIdentityLeaseGate.swift`, `StationaryCaptureOperatorAttestation.swift`, and `NembraApp/App/NembraCaptureEntrypoint.swift`. These enforce generation, chronology, account/device lease, local-BLE, safety, seal, and no-query/no-command boundaries. |
 | Typed private SDK observations | `TuyaStructuredApplicationEvidence.swift` — canonical, type-preserving Tuya SDK application observations with pseudonymous session identity, connection generation, delivery sequence, monotonic/wall receipt, closed recursive value types, deterministic JSON, replay checks, and permanent `rawTransportBytesAvailable=false` / no-telemetry-authority boundaries. Encoded events can still contain sensitive SDK payload strings and belong only in private custody until an explicit sanitizer derives a reviewed fixture. |
 | Guided stationary action windows | `ES80GuidedCapturePlan.swift` — an observation-only mode/headlight/brake plan with exact before/during/after receipts, retained duplicate observations, non-operator baseline/recovery completion, mandatory operator confirmation for each still-unmapped action, bounded receipt accumulation, and terminal disconnect/background/import continuity breaks. Arbitrary payload churn cannot prove an action or auto-advance it. Charger transitions and wheel motion remain deferred to separate safety procedures. |
-| Field authorization foundation | `PassiveBluetoothCaptureFieldAuthorization.swift` contains a closed-world P-256 envelope verifier bound to external build/evidence records and runtime identity. Its production trust anchor is deliberately `nil`, and the standalone app does not currently consume a verified authorization. |
+| Field authorization foundation | Historical `PassiveBluetoothCaptureFieldAuthorization.swift` remains non-authorizing for the current procedure. New `AuthenticatedStationaryCaptureFieldAuthorization.swift` plus `es80_signed_field_artifact_evidence.py` / `es80_field_authorization_envelope.py` define a current-procedure single-attempt challenge/expiry/replay contract with exact runtime and retained-evidence binding. Its production trust anchor is deliberately `nil`, no app adapter consumes its opaque capability, and no device can be reached through it. |
 | Standalone app and QA | `NembraApp/App/NembraCaptureEntrypoint.swift`, `NembraApp/App/NembraCaptureBuildIdentity.swift`, `NembraApp/App/NembraCaptureSimulatorQAHarness.swift`, `NembraCaptureUITests/NembraCaptureUITests.swift`, `.github/workflows/capture-v16-standalone.yml`, `.github/workflows/capture-standalone-visual-evidence.yml`, and `.github/workflows/capture-field-build-provenance.yml`. |
 | Truthful production fallback | `Packages/NembraCore/Sources/NembraCore/UnverifiedScooterService.swift` remains disconnected/unsupported, emits no telemetry, and rejects every scooter command until verified mappings exist. |
 
@@ -74,14 +74,13 @@ This P0 establishes only a legitimate supported application-level observation ch
 ### P0 blockers
 
 1. **Field authority is intentionally impossible in the current app.** `NembraCaptureBuildIdentity.isAuthoritativeFieldBuild` is hard-coded `false`; therefore even an app produced by the current private installer cannot begin `OFF1`. Preserve this fail-closed state. Do not replace it with a Boolean, plist flag, build setting, launch argument, or locally self-signed assertion.
-2. The package P-256 verifier is not deployable yet: its independent trust anchor is unconfigured, no independently controlled signer/GO process is accepted for this candidate, and the app is not wired to consume `PassiveBluetoothCaptureVerifiedFieldAuthorization`. A reviewed mechanism must bind the exact source, dependency lock, built/signed artifact, runtime identity, procedure, and external GO decision before OFF1 can unlock.
-   The historical schema is also reusable and procedure-stale: it has no one-time authorization ID, app-generated attempt challenge, not-before/expiry, current `ES80-AUTHENTICATED-STATIONARY-v1` binding, or durable replay-consumption policy. Do not silently repurpose its `ES80-FINGERPRINT-v1` decision.
+2. The new current-procedure P-256 verifier/helper contract is not deployable yet: its independent production trust anchor is deliberately nil, no independently controlled production signer/GO key has been accepted for this candidate, and the app is not wired to durably consume `AuthenticatedStationaryCaptureAttemptCapability`. The software schema now binds exact source, dependency lock, build/runtime, evidence, procedure, challenge, expiry, and one replay-consumption request; those package/Python tests do not substitute for key review, app wiring, signed retained-IPA evidence, or physical proof. The historical `ES80-FINGERPRINT-v1` envelope remains procedure-stale and non-authorizing.
 3. The private user-owned Tuya configuration/security component, intended account session, exact scooter membership, signed install, and intended iPhone are necessarily outside public CI and have not been accepted for this head.
 4. No physical authenticated P0 artifact exists. Public/synthetic greens cannot close this gap.
 5. The current SDK callback is sanitized into `[String: String]` through `String(describing:)`. It is deterministic and secret-aware but not lossless or type-preserving, so it is insufficient for the Capture 1.0 machine-readable mapping outcome.
 6. Official-SDK ownership currently exposes structured `dpsUpdate` values, not raw authenticated FD50/ATT bytes. Opening a second CoreBluetooth connection is forbidden. Raw authenticated bytes remain unavailable unless a supported same-session source is later proven; this limitation must remain explicit rather than relabeling SDK values.
-7. The current installer locally rebuilds a Debug app instead of installing one exact retained GitHub-hosted Xcode 27 signed IPA. That cannot satisfy release/build custody and must be replaced, not waived.
-8. `.github/workflows/capture-xcode27-trusted-command.yml` currently names absent signer/evidence helpers (`scripts/ci/es80_field_authorization_envelope.py` and `scripts/ci/es80_signed_field_artifact_evidence.py`). The trusted path is incomplete until reviewed current-procedure implementations and their custody tests exist.
+7. The installer now validates exact retained input paths/hashes/modes and stops unconditionally before its unreachable legacy Debug rebuild/device-install block. It cannot install until a reviewed workflow install manifest and app authorization adapter cross-bind every retained subject. The dead legacy block must be deleted when that replacement lands, not re-enabled.
+8. The signer/evidence helpers named by the trusted workflow now exist and pass local focused tests, but the workflow has not yet produced or cross-verified a real current-procedure retained artifact set on this head. Production private key custody remains external; no key, signed private IPA, authorization envelope, or raw evidence belongs in Git.
 
 ## P1 stationary-mapping gap
 
@@ -105,6 +104,14 @@ Physical actions beyond the P0 untouched baseline—including mode, light, brake
 ## Exact CI snapshot
 
 Queried on 2026-08-19 PDT / 2026-08-20 UTC.
+
+### Consolidation implementation `6d3a6f78abe6ec87455fd49f193edbe53ba6ef35`
+
+- Base `9659fbbed…` files: `AuthenticatedStationaryCaptureFieldAuthorization.swift` and its test; `es80_signed_field_artifact_evidence.py`; `es80_field_authorization_envelope.py`; their focused Python test; `TuyaFieldInstallerRetainedIPAAdmissionSourceTests.swift`; and `scripts/field/install_one_time_capture.command`. Follow-up `6d3a6f78…` caps expiry from attempt start and replaces absent historical test references in `.github/workflows/capture-xcode27-trusted-command.yml` with the current authorization suite.
+- Focused local evidence: SwiftPM 14/14 in 2 suites; Python 13/13 across the new authorization and existing signer-custody suites; both helper self-tests; installer syntax/self-test; three Swift parsers; diff/whitespace/secret scans. No local Xcode, signing, device contact, BLE, private key, or physical run occurred.
+- Exact-head `6d3a6f78…` workflows were newly dispatched: V16 `32325777026`, visual `32325776844`, field provenance `32325776914`, Xcode 27 Simulator `32325776790`, TODAY preflight `32325776773`, TODAY Final GO `32325776842`, and trusted-workflow pin/process/build/index custody `32325776803` / `32325776840` / `32325776834` / `32325776833` were pending or in progress. PR exact-head `32325776875` was skipped by policy. A new owner must inspect their terminal results.
+- The preceding `cb00ee46a…` V16 run `32321917923` failed 1 of 13 UI tests at `NembraCaptureUITests.swift:309`: the compact-landscape correlation confirmation control did not become hittable after bounded scroll attempts. Artifact `9390495057`, digest `sha256:4a4922697e6a009aea09494b159e845d35453da97542e1617c7130afbaa984ee`. This remains an unresolved reachability blocker, not permission to weaken the assertion.
+- Physical status remains **NO-GO**. The production trust root is nil, app consumption wiring is absent, the installer stops before device work, and there is no authenticated P0 artifact.
 
 ### Implementation head `5c32d29d5327e4c54d0f3a70b548da6eeeb537a5`
 
@@ -135,12 +142,12 @@ Queried on 2026-08-19 PDT / 2026-08-20 UTC.
 
 ## Exact next code batches
 
-1. **Field-authorization closure:** add a current-procedure, short-lived, single-use external P-256 envelope with an independently controlled pinned trust root, exact retained signed-IPA/runtime/dependency/procedure binding, app-generated attempt challenge, not-before/expiry, durable replay consumption, opaque in-memory attempt capability, and fail-closed import/presentation tests. Keep `isAuthoritativeFieldBuild` false until that verified capability is actually present; do not flip it as a shortcut or let the historical passive envelope authorize P0.
-2. **App adapter and private journal:** losslessly classify supported `dpsUpdate` key/value runtime types into `TuyaStructuredApplicationEvidenceEvent`, fail closed with an explicit diagnostic for unsupported values, and atomically append exact canonical bytes before UI publication. Never relabel application observations as raw FD50 bytes.
-3. **P1 action coordinator:** drive `ES80GuidedCapturePlan` from the accepted typed-observation stream with bounded app-owned before/after observation windows, one unavoidable action prompt at a time, explicit operator confirmation while fields remain unmapped, interruption/new-generation sealing, and no application command path. Automatic completion may be added only after a verified semantic correlation can identify the requested action rather than unrelated SDK churn.
-4. **Bundle, sanitizer, summary, import, and protocol claims:** export exact private machine-readable bytes plus a human summary; verify them on import; derive a separately reviewed repository-safe fixture and `unknown`/`hypothesis`/`correlated`/`verified` claims without mutating source evidence; preserve contradictions and session IDs.
-5. **Fixtures and decoder promotion:** after physical evidence exists, create privacy-reviewed deterministic fixtures and implement only `verified` mappings in production. Keep `correlated` mappings diagnostic/experimental and leave `UnverifiedScooterService` authoritative otherwise.
-6. Run focused package/static checks locally, then the exact-head GitHub-hosted Xcode 27 Capture workflows. Record run IDs, artifact names/digests, and every remaining physical blocker here and in `DEVELOPMENT_CONTINUITY.md` before pushing the next checkpoint.
+1. **Unified-owner authorization review:** verify remote head and rerun the focused Swift/Python suites named above. Review the compact sorted Swift/Python wire contract and external signing custody together. Arrange independent private-key custody; only after review, pin the matching public P-256 X9.63 bytes. Never commit the private key or let an envelope/plist/caller choose the trust root.
+2. **App capability and exact install:** add an app-owned atomic ThisDeviceOnly Keychain consumption store, then pass the opaque capability through every OFF1/authentication/connection/seal boundary. Define the trusted install-manifest cross-binding, delete the unreachable legacy installer block, and install only the exact retained accepted signed IPA. Keep `isAuthoritativeFieldBuild` false; no Boolean/plist/environment shortcut.
+3. **Compact-landscape closure:** inspect V16 artifact `9390495057` and fix the confirmation control's real scroll/layout reachability while preserving the final hittability assertion. Run all exact-head hosted Xcode 27 Capture lanes before any physical GO claim.
+4. **App adapter and private journal:** losslessly classify supported `dpsUpdate` key/value runtime types into `TuyaStructuredApplicationEvidenceEvent`, fail closed with an explicit diagnostic for unsupported values, and atomically append exact canonical bytes before UI publication. Never relabel application observations as raw FD50 bytes.
+5. **P1 coordinator/bundle/claims:** drive `ES80GuidedCapturePlan` from the accepted typed stream, export exact private bytes plus a human summary, cross-verify on import, derive a reviewed repository-safe fixture, preserve contradictions/session IDs, and keep every claim `unknown`/`hypothesis`/`correlated` until repeatable evidence makes it `verified`.
+6. **Fixtures and decoder promotion:** only after accepted physical evidence exists, implement `verified` mappings with stale/invalid/impossible-value tests. Update `docs/ES80_PROTOCOL_MAP.md`, both continuity files, and PR #3675; notify sibling workstreams only when a stable privacy-safe contract/fixture exists.
 
 ## Eventual one-time operator session
 
