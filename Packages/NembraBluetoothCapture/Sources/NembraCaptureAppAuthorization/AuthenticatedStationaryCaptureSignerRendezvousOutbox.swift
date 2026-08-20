@@ -62,10 +62,11 @@ public struct AuthenticatedStationaryCaptureSignerRendezvousOutbox: Sendable {
 
         var completed = false
         defer {
-            Darwin.close(descriptor)
-            if !completed {
+            if !completed,
+               pathStillNamesDescriptor(directoryFD: directoryFD, descriptor: descriptor) {
                 _ = Darwin.unlinkat(directoryFD, Self.filename, 0)
             }
+            Darwin.close(descriptor)
         }
 
         try data.withUnsafeBytes { rawBuffer in
@@ -99,7 +100,8 @@ public struct AuthenticatedStationaryCaptureSignerRendezvousOutbox: Sendable {
               metadata.st_nlink == 1,
               metadata.st_uid == getuid(),
               (metadata.st_mode & mode_t(0o777)) == mode_t(0o600),
-              metadata.st_size == off_t(data.count) else {
+              metadata.st_size == off_t(data.count),
+              pathStillNamesDescriptor(directoryFD: directoryFD, descriptor: descriptor) else {
             throw AuthenticatedStationaryCaptureSignerRendezvousOutboxError
                 .subjectCustodyRejected
         }
@@ -127,7 +129,8 @@ public struct AuthenticatedStationaryCaptureSignerRendezvousOutbox: Sendable {
         guard Darwin.fstat(descriptor, &before) == 0,
               (before.st_mode & S_IFMT) == S_IFREG,
               before.st_nlink == 1,
-              before.st_uid == getuid() else {
+              before.st_uid == getuid(),
+              pathStillNamesDescriptor(directoryFD: directoryFD, descriptor: descriptor) else {
             throw AuthenticatedStationaryCaptureSignerRendezvousOutboxError
                 .subjectCustodyRejected
         }
@@ -137,8 +140,7 @@ public struct AuthenticatedStationaryCaptureSignerRendezvousOutbox: Sendable {
 
         var after = stat()
         guard Darwin.fstat(descriptor, &after) == 0,
-              before.st_dev == after.st_dev,
-              before.st_ino == after.st_ino,
+              sameInode(before, after),
               after.st_nlink == 0 else {
             throw AuthenticatedStationaryCaptureSignerRendezvousOutboxError.retirementFailed
         }
@@ -147,11 +149,21 @@ public struct AuthenticatedStationaryCaptureSignerRendezvousOutbox: Sendable {
     private func openFieldAuthorizationDirectory(createIfMissing: Bool) throws -> Int32 {
         let baseFD = applicationSupportURL.withUnsafeFileSystemRepresentation { path -> Int32 in
             guard let path else { return -1 }
-            return Darwin.open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+            return Darwin.open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         }
         guard baseFD >= 0 else {
             throw AuthenticatedStationaryCaptureSignerRendezvousOutboxError
                 .applicationSupportUnavailable
+        }
+
+        var baseMetadata = stat()
+        guard Darwin.fstat(baseFD, &baseMetadata) == 0,
+              (baseMetadata.st_mode & S_IFMT) == S_IFDIR,
+              baseMetadata.st_uid == getuid(),
+              (baseMetadata.st_mode & mode_t(0o022)) == 0 else {
+            Darwin.close(baseFD)
+            throw AuthenticatedStationaryCaptureSignerRendezvousOutboxError
+                .directoryCustodyRejected("Application Support")
         }
 
         var currentFD = baseFD
@@ -203,5 +215,20 @@ public struct AuthenticatedStationaryCaptureSignerRendezvousOutbox: Sendable {
                 .directoryCustodyRejected(name)
         }
         return descriptor
+    }
+
+    private func pathStillNamesDescriptor(directoryFD: Int32, descriptor: Int32) -> Bool {
+        var opened = stat()
+        var published = stat()
+        guard Darwin.fstat(descriptor, &opened) == 0,
+              Darwin.fstatat(directoryFD, Self.filename, &published, AT_SYMLINK_NOFOLLOW) == 0,
+              (published.st_mode & S_IFMT) == S_IFREG else {
+            return false
+        }
+        return sameInode(opened, published)
+    }
+
+    private func sameInode(_ lhs: stat, _ rhs: stat) -> Bool {
+        lhs.st_dev == rhs.st_dev && lhs.st_ino == rhs.st_ino
     }
 }
