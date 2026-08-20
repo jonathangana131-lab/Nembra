@@ -1,134 +1,135 @@
 # PROJECT STATE
 
-Updated: 2026-08-07
+Updated: 2026-08-19
 
-This file is a **mutable coordination snapshot**, not a higher authority than GitHub. Before acting, inspect live `main`, open PRs, active branches, recent commits, and current Actions/Xcode runs. If this file disagrees with live GitHub, **GitHub wins**.
+This file is a mutable snapshot. Root `AGENTS.md`, current `main`, live PRs/reviews, current code/tests, and exact evidence are authoritative. Never resume an old named branch/phase only because this file mentions it.
 
 ## Product direction
+
 - Product: **Nembra**.
 - Repository: `jonathangana131-lab/Nembra`.
+- Target: a coherent, production-quality **Nembra 1.0**.
 - Primary real vehicle / first hardware-validation target: **AOVOPRO ES80**.
-- Deferred/unverified profile candidate: **MAXSHOT V1S Pro**. Preserve accepted abstractions, tests, simulation work, and generic vehicle architecture; do not prioritize MAXSHOT-specific physical validation.
-- Baseline device/runtime target: **iPhone 12 / iOS 27**.
-- Permanent engineering/product charter: `MASTER_CONTINUATION_DIRECTIVE.md`.
-- Nembra must feel like premium native vehicle software while preserving strict separation between measured, estimated, retained, interpolated, derived, Simulator, public-research, and physically verified evidence.
+- MAXSHOT V1S Pro remains deferred/unverified for physical validation unless newer explicit product authority changes that.
+- Baseline device/runtime where applicable: **iPhone 12 / iOS 27**.
+- Root `AGENTS.md` is execution authority.
+- `docs/AUTONOMY_STATUS.md` contains machine-readable release/Capture user-input milestone flags.
 
-## Live checkpoint
-Checkpoint captured from GitHub on 2026-08-07:
-- `main`: `58ba1958a78f3410fc53e549e04398e43204fe25`.
-- That head merged PR #299, **accepted-power propulsion-gauge accessibility**.
-- This SHA is a checkpoint only. Resolve the current head again before any write, gate, merge, or recovery decision.
+## Current live checkpoint
 
-Recent accepted `main` work materially newer than the previous project-memory snapshot includes:
-- #272 — transcript-wide Tuya candidate receipt chronology.
-- #287 — telemetry benchmark rejected-sample chronology / continuity hardening.
-- #285 — field-specific live speed currentness domain.
-- #290 — lifecycle-owned ride-duration observation segments.
-- #281 — ride-distance rejected-sample chronology.
-- #294 — Liquid Glass interactivity follows actual control availability.
-- #296 — highest accepted propulsion-power measurement evidence.
-- #299 — propulsion-gauge accessibility remains pinned to accepted power, not interpolated display frames.
+At this refresh:
 
-The old `feature/ride-location-capture` / PR #8 handoff is historical and must **not** be resumed merely because older prose names it.
+- development `main`: `0bc188e41c10e4deb7e8c2d214e216f6ea5b24e6`, the merged autonomous-development cutover (#3665);
+- draft PR #3678: **Nembra 1.0 unified release integration**, base `main`, mergeable, current inspected head `eecadc8ea23e2156dea8f9f5bced822477da7a01`, 77 commits / 215 changed files at inspection;
+- draft PR #3675: **Capture/Bluetooth checkpoint**, base `main`, mergeable, current inspected head `fb1cdc4ae82d1bcf6539790b62bb708b6984fcac`, physical/private Capture explicitly **NO-GO**;
+- PR #3677: portrait Home 1.0 workstream;
+- PR #3676: landscape Drive/cockpit 1.0 workstream;
+- older overlapping Capture/Dashboard recovery PRs such as #3658/#3666/#3662 are candidates/history to converge, not ownership authority.
 
-## Current maturity by product area
+Live GitHub must be refreshed before acting because these heads can move after this snapshot.
 
-### ES80 passive capture / Tuya research
-This remains the highest-value physical-integration path.
+## Development flow after Codex/swarm cutover
 
-`main` already contains bounded public-family Tuya offline-analysis foundations, including transcript chronology. The complete passive CoreBluetooth capture runtime/product shell is still moving through active recovery/dependency branches rather than being a finished production read-only ES80 service on `main`.
+Nembra must not globally stall because:
 
-Important active coordination snapshot:
-- #297 — final passive-capture runtime recovery/hardening.
-- #307 — repeated stock-app marker correlation recovery on the hardened capture runtime.
-- #305 — passive-capture → Tuya candidate bridge recovery, dependency-bound to the accepted passive runtime and final analyzer chronology.
-- #301 — exported capture artifact → deterministic offline framing report, downstream of the bridge.
-- #303 — product-facing Nembra Capture app recovery, still dependency-sensitive to passive runtime movement.
-- #295 and its dependent DP-analysis chain — generic structural DP research on current-main ancestry.
+- Codex quota/usage is exhausted;
+- one chat has no shell or Xcode;
+- one Mac/runner is unavailable;
+- GitHub Actions/Xcode is queued, unavailable, rate-limited, or out of capacity;
+- one PR is blocked on hardware or final evidence.
 
-These are **software research tools**, not physical ES80 protocol verification. No characteristic/DP becomes Battery, Voltage, Current, Power, Speed, Throttle, Regen, or a command until repeatable physical evidence verifies source, identity, units, scale, signedness, cadence, continuity, and provenance.
+Capable agents run the relevant checks themselves. Connector-only chats continue exact-source work and may integrate bounded source-complete ordinary development under root `AGENTS.md`'s development-main fast path, recording unavailable execution honestly as pending.
 
-The next real hardware milestone is not more speculative decoding. It is a short, safe, passive physical capture produced by accepted Nembra tooling and analyzed offline without random Bluetooth writes.
+This does **not** weaken physical BLE/Tuya, key/signing/custody, real-device, release, final visual/accessibility/performance, or known fail-first/source-incomplete gates.
 
-### Propulsion / power
-`main` now has a substantially stronger truth-preserving domain stack:
-- accepted propulsion-power presentation chronology;
-- render-only smoothing separated from measurement evidence;
-- accepted-power accessibility projection;
-- accepted observed peak-power evidence;
-- learned observed-power-envelope foundations.
+Hosted Xcode 27 remains useful evidence when available, but it is not privileged merely because it is GitHub-hosted. Exact-source Xcode 27/iPhone 12/iOS 27 evidence may come from any trusted capable environment that actually ran the candidate.
 
-Active #302 is recovering/durably persisting learned observed envelope calibration and bridging retained calibration back into presentation scale.
+## Current Nembra 1.0 integration truth
 
-This stack is **not yet proof of a physical ES80 power/current source** and is not a rated motor/controller maximum, throttle-position signal, or regen proof. Production ES80 power integration remains gated on physical field verification.
+PR #3678 is the strongest current unified integration candidate. It already brings together substantial Capture foundations, portrait Home/Rides work, and the post-V4 Drive/cockpit foundation. It is **not** Nembra 1.0 acceptance merely because the branch exists.
 
-### Speed / cockpit currentness
-`main` contains field-specific speed currentness (#285), but application/provider and cockpit control-policy integration is still being reconciled in active lanes.
+The old pattern of allowing most real product development to live only on a huge release branch is not the desired steady state. Future broad `Go` work should:
 
-Relevant active work includes #293 and dependent/interim Dashboard work such as #282, plus the dedicated Dashboard performance lane #255 and related formatting work. `DashboardView.swift`, speed-model tests, and several app/UI-test surfaces are therefore high-contention. Do not create a competing Dashboard implementation.
+1. refresh #3678/#3675/#3676/#3677 and current `main`;
+2. identify coherent source-complete slices that can safely converge onto development `main` without widening unverified physical authority;
+3. review/integrate those slices rather than creating more recovery ladders;
+4. fix `main` forward when later execution exposes a regression;
+5. keep release acceptance separate until the exact final candidate satisfies the full applicable gates.
 
-### Battery / adaptive range
-The permanent direction remains unchanged:
-- one authoritative battery evidence/currentness domain;
-- `% ↔ estimated remaining range` as a direct primary interaction;
-- range learned from this specific ES80's legitimate battery consumption vs real ride distance;
-- no advertised-range × SoC final formula;
-- no invented current, watts, Wh/mi, voltage, charging state, or 1% raw resolution.
+## Capture / ES80 Bluetooth truth
 
-There are multiple active/recovery dependency lanes for battery receipt identity, range authority, learning-window assembly, persistence, and presentation. Treat them as dependency work to reconcile, not invitations to build duplicate models.
+Nembra Capture is the highest-value physical integration path, but it is an evidence utility, not a second flagship product.
 
-Stock Tuya Battery / Voltage / Current / Power values remain **correlation anchors** until their underlying physical transport/DP semantics are verified.
+Current Capture work contains substantial software-side foundations around typed/guided evidence, stationary authorization, provenance/custody, retained-artifact admission, and offline analysis. However current live PR descriptions still state:
 
-### Rides / history
-Accepted ride evidence continues moving upward:
-- lifecycle duration evidence is on `main`;
-- ride-distance chronology is hardened on `main`;
-- active #300 joins monotonic duration into durable completed-history truth;
-- active #306 binds accepted peak-power evidence to ride truth;
-- ride-detail/logbook and recent-ride Home presentation have separate active owners.
+- production trust/capability wiring is incomplete;
+- the accepted install/app consumption path is incomplete;
+- a real fresh private physical session has not been accepted;
+- physical/private Capture is **NO-GO**.
 
-Keep ODO, GPS distance, integrated speed distance, route geometry, duration coverage, peak evidence, and unavailable/partial states distinct. Do not derive missing duration from wall-clock subtraction or invent a single reconciled distance where the durable schema does not support one.
+Therefore `CAPTURE_USER_INPUT_READY` remains **false**.
 
-### Navigation
-Navigation foundations remain active. #309 is the current recovery for collision-resistant route-request identity. Other navigation evidence lanes may be dependency-bound or stale; inspect live ownership before touching planning, guidance, reroute, arrival, or MapKit adapter files.
+Agents must continue software work until the exact read-only stationary carrier/procedure is genuinely ready. Only then should the status flag become true and the user be asked for the fresh iPhone/scooter/account Bluetooth evidence.
 
-### Product visual closure
-Production UI is not considered finished merely because systems build and tests pass. Home, Dashboard, Vehicle Controls, Ride Details, app icon/system surfaces, Dynamic Type, accessibility, and performance each have active or recently active owners.
+No characteristic/DP becomes Battery, Voltage, Current, Power, Speed, Throttle, Regen, ODO, Mode, Light, Brake, Range, or command semantics until repeatable physical evidence verifies source, identity, units, scale, signedness, cadence, continuity, and provenance.
 
-Before taking app-visible work, inspect current PR path overlap. For visual changes, acceptance remains: real iPhone 12 / iOS 27 Simulator interaction + screenshots + critique + accessibility/performance review where relevant.
+Unknown BLE/Tuya writes, DP queries, unbind/reset, firmware/OTA, or guessed scooter semantics remain forbidden.
 
-## Active-worker rules
-- One chat owns one isolated branch/lane.
-- Existing changing branches/PRs are presumed owned.
-- Do not push to another worker's branch.
-- Recover abandoned work on a **new** recovery branch from its exact durable head.
-- Avoid high-contention integration surfaces (`project.pbxproj`, root/bootstrap/persistence wiring, global project-memory files, Dashboard/Home files) unless the lane is clearly unowned and the change is necessary.
-- Before deep work and before merge, refresh live PR/file overlap.
-- Queued, skipped, cancelled, stale-SHA, resolver-only, or ancestor CI is not exact-head acceptance.
+## Portrait / Home
+
+Portrait Home is moving toward production 1.0 quality with truthful battery/range states, durable Today/ride information, narrow render invalidation, Dynamic Type/accessibility work, and selected visual direction.
+
+Remaining acceptance is not merely source correctness. It includes exact-app runtime behavior, same-state visual critique, accessibility, performance, and a truthful production-cleared ES80 visual asset where required. Do not fabricate or AI-invent hardware details to close that gap.
+
+## Landscape Drive / cockpit
+
+The post-V4 Drive direction is the current cockpit foundation; old V2/V3/V4 pixels are not production authority. The target is a premium, truthful high-frequency riding surface with one-value battery semantics, rolling speed, accepted propulsion power/current-vs-peak separation, durable ride facts, stable orientation, accessibility, and bounded presentation work.
+
+Physical speed/power/odometer/range remain unavailable until verified upstream contracts exist. Do not substitute Simulator values for physical authority.
+
+## Persistence, rides, navigation, settings, accessibility, performance
+
+Nembra 1.0 is broader than Capture/Home/Drive. Continue current product-quality work through:
+
+- durable settings and recovery;
+- rides/history truth and idempotent persistence;
+- navigation/Explore only when their product/provider contracts are real and coherent;
+- controller/keyboard/accessibility semantics where applicable;
+- startup/crash/runtime failure handling;
+- render performance, hitch/frame pacing, and energy efficiency;
+- production visual polish and consistency across every included flow.
+
+Anything shipped in 1.0 should be production-ready rather than a knowingly disposable prototype.
+
+## Current milestone flags
+
+See `docs/AUTONOMY_STATUS.md`.
+
+At this snapshot:
+
+```text
+NEMBRA_1_0_RELEASED: false
+CAPTURE_USER_INPUT_READY: false
+```
+
+`NEMBRA_1_0_RELEASED` becomes true only after exact release acceptance plus the intended 1.0 release/tag/publication. A draft PR or development-main merge is not enough.
+
+`CAPTURE_USER_INPUT_READY` becomes true only when all software-side prerequisites for the exact read-only stationary physical rung are accepted and the next blocker is specifically fresh user-owned physical Bluetooth evidence.
 
 ## Highest-value continuation order
-Use live GitHub to choose the highest-value **safe, non-conflicting** slice. At this checkpoint the strongest product gravity is:
 
-1. Finish the hardened passive ES80 capture runtime lineage and re-anchor accepted passive capture onto current `main` without flattening provenance/continuity guarantees.
-2. Reconcile downstream marker correlation, capture→Tuya bridge, offline report, and product-facing Nembra Capture shell onto that accepted lineage.
-3. Perform one minimal, safe, passive stationary physical ES80 capture with the accepted research build; preserve the artifact unchanged and analyze it offline.
-4. Use repeated physical stock-app correlation to verify read-only field candidates. Only after raw source/scaling/signedness/cadence/provenance are repeatable may Battery / Voltage / Current / Power move toward production telemetry authority.
-5. When a verified production signal exists, move upward quickly into read-only vehicle-service integration, battery/range or propulsion presentation, runtime QA, accessibility, performance, and final visual polish rather than endlessly expanding research primitives.
-6. In parallel, continue already-owned ride/history/navigation/battery/product-UI lanes through their dependency and exact-head acceptance gates without duplicating them.
+Recompute from live GitHub every run, but current gravity is:
 
-If the active dependency graph has materially changed, recompute this order rather than following the numbered list mechanically.
+1. converge the strongest source-complete parts of #3678 and its predecessor workstreams onto development `main` without carrying stale recovery topology;
+2. finish the remaining software/security/install/app-consumption prerequisites for Capture while preserving physical NO-GO until they are real;
+3. continue Home/Drive product closure and integrate safe coherent slices rather than parking everything behind hosted Xcode;
+4. when Capture software truly reaches the user-input boundary, set `CAPTURE_USER_INPUT_READY: true`, document the exact safe procedure, and request the user's fresh physical evidence;
+5. use verified physical evidence to promote only supported read-only telemetry contracts upward into the production app;
+6. finish the remaining Nembra 1.0 product, persistence, navigation, accessibility, performance, visual, and release acceptance surfaces;
+7. tag/publish Nembra 1.0 only after the exact candidate is genuinely accepted, then set `NEMBRA_1_0_RELEASED: true`.
 
-## Physical truth still unresolved
-Do not claim these as verified until real ES80 evidence proves them:
-- stable physical advertisement/peripheral identity suitable for production/persistence;
-- authoritative GATT service/characteristic/notification identity;
-- Tuya family/framing compatibility on the physical target;
-- DP IDs/types/scales/signedness/units/cadence for Battery, Voltage, Current, Power, Speed, ODO/trip/mode/control fields;
-- throttle position or regen semantics;
-- command authorization/acknowledgement/state confirmation;
-- physical speed cadence/quality policy;
-- stable battery 1% resolution, voltage behavior, charging semantics, or energy telemetry;
-- physical iPhone 12 runtime/performance and outdoor ride/location behavior.
+## Recovery rule
 
-## Recovery rule for future chats
-Do **not** trust an old named phase, PR, branch, or SHA from this file without checking GitHub first. The first meaningful action in a fresh chat should be live repository inspection. Resume the newest safe unfinished action from live state; never regress to the obsolete PR #8 handoff.
+A fresh chat should not trust historical Swarm Foundry rules, old worker claims, old recovery branches, old GitHub-hosted-only gate language, or this file's SHAs without refreshing GitHub.
+
+The first meaningful action on `Go` is live repository inspection followed by real work. Keep moving while useful safe work remains in the current turn.
