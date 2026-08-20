@@ -1,0 +1,108 @@
+name: Route exact accessibility repair
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  patch-child:
+    if: github.event.head_commit.message == 'ci: route exact accessibility repair'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/a11y-release-gate-20260820-sol
+          fetch-depth: 0
+
+      - name: Verify exact child parent
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "14f2f5f93e9c083bf97fcd9e67393c25a91553c2"
+
+      - name: Apply narrow product repairs
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_exact(path: str, old: str, new: str, expected: int = 1) -> None:
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != expected:
+                  raise SystemExit(f"{path}: expected {expected} occurrences, found {count}: {old!r}")
+              p.write_text(text.replace(old, new))
+
+          replace_exact(
+              "NembraApp/Features/Dashboard/DashboardView.swift",
+              ".frame(maxWidth: .infinity, minHeight: dynamicTypeSize.isAccessibilitySize ? 58 : 54)",
+              ".frame(maxWidth: .infinity, minHeight: dynamicTypeSize.isAccessibilitySize ? 86 : 54)",
+          )
+          replace_exact(
+              "NembraApp/Features/Dashboard/SpeedInstrumentModel.swift",
+              "usesAccessibilityLayout ? 58 : 54,",
+              "usesAccessibilityLayout ? 86 : 54,",
+          )
+
+          home = Path("NembraApp/Features/Home/HomeView.swift")
+          text = home.read_text()
+          anchor = '        let displayedState = available ? subtitle : "Unavailable"\n'
+          if text.count(anchor) != 1:
+              raise SystemExit("HomeView displayed-state anchor changed")
+          text = text.replace(
+              anchor,
+              anchor
+              + "        let isInteractive = vehicle.state.connection == .connected\n"
+              + "            && !vehicle.isVehicleCommandPending\n"
+              + "            && available\n"
+              + "            && enabled\n",
+          )
+          old = """                    Text(displayedState)
+                        .font(.caption)
+                        .foregroundStyle(NembraColor.secondaryText)
+"""
+          new = """                    Text(displayedState)
+                        .font(.caption)
+                        .foregroundStyle(isInteractive ? NembraColor.secondaryText : NembraColor.primaryText)
+"""
+          if text.count(old) != 1:
+              raise SystemExit("HomeView disabled-state styling anchor changed")
+          text = text.replace(old, new)
+          old = """        .disabled(
+            vehicle.state.connection != .connected ||
+            vehicle.isVehicleCommandPending ||
+            !available ||
+            !enabled
+        )
+"""
+          if text.count(old) != 1:
+              raise SystemExit("HomeView disabled predicate anchor changed")
+          text = text.replace(old, "        .disabled(!isInteractive)\n")
+          home.write_text(text)
+
+      - name: Remove abandoned child bootstrap
+        run: git rm .github/workflows/zz-one-shot-a11y-release-gate-sol.yml
+
+      - name: Verify source-only diff
+        run: |
+          set -euo pipefail
+          git diff --check
+          changed="$(git diff --name-only | sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/zz-one-shot-a11y-release-gate-sol.yml \
+            NembraApp/Features/Dashboard/DashboardView.swift \
+            NembraApp/Features/Dashboard/SpeedInstrumentModel.swift \
+            NembraApp/Features/Home/HomeView.swift | sort)"
+          test "$changed" = "$expected"
+          git diff -- NembraApp/Features/Dashboard/DashboardView.swift NembraApp/Features/Dashboard/SpeedInstrumentModel.swift NembraApp/Features/Home/HomeView.swift
+
+      - name: Commit exact repair
+        run: |
+          git config user.name "nembra-sol-worker"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: clear exact-head accessibility release gates"
+          git push origin HEAD:fix/a11y-release-gate-20260820-sol
