@@ -46,9 +46,6 @@ class AppAuthorizationLifecycleWiringTests(unittest.TestCase):
         self.assertIn("fieldAuthorization", self.app)
 
     def test_real_entrypoint_drives_handoff_to_armed_before_off1(self) -> None:
-        # Lifecycle admissions are useless if the installed app never advances the retained manifest
-        # and signed envelope through the package-owned one-shot session. Presence is never authority;
-        # the entrypoint must consume the controller's verified handoff seam and gate OFF1 on `.armed`.
         self.assertIn("advanceInboxHandoffIfAvailable()", self.app)
         self.assertIn("fieldAuthorization.stage == .armed", self.app)
         handoff = self.app.index("advanceInboxHandoffIfAvailable()")
@@ -120,18 +117,22 @@ class AppAuthorizationLifecycleWiringTests(unittest.TestCase):
         authority_seal = section.index("sealAfterAcceptedArtifactFreeze()")
         accepted = section.index("self.phase = .accepted")
 
+        # The helper implementation itself can live later in this same textual section. Treat
+        # ExactByteArtifactSeal(...) as an inline freeze only when it occurs before the authority
+        # seal call; otherwise validate the earlier helper call and inspect the helper body below.
         inline_freeze = section.find("ExactByteArtifactSeal(sealing:")
         helper_call = section.find("freezeAcceptedArtifactForAuthorizationSeal(")
+        inline_freeze_before_authority_seal = 0 <= inline_freeze < authority_seal
         self.assertTrue(
-            inline_freeze >= 0 or helper_call >= 0,
+            inline_freeze_before_authority_seal or helper_call >= 0,
             "authorization seal must follow an exact immutable-artifact freeze boundary",
         )
-        freeze = inline_freeze if inline_freeze >= 0 else helper_call
+        freeze = inline_freeze if inline_freeze_before_authority_seal else helper_call
         self.assertLess(package_seal, freeze)
         self.assertLess(freeze, authority_seal)
         self.assertLess(authority_seal, accepted)
 
-        if inline_freeze >= 0:
+        if inline_freeze_before_authority_seal:
             between = section[inline_freeze:authority_seal]
             self.assertIn(".verifies(", between)
             self.assertTrue(
