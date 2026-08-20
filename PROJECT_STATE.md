@@ -1,8 +1,8 @@
 # PROJECT STATE
 
-Updated: 2026-08-19
+Updated: 2026-08-20
 
-This file is a mutable snapshot. Root `AGENTS.md`, current `main`, live PRs/reviews, current code/tests, and exact evidence are authoritative. Never resume an old named branch/phase only because this file mentions it.
+This file is a mutable snapshot. Root `AGENTS.md`, current `main`, live PRs/reviews, current code/tests, and exact evidence are authoritative. Never resume an old branch/phase merely because this file mentions it.
 
 ## Product direction
 
@@ -10,140 +10,139 @@ This file is a mutable snapshot. Root `AGENTS.md`, current `main`, live PRs/revi
 - Repository: `jonathangana131-lab/Nembra`.
 - Target: a coherent, production-quality **Nembra 1.0**.
 - Primary real vehicle / first hardware-validation target: **AOVOPRO ES80**.
-- MAXSHOT V1S Pro remains deferred/unverified for physical validation unless newer explicit product authority changes that.
+- MAXSHOT V1S Pro remains deferred/unverified for current physical validation unless newer explicit product authority changes that.
 - Baseline device/runtime where applicable: **iPhone 12 / iOS 27**.
 - Root `AGENTS.md` is execution authority.
-- `docs/AUTONOMY_STATUS.md` contains machine-readable release/Capture user-input milestone flags and the current trunk-health mode.
+- `docs/AUTONOMY_STATUS.md` contains machine-readable release/Capture user-input milestones and current execution mode.
 
 ## Current live checkpoint
 
 At this refresh:
 
-- development `main`: `24f5a5b310e782b65bf032de5be844542d8975d3`, with the trunk-health convergence policy merged in #3715;
-- open PR count at the health snapshot: 9;
-- draft PR #3675: **Capture: integrate latest fail-closed checkpoint into release candidate**, active carrier head `7a7e9461a363be91a1dfe45c98ae888eadedfeef`, 213 commits / 243 changed files at inspection, physical/private Capture explicitly **NO-GO**;
-- draft PR #3678: **Nembra 1.0 unified release integration**, active head `f952ac4fe551b912fb8f121003a62b782c89db53`, 86 commits / 220 changed files at inspection, not release acceptance;
-- the current root convergence policy has also been synchronized into the Capture carrier (#3716) and unified release branch (#3717), so agents operating from those branches see the same trunk-health authority as `main`.
+- development `main` before the full-blast policy integration is `5bbc4e8a6705ce86e62c3f5350e704b3de051dc3`;
+- the open PR queue has fallen from 9 to **3**, so the earlier repo-wide convergence state is no longer the correct default;
+- draft PR #3675 remains the active **Capture** carrier, around 270 commits / 254 changed files at the latest inspection, with physical/private Capture still **NO-GO**;
+- draft PR #3678 remains the **Nembra 1.0 unified integration candidate**, around 86 commits / 220 changed files at the latest inspection, and is not release acceptance;
+- draft PR #3728 is the one focused live child for the stronger SecureLink authorization lifecycle; additional competing Capture implementation children should not be spawned while that root cause has a live writer.
 
-Live GitHub must be refreshed before acting because these heads can move after this snapshot.
+Live GitHub must be refreshed before acting because heads and counts move quickly.
 
-## Trunk health: CONVERGENCE MODE
+## Execution mode: FULL-BLAST OUTCOMES
 
-Nembra is currently above the integration-pressure thresholds in root `AGENTS.md`. Broad `Go` work should therefore converge before spawning ordinary new work.
+Nembra is now in **builder / full-blast outcome mode**.
 
-Current priorities while convergence mode is active:
+The previous convergence rules successfully collapsed the open queue, but they also over-focused broad Go agents on micro Capture cleanup. That is no longer the intended behavior.
 
-1. shrink the open PR set by integrating, rebasing/transplanting, or closing existing work;
-2. close superseded/absorbed Capture child PRs instead of preserving recovery ladders;
-3. identify coherent source-complete ordinary slices on #3675/#3678 that can land safely on development `main` without widening physical authority;
-4. keep only the tightly coupled trust/signing/physical-authorization chain isolated when partial integration would misrepresent authority;
-5. do not create a new branch simply because a carrier moved, CI queued, or another chat ended;
-6. once the queue/divergence is healthy again, update `TRUNK_HEALTH_MODE` to `normal`.
+A broad `Go` should now select a substantial coherent outcome and carry it through real source implementation, verification, evidence inspection, fixes, integration, and main verification. Workflow-only, marker-only, test-only, or recovery-only PRs are supporting work, not the primary outcome unless they are the only true blocker.
 
-A healthy target is fewer than 5 open PRs, no unnecessary long-lived integration branch carrying ordinary finished work far ahead of `main`, and no duplicate implementation tree for the same subsystem.
+Direct production-source work is preferred. Do not use self-mutating/materializer workflows as the normal way to author product code. If a platform constraint truly requires one, the outcome is not complete until the actual source exists in Git, the exact diff is reviewed, the temporary authoring path is retired when appropriate, and required execution passes.
+
+## Parallel development lanes
+
+Many agents should spread across independent large outcomes rather than dogpile Capture.
+
+Current lane shape:
+
+1. **Capture authority lane** — at most one active implementation writer on the tightly coupled trust/signing/app-authorization/physical-session chain. Reviewers may inspect it concurrently.
+2. **Home / Rides lane** — portrait product quality, ride history, truthful battery/range presentation, persistence integration, accessibility and polish.
+3. **Drive / cockpit lane** — landscape riding surface, instruments, orientation, render isolation, accessibility, performance and truthful unavailable states.
+4. **Persistence / Settings / Navigation / runtime lane** — durable settings/recovery, idempotent storage, provider truth, startup/failure handling.
+5. **Release / accessibility / performance lane** — exact-source acceptance, visual review, regression repair, performance evidence, and integration of coherent accepted slices toward `main`.
+
+These are not permanent claims; recompute from live GitHub. One implementation per overlapping root cause remains the rule.
+
+## Trunk health
+
+Trunk health remains important, but strict Capture branch divergence alone does not freeze the whole repository.
+
+Hard convergence is appropriate when overlap/collision is actually high: many open overlapping PRs, several children targeting the same non-main root cause, duplicate recovery trees, stranded source-complete ordinary work, or merge/review pressure actively blocking integration.
+
+Fewer than 5 open PRs with one implementation per root cause is normally healthy enough for builder mode even if the strict physical-authority carrier remains long-lived.
+
+Ordinary product outcomes should prefer short-lived direct-to-`main` branches. The unified release branch must not become a permanent second development trunk.
 
 ## Development flow after Codex/swarm cutover
 
 Nembra must not globally stall because:
 
-- Codex quota/usage is exhausted;
-- one chat has no shell or Xcode;
+- Codex usage/quota is exhausted;
+- one chat has no local shell or Xcode;
 - one Mac/runner is unavailable;
-- GitHub Actions/Xcode is queued, unavailable, rate-limited, or out of capacity;
-- one PR is blocked on hardware or final evidence.
+- one hosted workflow is queued/broken/out of capacity;
+- one task is blocked on hardware or final evidence.
 
-Capable agents run the relevant checks themselves. Connector-only chats continue exact-source work and may integrate bounded source-complete ordinary development under root `AGENTS.md`'s development-main fast path, recording unavailable execution honestly as pending.
+Agents with execution capability run relevant checks directly. Connector-only agents should actively seek a real repository runner/workflow or other available computer for exact-source software verification. GitHub-hosted macOS/Xcode runners are valid computers when available.
 
-This does **not** weaken physical BLE/Tuya, key/signing/custody, real-device, release, final visual/accessibility/performance, or known fail-first/source-incomplete gates.
+A runner failure is a reroute, not a global stop. Fix it, use another real execution path, or move to another substantial independent outcome.
 
-Hosted Xcode 27 remains useful evidence when available, but it is not privileged merely because it is GitHub-hosted. Exact-source Xcode 27/iPhone 12/iOS 27 evidence may come from any trusted capable environment that actually ran the candidate.
+Do not claim software PASS without execution, and do not merge new executable behavior solely as `EXECUTION PENDING`. Physical/hardware/owner-only evidence remains an honest external exception.
 
 ## Current Nembra 1.0 integration truth
 
-PR #3678 remains the strongest unified integration candidate. It brings together substantial Capture foundations, portrait Home/Rides work, and the post-V4 Drive/cockpit foundation. It is **not** Nembra 1.0 acceptance merely because the branch exists.
+PR #3678 remains the strongest broad integration candidate and contains substantial portrait Home/Rides, landscape Drive/cockpit, and Capture foundations. It is not 1.0 merely because it is large.
 
-The old pattern of allowing most real product development to live only on a huge release branch is not the desired steady state. During convergence, broad `Go` work should split/transplant coherent safe development slices toward `main`, while keeping final release acceptance separate until the exact candidate satisfies the full applicable gates.
+Use it as source/evidence to transplant or integrate coherent accepted outcomes toward `main`, not as the default home for all new feature work.
 
 ## Capture / ES80 Bluetooth truth
 
-Nembra Capture is the highest-value physical integration path, but it is an evidence utility, not a second flagship product.
+Capture has materially advanced software foundations around app-owned authorization sessions, replay protection, retained-install manifests, app-container inbox/rendezvous, signer contracts, capability gating, exact-artifact freeze ordering, and focused integration tests.
 
-The current Capture carrier has materially advanced software-side prerequisites, including:
+However physical/private Capture remains **NO-GO**. The remaining exact software/security/install/app-consumption chain must be completed and accepted before the user is asked for fresh physical Bluetooth evidence.
 
-- a canonical app-owned authorization session/lifecycle;
-- ThisDeviceOnly replay-consumption storage;
-- retained-install manifest and cross-binding contracts;
-- a thin app authorization controller;
-- app-container inbox/rendezvous foundations;
-- signer-rendezvous contracts;
-- tightened exact-head integration tests and installer chronology checks.
+`CAPTURE_USER_INPUT_READY` remains **false** until the exact read-only stationary carrier/procedure is software-ready, build/install/signing/authorization/custody is accepted, physical status is no longer NO-GO, and the next blocker is specifically the user's fresh iPhone/ES80/account session.
 
-However current live truth still reports physical/private Capture **NO-GO**. Important remaining blockers include the independently reviewed production trust root/private-key custody, final real app lifecycle wiring, exact accepted install/container transport, exact composed execution evidence, and the later fresh physical iPhone/ES80 session.
+No characteristic/DP becomes Battery, Voltage, Current, Power, Speed, Throttle, Regen, ODO, Mode, Light, Brake, Range, or command semantics until repeatable physical evidence verifies it. Unknown writes/queries/unbind/reset/OTA or guessed scooter semantics remain forbidden.
 
-Therefore `CAPTURE_USER_INPUT_READY` remains **false**.
+## Product quality lanes still open
 
-Agents must continue software work until the exact read-only stationary carrier/procedure is genuinely ready. Only then should the status flag become true and the user be asked for fresh iPhone/scooter/account Bluetooth evidence.
+### Portrait / Home / Rides
 
-No characteristic/DP becomes Battery, Voltage, Current, Power, Speed, Throttle, Regen, ODO, Mode, Light, Brake, Range, or command semantics until repeatable physical evidence verifies source, identity, units, scale, signedness, cadence, continuity, and provenance.
+Continue production closure around truthful battery/range states, durable ride history/Today information, interaction polish, Dynamic Type/accessibility, persistence integration, visual consistency, and the truthful production-cleared ES80 asset where required.
 
-Unknown BLE/Tuya writes, DP queries, unbind/reset, firmware/OTA, or guessed scooter semantics remain forbidden.
+### Landscape Drive / cockpit
 
-## Portrait / Home
+Continue the post-V4 direction toward a premium truthful riding surface with one-value battery semantics, rolling speed presentation, accepted propulsion/current-vs-peak separation, durable ride facts, orientation stability, accessibility, render isolation, and performance.
 
-Portrait Home is moving toward production 1.0 quality with truthful battery/range states, durable Today/ride information, narrow render invalidation, Dynamic Type/accessibility work, and selected visual direction.
+### Persistence / Settings / Navigation / runtime
 
-The latest unified branch includes an exact-head accessibility repair for cockpit/Home release-gate defects, but production acceptance still includes exact-app runtime behavior, same-state visual critique, accessibility, performance, and a truthful production-cleared ES80 visual asset where required. Do not fabricate or AI-invent hardware details to close that gap.
+Continue durable settings and recovery, idempotent ride/inventory state, startup/crash/failure handling, navigation/provider truth, and product-complete included flows.
 
-## Landscape Drive / cockpit
+### Accessibility / performance / release
 
-The post-V4 Drive direction is the current cockpit foundation; old V2/V3/V4 pixels are not production authority. The target is a premium, truthful high-frequency riding surface with one-value battery semantics, rolling speed, accepted propulsion power/current-vs-peak separation, durable ride facts, stable orientation, accessibility, and bounded presentation work.
+Continue exact-source accessibility, representative Dynamic Type, performance/frame pacing/energy evidence, visual review, and final release-envelope closure.
 
-Physical speed/power/odometer/range remain unavailable until verified upstream contracts exist. Do not substitute Simulator values for physical authority.
-
-## Persistence, rides, navigation, settings, accessibility, performance
-
-Nembra 1.0 is broader than Capture/Home/Drive. Continue current product-quality work through:
-
-- durable settings and recovery;
-- rides/history truth and idempotent persistence;
-- navigation/Explore only when their product/provider contracts are real and coherent;
-- controller/keyboard/accessibility semantics where applicable;
-- startup/crash/runtime failure handling;
-- render performance, hitch/frame pacing, and energy efficiency;
-- production visual polish and consistency across every included flow.
-
-Anything shipped in 1.0 should be production-ready rather than a knowingly disposable prototype.
+Anything shipped in 1.0 should be production-quality rather than a knowingly disposable prototype.
 
 ## Current milestone flags
-
-See `docs/AUTONOMY_STATUS.md`.
-
-At this snapshot:
 
 ```text
 NEMBRA_1_0_RELEASED: false
 CAPTURE_USER_INPUT_READY: false
-TRUNK_HEALTH_MODE: convergence
+TRUNK_HEALTH_MODE: builder
+EXECUTION_MODE: full-blast-outcomes
 ```
 
-`NEMBRA_1_0_RELEASED` becomes true only after exact release acceptance plus the intended 1.0 release/tag/publication. A draft PR or development-main merge is not enough.
+`NEMBRA_1_0_RELEASED` becomes true only after exact release acceptance plus the intended 1.0 tag/release/publication.
 
-`CAPTURE_USER_INPUT_READY` becomes true only when all software-side prerequisites for the exact read-only stationary physical rung are accepted and the next blocker is specifically fresh user-owned physical Bluetooth evidence.
+`CAPTURE_USER_INPUT_READY` becomes true only when the next unresolved blocker is genuinely the user's fresh physical Bluetooth evidence.
 
-## Highest-value continuation order
+## Highest-value continuation behavior
 
-Recompute from live GitHub every run, but current gravity is:
+Recompute from live GitHub every run, but broad Go execution should now:
 
-1. **converge first**: shrink the open PR set and move safe coherent source-complete slices from #3675/#3678 toward `main`;
-2. finish the remaining software/security/install/app-consumption prerequisites for Capture while preserving physical NO-GO until they are real;
-3. continue Home/Drive product closure without turning the unified release branch into a permanent second trunk;
-4. when Capture software truly reaches the user-input boundary, set `CAPTURE_USER_INPUT_READY: true`, document the exact safe procedure, and request the user's fresh physical evidence;
-5. use verified physical evidence to promote only supported read-only telemetry contracts upward into the production app;
-6. finish the remaining Nembra 1.0 product, persistence, navigation, accessibility, performance, visual, and release acceptance surfaces;
-7. tag/publish Nembra 1.0 only after the exact candidate is genuinely accepted, then set `NEMBRA_1_0_RELEASED: true`.
+1. identify a **big non-overlapping outcome**, not a micro cleanup task;
+2. keep only one implementation writer on the sensitive Capture authority chain;
+3. route other agents to independent Home/Rides, Drive/cockpit, persistence/settings/navigation/runtime, accessibility/performance, and release-integration outcomes;
+4. implement real source directly and fold related tests/fixes/evidence tooling into the same outcome;
+5. execute relevant software verification on a real available computer;
+6. review exact-head evidence and fix failures;
+7. integrate coherent accepted work toward `main`;
+8. refresh and immediately choose the next substantial outcome while useful work remains;
+9. when Capture truly reaches the user-input boundary, set `CAPTURE_USER_INPUT_READY: true` and provide the exact safe procedure;
+10. when the bounded product genuinely passes final acceptance and is tagged/published, set `NEMBRA_1_0_RELEASED: true`.
 
 ## Recovery rule
 
-A fresh chat should not trust historical Swarm Foundry rules, old worker claims, old recovery branches, old GitHub-hosted-only gate language, or this file's SHAs without refreshing GitHub.
+Fresh chats must not trust old swarm state, historical worker claims, stale recovery branches, old hosted-runner-only language, or this file's SHAs without refreshing GitHub.
 
-The first meaningful action on `Go` is live repository inspection followed by real work. If convergence mode is active, converge first. Keep moving while useful safe work remains in the current turn.
+The first meaningful action on `Go` is live repository inspection followed immediately by substantial real work.
