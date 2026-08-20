@@ -1,0 +1,270 @@
+name: Capture lifecycle current one-shot
+
+on:
+  push:
+    branches:
+      - product/capture-lifecycle-7ba-gpt56sol-20260819
+    paths:
+      - .github/workflows/capture-lifecycle-current-one-shot.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: xcode-27
+    timeout-minutes: 35
+    env:
+      CLEAN_PRODUCT_PARENT: 19f553817284adc73c89431ab48cb7021aba2cb2
+      TARGET_BRANCH: product/capture-lifecycle-7ba-gpt56sol-20260819
+      AUTHORING_WORKFLOW: .github/workflows/capture-lifecycle-current-one-shot.yml
+      APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: product/capture-lifecycle-7ba-gpt56sol-20260819
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact bounded authoring head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git branch --show-current)" = "$TARGET_BRANCH"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git merge-base --is-ancestor "$CLEAN_PRODUCT_PARENT" HEAD
+          changed="$(git diff --name-only "$CLEAN_PRODUCT_PARENT"...HEAD | sort)"
+          test "$changed" = "$AUTHORING_WORKFLOW"
+
+      - name: Materialize fail-closed field authorization into real Capture lifecycle
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text(encoding="utf-8")
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one anchor, found {count}")
+              source = source.replace(old, new, 1)
+
+          replace_once(
+              '''    @Published private(set) var membershipStatus = "Exact scooter membership has not been checked in the official SDK account yet."\n    @Published private(set) var membershipBusy = false\n''',
+              '''    @Published private(set) var membershipStatus = "Exact scooter membership has not been checked in the official SDK account yet."\n    @Published private(set) var fieldAuthorizationStatus = "Waiting for the independently verified one-time Capture authorization."\n    @Published private(set) var membershipBusy = false\n''',
+              "authorization presentation status",
+          )
+
+          replace_once(
+              '''    private let buildIdentity = NembraCaptureBuildIdentity.current\n    private var byID: [UUID: Candidate] = [:]\n''',
+              '''    private let buildIdentity = NembraCaptureBuildIdentity.current\n    private let fieldAuthorization = NembraCaptureFieldAuthorizationController()\n    private var byID: [UUID: Candidate] = [:]\n''',
+              "authorization controller ownership",
+          )
+
+          replace_once(
+              '''    deinit { watchdog?.cancel() }\n\n    func activateMembershipRequestsForView() {\n''',
+              '''    deinit { watchdog?.cancel() }\n\n    var fieldAuthorizationReadyForOFF1: Bool { fieldAuthorization.stage == .armed }\n\n    func advanceFieldAuthorizationHandoffIfAvailable() {\n        guard buildIdentity.isAuthoritativeFieldBuild,\n              acceptsViewScopedMembershipRequests,\n              phase == .idle || phase == .failed else { return }\n        do {\n            switch try fieldAuthorization.advanceInboxHandoffIfAvailable() {\n            case .waitingForManifest:\n                fieldAuthorizationStatus = "Waiting for the retained one-time authorization manifest."\n            case .waitingForEnvelope:\n                fieldAuthorizationStatus = "Authorization challenge ready. Waiting for the independently signed response."\n            case .armed:\n                fieldAuthorizationStatus = "One-time Capture authorization is verified and ready for OFF1."\n            case .lifecycleInProgress:\n                fieldAuthorizationStatus = "One-time Capture authorization is in use by this attempt."\n            case .sealed:\n                fieldAuthorizationStatus = "One-time Capture authorization sealed with the accepted artifact."\n            case .revoked:\n                fieldAuthorizationStatus = "One-time Capture authorization was revoked. Relaunch before another physical attempt."\n            }\n        } catch {\n            fieldAuthorization.revoke()\n            fieldAuthorizationStatus = "One-time Capture authorization was rejected. Relaunch before another physical attempt."\n            failLocally(\n                "The independently verified one-time Capture authorization failed closed: \\(error.localizedDescription)",\n                "field_authorization_handoff_rejected"\n            )\n        }\n    }\n\n    func activateMembershipRequestsForView() {\n''',
+              "handoff advancement seam",
+          )
+
+          replace_once(
+              '''        foregroundIntegrityLossHandled = false\n        acceptsViewScopedMembershipRequests = true\n    }\n\n    func abandonCorrelationForViewExit() {\n''',
+              '''        foregroundIntegrityLossHandled = false\n        acceptsViewScopedMembershipRequests = true\n        advanceFieldAuthorizationHandoffIfAvailable()\n    }\n\n    func abandonCorrelationForViewExit() {\n''',
+              "handoff first poll",
+          )
+
+          replace_once(
+              '''    func abandonCorrelationForViewExit() {\n        // Close the screen-lifetime admission boundary before revoking every already-issued grant.\n''',
+              '''    func abandonCorrelationForViewExit() {\n        if phase != .accepted { fieldAuthorization.revoke() }\n        // Close the screen-lifetime admission boundary before revoking every already-issued grant.\n''',
+              "view-exit revocation",
+          )
+
+          replace_once(
+              '''    func appDidLoseForeground() {\n        // A sealed accepted artifact is immutable and already closed to new evidence. Backgrounding\n        // after acceptance must not downgrade or rebuild that frozen result.\n        guard phase != .accepted else { return }\n        guard !foregroundIntegrityLossHandled else { return }\n''',
+              '''    func appDidLoseForeground() {\n        // A sealed accepted artifact is immutable and already closed to new evidence. Backgrounding\n        // after acceptance must not downgrade or rebuild that frozen result.\n        guard phase != .accepted else { return }\n        fieldAuthorization.revoke()\n        guard !foregroundIntegrityLossHandled else { return }\n''',
+              "foreground revocation",
+          )
+
+          replace_once(
+              '''    func invalidateSDKMembership() {\n        let token = currentConnectionToken\n''',
+              '''    func invalidateSDKMembership() {\n        if phase != .accepted { fieldAuthorization.revoke() }\n        let token = currentConnectionToken\n''',
+              "membership revocation",
+          )
+
+          replace_once(
+              '''    var failedAttemptCanRestartFromOFF1: Bool {\n        phase == .failed\n            && currentConnectionToken == nil\n''',
+              '''    var failedAttemptCanRestartFromOFF1: Bool {\n        phase == .failed\n            && fieldAuthorization.stage == .armed\n            && currentConnectionToken == nil\n''',
+              "fresh armed retry fence",
+          )
+
+          replace_once(
+              '''            guard authorized,\n                  self.sdkAccountLoggedIn,\n                  leaseVerdict == .authorized else {\n                self.failLocally("Exact scooter membership could not be proven for this same current SDK account. Bluetooth correlation remains disabled.", "sdk_device_membership_required_before_scan")\n                return\n            }\n            self.beginCorrelationSeries()\n''',
+              '''            guard authorized,\n                  self.sdkAccountLoggedIn,\n                  leaseVerdict == .authorized else {\n                self.failLocally("Exact scooter membership could not be proven for this same current SDK account. Bluetooth correlation remains disabled.", "sdk_device_membership_required_before_scan")\n                return\n            }\n            do {\n                try self.fieldAuthorization.admitOFF1Start()\n            } catch {\n                self.fieldAuthorization.revoke()\n                self.failLocally(\n                    "The independently verified one-attempt authorization did not admit OFF1: \\(error.localizedDescription)",\n                    "field_authorization_rejected_off1"\n                )\n                return\n            }\n            self.beginCorrelationSeries()\n''',
+              "OFF1 admission",
+          )
+
+          replace_once(
+              '''            guard stillAuthorized,\n                  self.phase == .selected,\n                  self.targetCorrelationOperatorConfirmed,\n                  self.sdkAccountLoggedIn,\n                  self.accountIdentityLeaseIsAuthorized,\n                  self.selectedID == candidate.id else {\n                self.failLocally("Exact confirmed scooter/account authority could not be re-verified immediately before BLE authentication.", "sdk_device_membership_recheck_failed")\n                return\n            }\n            self.beginOfficialConnection(candidate: candidate)\n''',
+              '''            guard stillAuthorized,\n                  self.phase == .selected,\n                  self.targetCorrelationOperatorConfirmed,\n                  self.sdkAccountLoggedIn,\n                  self.accountIdentityLeaseIsAuthorized,\n                  self.selectedID == candidate.id else {\n                self.failLocally("Exact confirmed scooter/account authority could not be re-verified immediately before BLE authentication.", "sdk_device_membership_recheck_failed")\n                return\n            }\n            do {\n                try self.fieldAuthorization.admitAuthenticationStart()\n            } catch {\n                self.fieldAuthorization.revoke()\n                self.failLocally(\n                    "The independently verified one-attempt authorization did not admit authentication: \\(error.localizedDescription)",\n                    "field_authorization_rejected_authentication"\n                )\n                return\n            }\n            self.beginOfficialConnection(candidate: candidate)\n''',
+              "authentication admission",
+          )
+
+          replace_once(
+              '''        guard targetCorrelationOperatorConfirmed,\n              selectedID == candidate.id,\n              candidate.likely,\n              buildIdentity.isAuthoritativeFieldBuild,\n              sdkDeviceMembershipVerified,\n              sdkAccountLoggedIn,\n              accountIdentityLeaseIsAuthorized else {\n            failLocally("Confirmed build or Tuya account/device authority changed before connection start.", "sdk_authority_changed")\n            return\n        }\n        guard let newDriver = OfficialTuyaFactory.make() else {\n''',
+              '''        guard targetCorrelationOperatorConfirmed,\n              selectedID == candidate.id,\n              candidate.likely,\n              buildIdentity.isAuthoritativeFieldBuild,\n              sdkDeviceMembershipVerified,\n              sdkAccountLoggedIn,\n              accountIdentityLeaseIsAuthorized else {\n            failLocally("Confirmed build or Tuya account/device authority changed before connection start.", "sdk_authority_changed")\n            return\n        }\n        do {\n            try fieldAuthorization.admitOfficialConnectionStart()\n        } catch {\n            fieldAuthorization.revoke()\n            failLocally(\n                "The independently verified one-attempt authorization did not admit official Tuya connection: \\(error.localizedDescription)",\n                "field_authorization_rejected_official_connection"\n            )\n            return\n        }\n        guard let newDriver = OfficialTuyaFactory.make() else {\n''',
+              "official connection admission",
+          )
+
+          replace_once(
+              '''                    guard promotionLocalBLEOnline else {\n                        await recordObservedTransportLoss(token: token)\n                        return\n                    }\n\n                    phase = .observing\n''',
+              '''                    guard promotionLocalBLEOnline else {\n                        await recordObservedTransportLoss(token: token)\n                        return\n                    }\n                    do {\n                        try self.fieldAuthorization.admitObservationStart()\n                    } catch {\n                        await self.invalidateInternalLifecycle(\n                            token: token,\n                            message: "The independently verified one-attempt authorization did not admit observation: \\(error.localizedDescription)",\n                            kind: "field_authorization_rejected_observation"\n                        )\n                        return\n                    }\n\n                    phase = .observing\n''',
+              "observation admission",
+          )
+
+          replace_once(
+              '''                        guard let self,\n                              self.currentConnectionToken == token else { return }\n\n                        // SmartLifeDriver has already latched application forwarding closed.\n''',
+              '''                        guard let self,\n                              self.currentConnectionToken == token else { return }\n                        self.fieldAuthorization.revoke()\n\n                        // SmartLifeDriver has already latched application forwarding closed.\n''',
+              "callback source revocation",
+          )
+
+          replace_once(
+              '''                        self.sealedAcceptedEventPrefix = acceptedEventPrefixAtCut\n                        self.sealedAcceptedForbiddenSecrets = self.exactKnownSecretsForbiddenFromExport\n                        self.currentConnectionToken = nil\n                        self.sealedAcceptedExport = self.makeExport(\n                            exportedAt: Date(),\n                            phase: .accepted,\n                            events: acceptedEventPrefixAtCut\n                        )\n                        self.sealedAcceptedArtifact = nil\n                        self.exportData = nil\n                        self.acceptedArtifactSHA256 = nil\n                        self.acceptedArtifactByteCount = nil\n                        self.phase = .accepted\n                        self.prepareExport()\n''',
+              '''                        self.sealedAcceptedEventPrefix = acceptedEventPrefixAtCut\n                        self.sealedAcceptedForbiddenSecrets = self.exactKnownSecretsForbiddenFromExport\n                        let acceptedEnvelope = self.makeExport(\n                            exportedAt: Date(),\n                            phase: .accepted,\n                            events: acceptedEventPrefixAtCut\n                        )\n                        do {\n                            let artifactSeal = try self.freezeAcceptedArtifactForAuthorizationSeal(acceptedEnvelope)\n                            try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()\n                            let exactBytes = try artifactSeal.verifiedBytes()\n                            guard artifactSeal.verifies(exactBytes) else {\n                                throw CaptureArtifactPreparationError.integrityVerificationFailed\n                            }\n                            self.sealedAcceptedExport = acceptedEnvelope\n                            self.sealedAcceptedArtifact = artifactSeal\n                            self.exportData = exactBytes\n                            self.acceptedArtifactSHA256 = artifactSeal.sha256\n                            self.acceptedArtifactByteCount = artifactSeal.byteCount\n                            self.exportName = "Nembra-Capture-\\(self.deviceID.prefix(8)).json"\n                        } catch {\n                            self.fieldAuthorization.revoke()\n                            self.sealedAcceptedEventPrefix = nil\n                            self.sealedAcceptedExport = nil\n                            self.sealedAcceptedArtifact = nil\n                            self.sealedAcceptedForbiddenSecrets = nil\n                            self.exportData = nil\n                            self.acceptedArtifactSHA256 = nil\n                            self.acceptedArtifactByteCount = nil\n                            self.currentConnectionToken = nil\n                            self.localBLESettlementToken = nil\n                            self.sdkLocalBLEOnline = false\n                            self.driver = nil\n                            self.phase = .failed\n                            self.message = "Exact accepted bytes or one-attempt authorization could not seal: \\(error.localizedDescription). Relaunch Capture before another attempt; package chronology is diagnostic only."\n                            self.log("field_authorization_or_artifact_seal_rejected", [\n                                "generation": String(token.diagnosticGeneration)\n                            ])\n                            return\n                        }\n                        self.currentConnectionToken = nil\n                        self.localBLESettlementToken = nil\n                        self.driver = nil\n                        self.phase = .accepted\n                        self.prepareExport()\n''',
+              "exact artifact then authorization seal ordering",
+          )
+
+          replace_once(
+              '''    private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken) async {\n''',
+              '''    private func freezeAcceptedArtifactForAuthorizationSeal(\n        _ envelope: Export\n    ) throws -> ExactByteArtifactSeal {\n        let exactBytes = try encodeExport(envelope)\n        let artifactSeal = ExactByteArtifactSeal(sealing: exactBytes)\n        guard artifactSeal.verifies(exactBytes) else {\n            throw CaptureArtifactPreparationError.integrityVerificationFailed\n        }\n        _ = try artifactSeal.verifiedBytes()\n        let decoded = try artifactSeal.verifiedCanonicalValue(\n            strictlyDecoding: decodeExport,\n            canonicalEncoding: encodeExport\n        )\n        try validateAcceptedExport(decoded, exactBytes: exactBytes)\n        return artifactSeal\n    }\n\n    private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken) async {\n''',
+              "immutable artifact freeze helper",
+          )
+
+          for label, old, new in [
+              (
+                  "transport-loss revocation",
+                  '''    private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken) async {\n        guard currentConnectionToken == token else { return }\n        do {\n''',
+                  '''    private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken) async {\n        guard currentConnectionToken == token else { return }\n        fieldAuthorization.revoke()\n        do {\n''',
+              ),
+              (
+                  "source-authority revocation",
+                  '''    private func invalidateSourceAuthority(\n        token: TuyaReadOnlyConnectionToken,\n        message: String,\n        kind: String\n    ) async {\n        guard currentConnectionToken == token else { return }\n        do {\n''',
+                  '''    private func invalidateSourceAuthority(\n        token: TuyaReadOnlyConnectionToken,\n        message: String,\n        kind: String\n    ) async {\n        guard currentConnectionToken == token else { return }\n        fieldAuthorization.revoke()\n        do {\n''',
+              ),
+              (
+                  "continuity mirror revocation",
+                  '''    private func mirrorAlreadyTerminalObservationContinuity(\n        token: TuyaReadOnlyConnectionToken,\n        message: String,\n        kind: String\n    ) async {\n        guard currentConnectionToken == token else { return }\n        watchdog?.cancel()\n''',
+                  '''    private func mirrorAlreadyTerminalObservationContinuity(\n        token: TuyaReadOnlyConnectionToken,\n        message: String,\n        kind: String\n    ) async {\n        guard currentConnectionToken == token else { return }\n        fieldAuthorization.revoke()\n        watchdog?.cancel()\n''',
+              ),
+              (
+                  "incomplete mirror revocation",
+                  '''    private func mirrorAlreadyTerminalIncompleteObservationHorizon(\n        token: TuyaReadOnlyConnectionToken,\n        message: String,\n        kind: String\n    ) async {\n        guard currentConnectionToken == token else { return }\n        watchdog?.cancel()\n''',
+                  '''    private func mirrorAlreadyTerminalIncompleteObservationHorizon(\n        token: TuyaReadOnlyConnectionToken,\n        message: String,\n        kind: String\n    ) async {\n        guard currentConnectionToken == token else { return }\n        fieldAuthorization.revoke()\n        watchdog?.cancel()\n''',
+              ),
+              (
+                  "observation retirement revocation",
+                  '''    private func invalidateObservationContinuity(\n        token: TuyaReadOnlyConnectionToken,\n        message: String,\n        kind: String\n    ) async {\n        guard currentConnectionToken == token else { return }\n        do {\n''',
+                  '''    private func invalidateObservationContinuity(\n        token: TuyaReadOnlyConnectionToken,\n        message: String,\n        kind: String\n    ) async {\n        guard currentConnectionToken == token else { return }\n        fieldAuthorization.revoke()\n        do {\n''',
+              ),
+              (
+                  "internal retirement revocation",
+                  '''    private func invalidateInternalLifecycle(\n        token: TuyaReadOnlyConnectionToken,\n        message: String,\n        kind: String\n    ) async {\n        guard currentConnectionToken == token else { return }\n        do {\n''',
+                  '''    private func invalidateInternalLifecycle(\n        token: TuyaReadOnlyConnectionToken,\n        message: String,\n        kind: String\n    ) async {\n        guard currentConnectionToken == token else { return }\n        fieldAuthorization.revoke()\n        do {\n''',
+              ),
+          ]:
+              replace_once(old, new, label)
+
+          replace_once(
+              '''    private func resetDiscoverySessionOnly() {\n        acceptanceCutIsClosed = false\n''',
+              '''    private func resetDiscoverySessionOnly() {\n        revokeFieldAuthorizationIfAttemptStarted()\n        acceptanceCutIsClosed = false\n''',
+              "correlation reset revocation",
+          )
+
+          replace_once(
+              '''    private func failLocally(_ text: String, _ kind: String) {\n''',
+              '''    private func revokeFieldAuthorizationIfAttemptStarted() {\n        switch fieldAuthorization.stage {\n        case .off1Started, .authenticationAdmitted, .officialConnectionAdmitted, .observationAdmitted, .sealed:\n            fieldAuthorization.revoke()\n        case .idle, .awaitingEnvelope, .armed, .revoked:\n            break\n        }\n    }\n\n    private func failLocally(_ text: String, _ kind: String) {\n        revokeFieldAuthorizationIfAttemptStarted()\n''',
+              "local failure lifecycle revocation",
+          )
+
+          replace_once(
+              '''            while !Task.isCancelled {\n                test.consumeCorrelationAsyncInvalidation()\n                try? await Task.sleep(nanoseconds: 250_000_000)\n            }\n''',
+              '''            var handoffPollTick = 0\n            while !Task.isCancelled {\n                test.consumeCorrelationAsyncInvalidation()\n                if handoffPollTick == 0 {\n                    test.advanceFieldAuthorizationHandoffIfAvailable()\n                }\n                handoffPollTick = (handoffPollTick + 1) % 4\n                try? await Task.sleep(nanoseconds: 250_000_000)\n            }\n''',
+              "foreground handoff polling",
+          )
+
+          replace_once(
+              '''    private var authorityReady: Bool {\n        test.fieldBuildIsAuthoritative\n            && test.privateConfig\n            && test.sdkAccountLoggedIn\n            && test.sdkDeviceMembershipVerified\n            && test.accountIdentityLeaseIsAuthorized\n    }\n''',
+              '''    private var authorityReady: Bool {\n        test.fieldBuildIsAuthoritative\n            && test.privateConfig\n            && test.sdkAccountLoggedIn\n            && test.sdkDeviceMembershipVerified\n            && test.accountIdentityLeaseIsAuthorized\n            && test.fieldAuthorizationReadyForOFF1\n    }\n''',
+              "preflight authority readiness",
+          )
+
+          replace_once(
+              '''                VStack(spacing: 12) {\n                    requirementRow("Capture build", ready: test.fieldBuildIsAuthoritative)\n                    requirementRow("Tuya secure service", ready: test.privateConfig)\n                    requirementRow("Tuya account", ready: test.sdkAccountLoggedIn)\n                    requirementRow("This scooter in account", ready: test.sdkDeviceMembershipVerified && test.accountIdentityLeaseIsAuthorized)\n                }\n''',
+              '''                VStack(spacing: 12) {\n                    requirementRow("Capture build", ready: test.fieldBuildIsAuthoritative)\n                    requirementRow("Tuya secure service", ready: test.privateConfig)\n                    requirementRow("Tuya account", ready: test.sdkAccountLoggedIn)\n                    requirementRow("This scooter in account", ready: test.sdkDeviceMembershipVerified && test.accountIdentityLeaseIsAuthorized)\n                    requirementRow("One-time authorization", ready: test.fieldAuthorizationReadyForOFF1)\n                }\n\n                Text(test.fieldAuthorizationStatus)\n                    .font(.footnote)\n                    .foregroundStyle(.secondary)\n                    .fixedSize(horizontal: false, vertical: true)\n''',
+              "preflight authorization presentation",
+          )
+
+          path.write_text(source, encoding="utf-8")
+
+      - name: Enforce bounded truth-preserving mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git status --porcelain=v1 | awk '{print $2}' | sort | tr '\n' ' ' | sed 's/ $//')"
+          test "$changed" = "$APP_SOURCE"
+          git diff --check
+          grep -Fq 'private let fieldAuthorization = NembraCaptureFieldAuthorizationController()' "$APP_SOURCE"
+          grep -Fq 'fieldAuthorization.stage == .armed' "$APP_SOURCE"
+          grep -Fq 'advanceFieldAuthorizationHandoffIfAvailable()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitOFF1Start()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitAuthenticationStart()' "$APP_SOURCE"
+          grep -Fq 'try fieldAuthorization.admitOfficialConnectionStart()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitObservationStart()' "$APP_SOURCE"
+          grep -Fq 'freezeAcceptedArtifactForAuthorizationSeal(' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()' "$APP_SOURCE"
+          grep -Fq 'fieldAuthorization.revoke()' "$APP_SOURCE"
+          test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE")" = 0
+          test "$(grep -Fc 'AuthenticatedStationaryCaptureAttemptCapability' "$APP_SOURCE")" = 0
+          test "$(grep -Fc 'AuthenticatedStationaryCaptureCapabilityGate' "$APP_SOURCE")" = 0
+
+      - name: Run focused current authority contracts
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          swift test --filter AuthenticatedStationaryCaptureCapabilityGateTests
+          swift test --filter AuthenticatedStationaryCaptureAppAuthorizerTests
+          swift test --filter AuthenticatedStationaryCaptureAppSessionTests
+          swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
+
+      - name: Build standalone Capture on Xcode 27
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "${RUNNER_TEMP}/NembraCaptureLifecycleCurrent" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Publish tested source and retire authoring workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm "$AUTHORING_WORKFLOW"
+          git add -- "$APP_SOURCE" "$AUTHORING_WORKFLOW"
+          permanent="$(git diff --name-only "$CLEAN_PRODUCT_PARENT"...HEAD; git diff --cached --name-only)"
+          permanent="$(printf '%s\n' "$permanent" | grep -v '^$' | grep -v -F "$AUTHORING_WORKFLOW" | sort -u)"
+          test "$permanent" = "$APP_SOURCE"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat(capture): wire exact field authorization lifecycle'
+          materialized="$(git rev-parse HEAD)"
+          git fetch origin "$TARGET_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "${{ github.sha }}"
+          git push origin HEAD:"$TARGET_BRANCH"
+          printf 'NEMBRA_CAPTURE_LIFECYCLE_CURRENT materialized=%s parent=%s physicalAuthorityCreated=false\n' "$materialized" "$CLEAN_PRODUCT_PARENT"
