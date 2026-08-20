@@ -27,7 +27,10 @@ on:
       - NembraApp/App/NembraCaptureEntrypoint.swift
       - NembraApp/App/NembraCaptureFieldAuthorizationController.swift
       - NembraCapture.xcodeproj/project.pbxproj
-      - Packages/NembraBluetoothCapture/Sources/NembraCaptureAppAuthorization/AuthenticatedStationaryCaptureSignerRendezvousDocument.swift
+      - Packages/NembraBluetoothCapture/Sources/NembraCaptureAppAuthorization/**
+      - Packages/NembraBluetoothCapture/Tests/NembraCaptureAppAuthorizationTests/**
+      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedFieldAuthorizationInboxAppAdapterSourceTests.swift
+      - Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedFieldCapabilityAppWiringSourceTests.swift
       - scripts/field/install_one_time_capture.command
       - docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md
       - docs/ES80_AUTHENTICATED_STATIONARY_RETAINED_INSTALL_MANIFEST.md
