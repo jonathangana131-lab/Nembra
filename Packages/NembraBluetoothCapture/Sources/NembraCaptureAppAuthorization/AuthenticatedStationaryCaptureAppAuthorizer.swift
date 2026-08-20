@@ -178,7 +178,7 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
         return try prepareForTesting(
             externalBindings: manifest.externalBindings(),
             challenge: challenge,
-            bundleIdentifier: try #requireBundleIdentifier(currentBundleIdentifier),
+            bundleIdentifier: try requireBundleIdentifier(currentBundleIdentifier),
             runtimeBuildIdentity: runtimeBuildIdentity,
             wallClockUnixMilliseconds: wallClockUnixMilliseconds,
             uptimeNanoseconds: uptimeNanoseconds
