@@ -57,7 +57,7 @@ jobs:
           test "$(grep -Ec 'devicectl device copy (to|from)' "$CONTRACT" || true)" = 0
           # The contract is help-only, but it is allowed to parse/document an explicit --device
           # selector from Xcode help. What remains forbidden is executing a production copy command.
-          test "$(grep -Fc '"'"'--device'"'"' "$CONTRACT" || true)" -ge 1
+          test "$(grep -Fc '"--device"' "$CONTRACT" || true)" -ge 1
           artifacts_dir="$RUNNER_TEMP/capture-app-container-transport"
           mkdir -p "$artifacts_dir"
           printf 'subject_sha=%s\nphysicalAuthorityCreated=false\ndeviceContacted=false\n' "$actual" > "$artifacts_dir/subject.txt"
