@@ -152,6 +152,11 @@ case "${1:-}" in
   *) die "Only --dry-run or --self-test is accepted; private values and hashes must not be placed on argv." ;;
 esac
 
+: "${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:?Set NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA to the independently accepted 40-hex Capture source commit.}"
+[[ "$NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA" =~ ^[0-9A-Fa-f]{40}$ ]] || die "NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA must be exactly 40 hex characters."
+NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA="$(printf '%s' "$NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA" | /usr/bin/tr '[:upper:]' '[:lower:]')"
+export NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA
+
 : "${NEMBRA_RETAINED_IPA_PATH:?Set NEMBRA_RETAINED_IPA_PATH to the absolute retained accepted signed IPA path.}"
 : "${NEMBRA_RETAINED_IPA_SHA256:?Set NEMBRA_RETAINED_IPA_SHA256 to its independently accepted SHA-256.}"
 : "${NEMBRA_RETAINED_INSTALL_MANIFEST_PATH:?Set NEMBRA_RETAINED_INSTALL_MANIFEST_PATH to the absolute canonical retained-install manifest path.}"
@@ -178,10 +183,12 @@ validate_retained_input "intended-device pseudonymous binding" "$NEMBRA_INTENDED
 # Re-read only the small JSON subjects through no-follow descriptors and prove they all name one
 # identical retained install. The independently accepted IPA/Tuya/device digests are inputs; the IPA
 # itself is never loaded into this Python process. The two Python verifier modules are captured from
-# immutable Git object bytes and executed in memory; a mutable checkout pathname is never imported.
+# the exact independently accepted Git commit and executed in memory; a mutable checkout pathname or
+# merely-current HEAD can never choose the verifier implementation.
 /usr/bin/env -i \
   PATH=/usr/bin:/bin \
   LC_ALL=C \
+  NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA="$NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA" \
   /usr/bin/python3 -I -B - \
     "$ROOT" \
     "$NEMBRA_RETAINED_INSTALL_MANIFEST_PATH" "$NEMBRA_RETAINED_INSTALL_MANIFEST_SHA256" \
@@ -271,13 +278,18 @@ def git(*arguments: str, input_data: bytes | None = None) -> bytes:
     return completed.stdout
 
 
+accepted_source = os.environ.get("NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA", "").lower()
+if re.fullmatch(r"[0-9a-f]{40}", accepted_source) is None:
+    raise RuntimeError("independently accepted Capture source is not one canonical Git commit")
 head = git("rev-parse", "HEAD").decode("ascii").strip().lower()
 if re.fullmatch(r"[0-9a-f]{40}", head) is None:
     raise RuntimeError("field checkout HEAD is not one canonical Git commit")
+if not hmac.compare_digest(head, accepted_source):
+    raise RuntimeError("field checkout HEAD does not match the independently accepted Capture source")
 
 
 def immutable_git_source(path: str) -> bytes:
-    blob = git("rev-parse", f"{head}:{path}").decode("ascii").strip().lower()
+    blob = git("rev-parse", f"{accepted_source}:{path}").decode("ascii").strip().lower()
     if re.fullmatch(r"[0-9a-f]{40}", blob) is None:
         raise RuntimeError(f"verifier source is not a canonical Git blob: {path}")
     source = git("cat-file", "blob", blob)
@@ -293,7 +305,7 @@ def execute_module(name: str, path: str, source: bytes) -> types.ModuleType:
     except UnicodeDecodeError as error:
         raise RuntimeError(f"verifier source is not UTF-8: {path}") from error
     module = types.ModuleType(name)
-    module.__file__ = f"<git:{head}:{path}>"
+    module.__file__ = f"<git:{accepted_source}:{path}>"
     sys.modules[name] = module
     exec(compile(text, module.__file__, "exec"), module.__dict__)
     return module
