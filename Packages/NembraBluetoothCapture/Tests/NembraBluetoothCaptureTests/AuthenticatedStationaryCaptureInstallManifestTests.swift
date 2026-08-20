@@ -7,16 +7,15 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
     private typealias Verifier = AuthenticatedStationaryCaptureInstallManifestVerifier
     private typealias ManifestError = AuthenticatedStationaryCaptureInstallManifestError
 
-    private struct TestWire {
+    private struct TestWire: Codable {
         let schema: String
         let version: Int
-        let manifestKind: String
         let procedureID: String
         let sourceCommitSHA: String
         let bundleIdentifier: String
         let buildIdentifier: String
         let buildInstanceID: String
-        let signedInstallableSHA256: String
+        let retainedIPASHA256: String
         let executableSHA256: String
         let infoPlistSHA256: String
         let tuyaDependencyLockSHA256: String
@@ -37,19 +36,20 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
     private func wire(
         sourceCommitSHA: String? = nil,
         bundleIdentifier: String? = nil,
+        buildIdentifier: String? = nil,
         buildInstanceID: String? = nil,
-        signedInstallableSHA256: String? = nil
+        retainedIPASHA256: String? = nil
     ) -> TestWire {
-        TestWire(
+        let source = sourceCommitSHA ?? self.sourceCommitSHA
+        return TestWire(
             schema: Verifier.schema,
             version: Verifier.schemaVersion,
-            manifestKind: Verifier.manifestKind,
             procedureID: AuthenticatedStationaryCaptureFieldAuthorizationVerifier.procedureID,
-            sourceCommitSHA: sourceCommitSHA ?? self.sourceCommitSHA,
+            sourceCommitSHA: source,
             bundleIdentifier: bundleIdentifier ?? Verifier.bundleIdentifier,
-            buildIdentifier: "Capture Build V14-0123456789ab",
+            buildIdentifier: buildIdentifier ?? "Capture Build V14-\(source.prefix(12))",
             buildInstanceID: buildInstanceID ?? self.buildInstanceID,
-            signedInstallableSHA256: signedInstallableSHA256 ?? String(repeating: "1", count: 64),
+            retainedIPASHA256: retainedIPASHA256 ?? String(repeating: "1", count: 64),
             executableSHA256: executableSHA256,
             infoPlistSHA256: infoPlistSHA256,
             tuyaDependencyLockSHA256: String(repeating: "2", count: 64),
@@ -61,44 +61,15 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
         )
     }
 
-    private func canonicalPythonData(_ wire: TestWire) throws -> Data {
-        let fields: [(String, String)] = [
-            ("schema", try jsonString(wire.schema)),
-            ("version", String(wire.version)),
-            ("manifestKind", try jsonString(wire.manifestKind)),
-            ("procedureID", try jsonString(wire.procedureID)),
-            ("sourceCommitSHA", try jsonString(wire.sourceCommitSHA)),
-            ("bundleIdentifier", try jsonString(wire.bundleIdentifier)),
-            ("buildIdentifier", try jsonString(wire.buildIdentifier)),
-            ("buildInstanceID", try jsonString(wire.buildInstanceID)),
-            ("signedInstallableSHA256", try jsonString(wire.signedInstallableSHA256)),
-            ("executableSHA256", try jsonString(wire.executableSHA256)),
-            ("infoPlistSHA256", try jsonString(wire.infoPlistSHA256)),
-            ("tuyaDependencyLockSHA256", try jsonString(wire.tuyaDependencyLockSHA256)),
-            ("externalBuildRecordSHA256", try jsonString(wire.externalBuildRecordSHA256)),
-            ("signedBuildEvidenceSHA256", try jsonString(wire.signedBuildEvidenceSHA256)),
-            ("finalGORecordSHA256", try jsonString(wire.finalGORecordSHA256)),
-            ("intendedDevicePseudonymSHA256", try jsonString(wire.intendedDevicePseudonymSHA256)),
-            ("authorizationEnvelopeSHA256", try jsonString(wire.authorizationEnvelopeSHA256)),
-        ].sorted { $0.0 < $1.0 }
-
-        var lines = ["{"]
-        for (index, field) in fields.enumerated() {
-            lines.append("  \(try jsonString(field.0)): \(field.1)\(index == fields.count - 1 ? "" : ",")")
-        }
-        lines.append("}")
-        return Data((lines.joined(separator: "\n") + "\n").utf8)
+    private func canonicalData(_ wire: TestWire) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        return try encoder.encode(wire)
     }
 
-    private func jsonString(_ value: String) throws -> String {
-        let data = try JSONSerialization.data(withJSONObject: [value], options: [.withoutEscapingSlashes])
-        let array = try #require(String(data: data, encoding: .utf8))
-        return String(array.dropFirst().dropLast())
-    }
-
-    @Test("canonical Python manifest binds the retained install candidate and authorization inputs")
+    @Test("canonical manifest binds the retained install candidate and authorization inputs")
     func canonicalManifestBindsExactInputs() throws {
-        let data = try canonicalPythonData(wire())
+        let data = try canonicalData(wire())
         let manifest = try Verifier.decodeCanonical(data)
 
         #expect(manifest.procedureID == AuthenticatedStationaryCaptureFieldAuthorizationVerifier.procedureID)
@@ -106,7 +77,7 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
         #expect(manifest.bundleIdentifier == Verifier.bundleIdentifier)
         #expect(manifest.buildIdentifier == "Capture Build V14-0123456789ab")
         #expect(manifest.buildInstanceID == buildInstanceID)
-        #expect(manifest.signedInstallableSHA256 == String(repeating: "1", count: 64))
+        #expect(manifest.retainedIPASHA256 == String(repeating: "1", count: 64))
         #expect(manifest.authorizationEnvelopeSHA256 == String(repeating: "7", count: 64))
         #expect(manifest.canonicalManifestSHA256.utf8.count == 64)
 
@@ -118,21 +89,25 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
         #expect(bindings.intendedDevicePseudonymSHA256 == String(repeating: "6", count: 64))
     }
 
-    @Test("Swift verifier vocabulary is pinned to the Python manifest producer")
-    func swiftAndPythonManifestVocabularyCannotDrift() throws {
+    @Test("Swift verifier vocabulary and strictness stay pinned to the Python mirror")
+    func swiftAndPythonManifestContractCannotDrift() throws {
         let python = try Self.repositoryFile("scripts/ci/es80_retained_install_manifest.py")
 
         #expect(python.contains("SCHEMA = \"\(Verifier.schema)\""))
         #expect(python.contains("SCHEMA_VERSION = \(Verifier.schemaVersion)"))
-        #expect(python.contains("MANIFEST_KIND = \"\(Verifier.manifestKind)\""))
         #expect(python.contains("BUNDLE_IDENTIFIER = \"\(Verifier.bundleIdentifier)\""))
-        #expect(python.contains("\"signedInstallableSHA256\""))
-        #expect(!python.contains("retainedIPASHA256"))
+        #expect(python.contains("\"retainedIPASHA256\""))
+        #expect(python.contains("value.get(\"bundleIdentifier\") != BUNDLE_IDENTIFIER"))
+        #expect(python.contains("expected_build_identifier = f\"Capture Build V14-{source[:12]}\""))
+        #expect(python.contains("or value == \"0\" * 64"))
+        #expect(python.contains("-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-"))
+        #expect(!python.contains("manifestKind"))
+        #expect(!python.contains("signedInstallableSHA256"))
     }
 
     @Test("manifest can be checked against the build identity measured from the running app")
     func manifestMatchesMeasuredRuntimeBuildIdentity() throws {
-        let manifest = try Verifier.decodeCanonical(canonicalPythonData(wire()))
+        let manifest = try Verifier.decodeCanonical(canonicalData(wire()))
         let identity = try PassiveBluetoothCaptureRuntimeBuildIdentityReader.resolveEmbeddedMetadata(
             infoDictionary: [
                 PassiveBluetoothCaptureRuntimeBuildIdentityReader.buildIdentifierInfoDictionaryKey:
@@ -151,8 +126,8 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
 
     @Test("non-canonical bytes cannot acquire a retained manifest identity")
     func rejectsNonCanonicalBytes() throws {
-        var data = try canonicalPythonData(wire())
-        data.removeLast()
+        var data = try canonicalData(wire())
+        data.append(0x0A)
 
         #expect(throws: ManifestError.nonCanonicalManifest) {
             try Verifier.decodeCanonical(data)
@@ -161,12 +136,12 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
 
     @Test("duplicate and unknown fields fail closed before any cross-binding is trusted")
     func rejectsDuplicateAndUnexpectedFields() throws {
-        let data = try canonicalPythonData(wire())
+        let data = try canonicalData(wire())
         let canonical = try #require(String(data: data, encoding: .utf8))
-        let schemaLine = "  \"schema\": \"\(Verifier.schema)\","
+        let schemaField = "\"schema\":\"\(Verifier.schema)\""
         let duplicated = canonical.replacingOccurrences(
-            of: schemaLine,
-            with: "\(schemaLine)\n\(schemaLine)"
+            of: schemaField,
+            with: "\(schemaField),\(schemaField)"
         )
         #expect(duplicated != canonical)
 
@@ -174,43 +149,55 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
             try Verifier.decodeCanonical(Data(duplicated.utf8))
         }
 
-        let unexpected = canonical.replacingOccurrences(
-            of: "{\n",
-            with: "{\n  \"callerAuthority\": true,\n"
-        )
+        let unexpected = String(canonical.dropLast()) + ",\"callerAuthority\":true}"
         #expect(throws: ManifestError.unexpectedManifestField("callerAuthority")) {
             try Verifier.decodeCanonical(Data(unexpected.utf8))
         }
     }
 
-    @Test("digests, source commit, bundle, and build instance must already be canonical")
-    func rejectsNormalizedAfterTheFactIdentities() throws {
-        #expect(throws: ManifestError.invalidDigestField("signedInstallableSHA256")) {
-            try Verifier.decodeCanonical(canonicalPythonData(
-                wire(signedInstallableSHA256: String(repeating: "A", count: 64))
+    @Test("digests and source commit must already be canonical nonzero identities")
+    func rejectsNormalizedOrZeroIdentities() throws {
+        #expect(throws: ManifestError.invalidDigestField("retainedIPASHA256")) {
+            try Verifier.decodeCanonical(canonicalData(
+                wire(retainedIPASHA256: String(repeating: "A", count: 64))
             ))
         }
 
-        #expect(throws: ManifestError.invalidDigestField("signedInstallableSHA256")) {
-            try Verifier.decodeCanonical(canonicalPythonData(
-                wire(signedInstallableSHA256: String(repeating: "0", count: 64))
+        #expect(throws: ManifestError.invalidDigestField("retainedIPASHA256")) {
+            try Verifier.decodeCanonical(canonicalData(
+                wire(retainedIPASHA256: String(repeating: "0", count: 64))
             ))
         }
 
         #expect(throws: ManifestError.invalidSourceCommitSHA) {
-            try Verifier.decodeCanonical(canonicalPythonData(
+            try Verifier.decodeCanonical(canonicalData(
                 wire(sourceCommitSHA: sourceCommitSHA.uppercased())
             ))
         }
 
+        #expect(throws: ManifestError.invalidSourceCommitSHA) {
+            try Verifier.decodeCanonical(canonicalData(
+                wire(sourceCommitSHA: String(repeating: "0", count: 40))
+            ))
+        }
+    }
+
+    @Test("bundle, source-bound build label, and build instance are exact")
+    func rejectsWrongRuntimeBindingVocabulary() throws {
         #expect(throws: ManifestError.invalidBundleIdentifier) {
-            try Verifier.decodeCanonical(canonicalPythonData(
+            try Verifier.decodeCanonical(canonicalData(
                 wire(bundleIdentifier: "com.example.wrong")
             ))
         }
 
+        #expect(throws: ManifestError.invalidBuildIdentifier) {
+            try Verifier.decodeCanonical(canonicalData(
+                wire(buildIdentifier: "Capture Build V14-deadbeefdead")
+            ))
+        }
+
         #expect(throws: ManifestError.invalidBuildInstanceID) {
-            try Verifier.decodeCanonical(canonicalPythonData(
+            try Verifier.decodeCanonical(canonicalData(
                 wire(buildInstanceID: "12345678-90ab-1def-9234-567890abcdef")
             ))
         }
