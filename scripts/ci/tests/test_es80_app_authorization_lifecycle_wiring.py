@@ -122,17 +122,26 @@ class AppAuthorizationLifecycleWiringTests(unittest.TestCase):
 
         inline_freeze = section.find("ExactByteArtifactSeal(sealing:")
         helper_call = section.find("freezeAcceptedArtifactForAuthorizationSeal(")
+        operational_candidates = [
+            ("inline", inline_freeze),
+            ("helper", helper_call),
+        ]
+        operational_candidates = [
+            (kind, position)
+            for kind, position in operational_candidates
+            if 0 <= position < authority_seal
+        ]
         self.assertTrue(
-            inline_freeze >= 0 or helper_call >= 0,
-            "authorization seal must follow an exact immutable-artifact freeze boundary",
+            operational_candidates,
+            "authorization seal must follow an operational exact immutable-artifact freeze boundary",
         )
-        freeze = inline_freeze if inline_freeze >= 0 else helper_call
+        freeze_kind, freeze = min(operational_candidates, key=lambda candidate: candidate[1])
         self.assertLess(package_seal, freeze)
         self.assertLess(freeze, authority_seal)
         self.assertLess(authority_seal, accepted)
 
-        if inline_freeze >= 0:
-            between = section[inline_freeze:authority_seal]
+        if freeze_kind == "inline":
+            between = section[freeze:authority_seal]
             self.assertIn(".verifies(", between)
             self.assertTrue(
                 "verifiedBytes()" in between or "verifiedCanonicalValue(" in between,
