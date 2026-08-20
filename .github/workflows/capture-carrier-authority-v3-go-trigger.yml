@@ -1,4 +1,4 @@
-# retrigger after current-source lifecycle boundary repair
+# retrigger after current-source lifecycle boundary + exact-preflight repair
 name: Capture carrier authority v3 GO trigger
 
 on:
