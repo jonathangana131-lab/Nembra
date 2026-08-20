@@ -120,18 +120,22 @@ class AppAuthorizationLifecycleWiringTests(unittest.TestCase):
         authority_seal = section.index("sealAfterAcceptedArtifactFreeze()")
         accepted = section.index("self.phase = .accepted")
 
+        # The helper implementation itself can live later in this same textual section. Treat
+        # ExactByteArtifactSeal(...) as an inline freeze only when it occurs before the authority
+        # seal call; otherwise validate the earlier helper call and inspect the helper body below.
         inline_freeze = section.find("ExactByteArtifactSeal(sealing:")
         helper_call = section.find("freezeAcceptedArtifactForAuthorizationSeal(")
+        inline_freeze_before_authority_seal = 0 <= inline_freeze < authority_seal
         self.assertTrue(
-            inline_freeze >= 0 or helper_call >= 0,
+            inline_freeze_before_authority_seal or helper_call >= 0,
             "authorization seal must follow an exact immutable-artifact freeze boundary",
         )
-        freeze = inline_freeze if inline_freeze >= 0 else helper_call
+        freeze = inline_freeze if inline_freeze_before_authority_seal else helper_call
         self.assertLess(package_seal, freeze)
         self.assertLess(freeze, authority_seal)
         self.assertLess(authority_seal, accepted)
 
-        if inline_freeze >= 0:
+        if inline_freeze_before_authority_seal:
             between = section[inline_freeze:authority_seal]
             self.assertIn(".verifies(", between)
             self.assertTrue(
