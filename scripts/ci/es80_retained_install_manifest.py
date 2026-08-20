@@ -107,7 +107,9 @@ def _validate_bindings(value: dict[str, Any]) -> dict[str, Any]:
     source = value.get("sourceCommitSHA")
     if not isinstance(source, str) or not SHA40.fullmatch(source) or source == "0" * 40:
         raise RetainedInstallManifestError("sourceCommitSHA is not one canonical nonzero full Git SHA")
-    _build_identifier(value.get("buildIdentifier"))
+    build_identifier = _build_identifier(value.get("buildIdentifier"))
+    if build_identifier != f"Capture Build V14-{source[:12]}":
+        raise RetainedInstallManifestError("buildIdentifier does not match exact source commit")
     _canonical_uuid4(value.get("buildInstanceID"))
     for key in DIGEST_KEYS:
         _canonical_nonzero_sha256(value.get(key), key)
@@ -173,7 +175,7 @@ def _self_test() -> None:
         "procedureID": PROCEDURE_ID,
         "sourceCommitSHA": "1" * 40,
         "bundleIdentifier": BUNDLE_IDENTIFIER,
-        "buildIdentifier": "Capture Build manifest-self-test",
+        "buildIdentifier": "Capture Build V14-111111111111",
         "buildInstanceID": "12345678-1234-4abc-8def-123456789abc",
         "retainedIPASHA256": "2" * 64,
         "executableSHA256": "3" * 64,
