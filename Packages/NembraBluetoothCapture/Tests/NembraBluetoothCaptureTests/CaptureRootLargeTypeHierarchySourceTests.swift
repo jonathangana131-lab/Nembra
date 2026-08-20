@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Capture root large-type hierarchy")
 struct CaptureRootLargeTypeHierarchySourceTests {
-    @Test("large type keeps authority and the shortest safe action ahead of recovery details")
+    @Test("large type keeps build metadata and the shortest safe action ahead of recovery details")
     func largeTypeHierarchy() throws {
         let app = try read("NembraApp/App/NembraCaptureEntrypoint.swift")
         let root = String(try section(
@@ -33,15 +33,15 @@ struct CaptureRootLargeTypeHierarchySourceTests {
         #expect(!hero.contains("Capture locked"))
         #expect(!hero.contains("NEMBRA CAPTURE"))
 
-        #expect(authority.contains("Text(fieldBuildIsAuthoritative ? \"Field build ready\" : \"Capture locked\")"))
+        #expect(authority.contains("Text(fieldBuildMetadataReady ? \"Build metadata ready\" : \"Capture locked\")"))
         #expect(authority.contains(".font(isAccessibilityLayout ? .body.weight(.semibold) : .headline)"))
         #expect(authority.contains(".dynamicTypeSize(...DynamicTypeSize.accessibility1)"))
         #expect(authority.contains(".padding(isAccessibilityLayout ? 12 : 14)"))
-        #expect(authority.contains(".accessibilityLabel(fieldBuildIsAuthoritative ? \"Field build ready\" : \"Physical capture locked\")"))
-        #expect(authority.contains("This public build cannot authorize Bluetooth or collect physical evidence."))
+        #expect(authority.contains(".accessibilityLabel(fieldBuildMetadataReady ? \"Build metadata ready\" : \"Physical capture locked\")"))
+        #expect(authority.contains("one-time field authorization checks are still required before Bluetooth"))
 
         #expect(account.contains("Text(sdkAccount.loggedIn ? \"Scooter account linked\" : \"Link scooter account\")"))
-        #expect(account.contains("if !fieldBuildIsAuthoritative"))
+        #expect(account.contains("if !fieldBuildMetadataReady"))
         #expect(account.contains("Review field requirements"))
         #expect(account.contains("nembra.capture.root.account-link-action"))
         #expect(account.contains("SignInWithAppleButton(.signIn)"))
