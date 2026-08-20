@@ -121,11 +121,22 @@ xcrun simctl status_bar "$UDID" override \
   --cellularMode active \
   --cellularBars 4 >/dev/null 2>&1 || true
 
+set_appearance() {
+  local appearance="$1"
+  local output
+  if ! output="$(xcrun simctl ui "$UDID" appearance "$appearance" 2>&1)"; then
+    echo "Could not set Simulator appearance to '$appearance': $output" >&2
+    exit 8
+  fi
+  printf '%s\n' "appearance=$appearance output=${output:-<none>}" \
+    >> "$ARTIFACTS_DIR/logs/simulator-appearance.log"
+}
+
 capture_state() {
   local state="$1"
   local appearance="${2:-light}"
   xcrun simctl terminate "$UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
-  xcrun simctl ui "$UDID" appearance "$appearance" >/dev/null 2>&1 || true
+  set_appearance "$appearance"
   local launch_output pid screenshot_path
   launch_output="$(
     SIMCTL_CHILD_NEMBRA_SIMULATION_SCENARIO="$state" \
@@ -138,6 +149,7 @@ capture_state() {
     exit 5
   fi
 
+  set_appearance "$appearance"
   sleep 2
   if ! kill -0 "$pid" >/dev/null 2>&1; then
     echo "Nembra exited before ${state}/${appearance} screenshot capture." >&2
@@ -167,6 +179,17 @@ do
 done
 capture_state connected-stopped dark
 capture_state reconnecting dark
+
+LIGHT_SCREENSHOT="$ARTIFACTS_DIR/screenshots/connected-stopped-light.png"
+DARK_SCREENSHOT="$ARTIFACTS_DIR/screenshots/connected-stopped-dark.png"
+if cmp -s "$LIGHT_SCREENSHOT" "$DARK_SCREENSHOT"; then
+  echo "Dark-mode evidence is invalid: connected-stopped light and dark captures are byte-identical." >&2
+  exit 9
+fi
+python3 scripts/ci/verify_screenshot_appearance.py \
+  --light "$LIGHT_SCREENSHOT" \
+  --dark "$DARK_SCREENSHOT" \
+  --log "$ARTIFACTS_DIR/logs/rendered-appearance.txt"
 
 printf '%s\n' "Captured screenshots:" > "$ARTIFACTS_DIR/screenshots.txt"
 find "$ARTIFACTS_DIR/screenshots" -type f -name '*.png' -print | sort >> "$ARTIFACTS_DIR/screenshots.txt"
