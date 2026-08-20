@@ -1,0 +1,125 @@
+name: Capture carrier authority v2 GO trigger
+
+on:
+  push:
+    branches:
+      - product/capture-1-0-main-20260818
+    paths:
+      - .github/workflows/capture-carrier-authority-v2-go-trigger.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-carrier-authority-v2-go-trigger
+  cancel-in-progress: true
+
+jobs:
+  materialize:
+    runs-on: xcode-27
+    timeout-minutes: 35
+    env:
+      TARGET_BRANCH: product/capture-1-0-main-20260818
+      TRIGGER_WORKFLOW: .github/workflows/capture-carrier-authority-v2-go-trigger.yml
+      AUTHORING_WORKFLOW: .github/workflows/capture-carrier-authority-v2-materialize-once.yml
+      EXPECTED_AUTHORING_BLOB: 59d38ec605728302604ed2b3321b6bd4558dbdda
+      APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
+      EXPECTED_SOURCE_BLOB: 627c17949d15aaf26ca28c12abb9bb684ab0e731
+    steps:
+      - name: Checkout exact carrier trigger head
+        uses: actions/checkout@v6
+        with:
+          ref: product/capture-1-0-main-20260818
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind reviewed V2 transform and source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git branch --show-current)" = "$TARGET_BRANCH"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD:"$AUTHORING_WORKFLOW")" = "$EXPECTED_AUTHORING_BLOB"
+          test "$(git rev-parse HEAD:"$APP_SOURCE")" = "$EXPECTED_SOURCE_BLOB"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Extract and apply reviewed V2 transform
+        shell: python
+        run: |
+          from pathlib import Path
+
+          workflow = Path(".github/workflows/capture-carrier-authority-v2-materialize-once.yml").read_text(encoding="utf-8")
+          start_marker = '          cat > "${RUNNER_TEMP}/materialize_capture_authority_v2.py" <<\'PY\'\n'
+          end_marker = '          PY\n\n      - name: Materialize against latest reviewed carrier source\n'
+          if workflow.count(start_marker) != 1 or workflow.count(end_marker) != 1:
+              raise SystemExit("reviewed V2 transform markers changed; refusing")
+          body = workflow.split(start_marker, 1)[1].split(end_marker, 1)[0]
+          lines = body.splitlines()
+          if any(line and not line.startswith("          ") for line in lines):
+              raise SystemExit("unexpected V2 transform indentation; refusing")
+          script = "\n".join(line[10:] if line else "" for line in lines) + "\n"
+          out = Path("/tmp/materialize_capture_authority_v2.py")
+          out.write_text(script, encoding="utf-8")
+
+      - name: Materialize V2 app source
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 /tmp/materialize_capture_authority_v2.py
+          changed="$(git status --porcelain=v1 | awk '{print $2}' | sort)"
+          test "$changed" = "$APP_SOURCE"
+          git diff --check
+
+      - name: Run exact lifecycle and artifact fail-closed contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
+          (
+            cd Packages/NembraBluetoothCapture
+            swift test --filter AuthenticatedStationaryCaptureAppSessionTests
+            swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
+            swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthorizationInboxAppAdapter
+            swift test --filter TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
+          )
+          grep -Fq 'advanceInboxHandoffIfAvailable()' "$APP_SOURCE"
+          grep -Fq 'fieldAuthorization.stage == .armed' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()' "$APP_SOURCE"
+          test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE")" = 0
+          test "$(grep -Fc 'AuthenticatedStationaryCaptureAttemptCapability' "$APP_SOURCE")" = 0
+          test "$(grep -Fc 'AuthenticatedStationaryCaptureCapabilityGate' "$APP_SOURCE")" = 0
+
+      - name: Build standalone Capture on Xcode 27
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "${RUNNER_TEMP}/NembraCaptureCarrierAuthorityV2GO" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Publish exact tested descendant and retire authoring workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin "$TARGET_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          rm "$AUTHORING_WORKFLOW" "$TRIGGER_WORKFLOW"
+          git add -- "$APP_SOURCE" "$AUTHORING_WORKFLOW" "$TRIGGER_WORKFLOW"
+          git diff --cached --check
+          staged="$(git diff --cached --name-only | sort)"
+          expected="$(printf '%s\n%s\n%s\n' "$APP_SOURCE" "$AUTHORING_WORKFLOW" "$TRIGGER_WORKFLOW" | sort)"
+          test "$staged" = "$expected"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat(capture): close authorized SecureLink attempt lifecycle v2'
+          materialized="$(git rev-parse HEAD)"
+          git fetch origin "$TARGET_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          git push origin HEAD:"$TARGET_BRANCH"
+          printf 'CAPTURE_CARRIER_AUTHORITY_V2_GO=%s trigger=%s physicalAuthorityCreated=false\n' "$materialized" "$GITHUB_SHA"
