@@ -124,7 +124,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          /usr/bin/python3 -I scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py 2>&1 | tee "${RUNNER_TEMP}/nembra-real-entrypoint-authorization-source-contract.log"
+
+      - name: Retain real-entrypoint source-contract diagnostic
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: capture-real-entrypoint-authorization-source-contract-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/nembra-real-entrypoint-authorization-source-contract.log
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Run package authorization and exact-freeze contracts
         working-directory: Packages/NembraBluetoothCapture
