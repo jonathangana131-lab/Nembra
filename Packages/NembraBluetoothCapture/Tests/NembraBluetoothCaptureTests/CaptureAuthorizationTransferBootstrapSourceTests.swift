@@ -3,31 +3,8 @@ import Testing
 @testable import NembraBluetoothCapture
 
 extension CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring {
-    @Test("idle handoff prepares protected transfer custody before first manifest read")
-    func idleHandoffPreparesTransferDirectoryBeforeManifestRead() throws {
-        let coordinator = try repositorySource(
-            "NembraApp/App/NembraCaptureFieldAuthorizationController.swift"
-        )
-        let handoff = try sourceSlice(
-            coordinator,
-            from: "func advanceInboxHandoffIfAvailable()",
-            through: "func admitOFF1Start()"
-        )
-        let prepare = try #require(
-            handoff.range(of: "prepareAuthorizationTransferDirectory()")
-        )
-        let consume = try #require(
-            handoff.range(of: "prepareSignerRendezvousDocumentFromInbox()")
-        )
-
-        #expect(prepare.lowerBound < consume.lowerBound)
-        let preparationBoundary = handoff[prepare.lowerBound..<consume.lowerBound]
-        #expect(preparationBoundary.contains("catch"))
-        #expect(preparationBoundary.contains("session.revoke()"))
-    }
-
-    @Test("controller construction does not create transport state")
-    func controllerConstructionDoesNotPrepareTransferDirectory() throws {
+    @Test("controller bootstrap creates only transfer custody before authority-gated handoff")
+    func controllerBootstrapIsNonAuthorizing() throws {
         let coordinator = try repositorySource(
             "NembraApp/App/NembraCaptureFieldAuthorizationController.swift"
         )
@@ -37,7 +14,30 @@ extension CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWi
             through: "init(session: AuthenticatedStationaryCaptureAppSession)"
         )
 
-        #expect(!initializer.contains("prepareAuthorizationTransferDirectory()"))
+        #expect(initializer.contains("prepareAuthorizationTransferDirectory()"))
+        #expect(!initializer.contains("takeInstallManifest()"))
+        #expect(!initializer.contains("prepareSignerRendezvousDocumentFromInbox()"))
+        #expect(!initializer.contains("authorizeFromInbox()"))
+        #expect(!initializer.contains("acceptEnvelope"))
+        #expect(!initializer.contains("admitOFF1Start()"))
+    }
+
+    @Test("authority-gated handoff consumes subjects but does not own directory bootstrap")
+    func handoffConsumesOnlyAfterIndependentBootstrap() throws {
+        let coordinator = try repositorySource(
+            "NembraApp/App/NembraCaptureFieldAuthorizationController.swift"
+        )
+        let handoff = try sourceSlice(
+            coordinator,
+            from: "func advanceInboxHandoffIfAvailable()",
+            through: "func admitOFF1Start()"
+        )
+
+        #expect(!handoff.contains("prepareAuthorizationTransferDirectory()"))
+        #expect(handoff.contains("transferDirectoryPreparationError"))
+        #expect(handoff.contains("session.revoke()"))
+        #expect(handoff.contains("prepareSignerRendezvousDocumentFromInbox()"))
+        #expect(handoff.contains("authorizeFromInbox()"))
     }
 
     private func sourceSlice(
