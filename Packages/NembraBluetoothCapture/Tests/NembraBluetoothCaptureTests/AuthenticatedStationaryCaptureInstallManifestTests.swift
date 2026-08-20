@@ -129,7 +129,7 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
             try Verifier.decodeCanonical(Data(duplicated.utf8))
         }
 
-        let unexpected = canonical.dropLast() + ",\"callerAuthority\":true}"
+        let unexpected = String(canonical.dropLast()) + ",\"callerAuthority\":true}"
         #expect(throws: ManifestError.unexpectedManifestField("callerAuthority")) {
             try Verifier.decodeCanonical(Data(unexpected.utf8))
         }
