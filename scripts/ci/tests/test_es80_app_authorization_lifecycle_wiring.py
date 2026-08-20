@@ -45,6 +45,16 @@ class AppAuthorizationLifecycleWiringTests(unittest.TestCase):
         self.assertIn("NembraCaptureFieldAuthorizationController", self.app)
         self.assertIn("fieldAuthorization", self.app)
 
+    def test_real_entrypoint_drives_handoff_to_armed_before_off1(self) -> None:
+        # Lifecycle admissions are useless if the installed app never advances the retained manifest
+        # and signed envelope through the package-owned one-shot session. Presence is never authority;
+        # the entrypoint must consume the controller's verified handoff seam and gate OFF1 on `.armed`.
+        self.assertIn("advanceInboxHandoffIfAvailable()", self.app)
+        self.assertIn("fieldAuthorization.stage == .armed", self.app)
+        handoff = self.app.index("advanceInboxHandoffIfAvailable()")
+        off1 = self.app.index("admitOFF1Start()")
+        self.assertLess(handoff, off1)
+
     def test_off1_requires_authorization_before_correlation(self) -> None:
         section = self.section(
             "private func beginBaselineAfterCurrentOperatorAttestation()",
@@ -55,17 +65,24 @@ class AppAuthorizationLifecycleWiringTests(unittest.TestCase):
         self.assertLess(admission, correlation)
         self.assert_fail_closed_near(section, "admitOFF1Start()")
 
+    def test_failed_retry_requires_fresh_armed_authorization(self) -> None:
+        retry = self.section(
+            "var failedAttemptCanRestartFromOFF1: Bool",
+            "var canRestartFromFreshOFF1: Bool",
+        )
+        self.assertIn("fieldAuthorization.stage == .armed", retry)
+
     def test_authentication_requires_authorization_before_connection(self) -> None:
         section = self.section(
             "func authenticate()",
-            "private func beginOfficialConnection(candidate: CaptureTargetDevice)",
+            "private func beginOfficialConnection(candidate: Candidate)",
         )
         self.assertIn("admitAuthenticationStart()", section)
         self.assert_fail_closed_near(section, "admitAuthenticationStart()")
 
     def test_official_connection_requires_authorization_before_driver_creation(self) -> None:
         section = self.section(
-            "private func beginOfficialConnection(candidate: CaptureTargetDevice)",
+            "private func beginOfficialConnection(candidate: Candidate)",
             "private func authenticated(token: TuyaReadOnlyConnectionToken)",
         )
         admission = section.index("admitOfficialConnectionStart()")
@@ -82,7 +99,7 @@ class AppAuthorizationLifecycleWiringTests(unittest.TestCase):
         self.assertLess(admission, section.index("phase = .observing"))
         self.assert_fail_closed_near(section, "admitObservationStart()")
 
-    def test_capability_seals_only_after_package_artifact_freeze(self) -> None:
+    def test_capability_seals_only_after_exact_accepted_bytes_are_frozen_and_verified(self) -> None:
         section = self.section(
             "private func startWatchdog(token: TuyaReadOnlyConnectionToken)",
             "private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken)",
@@ -90,8 +107,41 @@ class AppAuthorizationLifecycleWiringTests(unittest.TestCase):
         package_seal = section.index("sealAcceptedObservation(for: token)")
         authority_seal = section.index("sealAfterAcceptedArtifactFreeze()")
         accepted = section.index("self.phase = .accepted")
-        self.assertLess(package_seal, authority_seal)
+
+        inline_freeze = section.find("ExactByteArtifactSeal(sealing:")
+        helper_call = section.find("freezeAcceptedArtifactForAuthorizationSeal(")
+        self.assertTrue(
+            inline_freeze >= 0 or helper_call >= 0,
+            "authorization seal must follow an exact immutable-artifact freeze boundary",
+        )
+        freeze = inline_freeze if inline_freeze >= 0 else helper_call
+        self.assertLess(package_seal, freeze)
+        self.assertLess(freeze, authority_seal)
         self.assertLess(authority_seal, accepted)
+
+        if inline_freeze >= 0:
+            between = section[inline_freeze:authority_seal]
+            self.assertIn(".verifies(", between)
+            self.assertTrue(
+                "verifiedBytes()" in between or "verifiedCanonicalValue(" in between,
+                "exact bytes must be canonically verified before authorization seal",
+            )
+        else:
+            helper_start = self.app.index("private func freezeAcceptedArtifactForAuthorizationSeal(")
+            helper_end_candidates = [
+                self.app.find("private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken)", helper_start),
+                self.app.find("private func invalidateSourceAuthority(", helper_start),
+            ]
+            helper_end_candidates = [value for value in helper_end_candidates if value >= 0]
+            self.assertTrue(helper_end_candidates)
+            helper = self.app[helper_start:min(helper_end_candidates)]
+            self.assertIn("ExactByteArtifactSeal(sealing:", helper)
+            self.assertIn(".verifies(", helper)
+            self.assertTrue(
+                "verifiedBytes()" in helper or "verifiedCanonicalValue(" in helper,
+                "artifact-freeze helper must prove canonical bytes before returning",
+            )
+
         self.assert_fail_closed_near(section, "sealAfterAcceptedArtifactFreeze()")
 
     def test_authority_admissions_cannot_be_optional_noops(self) -> None:

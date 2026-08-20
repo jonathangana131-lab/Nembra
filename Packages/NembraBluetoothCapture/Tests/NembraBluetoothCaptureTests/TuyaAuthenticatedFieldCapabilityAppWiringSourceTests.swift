@@ -86,8 +86,9 @@ struct CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWirin
         #expect(hasFailClosedAuthorizationHandling(around: admission.lowerBound, in: section))
     }
 
-    @Test("accepted artifact promotion seals session only after package accepted-prefix freeze")
-    func acceptedArtifactSealsSessionAfterPackageFreeze() throws {
+    @Test("accepted authorization seals only after exact immutable artifact bytes are frozen and verified")
+    func acceptedArtifactSealsSessionAfterExactByteFreeze() throws {
+        let app = try appSource()
         let section = try appSection(
             from: "private func startWatchdog(token: TuyaReadOnlyConnectionToken)",
             through: "private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken)"
@@ -98,12 +99,50 @@ struct CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWirin
         )
         let acceptedPromotion = try #require(section.range(of: "self.phase = .accepted"))
 
-        #expect(packageSeal.lowerBound < capabilitySeal.lowerBound)
+        let freezeBoundary: String.Index
+        if let inlineFreeze = section.range(of: "ExactByteArtifactSeal(sealing:") {
+            freezeBoundary = inlineFreeze.lowerBound
+            let verifiedRegion = section[inlineFreeze.lowerBound..<capabilitySeal.lowerBound]
+            #expect(verifiedRegion.contains(".verifies("))
+            #expect(
+                verifiedRegion.contains("verifiedBytes()")
+                    || verifiedRegion.contains("verifiedCanonicalValue(")
+            )
+        } else {
+            let freezeCall = try #require(
+                section.range(of: "freezeAcceptedArtifactForAuthorizationSeal(")
+            )
+            freezeBoundary = freezeCall.lowerBound
+            let helper = try sourceSection(
+                in: app,
+                from: "private func freezeAcceptedArtifactForAuthorizationSeal(",
+                through: "func prepareExport()"
+            )
+            #expect(helper.contains("ExactByteArtifactSeal(sealing:"))
+            #expect(helper.contains(".verifies("))
+            #expect(
+                helper.contains("verifiedBytes()")
+                    || helper.contains("verifiedCanonicalValue(")
+            )
+        }
+
+        #expect(packageSeal.lowerBound < freezeBoundary)
+        #expect(freezeBoundary < capabilitySeal.lowerBound)
         #expect(capabilitySeal.lowerBound < acceptedPromotion.lowerBound)
         #expect(hasFailClosedAuthorizationHandling(
             around: capabilitySeal.lowerBound,
             in: section
         ))
+    }
+
+    @Test("a consumed one-OFF1 authorization cannot silently power an in-process retry")
+    func failedRetryRequiresFreshArmedAuthorization() throws {
+        let retry = try appSection(
+            from: "var failedAttemptCanRestartFromOFF1: Bool",
+            through: "var canRestartFromFreshOFF1: Bool"
+        )
+
+        #expect(retry.contains("fieldAuthorization.stage == .armed"))
     }
 
     @Test("authority admissions cannot be silently skipped by optional chaining")
@@ -155,10 +194,17 @@ struct CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWirin
     }
 
     private func appSection(from startMarker: String, through endMarker: String) throws -> String {
-        let app = try appSource()
-        let start = try #require(app.range(of: startMarker))
-        let end = try #require(app.range(of: endMarker, range: start.upperBound..<app.endIndex))
-        return String(app[start.lowerBound..<end.lowerBound])
+        try sourceSection(in: appSource(), from: startMarker, through: endMarker)
+    }
+
+    private func sourceSection(
+        in source: String,
+        from startMarker: String,
+        through endMarker: String
+    ) throws -> String {
+        let start = try #require(source.range(of: startMarker))
+        let end = try #require(source.range(of: endMarker, range: start.upperBound..<source.endIndex))
+        return String(source[start.lowerBound..<end.lowerBound])
     }
 
     private func appSource() throws -> String {

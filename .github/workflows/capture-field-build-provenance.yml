@@ -16,6 +16,8 @@ on:
       - Scripts/bootstrap_capture_tuya_sdk.sh
       - Scripts/capture_tuya_private_input_provenance.py
       - Scripts/provision_capture_tuya_identity.sh
+      - scripts/ci/es80_retained_install_manifest.py
+      - scripts/ci/es80_retained_install_cross_binding.py
       - scripts/ci/es80_signed_field_artifact_private_runner.py
       - scripts/ci/tests/test_capture_tuya_private_input_provenance.py
       - scripts/ci/tests/test_capture_field_nested_execution_subject_closure.py
@@ -67,8 +69,13 @@ jobs:
             test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
           fi
           procedure='ES80-AUTHENTICATED-STATIONARY-v1'
-          grep -Fq "PROCEDURE_ID=\"$procedure\"" scripts/field/install_one_time_capture.command
+          grep -Fq "PROCEDURE_ID = \"$procedure\"" scripts/ci/es80_retained_install_manifest.py
           grep -Fq "requiredFieldProcedureIdentifier = \"$procedure\"" NembraApp/App/NembraCaptureBuildIdentity.swift
+          grep -Fq 'manifest_source_path = "scripts/ci/es80_retained_install_manifest.py"' scripts/field/install_one_time_capture.command
+          grep -Fq 'helper_source_path = "scripts/ci/es80_retained_install_cross_binding.py"' scripts/field/install_one_time_capture.command
+          grep -Fq 'immutable_git_source(manifest_source_path)' scripts/field/install_one_time_capture.command
+          grep -Fq 'immutable_git_source(helper_source_path)' scripts/field/install_one_time_capture.command
+          grep -Fq 'helper.verify_cross_binding(' scripts/field/install_one_time_capture.command
 
           private_review_authority="$(tr -d '\r\n' < CAPTURE_TUYA_PRIVATE_INPUT_REVIEW_COMMITMENT.txt)"
           if [[ "$private_review_authority" != "UNSET" && ! "$private_review_authority" =~ ^[0-9a-f]{64}$ ]]; then
@@ -89,8 +96,11 @@ jobs:
           bash -n Scripts/bootstrap_capture_tuya_sdk.sh
           bash -n scripts/field/install_one_time_capture.command
           /usr/bin/python3 -m py_compile Scripts/capture_tuya_private_input_provenance.py
+          /usr/bin/python3 -m py_compile scripts/ci/es80_retained_install_manifest.py
+          /usr/bin/python3 -m py_compile scripts/ci/es80_retained_install_cross_binding.py
           /usr/bin/python3 -m py_compile scripts/ci/es80_signed_field_artifact_private_runner.py
           /usr/bin/python3 -m py_compile scripts/ci/tests/test_capture_field_nested_execution_subject_closure.py
+          /usr/bin/python3 -I scripts/ci/es80_retained_install_manifest.py --self-test
           /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
           /usr/bin/python3 -I scripts/ci/tests/test_capture_tuya_private_input_provenance.py
           /usr/bin/python3 -I scripts/ci/tests/test_capture_field_nested_execution_subject_closure.py
@@ -128,6 +138,7 @@ jobs:
           swift test --filter TuyaFieldInstallerSignedBundleVerificationSourceTests
           swift test --filter TuyaSignedAppleAppIdentityCustodySourceTests
           swift test --filter TuyaLegacyTodayExecutableAuthorityRetirementSourceTests
+          swift test --filter TuyaFieldProcedureProjectMappingSourceTests
 
       - name: Preserve physical truth boundary
         run: |
