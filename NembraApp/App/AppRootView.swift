@@ -401,7 +401,8 @@ private struct RideHistoryRowView: View {
             if let odometerDeltaKilometers {
                 distanceLine(
                     label: "SCOOTER",
-                    value: VehicleDisplayFormatting.distance(kilometers: odometerDeltaKilometers)
+                    value: VehicleDisplayFormatting.distance(kilometers: odometerDeltaKilometers),
+                    alignment: alignment
                 )
             }
 
@@ -410,7 +411,8 @@ private struct RideHistoryRowView: View {
                     label: "GPS",
                     value: VehicleDisplayFormatting.distance(
                         kilometers: record.evidence.qualityScreenedGPSDistanceMeters / 1_000
-                    )
+                    ),
+                    alignment: alignment
                 )
             }
 
@@ -428,8 +430,8 @@ private struct RideHistoryRowView: View {
         }
     }
 
-    private func distanceLine(label: String, value: String) -> some View {
-        VStack(alignment: label == "SCOOTER" ? .trailing : .trailing, spacing: 2) {
+    private func distanceLine(label: String, value: String, alignment: HorizontalAlignment) -> some View {
+        VStack(alignment: alignment, spacing: 2) {
             Text(label)
                 .font(.caption2.weight(.bold))
                 .tracking(0.7)
