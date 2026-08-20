@@ -4,7 +4,7 @@ name: Capture app authorization race-safe GO
 # and fail-closed across overlapping product/authority movement. Re-run when the
 # canonical transform/controller/acceptance inputs move so tested app wiring cannot
 # remain stranded behind a stale one-file trigger.
-# GO retrigger after parse-safe materializer repair at 05c91196; no authority change.
+# GO retrigger after parse-safe materializer repair; no authority change.
 
 on:
   workflow_dispatch:
@@ -93,6 +93,19 @@ jobs:
           for token in required:
               if token not in program:
                   raise SystemExit(f"canonical materializer missing required token: {token}")
+
+          # The canonical transform predates the current entrypoint import prelude. Repair only
+          # those two string literals in-memory; every lifecycle replacement remains canonical and
+          # retains its exact-one-anchor fail-closed check.
+          old_source_literal = '"import Foundation\\nimport NembraBluetoothCapture\\nimport SwiftUI\\n"'
+          old_replacement_literal = '"import Foundation\\nimport NembraBluetoothCapture\\nimport NembraCaptureAppAuthorization\\nimport SwiftUI\\n"'
+          current_source_literal = '"import NembraBluetoothCapture\\n"'
+          current_replacement_literal = '"import NembraBluetoothCapture\\nimport NembraCaptureAppAuthorization\\n"'
+          if program.count(old_source_literal) != 1 or program.count(old_replacement_literal) != 1:
+              raise SystemExit("canonical import replacement changed; refusing to guess")
+          program = program.replace(old_source_literal, current_source_literal, 1)
+          program = program.replace(old_replacement_literal, current_replacement_literal, 1)
+
           namespace = {"__name__": "__main__", "__file__": "<canonical-capture-app-authorization-materializer>"}
           exec(compile(program, namespace["__file__"], "exec", dont_inherit=True), namespace)
 
