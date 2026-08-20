@@ -1322,7 +1322,7 @@ struct DashboardInstrumentVerticalLayout: Equatable {
         }
 
         let topClearance = min(
-            usesAccessibilityLayout ? 58 : 54,
+            usesAccessibilityLayout ? 86 : 54,
             size.height * 0.25
         )
         let bottomClearance = min(

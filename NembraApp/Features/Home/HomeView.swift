@@ -388,6 +388,10 @@ struct HomeView: View {
         action: @escaping () -> Void
     ) -> some View {
         let displayedState = available ? subtitle : "Unavailable"
+        let isInteractive = vehicle.state.connection == .connected
+            && !vehicle.isVehicleCommandPending
+            && available
+            && enabled
 
         return Button(action: action) {
             VStack(spacing: 6) {
@@ -416,7 +420,7 @@ struct HomeView: View {
                         .foregroundStyle(NembraColor.primaryText)
                     Text(displayedState)
                         .font(.caption)
-                        .foregroundStyle(NembraColor.secondaryText)
+                        .foregroundStyle(isInteractive ? NembraColor.secondaryText : NembraColor.primaryText)
                         .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -427,12 +431,7 @@ struct HomeView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(
-            vehicle.state.connection != .connected ||
-            vehicle.isVehicleCommandPending ||
-            !available ||
-            !enabled
-        )
+        .disabled(!isInteractive)
         .accessibilityLabel("\(title), \(displayedState)")
         .accessibilityValue(pending ? "Requesting confirmation" : "")
     }
