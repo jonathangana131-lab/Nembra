@@ -38,6 +38,8 @@ on:
       - docs/ES80_TODAY_SIGNED_FIELD_CANDIDATE_PRODUCTION.md
       - docs/ES80_TODAY_PRIVATE_DEVICE_INPUT_CUSTODY.md
       - docs/ES80_TODAY_PRIVATE_FIELD_RUNBOOK.md
+      - .github/workflows/capture-app-authorization-close-one-shot.yml
+      - .github/workflows/capture-app-authorization-race-safe-go.yml
       - .github/workflows/capture-today-field-candidate-preflight-qa.yml
 
 permissions:
@@ -52,6 +54,10 @@ jobs:
     concurrency:
       group: nembra-capture-today-field-preflight-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
       cancel-in-progress: true
+    env:
+      APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
+      SOURCE_WORKFLOW: .github/workflows/capture-app-authorization-close-one-shot.yml
+      MATERIALIZER_WORKFLOW: .github/workflows/capture-app-authorization-race-safe-go.yml
 
     steps:
       - name: Checkout immutable PR head
@@ -102,7 +108,6 @@ jobs:
           python3 scripts/ci/tests/test_es80_sign_field_authorization_from_rendezvous.py -v
           python3 scripts/ci/tests/test_es80_sign_field_authorization_execution_custody.py -v
           python3 scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py -v
-          python3 scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py -v
           python3 scripts/ci/tests/test_es80_today_field_candidate_preflight.py -v
           python3 scripts/ci/tests/test_es80_today_field_candidate_developer_dir_handoff.py -v
           python3 scripts/ci/tests/test_es80_today_field_source_scope.py -v
@@ -110,3 +115,44 @@ jobs:
           python3 scripts/ci/tests/test_es80_export_options_coherence.py -v
           python3 scripts/ci/tests/test_es80_private_field_runbook_production_entry.py -v
           python3 scripts/ci/tests/test_es80_today_private_device_input.py -v
+
+      - name: Materialize canonical lifecycle transform for source contract
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path(os.environ["MATERIALIZER_WORKFLOW"]).read_text(encoding="utf-8")
+          marker = "      - name: Materialize canonical lifecycle transform\n"
+          section = workflow.index(marker)
+          run_marker = "        run: |\n"
+          start = workflow.index(run_marker, section) + len(run_marker)
+          end = workflow.index("\n      - name:", start)
+          program = textwrap.dedent(workflow[start:end])
+          required = [
+              "SOURCE_WORKFLOW",
+              "admitOFF1Start",
+              "admitAuthenticationStart",
+              "admitOfficialConnectionStart",
+              "admitObservationStart",
+              "freezeAcceptedArtifactForAuthorizationSeal",
+              "sealAfterAcceptedArtifactFreeze",
+              "app.write_text(source, encoding=\"utf-8\")",
+          ]
+          for token in required:
+              if token not in program:
+                  raise SystemExit(f"race-safe materializer missing required token: {token}")
+          namespace = {
+              "__name__": "__main__",
+              "__file__": "<capture-today-field-preflight-materializer>",
+          }
+          exec(compile(program, namespace["__file__"], "exec", dont_inherit=True), namespace)
+
+      - name: Run real-entrypoint lifecycle source contract
+        run: |
+          set -euo pipefail
+          git diff --check
+          test "$(git status --porcelain=v1 | awk '{print $2}' | sort | tr '\n' ' ' | sed 's/ $//')" = "$APP_SOURCE"
+          test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE")" = 0
+          python3 scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py -v
