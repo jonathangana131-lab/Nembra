@@ -55,6 +55,44 @@ class AppAuthorizationLifecycleWiringTests(unittest.TestCase):
         off1 = self.app.index("admitOFF1Start()")
         self.assertLess(handoff, off1)
 
+    def test_non_authorizing_handoff_bootstrap_does_not_require_legacy_field_authority(self) -> None:
+        # `isAuthoritativeFieldBuild` is intentionally hard false until the independently signed
+        # package session becomes the trust root. Requiring that legacy Boolean before reading the
+        # retained manifest/challenge handoff makes the external authorization impossible to obtain.
+        # Complete self-described build metadata may gate this *non-authorizing* bootstrap only;
+        # `AuthenticatedStationaryCaptureAppSession.acceptEnvelope` still owns actual authority.
+        handoff = self.section(
+            "func advanceFieldAuthorizationHandoffIfAvailable()",
+            "func activateMembershipRequestsForView()",
+        )
+        self.assertNotIn("buildIdentity.isAuthoritativeFieldBuild", handoff)
+        self.assertIn("buildIdentity.hasCompleteFieldBuildMetadata", handoff)
+        self.assertIn("advanceInboxHandoffIfAvailable()", handoff)
+
+    def test_off1_composition_does_not_recheck_permanently_false_legacy_build_authority(self) -> None:
+        # A verified `.armed` package session is the external attempt authority. The OFF1 admission
+        # itself is still mandatory and fail-closed; a second hard-false bundle Boolean must not
+        # make an independently signed, runtime-cross-bound session unreachable.
+        section = self.section(
+            "private func beginBaselineAfterCurrentOperatorAttestation()",
+            "private func beginCorrelationSeries()",
+        )
+        self.assertNotIn("buildIdentity.isAuthoritativeFieldBuild", section)
+        self.assertIn("admitOFF1Start()", section)
+
+    def test_selected_authentication_action_is_not_gated_by_pre_off1_armed_readiness(self) -> None:
+        # OFF1 legitimately advances the package stage `.armed -> .off1Started`. The selected-state
+        # button must therefore not reuse the pre-OFF1 readiness Boolean that is true only at
+        # `.armed`, otherwise `authenticate()` can never advance to `.authenticationAdmitted`.
+        panel = self.section(
+            "private var secureObservationPanel: some View",
+            "private var failureRecoveryContextPanel: some View",
+        )
+        selected_end = panel.index("} else if test.phase == .authenticating")
+        selected = panel[:selected_end]
+        self.assertIn("test.authenticate()", selected)
+        self.assertNotIn(".disabled(!authorityReady", selected)
+
     def test_off1_requires_authorization_before_correlation(self) -> None:
         section = self.section(
             "private func beginBaselineAfterCurrentOperatorAttestation()",
