@@ -4,7 +4,9 @@ import NembraBluetoothCapture
 /// Process-local handle for one live authorization attempt.
 ///
 /// Callers can inspect the package-generated challenge needed by the independent signer, but they
-/// cannot construct the underlying attempt or the physical-attempt capability themselves.
+/// cannot construct the underlying attempt or the physical-attempt capability themselves. A
+/// production manifest-backed attempt privately retains the exact admitted manifest SHA so a
+/// different retained-install subject cannot be substituted later in the same process.
 public struct AuthenticatedStationaryCapturePreparedAttempt: Sendable {
     public let challengeSHA256: String
     public let startedAtWallClockUnixMilliseconds: Int64
@@ -12,9 +14,14 @@ public struct AuthenticatedStationaryCapturePreparedAttempt: Sendable {
     public let procedureID: String
 
     fileprivate let packageAttempt: AuthenticatedStationaryCaptureAttempt
+    fileprivate let installManifestSHA256: String?
 
-    fileprivate init(packageAttempt: AuthenticatedStationaryCaptureAttempt) {
+    fileprivate init(
+        packageAttempt: AuthenticatedStationaryCaptureAttempt,
+        installManifestSHA256: String? = nil
+    ) {
         self.packageAttempt = packageAttempt
+        self.installManifestSHA256 = installManifestSHA256
         challengeSHA256 = packageAttempt.challengeSHA256
         startedAtWallClockUnixMilliseconds = packageAttempt.startedAtWallClockUnixMilliseconds
         startedAtUptimeNanoseconds = packageAttempt.startedAtUptimeNanoseconds
@@ -26,6 +33,7 @@ public enum AuthenticatedStationaryCaptureAppAuthorizerError: Error, Equatable, 
     case manifestBundleMismatch
     case manifestRuntimeMismatch
     case manifestAttemptBindingsMismatch
+    case manifestChangedSinceAttemptBegan
 }
 
 /// App-owned composition seam for authenticated stationary Capture authorization.
@@ -33,9 +41,9 @@ public enum AuthenticatedStationaryCaptureAppAuthorizerError: Error, Equatable, 
 /// This adapter deliberately owns no Boolean field-authority switch. It can only:
 /// 1. prove the retained install manifest matches the application that is actually running;
 /// 2. ask `NembraBluetoothCapture` to create a live, runtime-bound attempt from those exact stable
-///    manifest bindings;
+///    manifest bindings while pinning the exact manifest SHA to that process-local attempt;
 /// 3. expose that attempt's random challenge to the independent signing workflow; and
-/// 4. re-check the retained manifest before presenting the post-install signed envelope to the
+/// 4. require the same retained manifest before presenting the post-install signed envelope to the
 ///    package verifier.
 ///
 /// The retained install manifest intentionally cannot contain the signed authorization envelope:
@@ -73,18 +81,25 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
             currentBundleIdentifier: Bundle.main.bundleIdentifier,
             runtimeBuildIdentity: runtimeBuildIdentity
         )
-        return try beginAttempt(externalBindings: manifest.externalBindings())
+        return try beginAttempt(
+            externalBindings: manifest.externalBindings(),
+            installManifestSHA256: manifest.canonicalManifestSHA256
+        )
     }
 
     /// Internal composition step after the production manifest gate. Keeping this private prevents
     /// app callers from creating signer rendezvous attempts from arbitrary digest tuples that never
     /// passed the retained-install/runtime cross-binding boundary.
     private func beginAttempt(
-        externalBindings: AuthenticatedStationaryCaptureExternalBindings
+        externalBindings: AuthenticatedStationaryCaptureExternalBindings,
+        installManifestSHA256: String? = nil
     ) throws -> AuthenticatedStationaryCapturePreparedAttempt {
         let attempt = try AuthenticatedStationaryCaptureFieldAuthorizationVerifier
             .makeCurrentApplicationAttempt(externalBindings: externalBindings)
-        return AuthenticatedStationaryCapturePreparedAttempt(packageAttempt: attempt)
+        return AuthenticatedStationaryCapturePreparedAttempt(
+            packageAttempt: attempt,
+            installManifestSHA256: installManifestSHA256
+        )
     }
 
     /// Verifies the retained install manifest against the running app and the exact prepared
@@ -144,6 +159,12 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
             currentBundleIdentifier: currentBundleIdentifier,
             runtimeBuildIdentity: runtimeBuildIdentity
         )
+        if let admittedManifestSHA256 = preparedAttempt.installManifestSHA256 {
+            guard manifest.canonicalManifestSHA256 == admittedManifestSHA256 else {
+                throw AuthenticatedStationaryCaptureAppAuthorizerError
+                    .manifestChangedSinceAttemptBegan
+            }
+        }
         guard try manifest.externalBindings() == preparedAttempt.packageAttempt.externalBindings else {
             throw AuthenticatedStationaryCaptureAppAuthorizerError.manifestAttemptBindingsMismatch
         }
@@ -166,7 +187,8 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
     }
 
     /// Deterministic pre-signing seam used only by package tests. It proves the exact manifest is
-    /// accepted for the supplied test runtime before creating the challenge-bound attempt.
+    /// accepted for the supplied test runtime before creating the challenge-bound attempt and pins
+    /// the same manifest identity as the production path.
     package func prepareFromInstallManifestForTesting(
         _ installManifestData: Data,
         challenge: Data,
@@ -182,6 +204,7 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
         )
         return try prepareForTesting(
             externalBindings: manifest.externalBindings(),
+            installManifestSHA256: manifest.canonicalManifestSHA256,
             challenge: challenge,
             bundleIdentifier: try requireBundleIdentifier(currentBundleIdentifier),
             runtimeBuildIdentity: runtimeBuildIdentity,
@@ -190,10 +213,12 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
         )
     }
 
-    /// Deterministic construction seam used only by tests in this Swift package. It preserves the
-    /// same opaque wrapper while avoiding dependence on a test host's Bundle.main metadata.
+    /// Deterministic construction seam used only by tests in this Swift package. The optional
+    /// manifest identity allows binding-level adversarial tests to construct deliberate mismatches
+    /// without depending on Bundle.main; production app code cannot call this package-only seam.
     package func prepareForTesting(
         externalBindings: AuthenticatedStationaryCaptureExternalBindings,
+        installManifestSHA256: String? = nil,
         challenge: Data,
         bundleIdentifier: String,
         runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity,
@@ -208,7 +233,10 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
             wallClockUnixMilliseconds: wallClockUnixMilliseconds,
             uptimeNanoseconds: uptimeNanoseconds
         )
-        return AuthenticatedStationaryCapturePreparedAttempt(packageAttempt: attempt)
+        return AuthenticatedStationaryCapturePreparedAttempt(
+            packageAttempt: attempt,
+            installManifestSHA256: installManifestSHA256
+        )
     }
 
     private func requireBundleIdentifier(_ value: String?) throws -> String {
