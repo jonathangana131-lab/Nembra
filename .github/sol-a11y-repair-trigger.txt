@@ -1,1 +1,2 @@
 Temporary PR event used to route the exact accessibility repair through a GitHub runner. Do not merge.
+Synchronize event after the default-branch workflow became authoritative.
