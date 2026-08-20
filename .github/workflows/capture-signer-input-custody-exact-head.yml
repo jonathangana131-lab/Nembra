@@ -1,0 +1,96 @@
+name: Capture Signer Input Custody Exact-Head
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - product/capture-1-0-main-20260818
+    paths:
+      - 'scripts/ci/es80_signed_field_artifact_evidence.py'
+      - 'scripts/ci/es80_field_authorization_envelope.py'
+      - 'scripts/ci/es80_field_authorization_rendezvous.py'
+      - 'scripts/ci/es80_sign_field_authorization_from_rendezvous.py'
+      - 'scripts/ci/tests/test_es80_signed_field_artifact_path_custody.py'
+      - 'scripts/ci/tests/test_es80_sign_field_authorization_execution_custody.py'
+      - 'scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py'
+      - '.github/workflows/capture-signer-input-custody-exact-head.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-signer-input-custody-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Signer custody / Linux exact head
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Verify exact PR head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Exercise signer custody contracts
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/es80_signed_field_artifact_evidence.py \
+            scripts/ci/es80_field_authorization_envelope.py \
+            scripts/ci/es80_field_authorization_rendezvous.py \
+            scripts/ci/es80_sign_field_authorization_from_rendezvous.py \
+            scripts/ci/tests/test_es80_signed_field_artifact_path_custody.py \
+            scripts/ci/tests/test_es80_sign_field_authorization_execution_custody.py \
+            scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py
+          /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_evidence.py --self-test
+          /usr/bin/python3 -I scripts/ci/es80_field_authorization_envelope.py --self-test
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_signed_field_artifact_path_custody.py
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_sign_field_authorization_execution_custody.py
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py
+
+  macos:
+    name: Signer custody / Xcode 27 exact head
+    runs-on: xcode-27
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Verify exact PR head and runner
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          xcodebuild -version
+          xcodebuild -version | grep -Eq '^Xcode 27([.]|$)'
+
+      - name: Exercise signer custody contracts on Darwin
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m py_compile \
+            scripts/ci/es80_signed_field_artifact_evidence.py \
+            scripts/ci/es80_field_authorization_envelope.py \
+            scripts/ci/es80_field_authorization_rendezvous.py \
+            scripts/ci/es80_sign_field_authorization_from_rendezvous.py \
+            scripts/ci/tests/test_es80_signed_field_artifact_path_custody.py \
+            scripts/ci/tests/test_es80_sign_field_authorization_execution_custody.py \
+            scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py
+          /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_evidence.py --self-test
+          /usr/bin/python3 -I scripts/ci/es80_field_authorization_envelope.py --self-test
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_signed_field_artifact_path_custody.py
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_sign_field_authorization_execution_custody.py
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py
