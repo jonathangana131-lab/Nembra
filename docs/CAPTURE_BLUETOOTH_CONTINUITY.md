@@ -7,7 +7,7 @@ Status: consolidation handoff for the stopped Capture/Bluetooth-truth workstream
 - Repository: `jonathangana131-lab/Nembra`
 - Branch: `product/capture-1-0-main-20260818`
 - Draft PR: [#3675 — Finish Capture checkpoint and production Nembra surfaces](https://github.com/jonathangana131-lab/Nembra/pull/3675)
-- Latest pushed implementation checkpoint: `b16cec4c437b848339bd5b154ed43edf66220b2b`
+- Latest pushed implementation checkpoint: `2cdff58225b90499808d1ba728714b9289a143f1`
 - Last fully completed hosted Capture baseline: `3f0814ac70211f68b7af1a6913c78c91a810f663`
 - Physical status: **NO-GO**. CI and Simulator evidence are not hardware evidence or field authorization.
 - Current physical procedure: `ES80-AUTHENTICATED-STATIONARY-v1` in `docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md`
@@ -105,11 +105,11 @@ Physical actions beyond the P0 untouched baseline—including mode, light, brake
 
 Queried on 2026-08-19 PDT / 2026-08-20 UTC.
 
-### Consolidation implementation `b16cec4c437b848339bd5b154ed43edf66220b2b`
+### Consolidation implementation `2cdff58225b90499808d1ba728714b9289a143f1`
 
-- Base `9659fbbed…` files: `AuthenticatedStationaryCaptureFieldAuthorization.swift` and its test; `es80_signed_field_artifact_evidence.py`; `es80_field_authorization_envelope.py`; their focused Python test; `TuyaFieldInstallerRetainedIPAAdmissionSourceTests.swift`; and `scripts/field/install_one_time_capture.command`. Follow-up `6d3a6f78…` caps expiry from attempt start and replaces absent historical test references in `.github/workflows/capture-xcode27-trusted-command.yml`; `b16cec4c4…` repins the TODAY trust-subject workflows to that exact new workflow blob.
-- Focused local evidence: SwiftPM 14/14 in 2 suites; Python 13/13 across the new authorization and existing signer-custody suites; trusted pin/subject/Final-GO suites 22/22; both helper self-tests; installer syntax/self-test; three Swift parsers; exact workflow-blob equality; diff/whitespace/secret scans. No local Xcode, signing, device contact, BLE, private key, or physical run occurred.
-- Exact-head `b16cec4c4…` workflows were newly dispatched: V16 `32326067450`, visual `32326067536`, field provenance `32326067466`, Xcode 27 Simulator `32326067473`, TODAY preflight `32326067386`, TODAY Final GO `32326067439`, and trusted-workflow pin/process/build/index custody `32326067492` / `32326067426` / `32326067430` / `32326067462` were pending or in progress. PR exact-head `32326067397` was skipped by policy. A new owner must inspect their terminal results.
+- Base `9659fbbed…` files: `AuthenticatedStationaryCaptureFieldAuthorization.swift` and its test; `es80_signed_field_artifact_evidence.py`; `es80_field_authorization_envelope.py`; their focused Python test; `TuyaFieldInstallerRetainedIPAAdmissionSourceTests.swift`; and `scripts/field/install_one_time_capture.command`. Follow-up `6d3a6f78…` caps expiry from attempt start. The `b16cec4c4…` self-repin was rejected by hosted Final-GO custody and is superseded by `2cdff5822…`, which restores the previously accepted trusted workflow/module bytes. New authorization tests are intentionally not inserted into that external authority without a new independent acceptance process.
+- Focused local evidence: SwiftPM 14/14 in 2 suites; Python 13/13 across the new authorization and existing signer-custody suites; accepted Final-GO bundle/pin/subject/hardening suites 27/27; both helper self-tests; installer syntax/self-test; three Swift parsers; exact accepted workflow/module blob equality; diff/whitespace/secret scans. No local Xcode, signing, device contact, BLE, private key, or physical run occurred.
+- Exact-head `2cdff5822…`: TODAY preflight `32326934619` is green; V16 `32326934655`, visual `32326934630`, field provenance `32326934676`, Xcode 27 Simulator `32326934618`, and TODAY Final GO `32326934696` were pending/in progress; PR exact-head `32326934633` was skipped by policy. A new owner must inspect their terminal results.
 - The preceding `cb00ee46a…` V16 run `32321917923` failed 1 of 13 UI tests at `NembraCaptureUITests.swift:309`: the compact-landscape correlation confirmation control did not become hittable after bounded scroll attempts. Artifact `9390495057`, digest `sha256:4a4922697e6a009aea09494b159e845d35453da97542e1617c7130afbaa984ee`. This remains an unresolved reachability blocker, not permission to weaken the assertion.
 - Physical status remains **NO-GO**. The production trust root is nil, app consumption wiring is absent, the installer stops before device work, and there is no authenticated P0 artifact.
 
