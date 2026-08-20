@@ -2,24 +2,26 @@ import Foundation
 import Testing
 @testable import NembraBluetoothCapture
 
-@Suite("Capture field-build presentation authority")
+@Suite("Capture build metadata and independent field authority")
 struct TuyaFieldBuildPresentationAuthoritySourceTests {
-    @Test("field-build authority is derived from compiled build provenance")
-    func fieldBuildAuthorityUsesBuildIdentity() throws {
+    @Test("self-described build tuple remains metadata and never becomes physical authority")
+    func buildMetadataUsesBuildIdentityWithoutSelfAuthority() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let identity = try readRepositoryFile("NembraApp/App/NembraCaptureBuildIdentity.swift")
         let controllerAuthority = try section(
             in: app,
             from: "var privateConfig: Bool",
             to: "func consumeCorrelationAsyncInvalidation()"
         )
 
-        #expect(controllerAuthority.contains("var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }"))
-        #expect(!controllerAuthority.contains("fieldBuildIsAuthoritative: Bool { accountIdentityLeaseIsAuthorized"))
-        #expect(!controllerAuthority.contains("fieldBuildIsAuthoritative: Bool { sdkDeviceMembershipVerified"))
+        #expect(controllerAuthority.contains("var fieldBuildMetadataReady: Bool { buildIdentity.hasCompleteFieldBuildMetadata }"))
+        #expect(!app.contains("fieldBuildIsAuthoritative"))
+        #expect(!app.contains("buildIdentity.isAuthoritativeFieldBuild"))
+        #expect(identity.contains("var isAuthoritativeFieldBuild: Bool {\n        false\n    }"))
     }
 
-    @Test("shipping preflight exposes build provenance separately and blocks OFF1 until it is authoritative")
-    func secureLinkPresentationConsumesBuildAuthority() throws {
+    @Test("shipping preflight presents build metadata separately from one-time authorization")
+    func secureLinkPresentationSeparatesMetadataFromAuthority() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
         let hero = try section(
@@ -27,15 +29,15 @@ struct TuyaFieldBuildPresentationAuthoritySourceTests {
             from: "private var hero: some View",
             to: "@ViewBuilder\n    private var stageRail"
         )
-        #expect(hero.contains("test.fieldBuildIsAuthoritative ? \"Field build\" : \"Build blocked\""))
-        #expect(hero.contains("test.fieldBuildIsAuthoritative ? \"checkmark.shield.fill\" : \"exclamationmark.shield\""))
+        #expect(hero.contains("test.fieldBuildMetadataReady ? \"Build metadata\" : \"Build metadata missing\""))
+        #expect(hero.contains("test.fieldBuildMetadataReady ? \"checkmark.shield.fill\" : \"exclamationmark.shield\""))
 
         let primarySurface = try section(
             in: app,
             from: "private var primarySurface: some View",
             to: "private var preflightPanel: some View"
         )
-        #expect(primarySurface.contains("if !test.fieldBuildIsAuthoritative || !test.privateConfig"))
+        #expect(primarySurface.contains("if !test.fieldBuildMetadataReady || !test.privateConfig"))
         #expect(primarySurface.contains("preflightPanel"))
 
         let preflight = try section(
@@ -43,7 +45,8 @@ struct TuyaFieldBuildPresentationAuthoritySourceTests {
             from: "private var preflightPanel: some View",
             to: "private var correlationDisplayedWindowOrdinal"
         )
-        #expect(preflight.contains("requirementRow(\"Capture build\", ready: test.fieldBuildIsAuthoritative)"))
+        #expect(preflight.contains("requirementRow(\"Capture build metadata\", ready: test.fieldBuildMetadataReady)"))
+        #expect(preflight.contains("requirementRow(\"One-time field authorization\", ready: test.fieldAuthorizationReady)"))
         #expect(preflight.contains("if authorityReady"))
         #expect(preflight.contains("stationarySafetyLaunch = .begin"))
         #expect(preflight.contains("Label(\"Review safety and begin\", systemImage: \"checkmark.shield.fill\")"))
@@ -56,16 +59,16 @@ struct TuyaFieldBuildPresentationAuthoritySourceTests {
             from: "private var authorityReady: Bool",
             to: "private var currentStageIndex: Int"
         )
-        #expect(authorityReady.contains("test.fieldBuildIsAuthoritative"))
+        #expect(authorityReady.contains("test.fieldBuildMetadataReady"))
+        #expect(authorityReady.contains("&& test.fieldAuthorizationReady"))
         #expect(authorityReady.contains("&& test.privateConfig"))
         #expect(authorityReady.contains("&& test.sdkAccountLoggedIn"))
         #expect(authorityReady.contains("&& test.sdkDeviceMembershipVerified"))
         #expect(authorityReady.contains("&& test.accountIdentityLeaseIsAuthorized"))
-        #expect(!authorityReady.contains("|| test.fieldBuildIsAuthoritative"))
     }
 
-    @Test("runtime OFF1 admission independently rechecks exact field-build provenance")
-    func runtimeGuardIsPreserved() throws {
+    @Test("runtime OFF1 validates metadata then consumes verifier-owned session authority")
+    func runtimeGuardConsumesIndependentSessionAuthority() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let startBaseline = try section(
             in: app,
@@ -73,10 +76,14 @@ struct TuyaFieldBuildPresentationAuthoritySourceTests {
             to: "private func beginCorrelationSeries"
         )
 
-        #expect(startBaseline.contains("guard buildIdentity.isAuthoritativeFieldBuild else"))
+        #expect(startBaseline.contains("guard buildIdentity.hasCompleteFieldBuildMetadata else"))
         #expect(startBaseline.contains("field_build_identity_unavailable"))
-        #expect(startBaseline.contains("return"))
-        #expect(startBaseline.contains("verifySDKMembership"))
+        #expect(startBaseline.contains("try self.fieldAuthorization.admitOFF1Start()"))
+        let metadata = try #require(startBaseline.range(of: "guard buildIdentity.hasCompleteFieldBuildMetadata else"))
+        let admission = try #require(startBaseline.range(of: "try self.fieldAuthorization.admitOFF1Start()"))
+        let scan = try #require(startBaseline.range(of: "self.beginCorrelationSeries()"))
+        #expect(metadata.lowerBound < admission.lowerBound)
+        #expect(admission.lowerBound < scan.lowerBound)
     }
 
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
