@@ -252,7 +252,7 @@ struct AuthenticatedStationaryCaptureAppAuthorizerTests {
         }
     }
 
-    @Test("adapter source keeps trust and physical authority package-owned")
+    @Test("adapter source keeps trust and raw physical authority package-owned")
     func sourceKeepsAuthorityPackageOwned() throws {
         let sourceURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -269,6 +269,11 @@ struct AuthenticatedStationaryCaptureAppAuthorizerTests {
         #expect(source.contains("manifest.externalBindings() == preparedAttempt.packageAttempt.externalBindings"))
         #expect(source.contains("verifyForCurrentApplication"))
         #expect(source.contains("ThisDeviceAuthorizationConsumptionStore"))
+        #expect(source.contains("throws -> AuthenticatedStationaryCaptureCapabilityGate"))
+        #expect(source.contains("return AuthenticatedStationaryCaptureCapabilityGate(capability: capability)"))
+        #expect(source.contains("private func beginAttempt(\n        externalBindings:"))
+        #expect(!source.contains("public func beginAttempt(\n        externalBindings:"))
+        #expect(!source.contains("throws -> AuthenticatedStationaryCaptureAttemptCapability"))
         #expect(!source.contains("authorizationEnvelopeSHA256"))
         #expect(!source.contains("publicKeyX963Representation:"))
         #expect(!source.contains("permitsPhysicalProcedure"))
