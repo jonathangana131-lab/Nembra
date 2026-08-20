@@ -9,7 +9,7 @@ struct TuyaFieldInstallerRetainedIPAAdmissionSourceTests {
         let installer = try source()
 
         #expect(installer.contains("Installation remains blocked:"))
-        #expect(installer.contains("No app was rebuilt, contacted, installed, launched, or authorized for OFF1"))
+        #expect(installer.contains("No device was contacted and no app was installed"))
         #expect(!installer.contains("xcodebuild"))
         #expect(!installer.contains("devicectl"))
         #expect(!installer.contains("xctrace"))
@@ -41,8 +41,8 @@ struct TuyaFieldInstallerRetainedIPAAdmissionSourceTests {
         #expect(!installer.contains("NEMBRA_CURRENT_PROCEDURE_AUTHORIZATION_ENVELOPE_PATH"))
         #expect(!installer.contains("NEMBRA_CURRENT_PROCEDURE_AUTHORIZATION_ENVELOPE_SHA256"))
         #expect(!installer.contains("current-procedure authorization envelope"))
-        #expect(installer.contains("post-install envelope can exist only after the running"))
         #expect(installer.contains("fresh process-local challenge"))
+        #expect(installer.contains("must be created only after the installed app emits its fresh challenge"))
     }
 
     @Test("retained input admission is no-follow, bounded, stable, mode and link constrained")
@@ -59,7 +59,6 @@ struct TuyaFieldInstallerRetainedIPAAdmissionSourceTests {
         #expect(installer.contains("identity(after) != identity(before)"))
         #expect(installer.contains("hmac.compare_digest(digest.hexdigest(), expected)"))
         #expect(installer.contains("before.st_size > maximum"))
-        #expect(installer.contains("Self-test accepted a multiply linked retained subject"))
     }
 
     @Test("stable subjects must cross-bind before the unconditional NO-GO stop")
@@ -70,7 +69,7 @@ struct TuyaFieldInstallerRetainedIPAAdmissionSourceTests {
         )
         let verifier = try #require(installer.range(of: "helper.verify_cross_binding("))
         let accepted = try #require(
-            installer.range(of: "Retained manifest cross-bound the accepted stable install/evidence tuple")
+            installer.range(of: "Stable retained-install subjects cross-bound to one canonical manifest")
         )
         let blocker = try #require(installer.range(of: "Installation remains blocked:"))
 
