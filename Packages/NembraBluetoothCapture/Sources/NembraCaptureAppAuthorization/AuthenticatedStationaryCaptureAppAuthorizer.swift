@@ -22,13 +22,19 @@ public struct AuthenticatedStationaryCapturePreparedAttempt: Sendable {
     }
 }
 
+public enum AuthenticatedStationaryCaptureAppAuthorizerError: Error, Equatable, Sendable {
+    case runtimeBundleIdentifierUnavailable
+    case signedBuildEvidenceDoesNotMatchRunningApplication
+}
+
 /// App-owned composition seam for authenticated stationary Capture authorization.
 ///
-/// This adapter deliberately owns no Boolean field-authority switch. It can only:
-/// 1. ask `NembraBluetoothCapture` to create a live, runtime-bound attempt;
-/// 2. expose that attempt's random challenge to the independent signing workflow; and
-/// 3. present the returned signed envelope back to the package verifier using the durable
-///    ThisDeviceOnly Keychain replay-consumption store.
+/// This adapter deliberately owns no Boolean field-authority switch. Production attempt creation
+/// starts from the exact signed-build evidence bytes retained by the independently accepted build
+/// pipeline. The adapter validates that evidence against the running executable/Info.plist tuple,
+/// hashes those exact evidence bytes into the external bindings, asks `NembraBluetoothCapture` to
+/// create a process-local challenge, and later presents the independent signed response back to the
+/// package verifier using the durable ThisDeviceOnly Keychain replay-consumption store.
 ///
 /// With the package production trust root still unset, `authorize` remains mechanically NO-GO.
 /// Pinning that root later is a separate independently reviewed change; this type must not grow a
@@ -47,9 +53,32 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
         self.consumptionStore = consumptionStore
     }
 
-    /// Starts one live authorization attempt from already-validated external install/evidence
-    /// bindings. This does not start OFF1, scan Bluetooth, authenticate Tuya, or grant physical GO.
+    /// Begins one live signer-rendezvous attempt from the exact non-authorizing signed-build
+    /// evidence. This verifies byte grammar and runtime/build identity only; it does not trust the
+    /// evidence as physical authority. Only the later package-pinned signature can mint capability.
     public func beginAttempt(
+        signedBuildEvidenceData: Data
+    ) throws -> AuthenticatedStationaryCapturePreparedAttempt {
+        let evidence = try AuthenticatedStationaryCaptureSignedBuildEvidenceVerifier
+            .decodeCanonical(signedBuildEvidenceData)
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
+            throw AuthenticatedStationaryCaptureAppAuthorizerError
+                .runtimeBundleIdentifierUnavailable
+        }
+        let runtime = try PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()
+        guard evidence.matches(
+            runtimeBuildIdentity: runtime,
+            bundleIdentifier: bundleIdentifier
+        ) else {
+            throw AuthenticatedStationaryCaptureAppAuthorizerError
+                .signedBuildEvidenceDoesNotMatchRunningApplication
+        }
+        return try beginAttempt(externalBindings: evidence.externalBindings())
+    }
+
+    /// Package-only seam for already-validated bindings. Keeping this non-public prevents the app
+    /// product from accidentally creating signer challenges from arbitrary caller-authored digests.
+    package func beginAttempt(
         externalBindings: AuthenticatedStationaryCaptureExternalBindings
     ) throws -> AuthenticatedStationaryCapturePreparedAttempt {
         let attempt = try AuthenticatedStationaryCaptureFieldAuthorizationVerifier
