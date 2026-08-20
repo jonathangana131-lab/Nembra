@@ -1,6 +1,8 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
+import tempfile
 import unittest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "es80_retained_install_cross_binding.py"
@@ -154,6 +156,80 @@ class RetainedInstallCrossBindingTests(unittest.TestCase):
         self.assertEqual(set(json.loads(self.external)), cross.EXTERNAL_KEYS)
         self.assertNotIn("experimentRecipeID", cross.EXTERNAL_KEYS)
         self.assertNotIn("procedureVersion", cross.EXTERNAL_KEYS)
+
+    def test_path_cross_binding_keeps_digest_and_semantics_on_one_descriptor_read(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name).resolve()
+            os.chmod(root, 0o700)
+            manifest_path = root / "manifest.json"
+            external_path = root / "external.json"
+            evidence_path = root / "evidence.json"
+            final_path = root / "final-go.json"
+            for path, data, mode in (
+                (manifest_path, self.manifest, 0o600),
+                (external_path, self.external, 0o644),
+                (evidence_path, self.evidence, 0o644),
+                (final_path, self.final_go, 0o600),
+            ):
+                path.write_bytes(data)
+                os.chmod(path, mode)
+
+            value = cross.verify_cross_binding_paths(
+                install_manifest_path=manifest_path,
+                external_build_record_path=external_path,
+                signed_build_evidence_path=evidence_path,
+                final_go_record_path=final_path,
+                accepted_install_manifest_sha256=self.manifest_sha,
+                accepted_retained_ipa_sha256=self.ipa,
+                accepted_external_build_record_sha256=self.external_sha,
+                accepted_signed_build_evidence_sha256=self.evidence_sha,
+                accepted_final_go_record_sha256=self.final_go_sha,
+                accepted_tuya_lock_sha256=self.tuya,
+                accepted_intended_device_pseudonym_sha256=self.pseudonym,
+            )
+            self.assertEqual(value["sourceCommitSHA"], self.source)
+
+            symlink = root / "external-symlink.json"
+            symlink.symlink_to(external_path)
+            with self.assertRaises(cross.RetainedInstallCrossBindingError):
+                cross.verify_cross_binding_paths(
+                    install_manifest_path=manifest_path,
+                    external_build_record_path=symlink,
+                    signed_build_evidence_path=evidence_path,
+                    final_go_record_path=final_path,
+                    accepted_install_manifest_sha256=self.manifest_sha,
+                    accepted_retained_ipa_sha256=self.ipa,
+                    accepted_external_build_record_sha256=self.external_sha,
+                    accepted_signed_build_evidence_sha256=self.evidence_sha,
+                    accepted_final_go_record_sha256=self.final_go_sha,
+                    accepted_tuya_lock_sha256=self.tuya,
+                    accepted_intended_device_pseudonym_sha256=self.pseudonym,
+                )
+
+            with self.assertRaisesRegex(
+                cross.RetainedInstallCrossBindingError,
+                "independently accepted external build record digest mismatch",
+            ):
+                cross._read_exact_subject(
+                    external_path,
+                    "a" * 64,
+                    label="external build record",
+                    access_policy="public",
+                    maximum_bytes=cross.MAX_JSON_BYTES,
+                )
+
+            os.chmod(final_path, 0o644)
+            with self.assertRaisesRegex(
+                cross.RetainedInstallCrossBindingError,
+                "permissions are too broad",
+            ):
+                cross._read_exact_subject(
+                    final_path,
+                    self.final_go_sha,
+                    label="Final-GO record",
+                    access_policy="private",
+                    maximum_bytes=cross.MAX_JSON_BYTES,
+                )
 
 
 if __name__ == "__main__":
