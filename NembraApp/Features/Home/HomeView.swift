@@ -191,10 +191,10 @@ struct HomeView: View {
 
     private var dataFreshnessBadge: some View {
         Group {
-            if vehicle.state.connection != .connected && hasRetainedSummaryData {
+            if vehicle.state.dataAvailability == .retained && hasRetainedSummaryData {
                 Label("LAST KNOWN", systemImage: "clock.arrow.circlepath")
                     .accessibilityLabel("Last known vehicle data")
-                    .accessibilityHint("These values may be stale until the scooter reconnects.")
+                    .accessibilityHint("These values may be stale until fresh scooter data arrives.")
             } else if vehicle.state.connection == .connected && vehicle.state.dataAvailability == .live {
                 Label("LIVE", systemImage: "wave.3.right")
                     .accessibilityLabel("Live vehicle data")
@@ -327,7 +327,7 @@ struct HomeView: View {
 
     private var readinessTitle: String {
         if vehicle.state.connection == .connected && vehicle.state.dataAvailability == .live {
-            return "Ride ready"
+            return "Vehicle live"
         }
         if vehicle.state.connection == .connected {
             return "Vehicle connected"
@@ -340,7 +340,10 @@ struct HomeView: View {
 
     private var readinessDetail: String {
         if vehicle.state.connection == .connected && vehicle.state.dataAvailability == .live {
-            return "Live vehicle evidence is available."
+            return "Fresh vehicle evidence is available."
+        }
+        if vehicle.state.connection == .connected && hasRetainedSummaryData {
+            return "Last known values remain read-only while fresh vehicle data is unavailable."
         }
         if vehicle.state.connection == .connected {
             return "Waiting for fresh vehicle data before live status is shown."
