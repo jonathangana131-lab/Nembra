@@ -220,9 +220,10 @@ final class NembraAppTests: XCTestCase {
         )
         await store.start()
 
-        XCTAssertTrue(await waitUntil {
+        let initialLiveArrived = await waitUntil {
             store.simulatorPowerStoreProjection.currentness == .live
-        })
+        }
+        XCTAssertTrue(initialLiveArrived)
 
         await service.simulateRide(speedKilometersPerHour: 36, elapsedSeconds: 0)
         let highArrived = await waitUntil {
@@ -248,9 +249,10 @@ final class NembraAppTests: XCTestCase {
         XCTAssertLessThan(lowerReceipt.watts, highReceipt.watts)
 
         model.synchronize(lowerProjection, sourceCapabilityIsOwned: true)
-        XCTAssertTrue(await waitUntil(timeoutNanoseconds: 500_000_000) {
+        let lowerSettled = await waitUntil(timeoutNanoseconds: 500_000_000) {
             !model.shouldTick
-        })
+        }
+        XCTAssertTrue(lowerSettled)
         let revisionAfterLowerSettled = model.revision
 
         let expectedHighExpiry = highReceipt.receivedAtUptimeNanoseconds + 2_000_000_001
