@@ -24,8 +24,9 @@ meaningful pushed checkpoint and before pausing or handing off.
 - Integration target: `product/capture-1-0-main-20260818`
 - Integration PR: [#3675](https://github.com/jonathangana131-lab/Nembra/pull/3675)
 - Branch base at worktree creation: `cf817a8b1c1f74640055af317671497a202e4f74`
-- Latest pushed cockpit checkpoint recorded here: none yet
-- Cockpit PR: not opened yet
+- Latest pushed cockpit checkpoint recorded here:
+  `8671b285061f62983a590f6a27cd0fed725cb8a1`
+- Cockpit PR: [#3676](https://github.com/jonathangana131-lab/Nembra/pull/3676)
 
 A Git commit cannot embed its own SHA without changing that SHA. This file
 records the latest pushed coherent implementation checkpoint it has audited;
@@ -103,6 +104,10 @@ meets this gate.
   The V4 composition, detached range, capsule battery, extreme 32-tick arc,
   nested digit animations, and ambiguous Simulator power rendering are marked
   for replacement.
+- Pushed the complete post-V4 study/provenance, capability, feature-lab,
+  cross-surface contract, and recovery checkpoint as `8671b285…`; verified the
+  remote branch ref matched exactly and opened draft PR #3676 against the
+  integration branch.
 - Confirmed the current app is still structurally V4: detached adaptive-range
   copy, generic silver capsule battery, extreme raised 32-tick arc, uppercase
   metric strip, and ambiguous rail marker. Its truthful state and render-island
@@ -110,10 +115,9 @@ meets this gate.
 
 ## Work in progress
 
-- Native Drive recomposition has not started. Current uncommitted files are the
-  four study PNGs, the study/capability/feature-lab records, shared UI contract,
-  and this continuity file. They are safe documentation/evidence inputs but are
-  not yet committed or pushed.
+- Native Drive recomposition has not started. The audit/design inputs are
+  remotely recoverable at `8671b285…`. This continuity-only synchronization is
+  the sole local change before the next push.
 
 ## Validation and CI truth
 
@@ -150,19 +154,16 @@ It is baseline evidence only and does not validate this branch. Artifact:
 
 ## Exact next executable action
 
-1. Commit and push the study/provenance/audit/continuity checkpoint; verify the remote
-   SHA and open a draft cockpit PR targeting
-   `product/capture-1-0-main-20260818`.
-2. Replace the current Drive slow layer and power geometry in
+1. Replace the current Drive slow layer and power geometry in
    `NembraApp/Features/Dashboard/DashboardView.swift`,
    `SpeedInstrumentModel.swift`, and `RollingSpeedValueView.swift` while retaining
    typed truth boundaries and the narrow render island.
-3. Update focused app/UI/source tests for one-value battery semantics, zero/NOW/
+2. Update focused app/UI/source tests for one-value battery semantics, zero/NOW/
    peak power clarity, geometry bounds, idle timeline shutdown, and rejection of
    detached range/fantasy scale.
-4. Run parsers, focused SwiftPM/app tests, `git diff --check`, and a scope/secret
+3. Run parsers, focused SwiftPM/app tests, `git diff --check`, and a scope/secret
    audit; commit/push/verify, then request the exact-head Xcode 27 workflow.
-5. Inspect the retained iPhone 12 landscape screenshots and Release metrics before
+4. Inspect the retained iPhone 12 landscape screenshots and Release metrics before
    widening into Navigation.
 
 ## Rejected designs and approaches
