@@ -30,6 +30,7 @@ class AppAuthorizationLifecycleWiringTests(unittest.TestCase):
                 "failAndRetireSession(",
                 "invalidateInternalLifecycle(",
                 "retireSession",
+                "phase = .failed",
             )),
             f"{needle} is not surrounded by fail-closed lifecycle handling",
         )
@@ -105,7 +106,7 @@ class AppAuthorizationLifecycleWiringTests(unittest.TestCase):
             self.assertNotIn(forbidden, self.app)
 
     def test_foreground_and_view_abandonment_revoke_unfinished_authority(self) -> None:
-        foreground = self.section("func appDidLoseForeground()", "func prepareForShare()")
+        foreground = self.section("func appDidLoseForeground()", "var privateConfig: Bool")
         view_exit = self.section(
             "func abandonCorrelationForViewExit()",
             "func appDidLoseForeground()",
