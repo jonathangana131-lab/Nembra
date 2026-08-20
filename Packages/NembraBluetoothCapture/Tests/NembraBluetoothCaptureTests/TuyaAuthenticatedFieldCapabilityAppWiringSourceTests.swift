@@ -145,6 +145,20 @@ struct CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWirin
         #expect(retry.contains("fieldAuthorization.stage == .armed"))
     }
 
+    @Test("failed transition preserves only a fresh unspent authorization")
+    func failedTransitionPreservesOnlyFreshArmedAuthorization() throws {
+        let failed = try appSection(
+            from: "if phase == .failed {",
+            through: "operatorSafetyAttemptID = nil"
+        )
+        let armedFence = try #require(
+            failed.range(of: "fieldAuthorization.stage != .armed")
+        )
+        let revoke = try #require(failed.range(of: "fieldAuthorization.revoke()"))
+
+        #expect(armedFence.lowerBound < revoke.lowerBound)
+    }
+
     @Test("authority admissions cannot be silently skipped by optional chaining")
     func missingAuthorityFailsClosedInsteadOfOptionalSkipping() throws {
         let app = try appSource()
