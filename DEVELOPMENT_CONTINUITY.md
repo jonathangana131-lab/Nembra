@@ -19,7 +19,7 @@ This repository document is the recovery authority. Chat summaries are supplemen
 - Repository: `jonathangana131-lab/Nembra`
 - Unified release branch: `release/nembra-1-0-unified`
 - Unified isolated worktree: local directory `Nembra-unified-1-0`
-- Latest remotely verified unified implementation checkpoint before this continuity update: `1847627d7c84b62e4f6a9633886d0e3dd756ddfc`
+- Latest unified implementation checkpoint audited before this continuity update: `68b4eaa7a58483aa9ec660d1393f2960c8413aad`
 - Source integration branch: `product/capture-1-0-main-20260818`
 - Source integration PR: [#3675](https://github.com/jonathangana131-lab/Nembra/pull/3675), draft, base `main`
 - Portrait predecessor PR: [#3677](https://github.com/jonathangana131-lab/Nembra/pull/3677), branch `agent/portrait-home-1-0-polish`, remote tip `0a418aef716fb9053cc9d67064fd56bd87f27677`
@@ -40,6 +40,8 @@ The unified branch begins at Capture continuity checkpoint `cb00ee46a…`, which
 The two predecessor UI branches were created before `5c32d29d…`. Their branch snapshots appear to delete the newer Capture files. Integrate their owned commits onto the unified branch; never merge or replace the unified tree with either older snapshot.
 
 Portrait predecessor tip `0a418aef716fb9053cc9d67064fd56bd87f27677` is integrated by merge checkpoint `d4d8f6c882dac1c2eda634bbdff9121c218fefbb`. Cockpit predecessor commits through tip `75edf0fcb231e28b3d9fbd7b7acc7592bdac1a48` are integrated in audited order, with shared tests/contracts semantically combined, through unified implementation checkpoint `1847627d7c84b62e4f6a9633886d0e3dd756ddfc`.
+
+The stopped Capture predecessor's final remote handoff `2a0e11e2be85d961386a058e0da0cf6f0ddf8189` is integrated in original commit order. Unified commits `0f8504ef8…` and `f9a6cea22…` carry the current-procedure signer/verifier/installer foundation; `92e58645d…` preserves the previously accepted Final-GO custody boundary; `07b0cab29…` records the source handoff. The production trust anchor remains deliberately nil, the installer still stops before device work, and this software checkpoint does not authorize physical Capture.
 
 ## Workstream ownership matrix
 
@@ -64,13 +66,13 @@ Current gate: close the independently signed, short-lived, single-use `ES80-AUTH
 
 Finish Home before widening. Preserve truthful battery/range, durable Today, confirmed controls, automatic-recording readiness, recovery states, and narrow render invalidation. The visual authority is the selected portrait source plus gold handoff; the temporary 500×500 grey/red ES80 raster is not production-cleared.
 
-Current gate: close the three remaining exact-tip Home contrast findings from run `32322459434`, run the combined unified exact head on Xcode 27/iPhone 12, then perform a same-state side-by-side design QA loop. No Home visual acceptance exists until the battery, typography, approved scooter asset, zero copy occlusion, grounding/light, native glass, accessibility, first-fold/tab clearance, and runtime performance all pass.
+Current gate: unified source checkpoint `4faf337d42b2a02cf3f849f8814dc3d5ea4929d9` closes the three exact-tip contrast seams without weakening the audits; exact unified-head Xcode 27/iPhone 12 runtime proof is still required. Then perform a same-state side-by-side design QA loop. No Home visual acceptance exists until the battery, typography, approved scooter asset, zero copy occlusion, grounding/light, native glass, accessibility, first-fold/tab clearance, and runtime performance all pass.
 
 ### C. Landscape Cockpit / Drive / Navigation / Explore
 
 Horizon V4 retains requirements only and is visually rejected. The selected Energy Chamber family supplies material/composition direction, not pixel authority. Drive must establish one-value battery, enormous rolling speed, truthful current/peak propulsion, durable facts, recording truth, exact-scene orientation, accessibility, and an idle-free high-frequency render island before Navigation or Explore widens.
 
-Current gate: run exact unified-head Xcode 27/iPhone 12 landscape functional, accessibility, screenshot, and Release clock/Hitch Time Ratio evidence, compare the same-state runtime with the refined internal study, and iterate remaining P0/P1/P2 visual differences. Physical speed/power/odometer/range remain unavailable until verified upstream contracts exist.
+Current gate: unified checkpoint `68b4eaa7a58483aa9ec660d1393f2960c8413aad` hardens source-bound NOW geometry, explicit non-overlapping speed/power bands, large-text rail labels, and single terminal test cleanup. Run exact unified-head Xcode 27/iPhone 12 landscape functional, accessibility, screenshot, and Release clock/Hitch Time Ratio evidence, compare the same-state runtime with the refined internal study, and iterate remaining P0/P1/P2 visual differences. Physical speed/power/odometer/range remain unavailable until verified upstream contracts exist.
 
 ## Completed work and exact paths
 
@@ -84,6 +86,8 @@ Current gate: run exact unified-head Xcode 27/iPhone 12 landscape functional, ac
 - `.gitignore` private-evidence protections
 
 Checkpoint `5c32d29d…` passed 33/33 focused Swift tests across the typed-event and guided-plan suites, parser/diff/secret checks, and a final adversarial review. These are software contracts only; every production ES80 semantic remains unknown.
+
+The final predecessor authorization slice is also integrated. Exact paths are `AuthenticatedStationaryCaptureFieldAuthorization.swift` and tests, `TuyaFieldInstallerRetainedIPAAdmissionSourceTests.swift`, `es80_field_authorization_envelope.py`, `es80_signed_field_artifact_evidence.py`, their Python tests, `install_one_time_capture.command`, and the accepted-custody workflow pin. The compact Swift/Python contract binds procedure, exact build/runtime/evidence subjects, current-attempt challenge, expiry, and one replay-consumption request. It deliberately supplies no production public-key trust root and no app capability adapter.
 
 ### Integrated Portrait checkpoint
 
@@ -100,19 +104,17 @@ Checkpoint `5c32d29d…` passed 33/33 focused Swift tests across the typed-event
 
 The integrated Cockpit Swift files parse cleanly and the integration diff check passes. Its predecessor branch passed 49/49 focused Core tests and a diagnostic strict local build, but the unified exact head has no Xcode 27 runtime acceptance yet.
 
+### Unified pre-CI corrections
+
+- `4faf337d42b2a02cf3f849f8814dc3d5ea4929d9` replaces the audited decorative text dot with a hidden shape, gives the Vehicle Controls glyph an opaque high-contrast inner backing while retaining native prominent glass, keeps range primary truth opaque, and renders the graphite copy well after charged-region ribs.
+- `68b4eaa7a58483aa9ec660d1393f2960c8413aad` rejects a caller-supplied accepted-power NOW fraction that contradicts accepted watts and its admitted scale while preserving truthful above-envelope saturation; it replaces fractional speed/power centers with deterministic non-overlapping vertical regions, scales sighted rail microcopy for large text, and removes duplicate AX-test termination.
+- Both batches pass Swift parser and diff checks. Local package/build diagnostics were still running when this continuity checkpoint was written; their eventual result must be recorded rather than inferred. GitHub-hosted Xcode 27 remains the runtime/release authority.
+
 ## Work in progress and recovery
 
-- Unified worktree: clean and remotely recoverable at combined implementation `1847627d7c84b62e4f6a9633886d0e3dd756ddfc` before this documentation checkpoint; no integrated Portrait or Cockpit implementation is local-only.
-- Original Capture worktree: one bounded installer/evidence slice is local-only while being finalized on `product/capture-1-0-main-20260818`:
-  - `scripts/field/install_one_time_capture.command`
-  - `Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/AuthenticatedStationaryCaptureFieldAuthorization.swift`
-  - `Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/AuthenticatedStationaryCaptureFieldAuthorizationTests.swift`
-  - `Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerRetainedIPAAdmissionSourceTests.swift`
-  - `scripts/ci/es80_field_authorization_envelope.py`
-  - `scripts/ci/es80_signed_field_artifact_evidence.py`
-  - `scripts/ci/tests/test_es80_authenticated_stationary_offline_authorization.py`
-  The Capture owner found an incompatible Python-signer/Swift-verifier envelope schema and is reconciling that exact atomic unit with cross-contract coverage before any commit. Production trust remains nil and physical authority remains NO-GO. Do not delete or overwrite this worktree.
-- Portrait and Cockpit predecessor worktrees are clean and remote-recoverable. Their review agents are read-only.
+- All three predecessor worktrees are clean and their final branches are remote-recoverable. The unified branch contains every reviewed predecessor checkpoint plus the Portrait/Cockpit pre-CI corrections through `68b4eaa7a…`.
+- No intentional implementation is stranded only in a predecessor worktree. The unified local worktree should be clean after this continuity-only commit.
+- Local Xcode 26 package/build diagnostics may still be running; they are diagnostic only and can be safely restarted from the exact commands below. Do not mistake process state for repository state or release evidence.
 
 ## Exact CI and evidence snapshot
 
@@ -120,13 +122,14 @@ The integrated Cockpit Swift files parse cleanly and the integration diff check 
 - Latest fully completed Capture baseline `3f0814ac…`: V16 `32315926223` green with artifact `9388386960`; visual `32315926201` green with artifact `9388184207`; field/TODAY lanes green. This remains software/Simulator evidence only.
 - Portrait predecessor exact-tip Xcode 27 run [`32322459434`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32322459434) at `0a418aef…` is terminal red with artifact `nembra-xcode27-simulator-1369-1` (ID `9390586092`, SHA-256 `f0bcf0a3b498ab34b7401e9befb23aece14106efeb502aea18655e69a0d85a31`). Build/Core validation passed; app tests passed 78/78; Accessibility XXXL Home passed; Ride UI passed 5/5. Remaining Portrait failures are connected Home contrast on `slider.horizontal.3`, low-battery contrast on decorative `·`, and retained contrast on `Unavailable`. A separate Cockpit animation-idle timeout is not Portrait closure.
 - Cockpit exact-head acceptance is pending. `85dc4b70…` has parse, 49/49 focused package tests, strict local compile/build-for-testing, and scope/secret checks only. It has no exact-tip Xcode 27 screenshot/accessibility/Release hitch evidence.
+- Capture final remote handoff `2a0e11e2…`: TODAY preflight run `32327106843`, Final GO `32327106882`, and Field Handoff Provenance `32327106916` are green software/custody contracts. Product run `32327106874` is admission-only (its Mac job skipped). V16 `32327106929` and standalone visual `32327106847` were still running when recorded; inspect their terminal states. None grants physical authority.
 
 ## Known blockers
 
 ### Code / CI
 
-- Close the three known Portrait contrast findings and obtain combined exact-head runtime evidence without weakening the hosted audits.
-- Close current Capture field authorization, exact retained-IPA admission, typed private journal, bundle verifier, summary, and guided coordinator.
+- Prove the three Portrait contrast corrections on the combined exact head without weakening the hosted audits.
+- The Capture authorization/retained-IPA schema foundation is integrated; production key review, atomic app capability consumption, exact install-manifest binding, typed private journal, bundle verifier, summary, and guided coordinator remain code/security work.
 - Obtain exact unified-head Xcode 27 functional, UI, accessibility, screenshot, and Release performance evidence after each meaningful integration checkpoint.
 - Production adaptive range has no accepted physical runtime producer; numeric range remains unavailable.
 - Production automatic BLE ride capture, Navigation, and Explore lack verified hardware/provider/runtime wiring and must remain honest/degraded.
@@ -146,12 +149,11 @@ The integrated Cockpit Swift files parse cleanly and the integration diff check 
 
 ## Exact next executable action
 
-1. Commit and push this combined Portrait/Cockpit continuity update; verify the remote ref.
-2. Finish the single active local Core build, record exact results, and apply only reviewed P0/P1 fixes from the non-overlapping Portrait-contrast and Cockpit-preflight audits.
-3. When the Capture owner returns a pushed SHA, inspect its signer/verifier cross-contract evidence and cherry-pick that atomic authorization/installer checkpoint.
-4. Create a new draft PR from `release/nembra-1-0-unified` to `main`. After the final coherent SHA is pushed, explicitly dispatch `xcode27-simulator.yml` on that branch; do not treat automatic admission or the current default-branch `/xcode27` wrapper as Release-performance authority.
-5. Verify the dispatched run's exact `headSha`, Mac job, Xcode 27/iOS 27/iPhone 12 identity, complete artifact inventory, functional/accessibility results, deterministic screenshots, and separate Release three-sample Clock + Hitch Time Ratio validator output. Update this file with run and artifact IDs.
-6. Reassign three non-overlapping milestones from that evidence: Capture authorization/journal, Home exact visual/accessibility closure, and Drive exact visual/performance closure. Navigation, Explore, and additional portrait tabs widen only after their vertical-slice gates pass.
+1. Push this combined implementation/continuity checkpoint and verify `origin/release/nembra-1-0-unified` contains it.
+2. Create a new draft PR from `release/nembra-1-0-unified` to `main`, synchronize its checklist from this file, and explicitly dispatch `xcode27-simulator.yml` on the exact branch SHA. Do not treat automatic admission or the default-branch `/xcode27` wrapper as Release-performance authority.
+3. Verify the dispatched run's exact `headSha`, Mac job, Xcode 27/iOS 27/iPhone 12 identity, complete artifact inventory, functional/accessibility results, deterministic screenshots, and separate Release three-sample Clock + Hitch Time Ratio validator output. Update this file with run and artifact IDs.
+4. In parallel, finish Capture's atomic ThisDeviceOnly capability consumption/install-manifest seam without populating the trust root or contacting hardware; inspect the in-progress V16/visual runs and close compact-landscape reachability if still red.
+5. Reassign three non-overlapping milestones from exact evidence: Capture authorization/journal, Home visual/accessibility closure, and Drive visual/performance closure. Navigation, Explore, and additional portrait tabs widen only after their vertical-slice gates pass.
 
 ## Rejected designs and approaches
 
@@ -167,7 +169,7 @@ The integrated Cockpit Swift files parse cleanly and the integration diff check 
 ## Unverified assumptions and evidence still required
 
 - Portrait and Cockpit local strict builds/tests are not substitutes for exact unified-head Xcode 27 behavior.
-- The predecessor implementations may conflict in shared tests/root wiring; integration correctness is unproven until the combined build/test/runtime gate passes.
+- The predecessor implementations and unified corrections are source-integrated, but combined runtime correctness remains unproven until the exact-head build/test/runtime gate passes.
 - The selected Home and Energy Chamber references are visual targets/directions only; same-state runtime comparisons have not passed.
 - The temporary ES80 raster cannot close Home asset fidelity or rights.
 - No current GitHub-safe physical packet fixture proves a production ES80 semantic. Every field in `docs/ES80_PROTOCOL_MAP.md` remains unknown except transport topology facts.

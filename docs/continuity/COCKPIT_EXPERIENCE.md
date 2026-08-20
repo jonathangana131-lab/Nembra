@@ -32,8 +32,8 @@ pausing or handing off.
 - Latest pushed cockpit implementation checkpoint recorded here:
   `85dc4b70b7981502bd909dd6d7c628f7e8e4c700`. Local and remote branch refs
   were verified equal after push.
-- Latest remotely verified unified implementation containing this checkpoint:
-  `1847627d7c84b62e4f6a9633886d0e3dd756ddfc`.
+- Latest unified implementation containing this checkpoint and its pre-CI
+  hardening: `68b4eaa7a58483aa9ec660d1393f2960c8413aad`.
 - Cockpit PR: [#3676](https://github.com/jonathangana131-lab/Nembra/pull/3676)
 
 A Git commit cannot embed its own SHA without changing that SHA. This file
@@ -181,6 +181,26 @@ The unified integration preserved Portrait and Capture work, semantically
 combined shared app/UI tests and UI contracts, omitted only byte-identical
 duplicate study rasters, and added a physical-device fail-closed test guard for
 Simulator launch parsing. No production telemetry authority was widened.
+
+Unified pre-CI commit `68b4eaa7a58483aa9ec660d1393f2960c8413aad`
+then closes four review risks without widening Cockpit scope:
+
+- accepted watts and admitted scale now determine the sole accepted NOW
+  fraction within a narrow numeric tolerance; above-envelope accepted watts
+  remain exact and saturate the marker at one;
+- speed and Energy Rail use explicit non-overlapping vertical regions that
+  reserve the top identity and bottom durable ledger at standard and
+  Accessibility XXXL iPhone 12 landscape sizes;
+- sighted Energy Rail value/microcopy responds to Dynamic Type within bounded
+  mounted-display geometry while the full combined VoiceOver value remains
+  authoritative;
+- the Accessibility XXXL UI test has one failure-safe terminal cleanup rather
+  than issuing a duplicate termination after its kept screenshot.
+
+Swift parser and diff checks pass. Local diagnostic build/tests were running at
+this continuity write; only their terminal result may be claimed later. Exact
+Xcode 27 runtime, screenshot, accessibility, and Release performance evidence
+remain required.
 
 ## Validation and CI truth
 

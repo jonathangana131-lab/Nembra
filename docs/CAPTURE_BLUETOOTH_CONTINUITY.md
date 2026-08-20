@@ -2,6 +2,8 @@
 
 Status: consolidation handoff for the stopped Capture/Bluetooth-truth workstream. `DEVELOPMENT_CONTINUITY.md` remains the repository-wide authority; this file supplies the Capture-specific evidence ledger and executable next steps for a new unified owner.
 
+Unified integration note: original Capture handoff `2a0e11e2be85d961386a058e0da0cf6f0ddf8189` is preserved on `release/nembra-1-0-unified` through implementation/custody commits `0f8504ef8…`, `f9a6cea22…`, and `92e58645d…`, with scope handoff `07b0cab29…`. Resume new work only on the unified branch; the predecessor branch/PR below remain provenance.
+
 ## Recovery coordinates
 
 - Repository: `jonathangana131-lab/Nembra`

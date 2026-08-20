@@ -19,7 +19,7 @@ Updated: 2026-08-19
   `0a418aef716fb9053cc9d67064fd56bd87f27677`.
 - Unified merge checkpoint containing the Portrait lane:
   `d4d8f6c882dac1c2eda634bbdff9121c218fefbb`; the later combined unified
-  implementation checkpoint is `1847627d7c84b62e4f6a9633886d0e3dd756ddfc`.
+  implementation checkpoint is `68b4eaa7a58483aa9ec660d1393f2960c8413aad`.
 - Draft portrait PR: [#3677](https://github.com/jonathangana131-lab/Nembra/pull/3677).
 
 This file is the integrated Portrait scope recovery authority. The root
@@ -121,6 +121,24 @@ pushed and remote-verified:
 Recovery: checkout remote `agent/portrait-home-1-0-polish` at `72ba15f18…`.
 No implementation change from this correction remains local-only.
 
+## Unified exact-failure contrast closure
+
+Unified commit `4faf337d42b2a02cf3f849f8814dc3d5ea4929d9` is pushed on
+`release/nembra-1-0-unified` and closes the exact three source seams reported
+by hosted run `32322459434`:
+
+- the Vehicle Controls button keeps native prominent glass and its 44-point
+  semantics, while the audited monochrome symbol receives an opaque neutral
+  inner backing instead of another custom outer ring;
+- the decorative readiness separator is a hidden 4-point shape rather than an
+  antialiased `StaticText` accessibility node;
+- primary adaptive-range truth is opaque, and the graphite copy well is drawn
+  after charged-region ribs so texture cannot cut through `Unavailable`.
+
+Parser and diff checks pass. The unchanged hosted contrast audits remain the
+authority; this commit is not Portrait visual or accessibility acceptance until
+the exact unified Xcode 27 run passes.
+
 ## Tests and CI
 
 Latest completed baseline run:
@@ -169,11 +187,9 @@ transfer to `72ba15f18…`.
 
 ## Blockers
 
-- **Code/CI:** exact predecessor-tip Xcode 27 run `32322459434` built, passed
-  app tests 78/78, Accessibility XXXL Home, and Ride UI 5/5, but remains red on
-  three Portrait contrast nodes: `slider.horizontal.3`, the decorative middle
-  dot, and retained `Unavailable`. The unified head must close and re-prove
-  these without weakening the hosted audit.
+- **Code/CI:** exact predecessor-tip Xcode 27 run `32322459434` identified the
+  three contrast nodes. Unified source commit `4faf337d4…` corrects them, but
+  exact unified-head runtime proof is still pending and the audits are unchanged.
 - **User/asset rights:** final Home needs a user-owned/commissioned high-resolution
   actual ES80 side photo or written AOVOPRO permission with full provenance.
 - **Capture/BLE:** physical fields remain unavailable until the Capture/BLE
@@ -183,9 +199,8 @@ transfer to `72ba15f18…`.
 
 ## Exact next executable action
 
-1. Apply only the reviewed narrow fixes for the three exact contrast nodes on
-   `release/nembra-1-0-unified`, run proportional source checks, and push a
-   coherent checkpoint.
+1. Verify unified source commit `4faf337d4…` is contained in the exact branch
+   head and keep the hosted audits unchanged.
 2. For local recovery or preflight, run:
 
    ```sh
