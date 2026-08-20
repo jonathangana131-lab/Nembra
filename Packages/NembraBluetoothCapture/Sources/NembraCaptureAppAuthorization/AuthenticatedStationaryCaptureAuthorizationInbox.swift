@@ -4,6 +4,7 @@ import NembraBluetoothCapture
 
 public enum AuthenticatedStationaryCaptureAuthorizationInboxError: Error, Equatable, Sendable {
     case applicationSupportUnavailable
+    case directoryCustodyRejected(String)
     case missingSubject(String)
     case symbolicLinkRejected(String)
     case nonRegularFile(String)
@@ -26,6 +27,7 @@ public struct AuthenticatedStationaryCaptureAuthorizationInbox: Sendable {
     public static let installManifestFilename = "retained-install-manifest.json"
     public static let authorizationEnvelopeFilename = "authorization-envelope.json"
 
+    private let applicationSupportURL: URL?
     private let directoryURL: URL
 
     public init() throws {
@@ -35,6 +37,7 @@ public struct AuthenticatedStationaryCaptureAuthorizationInbox: Sendable {
         ).first else {
             throw AuthenticatedStationaryCaptureAuthorizationInboxError.applicationSupportUnavailable
         }
+        applicationSupportURL = applicationSupport
         directoryURL = applicationSupport.appendingPathComponent(
             Self.directoryName,
             isDirectory: true
@@ -42,7 +45,80 @@ public struct AuthenticatedStationaryCaptureAuthorizationInbox: Sendable {
     }
 
     package init(directoryURL: URL) {
+        applicationSupportURL = nil
         self.directoryURL = directoryURL
+    }
+
+    package init(applicationSupportURL: URL) {
+        self.applicationSupportURL = applicationSupportURL
+        directoryURL = applicationSupportURL.appendingPathComponent(
+            Self.directoryName,
+            isDirectory: true
+        )
+    }
+
+    /// Creates and validates the owner-controlled app-container rendezvous directory before the
+    /// field Mac attempts the first manifest copy. This operation is deliberately non-authorizing:
+    /// it creates no manifest, envelope, challenge, capability, signature, or physical GO state.
+    ///
+    /// Every path component is created/opened descriptor-relatively with `O_NOFOLLOW`, remains
+    /// owned by the app user, and rejects group/world-writable custody. This removes a chronology
+    /// cycle where the manifest could not be delivered until a directory that was previously only
+    /// created after manifest acceptance happened to exist.
+    public func prepareHandoffDirectory() throws {
+        guard let applicationSupportURL else {
+            let descriptor = try openDirectoryNoFollow(
+                subjectFilename: Self.installManifestFilename
+            )
+            Darwin.close(descriptor)
+            return
+        }
+
+        let baseFD = applicationSupportURL.withUnsafeFileSystemRepresentation { path -> Int32 in
+            guard let path else { return -1 }
+            return Darwin.open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        }
+        guard baseFD >= 0 else {
+            throw AuthenticatedStationaryCaptureAuthorizationInboxError
+                .directoryCustodyRejected("Application Support")
+        }
+
+        var currentFD = baseFD
+        do {
+            try validateOwnedDirectory(
+                descriptor: currentFD,
+                label: "Application Support"
+            )
+            for component in Self.directoryName.split(separator: "/").map(String.init) {
+                if Darwin.mkdirat(currentFD, component, mode_t(0o700)) != 0,
+                   errno != EEXIST {
+                    throw AuthenticatedStationaryCaptureAuthorizationInboxError
+                        .directoryCustodyRejected(component)
+                }
+
+                let nextFD = Darwin.openat(
+                    currentFD,
+                    component,
+                    O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
+                )
+                guard nextFD >= 0 else {
+                    throw AuthenticatedStationaryCaptureAuthorizationInboxError
+                        .directoryCustodyRejected(component)
+                }
+                do {
+                    try validateOwnedDirectory(descriptor: nextFD, label: component)
+                } catch {
+                    Darwin.close(nextFD)
+                    throw error
+                }
+                Darwin.close(currentFD)
+                currentFD = nextFD
+            }
+            Darwin.close(currentFD)
+        } catch {
+            Darwin.close(currentFD)
+            throw error
+        }
     }
 
     /// Takes the stable retained-install manifest. The returned bytes are still non-authorizing and
@@ -173,6 +249,17 @@ public struct AuthenticatedStationaryCaptureAuthorizationInbox: Sendable {
             }
         }
         return descriptor
+    }
+
+    private func validateOwnedDirectory(descriptor: Int32, label: String) throws {
+        var metadata = stat()
+        guard Darwin.fstat(descriptor, &metadata) == 0,
+              (metadata.st_mode & S_IFMT) == S_IFDIR,
+              metadata.st_uid == getuid(),
+              (metadata.st_mode & mode_t(0o022)) == 0 else {
+            throw AuthenticatedStationaryCaptureAuthorizationInboxError
+                .directoryCustodyRejected(label)
+        }
     }
 
     private func sameSnapshot(_ lhs: stat, _ rhs: stat) -> Bool {
