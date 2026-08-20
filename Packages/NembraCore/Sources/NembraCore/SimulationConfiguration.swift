@@ -21,18 +21,22 @@ public enum ScooterSimulationConfiguration {
     public static let launchArgumentPrefix = "--nembra-simulation="
     public static let launchArgumentName = "--nembra-simulation"
 
+    // Synthetic vehicle authority is a Simulator/host-test facility only. Keep
+    // package tests usable on host platforms while compile-time fencing the real
+    // iOS device runtime from selecting convincing QA telemetry.
+    private static let runtimeAllowsSyntheticScenarios: Bool = {
+#if os(iOS) && !targetEnvironment(simulator)
+        false
+#else
+        true
+#endif
+    }()
+
     public static func resolve(
         arguments: [String],
         environment: [String: String]
     ) -> ScooterSimulationConfigurationResolution {
-        // Synthetic vehicle authority is a Simulator/host-test facility only.
-        // A launch argument or environment variable on a physical iPhone must
-        // never be able to replace production-unverified state with convincing
-        // QA telemetry. Keep host-side package tests usable while fencing the
-        // actual iOS device runtime at compile time.
-#if os(iOS) && !targetEnvironment(simulator)
-        return .disabled
-#endif
+        guard runtimeAllowsSyntheticScenarios else { return .disabled }
 
         if let rawEnvironmentValue = environment[environmentKey] {
             guard let scenario = ScooterSimulationScenario(rawValue: rawEnvironmentValue) else {
