@@ -25,6 +25,15 @@ public enum ScooterSimulationConfiguration {
         arguments: [String],
         environment: [String: String]
     ) -> ScooterSimulationConfigurationResolution {
+        // Synthetic vehicle authority is a Simulator/host-test facility only.
+        // A launch argument or environment variable on a physical iPhone must
+        // never be able to replace production-unverified state with convincing
+        // QA telemetry. Keep host-side package tests usable while fencing the
+        // actual iOS device runtime at compile time.
+#if os(iOS) && !targetEnvironment(simulator)
+        return .disabled
+#endif
+
         if let rawEnvironmentValue = environment[environmentKey] {
             guard let scenario = ScooterSimulationScenario(rawValue: rawEnvironmentValue) else {
                 return .invalid(source: .environment, rawValue: rawEnvironmentValue)
