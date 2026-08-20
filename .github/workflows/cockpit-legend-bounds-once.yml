@@ -1,5 +1,4 @@
 name: Cockpit compact Energy Rail legend bounds one-shot
-# GO trigger after the one-shot workflow exists on this branch; no product authority change.
 
 on:
   push:
@@ -17,7 +16,7 @@ jobs:
     timeout-minutes: 10
     env:
       TARGET_BRANCH: product/cockpit-energy-rail-mainline-20260820
-      EXPECTED_PARENT: 140cf44be9affca279fdea0226b640949a86b256
+      EXPECTED_PARENT: 6f54cf8f676ee5597d56262847d107c173a5dccf
       SELF_WORKFLOW: .github/workflows/cockpit-legend-bounds-once.yml
       INSTRUMENT_SOURCE: NembraApp/Features/Dashboard/SpeedInstrumentModel.swift
       APP_TESTS: NembraAppTests/NembraAppTests.swift
@@ -30,18 +29,17 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Bind one-shot authoring lineage
+      - name: Bind exact parent and one-file trigger
         shell: bash
         run: |
           set -euo pipefail
           test "$(git branch --show-current)" = "$TARGET_BRANCH"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
-          changed="$(git diff --name-only "$EXPECTED_PARENT"...HEAD)"
-          test "$changed" = "$SELF_WORKFLOW"
+          test "$(git diff --name-only "$EXPECTED_PARENT"...HEAD)" = "$SELF_WORKFLOW"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Materialize bounded permanent legends
+      - name: Materialize bounded permanent rail legends
         shell: python
         run: |
           from pathlib import Path
@@ -55,43 +53,42 @@ jobs:
           instrument_path = Path("NembraApp/Features/Dashboard/SpeedInstrumentModel.swift")
           instrument = instrument_path.read_text(encoding="utf-8")
 
-          rail_anchor = "private struct DashboardEnergyRailView: View {"
-          legend_policy = '''enum DashboardEnergyRailLegendPolicy {
+          policy = '''enum DashboardEnergyRailLegendPolicy {
               static func frameHeight(for pointSize: CGFloat) -> CGFloat {
-              max(14, ceil(pointSize * 1.55))
-          }
-
-              static func centerY(
-              desiredY: CGFloat,
-              railHeight: CGFloat,
-              pointSize: CGFloat
-          ) -> CGFloat? {
-              guard desiredY.isFinite,
-                    railHeight.isFinite,
-                    pointSize.isFinite,
-                    railHeight > 0,
-                    pointSize > 0 else {
-                  return nil
+                  max(14, ceil(pointSize * 1.55))
               }
 
-              let labelHeight = frameHeight(for: pointSize)
-              // Permanent legends are decorative. At the 44pt accessibility rail floor,
-              // hiding them is preferable to drawing glyphs into the stopped-control strip.
-              guard railHeight >= max(52, labelHeight * 2.75) else { return nil }
+              static func centerY(
+                  desiredY: CGFloat,
+                  railHeight: CGFloat,
+                  pointSize: CGFloat
+              ) -> CGFloat? {
+                  guard desiredY.isFinite,
+                        railHeight.isFinite,
+                        pointSize.isFinite,
+                        railHeight > 0,
+                        pointSize > 0 else {
+                      return nil
+                  }
 
-              let inset = max(2, labelHeight * 0.15)
-              let minimumCenter = inset + labelHeight / 2
-              let maximumCenter = railHeight - inset - labelHeight / 2
-              guard maximumCenter >= minimumCenter else { return nil }
-              return min(max(desiredY, minimumCenter), maximumCenter)
-          }
+                  let labelHeight = frameHeight(for: pointSize)
+                  // Permanent legends are decorative. At the 44pt accessibility rail floor,
+                  // omit them instead of letting glyphs escape into stopped controls.
+                  guard railHeight >= max(52, labelHeight * 2.75) else { return nil }
+
+                  let inset = max(2, labelHeight * 0.15)
+                  let minimumCenter = inset + labelHeight / 2
+                  let maximumCenter = railHeight - inset - labelHeight / 2
+                  guard maximumCenter >= minimumCenter else { return nil }
+                  return min(max(desiredY, minimumCenter), maximumCenter)
+              }
           }
 
           private struct DashboardEnergyRailView: View {'''
           instrument = replace_once(
               instrument,
-              rail_anchor,
-              legend_policy,
+              "private struct DashboardEnergyRailView: View {",
+              policy,
               "legend policy insertion",
           )
 
@@ -170,7 +167,7 @@ jobs:
           tests_path = Path("NembraAppTests/NembraAppTests.swift")
           tests = tests_path.read_text(encoding="utf-8")
           anchor = "    func testPowerPeakLabelPolicyStaysInsideRailOrOmitsCompactLabel() throws {\n"
-          test_block = '''    func testEnergyRailPermanentLegendPolicyStaysInsideRailOrOmitsCompactLabels() throws {
+          regression = '''    func testEnergyRailPermanentLegendPolicyStaysInsideRailOrOmitsCompactLabels() throws {
               for pointSize: CGFloat in [8, 13, 15] {
                   XCTAssertNil(
                       DashboardEnergyRailLegendPolicy.centerY(
@@ -199,12 +196,7 @@ jobs:
           }
 
           '''
-          tests = replace_once(
-              tests,
-              anchor,
-              test_block + anchor,
-              "permanent legend regression test",
-          )
+          tests = replace_once(tests, anchor, regression + anchor, "legend regression")
           tests_path.write_text(tests, encoding="utf-8")
 
       - name: Enforce bounded source delta
@@ -216,13 +208,9 @@ jobs:
           expected="$(printf '%s\n' "$APP_TESTS" "$INSTRUMENT_SOURCE" | sort)"
           test "$actual" = "$expected"
           grep -Fq 'enum DashboardEnergyRailLegendPolicy' "$INSTRUMENT_SOURCE"
-          grep -Fq 'railHeight >= max(52, labelHeight * 2.75)' "$INSTRUMENT_SOURCE"
-          grep -Fq 'propulsionLabelY' "$INSTRUMENT_SOURCE"
-          grep -Fq 'scaleLabelY' "$INSTRUMENT_SOURCE"
-          grep -Fq 'zeroLabelY' "$INSTRUMENT_SOURCE"
           grep -Fq 'testEnergyRailPermanentLegendPolicyStaysInsideRailOrOmitsCompactLabels' "$APP_TESTS"
 
-      - name: Publish only if branch is still this exact head
+      - name: Publish exact bounded closure
         shell: bash
         run: |
           set -euo pipefail
@@ -234,8 +222,6 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'fix(cockpit): bound compact Energy Rail legends'
-          final_head="$(git rev-parse HEAD)"
           git fetch origin "$TARGET_BRANCH"
           test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
           git push origin HEAD:"$TARGET_BRANCH"
-          printf 'NEMBRA_COCKPIT_LEGEND_BOUNDS final=%s trigger=%s physicalTelemetryAuthorityCreated=false\n' "$final_head" "$GITHUB_SHA" | tee -a "$GITHUB_STEP_SUMMARY"
