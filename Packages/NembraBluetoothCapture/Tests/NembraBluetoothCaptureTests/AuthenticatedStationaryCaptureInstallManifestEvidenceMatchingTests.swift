@@ -29,7 +29,7 @@ struct AuthenticatedStationaryCaptureInstallManifestEvidenceMatchingTests {
     }
 
     private func manifestData(authorizationEnvelopeSHA256: String) -> Data {
-        Data("""
+        let canonical = """
         {
           "authorizationEnvelopeSHA256": "\(authorizationEnvelopeSHA256)",
           "buildIdentifier": "Capture Build V14-0123456789ab",
@@ -49,6 +49,7 @@ struct AuthenticatedStationaryCaptureInstallManifestEvidenceMatchingTests {
           "tuyaDependencyLockSHA256": "8888888888888888888888888888888888888888888888888888888888888888",
           "version": 1
         }
-        """.utf8)
+        """
+        return Data((canonical + "\n").utf8)
     }
 }
