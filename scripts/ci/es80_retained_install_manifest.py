@@ -30,7 +30,7 @@ MAX_MANIFEST_BYTES = 16_384
 SHA40 = re.compile(r"^[0-9a-f]{40}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 BUILD_INSTANCE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 )
 
 BINDING_KEYS = (
@@ -96,7 +96,7 @@ def _canonical_nonzero_sha256(value: object, label: str) -> str:
 def _canonical_build_instance(value: object) -> str:
     if not isinstance(value, str) or not BUILD_INSTANCE.fullmatch(value):
         raise RetainedInstallManifestError(
-            "buildInstanceID is not the canonical lowercase build-instance identity"
+            "buildInstanceID is not a canonical lowercase UUIDv4 build-instance identity"
         )
     return value
 
@@ -266,9 +266,7 @@ def _self_test() -> None:
         "sourceCommitSHA": source,
         "bundleIdentifier": BUNDLE_IDENTIFIER,
         "buildIdentifier": f"Capture Build V14-{source[:12]}",
-        # The build-instance rendezvous is intentionally UUID-shaped but opaque; it need not
-        # encode UUID version semantics beyond the runtime contract.
-        "buildInstanceID": "12345678-1234-abcd-8def-123456789abc",
+        "buildInstanceID": "12345678-1234-4bcd-8def-123456789abc",
         "retainedIPASHA256": "2" * 64,
         "executableSHA256": "3" * 64,
         "infoPlistSHA256": "4" * 64,
