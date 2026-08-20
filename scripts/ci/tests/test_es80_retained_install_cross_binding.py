@@ -24,48 +24,34 @@ class RetainedInstallCrossBindingTests(unittest.TestCase):
         self.ipa = "4" * 64
         self.tuya = "5" * 64
         self.pseudonym = "6" * 64
-
-        self.external = pretty({
-            "schemaVersion": cross.EXTERNAL_SCHEMA_VERSION,
-            "buildIdentifier": self.build,
-            "buildInstanceID": self.instance,
-            "sourceCommitSHA": self.source,
-            "executableSHA256": self.exe,
-            "infoPlistSHA256": self.info,
-            "experimentRecipeID": cross.RECIPE_ID,
-            "procedureVersion": cross.PROCEDURE_VERSION,
-        })
-        self.external_sha = cross.sha256_hex(self.external)
-
-        self.final_go = pretty({
-            "schemaVersion": cross.FINAL_GO_SCHEMA_VERSION,
-            "decision": "GO",
+        common = {
+            "schemaVersion": cross.SUBJECT_SCHEMA_VERSION,
             "procedureID": cross.manifest_contract.PROCEDURE_ID,
             "bundleIdentifier": cross.manifest_contract.BUNDLE_IDENTIFIER,
             "sourceCommitSHA": self.source,
             "buildIdentifier": self.build,
             "buildInstanceID": self.instance,
-            "signedInstallableSHA256": self.ipa,
             "executableSHA256": self.exe,
             "infoPlistSHA256": self.info,
             "tuyaDependencyLockSHA256": self.tuya,
+        }
+
+        self.external = pretty(common)
+        self.external_sha = cross.sha256_hex(self.external)
+
+        self.final_go = pretty({
+            **common,
+            "decision": "GO",
+            "signedInstallableSHA256": self.ipa,
             "intendedDevicePseudonymSHA256": self.pseudonym,
         })
         self.final_go_sha = cross.sha256_hex(self.final_go)
 
         self.evidence = pretty({
-            "schemaVersion": cross.EVIDENCE_SCHEMA_VERSION,
+            **common,
             "evidenceKind": cross.EVIDENCE_KIND,
-            "procedureID": cross.manifest_contract.PROCEDURE_ID,
-            "bundleIdentifier": cross.manifest_contract.BUNDLE_IDENTIFIER,
-            "sourceCommitSHA": self.source,
-            "buildIdentifier": self.build,
-            "buildInstanceID": self.instance,
             "signedInstallableKind": cross.SIGNED_INSTALLABLE_KIND,
             "signedInstallableSHA256": self.ipa,
-            "executableSHA256": self.exe,
-            "infoPlistSHA256": self.info,
-            "tuyaDependencyLockSHA256": self.tuya,
             "externalBuildRecordSHA256": self.external_sha,
             "finalGORecordSHA256": self.final_go_sha,
             "intendedDevicePseudonymSHA256": self.pseudonym,
@@ -163,6 +149,11 @@ class RetainedInstallCrossBindingTests(unittest.TestCase):
     def test_noncanonical_subject_json_fails_closed(self) -> None:
         with self.assertRaises(cross.RetainedInstallCrossBindingError):
             self.verify(external_build_record_data=self.external.rstrip(b"\n"))
+
+    def test_external_subject_is_the_signed_field_evidence_common_schema(self) -> None:
+        self.assertEqual(set(json.loads(self.external)), cross.EXTERNAL_KEYS)
+        self.assertNotIn("experimentRecipeID", cross.EXTERNAL_KEYS)
+        self.assertNotIn("procedureVersion", cross.EXTERNAL_KEYS)
 
 
 if __name__ == "__main__":
