@@ -15,11 +15,30 @@ installer/workflow tooling. It must not invent a second manifest shape. Both sid
 - schema `nembra.es80-authenticated-stationary-install-manifest`, version `1`;
 - compact sorted-key JSON with no trailing newline;
 - the same 16 KiB input bound;
-- procedure, source, bundle, build identifier, and build-instance identity;
+- procedure, source, exact Capture bundle, build identifier, and build-instance identity;
 - retained IPA, executable, raw `Info.plist`, reviewed Tuya lock, external build record, signed
-  build evidence, Final-GO record, intended-device pseudonym, and authorization-envelope digests.
+  build evidence, Final-GO record, and intended-device pseudonym digests.
 
 The retained IPA field is named `retainedIPASHA256` on both sides.
+
+## Attempt chronology
+
+The retained-install manifest contains **stable pre-attempt subjects only**. It deliberately does not
+contain `authorizationEnvelopeSHA256`.
+
+That omission is required by the accepted authorization model, not a weakening of it:
+
+1. the exact retained app is installed and runs;
+2. `makeCurrentApplicationAttempt` generates a fresh random process-local challenge;
+3. the independent signer creates an authorization envelope that binds that exact challenge plus the
+   stable build/evidence/device facts;
+4. the running app verifies the returned envelope against the same in-memory attempt and the pinned
+   production public key;
+5. only the verifier-minted opaque capability may advance toward OFF1.
+
+A pre-install manifest cannot truthfully bind the final envelope bytes because those bytes do not
+exist until the running app creates the fresh attempt challenge. Reinstalling or relaunching cannot
+bridge that cycle because the attempt is intentionally non-Codable and process-local.
 
 ## Authority boundary
 
@@ -31,9 +50,8 @@ The offline mirror additionally provides `verify_manifest_against_expected`: ins
 that only with values independently derived from already accepted subjects. Matching caller-supplied
 files to each other is not sufficient authority.
 
-A future installer integration remains blocked until the repository's pinned trust root, app
-authorization adapter, runtime/build identity handoff, accepted signed-install provenance, and
-applicable exact-source execution evidence are independently closed. Do not self-repin an accepted
+The production trust root remains unset and the app entrypoint still does not consume the new
+attempt/capability path, so physical Capture remains **NO-GO**. Do not self-repin an accepted
 workflow/build-graph custody boundary merely because package/runtime source moved.
 
 ## Validation
@@ -44,8 +62,10 @@ Focused contract checks:
 python3 -m unittest scripts/ci/tests/test_es80_retained_install_manifest.py
 python3 scripts/ci/es80_retained_install_manifest.py --self-test
 python3 -m py_compile scripts/ci/es80_retained_install_manifest.py scripts/ci/tests/test_es80_retained_install_manifest.py
+swift test --package-path Packages/NembraBluetoothCapture --filter AuthenticatedStationaryCaptureInstallManifest
 ```
 
-Passing these checks proves only wire-format parity, manifest grammar, and exact-binding comparison
-behavior. It does not prove Xcode, signing, installation, an intended iPhone, Tuya authentication,
-BLE continuity, ES80 identity, telemetry semantics, command safety, or physical readiness.
+Passing these checks proves only wire-format parity, manifest grammar, exact stable-binding behavior,
+and chronology separation. It does not prove Xcode, signing, installation, an intended iPhone, Tuya
+authentication, BLE continuity, ES80 identity, telemetry semantics, command safety, or physical
+readiness.

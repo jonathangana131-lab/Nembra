@@ -3,9 +3,13 @@ import Foundation
 
 /// Canonical cross-binding contract for the exact retained Capture install candidate.
 ///
-/// This manifest is evidence, not physical authority. It lets the installer, app adapter, and
-/// authorization envelope agree on the exact accepted IPA/build/evidence/device-binding inputs
+/// This manifest is evidence, not physical authority. It lets the installer and later app
+/// authorization attempt agree on the exact accepted IPA/build/evidence/device-binding inputs
 /// without letting any one of those caller-controlled files mint a field-attempt capability.
+///
+/// Per-attempt authorization-envelope bytes are intentionally absent. The envelope binds a fresh,
+/// app-generated process-local challenge and therefore cannot exist before this retained install
+/// candidate is installed and the current application attempt begins.
 public struct AuthenticatedStationaryCaptureInstallManifest: Equatable, Sendable {
     public let procedureID: String
     public let sourceCommitSHA: String
@@ -20,7 +24,6 @@ public struct AuthenticatedStationaryCaptureInstallManifest: Equatable, Sendable
     public let signedBuildEvidenceSHA256: String
     public let finalGORecordSHA256: String
     public let intendedDevicePseudonymSHA256: String
-    public let authorizationEnvelopeSHA256: String
     public let canonicalManifestSHA256: String
 
     fileprivate init(
@@ -37,7 +40,6 @@ public struct AuthenticatedStationaryCaptureInstallManifest: Equatable, Sendable
         signedBuildEvidenceSHA256: String,
         finalGORecordSHA256: String,
         intendedDevicePseudonymSHA256: String,
-        authorizationEnvelopeSHA256: String,
         canonicalManifestSHA256: String
     ) {
         self.procedureID = procedureID
@@ -53,13 +55,11 @@ public struct AuthenticatedStationaryCaptureInstallManifest: Equatable, Sendable
         self.signedBuildEvidenceSHA256 = signedBuildEvidenceSHA256
         self.finalGORecordSHA256 = finalGORecordSHA256
         self.intendedDevicePseudonymSHA256 = intendedDevicePseudonymSHA256
-        self.authorizationEnvelopeSHA256 = authorizationEnvelopeSHA256
         self.canonicalManifestSHA256 = canonicalManifestSHA256
     }
 
-    /// Reconstructs the exact external bindings consumed by the signed authorization verifier.
-    /// The initializer can only be reached after manifest validation, so these digests are already
-    /// canonical; the throwing boundary remains explicit instead of force-unwrapping evidence.
+    /// Reconstructs only the stable external bindings consumed by the later signed authorization
+    /// verifier. The fresh attempt challenge and its signed envelope are deliberately post-install.
     public func externalBindings() throws -> AuthenticatedStationaryCaptureExternalBindings {
         try AuthenticatedStationaryCaptureExternalBindings(
             tuyaDependencyLockSHA256: tuyaDependencyLockSHA256,
@@ -71,8 +71,8 @@ public struct AuthenticatedStationaryCaptureInstallManifest: Equatable, Sendable
     }
 
     /// Checks the manifest against the build identity measured from the running application.
-    /// The retained IPA digest and authorization-envelope digest remain installer-side evidence;
-    /// they are intentionally not inferred from the running process.
+    /// The retained IPA digest remains installer-side evidence and is intentionally not inferred
+    /// from the running process.
     public func matches(runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity) -> Bool {
         sourceCommitSHA == runtimeBuildIdentity.sourceCommitSHA
             && buildIdentifier == runtimeBuildIdentity.buildIdentifier
@@ -123,7 +123,6 @@ public enum AuthenticatedStationaryCaptureInstallManifestVerifier {
         let signedBuildEvidenceSHA256: String
         let finalGORecordSHA256: String
         let intendedDevicePseudonymSHA256: String
-        let authorizationEnvelopeSHA256: String
     }
 
     private static let allowedKeys: Set<String> = [
@@ -131,7 +130,6 @@ public enum AuthenticatedStationaryCaptureInstallManifestVerifier {
         "buildIdentifier", "buildInstanceID", "retainedIPASHA256", "executableSHA256",
         "infoPlistSHA256", "tuyaDependencyLockSHA256", "externalBuildRecordSHA256",
         "signedBuildEvidenceSHA256", "finalGORecordSHA256", "intendedDevicePseudonymSHA256",
-        "authorizationEnvelopeSHA256",
     ]
 
     public static func decodeCanonical(
@@ -191,7 +189,8 @@ public enum AuthenticatedStationaryCaptureInstallManifestVerifier {
         guard wire.buildIdentifier == expectedBuildIdentifier else {
             throw AuthenticatedStationaryCaptureInstallManifestError.invalidBuildIdentifier
         }
-        guard isCanonicalUUIDv4(wire.buildInstanceID) else {
+        guard PassiveBluetoothCaptureRuntimeBuildIdentityReader
+            .normalizedBuildInstanceID(wire.buildInstanceID) == wire.buildInstanceID else {
             throw AuthenticatedStationaryCaptureInstallManifestError.invalidBuildInstanceID
         }
 
@@ -204,7 +203,6 @@ public enum AuthenticatedStationaryCaptureInstallManifestVerifier {
             ("signedBuildEvidenceSHA256", wire.signedBuildEvidenceSHA256),
             ("finalGORecordSHA256", wire.finalGORecordSHA256),
             ("intendedDevicePseudonymSHA256", wire.intendedDevicePseudonymSHA256),
-            ("authorizationEnvelopeSHA256", wire.authorizationEnvelopeSHA256),
         ]
         if let invalid = digestFields.first(where: { !isCanonicalNonzeroSHA256($0.1) }) {
             throw AuthenticatedStationaryCaptureInstallManifestError.invalidDigestField(invalid.0)
@@ -224,7 +222,6 @@ public enum AuthenticatedStationaryCaptureInstallManifestVerifier {
             signedBuildEvidenceSHA256: wire.signedBuildEvidenceSHA256,
             finalGORecordSHA256: wire.finalGORecordSHA256,
             intendedDevicePseudonymSHA256: wire.intendedDevicePseudonymSHA256,
-            authorizationEnvelopeSHA256: wire.authorizationEnvelopeSHA256,
             canonicalManifestSHA256: sha256Hex(data)
         )
     }
@@ -235,14 +232,6 @@ public enum AuthenticatedStationaryCaptureInstallManifestVerifier {
             && value.utf8.allSatisfy {
                 (0x30 ... 0x39).contains($0) || (0x61 ... 0x66).contains($0)
             }
-    }
-
-    private static func isCanonicalUUIDv4(_ value: String) -> Bool {
-        guard PassiveBluetoothCaptureRuntimeBuildIdentityReader
-            .normalizedBuildInstanceID(value) == value else { return false }
-        let bytes = Array(value.utf8)
-        guard bytes.count == 36, bytes[14] == 0x34 else { return false }
-        return [0x38, 0x39, 0x61, 0x62].contains(bytes[19])
     }
 
     private static func sha256Hex(_ data: Data) -> String {

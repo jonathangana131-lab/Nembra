@@ -22,13 +22,24 @@ public struct AuthenticatedStationaryCapturePreparedAttempt: Sendable {
     }
 }
 
+public enum AuthenticatedStationaryCaptureAppAuthorizerError: Error, Equatable, Sendable {
+    case manifestBundleMismatch
+    case manifestRuntimeMismatch
+    case manifestAttemptBindingsMismatch
+}
+
 /// App-owned composition seam for authenticated stationary Capture authorization.
 ///
 /// This adapter deliberately owns no Boolean field-authority switch. It can only:
 /// 1. ask `NembraBluetoothCapture` to create a live, runtime-bound attempt;
 /// 2. expose that attempt's random challenge to the independent signing workflow; and
-/// 3. present the returned signed envelope back to the package verifier using the durable
-///    ThisDeviceOnly Keychain replay-consumption store.
+/// 3. cross-bind the retained install manifest to the running build and stable attempt bindings
+///    before presenting the post-install signed envelope to the package verifier.
+///
+/// The retained install manifest intentionally cannot contain the signed authorization envelope:
+/// that envelope depends on the fresh process-local challenge created after installation. The
+/// package verifier instead binds the envelope itself to this exact prepared attempt, runtime build,
+/// external evidence bindings, time window, and one-time replay-consumption request.
 ///
 /// With the package production trust root still unset, `authorize` remains mechanically NO-GO.
 /// Pinning that root later is a separate independently reviewed change; this type must not grow a
@@ -47,8 +58,9 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
         self.consumptionStore = consumptionStore
     }
 
-    /// Starts one live authorization attempt from already-validated external install/evidence
-    /// bindings. This does not start OFF1, scan Bluetooth, authenticate Tuya, or grant physical GO.
+    /// Starts one live authorization attempt from the separately accepted external install/evidence
+    /// bindings. The app-generated challenge is needed before the signer can create the envelope.
+    /// This does not start OFF1, scan Bluetooth, authenticate Tuya, or grant physical GO.
     public func beginAttempt(
         externalBindings: AuthenticatedStationaryCaptureExternalBindings
     ) throws -> AuthenticatedStationaryCapturePreparedAttempt {
@@ -57,16 +69,63 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
         return AuthenticatedStationaryCapturePreparedAttempt(packageAttempt: attempt)
     }
 
-    /// Verifies the independent signed response for exactly the prepared live attempt.
-    /// Successful replay consumption and capability construction remain package-owned.
+    /// Verifies the retained install manifest against the running app and the exact prepared
+    /// attempt's stable evidence bindings before the package-pinned signature verifier evaluates
+    /// the post-install envelope and may consume replay state or mint the opaque capability.
     public func authorize(
         envelopeData: Data,
+        installManifestData: Data,
         preparedAttempt: AuthenticatedStationaryCapturePreparedAttempt
     ) throws -> AuthenticatedStationaryCaptureAttemptCapability {
-        try AuthenticatedStationaryCaptureFieldAuthorizationVerifier.verifyForCurrentApplication(
+        let runtimeBuildIdentity = try PassiveBluetoothCaptureRuntimeBuildIdentityReader
+            .currentApplication()
+        try validateInstallManifest(
+            installManifestData,
+            preparedAttempt: preparedAttempt,
+            currentBundleIdentifier: Bundle.main.bundleIdentifier,
+            runtimeBuildIdentity: runtimeBuildIdentity
+        )
+
+        return try AuthenticatedStationaryCaptureFieldAuthorizationVerifier.verifyForCurrentApplication(
             envelopeData,
             attempt: preparedAttempt.packageAttempt,
             consumptionStore: consumptionStore
+        )
+    }
+
+    private func validateInstallManifest(
+        _ installManifestData: Data,
+        preparedAttempt: AuthenticatedStationaryCapturePreparedAttempt,
+        currentBundleIdentifier: String?,
+        runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity
+    ) throws {
+        let manifest = try AuthenticatedStationaryCaptureInstallManifestVerifier
+            .decodeCanonical(installManifestData)
+
+        guard currentBundleIdentifier == manifest.bundleIdentifier else {
+            throw AuthenticatedStationaryCaptureAppAuthorizerError.manifestBundleMismatch
+        }
+        guard manifest.matches(runtimeBuildIdentity: runtimeBuildIdentity) else {
+            throw AuthenticatedStationaryCaptureAppAuthorizerError.manifestRuntimeMismatch
+        }
+        guard try manifest.externalBindings() == preparedAttempt.packageAttempt.externalBindings else {
+            throw AuthenticatedStationaryCaptureAppAuthorizerError.manifestAttemptBindingsMismatch
+        }
+    }
+
+    /// Deterministic manifest-cross-binding seam used only by tests in this Swift package. It does
+    /// not invoke the production trust root, consume replay state, or mint a capability.
+    package func validateInstallManifestForTesting(
+        _ installManifestData: Data,
+        preparedAttempt: AuthenticatedStationaryCapturePreparedAttempt,
+        currentBundleIdentifier: String?,
+        runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity
+    ) throws {
+        try validateInstallManifest(
+            installManifestData,
+            preparedAttempt: preparedAttempt,
+            currentBundleIdentifier: currentBundleIdentifier,
+            runtimeBuildIdentity: runtimeBuildIdentity
         )
     }
 

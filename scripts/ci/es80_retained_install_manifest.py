@@ -5,13 +5,19 @@ This helper is deliberately non-authorizing. It does not verify a signature, ins
 contact a device, grant OFF1, or establish Bluetooth/physical truth. It exists so offline installer
 tooling can validate the same canonical bytes as AuthenticatedStationaryCaptureInstallManifestVerifier
 without inventing a second manifest schema.
+
+Only stable pre-attempt subjects belong here. A signed authorization envelope is created later from
+the running app's fresh process-local challenge, so binding its digest into this retained pre-install
+record would create an impossible chronology cycle.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import re
+import stat
 import sys
 from typing import Any
 
@@ -24,7 +30,7 @@ MAX_MANIFEST_BYTES = 16_384
 SHA40 = re.compile(r"^[0-9a-f]{40}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 BUILD_INSTANCE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 )
 
 BINDING_KEYS = (
@@ -41,7 +47,6 @@ BINDING_KEYS = (
     "signedBuildEvidenceSHA256",
     "finalGORecordSHA256",
     "intendedDevicePseudonymSHA256",
-    "authorizationEnvelopeSHA256",
 )
 MANIFEST_KEYS = {"schema", "version", *BINDING_KEYS}
 DIGEST_KEYS = (
@@ -53,7 +58,6 @@ DIGEST_KEYS = (
     "signedBuildEvidenceSHA256",
     "finalGORecordSHA256",
     "intendedDevicePseudonymSHA256",
-    "authorizationEnvelopeSHA256",
 )
 
 
@@ -92,7 +96,7 @@ def _canonical_nonzero_sha256(value: object, label: str) -> str:
 def _canonical_build_instance(value: object) -> str:
     if not isinstance(value, str) or not BUILD_INSTANCE.fullmatch(value):
         raise RetainedInstallManifestError(
-            "buildInstanceID is not a canonical lowercase UUIDv4 build-instance identity"
+            "buildInstanceID is not the canonical lowercase build-instance identity"
         )
     return value
 
@@ -187,15 +191,72 @@ def verify_manifest_against_expected(
 
 
 def _read_manifest(path: Path) -> bytes:
+    """Read one exact manifest through no-follow descriptors, never a reopened pathname."""
     candidate = path.expanduser()
-    if not candidate.is_file() or candidate.is_symlink():
-        raise RetainedInstallManifestError(
-            "manifest path must be one regular non-symlink file"
+    raw_path = os.fspath(candidate)
+    if not os.path.isabs(raw_path) or "\x00" in raw_path:
+        raise RetainedInstallManifestError("manifest path must be absolute and NUL-free")
+
+    parts = Path(raw_path).parts
+    if len(parts) < 2 or parts[0] != "/" or any(part in {"", ".", ".."} for part in parts[1:]):
+        raise RetainedInstallManifestError("manifest path is not canonical")
+
+    no_follow = getattr(os, "O_NOFOLLOW", None)
+    directory_only = getattr(os, "O_DIRECTORY", None)
+    if no_follow is None or directory_only is None:
+        raise RetainedInstallManifestError("platform cannot guarantee no-follow manifest custody")
+
+    directory_fd = os.open("/", os.O_RDONLY | directory_only)
+    descriptor: int | None = None
+    try:
+        for component in parts[1:-1]:
+            next_fd = os.open(
+                component,
+                os.O_RDONLY | directory_only | no_follow,
+                dir_fd=directory_fd,
+            )
+            os.close(directory_fd)
+            directory_fd = next_fd
+        descriptor = os.open(parts[-1], os.O_RDONLY | no_follow, dir_fd=directory_fd)
+    except OSError as error:
+        raise RetainedInstallManifestError("manifest path failed no-follow admission") from error
+    finally:
+        os.close(directory_fd)
+
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+            raise RetainedInstallManifestError("manifest must be one regular single-link file")
+        if before.st_size <= 0 or before.st_size > MAX_MANIFEST_BYTES:
+            raise RetainedInstallManifestError("manifest file size is invalid")
+
+        blocks: list[bytes] = []
+        byte_count = 0
+        while True:
+            block = os.read(descriptor, min(4096, MAX_MANIFEST_BYTES + 1 - byte_count))
+            if not block:
+                break
+            blocks.append(block)
+            byte_count += len(block)
+            if byte_count > MAX_MANIFEST_BYTES:
+                raise RetainedInstallManifestError("manifest exceeds the byte limit")
+
+        after = os.fstat(descriptor)
+        identity = lambda value: (
+            value.st_dev,
+            value.st_ino,
+            value.st_mode,
+            value.st_uid,
+            value.st_nlink,
+            value.st_size,
+            value.st_mtime_ns,
+            value.st_ctime_ns,
         )
-    data = candidate.read_bytes()
-    if len(data) > MAX_MANIFEST_BYTES:
-        raise RetainedInstallManifestError("manifest exceeds the byte limit")
-    return data
+        if identity(after) != identity(before) or byte_count != before.st_size:
+            raise RetainedInstallManifestError("manifest changed during descriptor read")
+        return b"".join(blocks)
+    finally:
+        os.close(descriptor)
 
 
 def _self_test() -> None:
@@ -205,7 +266,9 @@ def _self_test() -> None:
         "sourceCommitSHA": source,
         "bundleIdentifier": BUNDLE_IDENTIFIER,
         "buildIdentifier": f"Capture Build V14-{source[:12]}",
-        "buildInstanceID": "12345678-1234-4abc-8def-123456789abc",
+        # The build-instance rendezvous is intentionally UUID-shaped but opaque; it need not
+        # encode UUID version semantics beyond the runtime contract.
+        "buildInstanceID": "12345678-1234-abcd-8def-123456789abc",
         "retainedIPASHA256": "2" * 64,
         "executableSHA256": "3" * 64,
         "infoPlistSHA256": "4" * 64,
@@ -214,10 +277,11 @@ def _self_test() -> None:
         "signedBuildEvidenceSHA256": "7" * 64,
         "finalGORecordSHA256": "8" * 64,
         "intendedDevicePseudonymSHA256": "9" * 64,
-        "authorizationEnvelopeSHA256": "a" * 64,
     }
     data = build_manifest(example)
     verify_manifest_against_expected(data, example)
+    if b"authorizationEnvelopeSHA256" in data:
+        raise AssertionError("pre-install manifest must not bind a future attempt envelope")
 
 
 def main(argv: list[str] | None = None) -> int:
