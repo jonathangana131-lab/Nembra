@@ -31,6 +31,7 @@ struct ThisDeviceAuthorizationConsumptionStoreTests {
         #expect(query[accessibleKey] as? String == whenUnlockedThisDeviceOnlyValue)
         #expect(query[synchronizableKey] == nil)
         #expect(query[accessGroupKey] == nil)
+        #expect(ThisDeviceAuthorizationConsumptionStore.service.hasSuffix(".v1"))
     }
 
     @Test("duplicate item is replay rejection without retry or mutation fallback")
@@ -41,7 +42,7 @@ struct ThisDeviceAuthorizationConsumptionStoreTests {
             return ThisDeviceAuthorizationConsumptionStore.duplicateItemStatus
         }
 
-        #expect(try !store.consumeIfUnseen(requestIdentitySHA256: identity))
+        #expect(try store.consumeIfUnseen(requestIdentitySHA256: identity) == false)
         #expect(calls == 1)
     }
 

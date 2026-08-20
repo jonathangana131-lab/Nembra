@@ -53,8 +53,21 @@ public final class ThisDeviceAuthorizationConsumptionStore:
         }
     }
 
-    package static let successStatus: Int32 = 0
-    package static let duplicateItemStatus: Int32 = -25_299
+    package static var successStatus: Int32 {
+        #if canImport(Security)
+        errSecSuccess
+        #else
+        0
+        #endif
+    }
+
+    package static var duplicateItemStatus: Int32 {
+        #if canImport(Security)
+        errSecDuplicateItem
+        #else
+        -25_299
+        #endif
+    }
 
     package static func makeAddQuery(account: String) -> [String: Any] {
         #if canImport(Security)
