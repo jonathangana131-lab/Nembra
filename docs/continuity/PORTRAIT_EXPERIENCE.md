@@ -13,9 +13,9 @@ Updated: 2026-08-19
   `3f0814ac70211f68b7af1a6913c78c91a810f663` (contains implementation
   checkpoint `0b7e3b27de5e9b547911558ae8ed4cb852becb59`).
 - Latest pushed portrait implementation checkpoint:
-  `1149ea9babb7a49fd52cb927826b4a0a59c12820` (remote-verified).
-- Latest remote branch/continuity tip verified before the current work in
-  progress: `bec498463c2f2673fb719c0bdedd3ec9bddfadb8`.
+  `15aff85c4a98abd5c37dfb12a677a1a8555de4df` (remote-verified).
+- Latest remote branch tip verified before this continuity update:
+  `15aff85c4a98abd5c37dfb12a677a1a8555de4df`.
 - Draft portrait PR: [#3677](https://github.com/jonathangana131-lab/Nembra/pull/3677).
 
 This file is the portrait workstream recovery authority. The root
@@ -70,10 +70,10 @@ pushed and verified on `origin/agent/portrait-home-1-0-polish`:
   selected source, authority, explicit visual gaps, design system, and workstream
   boundaries.
 
-## Work in progress after the remote checkpoint
+## Completed and pushed in the render-isolation checkpoint
 
-The following intentional Home render-isolation slice is currently uncommitted
-while its checkpoint review completes:
+Implementation commit `15aff85c4a98abd5c37dfb12a677a1a8555de4df` is
+pushed and verified on `origin/agent/portrait-home-1-0-polish`:
 
 - `NembraApp/Features/Home/HomeView.swift`: replaces inline header/energy
   implementations with two narrow Observation bridges;
@@ -89,11 +89,10 @@ while its checkpoint review completes:
 - this file, `docs/PRODUCTION_VISUAL_ASSET_PROVENANCE.md`, and
   `docs/coordination/UI_CONTRACTS.md`: recovery/provenance/coordination updates.
 
-Recovery if interrupted before commit: checkout remote
-`agent/portrait-home-1-0-polish` at `bec498463…`, reapply only the seven paths
-above, run the commands under Exact next executable action, then commit only if
-all source and strict-concurrency checks pass. Do not restore the removed legacy
-vector scooter code; it was rejected, unused, and is not evidence of an ES80.
+Recovery: checkout remote `agent/portrait-home-1-0-polish` at
+`15aff85c4…`. No implementation change from this slice remains local-only. Do
+not restore the removed legacy vector scooter code; it was rejected, unused,
+and is not evidence of an ES80.
 
 ## Tests and CI
 
@@ -125,8 +124,8 @@ separator contrast, retained `%` contrast, and Ride timestamp Dynamic Type; the
 fifth failure is cockpit-owned animation quiescence. Artifact
 `nembra-xcode27-simulator-1365-1` is ID `9389149291`, digest
 `aef19246aa9d9d782a343c138ab77c1a03a7a8560f282c707b4d3f5782063ff8`.
-The run validates the first checkpoint only, not this uncommitted isolation
-slice, and it is not portrait acceptance.
+The run validates the first checkpoint only, not pushed isolation checkpoint
+`15aff85c4…`, and it is not portrait acceptance.
 
 ## Blockers
 
@@ -142,8 +141,8 @@ slice, and it is not portrait acceptance.
 
 ## Exact next executable action
 
-1. Finish the render-isolation checkpoint review on the exact uncommitted paths
-   listed above. For local recovery or preflight, run:
+1. Fix the four portrait-owned failures from run `32318006928` against the
+   current render-isolated implementation without weakening any audit. Run:
 
    ```sh
    xcrun swiftc -frontend -parse NembraApp/Features/Home/HomeView.swift NembraApp/Features/Home/VehicleHeroView.swift NembraAppTests/NembraAppTests.swift
@@ -152,10 +151,12 @@ slice, and it is not portrait acceptance.
    git diff --check
    ```
 
-2. Commit the coherent slice, push it, verify the remote SHA, update both
-   continuity files and PR body, then dispatch a new exact-head Xcode 27 run.
-3. Fix the four portrait failures from ancestor run `32318006928` without
-   weakening its audits. Do not transfer that ancestor result to the new SHA.
+2. Commit/push the focused accessibility correction, verify the remote SHA,
+   update both continuity files and PR body, then dispatch exact-head
+   `xcode27-simulator.yml` on the portrait branch.
+3. The new run must execute the two snapshot unit tests and the unchanged
+   Home/Ride production audits. Do not transfer ancestor run `32318006928` to
+   the new SHA.
 
 ## Rejected approaches
 

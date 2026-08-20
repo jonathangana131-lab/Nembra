@@ -40,29 +40,38 @@ The root task is now the dedicated **Capture + Bluetooth truth** workstream and 
 ### Parallel portrait recovery record
 
 - Branch: `agent/portrait-home-1-0-polish`
-- Latest pushed implementation checkpoint:
-  `1149ea9babb7a49fd52cb927826b4a0a59c12820`
+- Draft PR: [#3677 — Portrait Home 1.0 polish](https://github.com/jonathangana131-lab/Nembra/pull/3677), targeting
+  `product/capture-1-0-main-20260818`
+- Latest pushed implementation checkpoint, remote-verified:
+  `15aff85c4a98abd5c37dfb12a677a1a8555de4df`
 - Scope recovery authority: `docs/continuity/PORTRAIT_EXPERIENCE.md`
-- Current focus: finish Home connected/disconnected/loading/error/retained/low
-  states and selected composition before widening into Rides, Vehicle, Settings,
-  profile, or secondary sheets.
-- First checkpoint paths: `NembraApp/Features/Home/HomeView.swift`,
-  `NembraApp/DesignSystem/NembraVisuals.swift`, `NembraUITests/NembraUITests.swift`,
-  focused Home source tests, `docs/design/`, `docs/coordination/UI_CONTRACTS.md`,
-  and portrait continuity/provenance records.
-- Local evidence: Swift parse passes; focused Home source tests pass 5/5;
-  inherited Ride source test passes 1/1; strict-concurrency generic Simulator
-  build-for-testing exits 0 under diagnostic local Xcode 26; secret/path and
-  diff checks pass.
-- Hosted acceptance: not yet run for `1149ea9b…`. Exact Xcode 27 / iPhone 12 /
-  iOS 27 accessibility, screenshot, and performance evidence remains required.
+- Current focus: close the four portrait accessibility failures from exact
+  Xcode 27 run `32318006928`, then finish Home connected/disconnected/loading/
+  error/retained/low states and selected composition before widening scope.
+- Checkpoint `15aff85c4…` moves Home's header and expensive energy scene behind
+  narrow Observation bridges and Equatable value snapshots in
+  `NembraApp/Features/Home/HomeView.swift` and `VehicleHeroView.swift`; it adds
+  snapshot equality tests in `NembraAppTests/NembraAppTests.swift` and source
+  boundaries in `HomeAccessibilityMetricLayoutSourceTests.swift`.
+- Local evidence for `15aff85c4…`: all four touched Swift files parse; focused
+  Home source tests pass 5/5; strict Swift 6 generic-Simulator
+  `build-for-testing` exits 0 for app/unit/UI targets under diagnostic local
+  Xcode 26; secret/path and diff checks pass. The two new XCTest methods compile
+  but have not executed locally.
+- Hosted baseline at ancestor `bec498463…`: exact Xcode 27/iOS 27/iPhone 12 run
+  [`32318006928`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32318006928)
+  is red after Core 1,355/1,355 and app unit 76/76 passed; UI is 17/22. Portrait
+  failures are Vehicle Controls contrast, low-battery separator contrast,
+  retained `%` contrast, and Ride timestamp Dynamic Type. Artifact
+  `nembra-xcode27-simulator-1365-1` is ID `9389149291`, digest
+  `aef19246aa9d9d782a343c138ab77c1a03a7a8560f282c707b4d3f5782063ff8`.
 - External blocker: final Home artwork still requires a high-resolution,
   production-cleared truthful ES80 source. The 500×500 temporary raster cannot
   close visual acceptance.
-- Next executable action: open the portrait draft PR against the integration
-  branch, manually dispatch branch-local `xcode27-simulator.yml`, inspect the
-  exact-head Mac job/artifacts, then continue the value-input Home leaf
-  extraction while hosted evidence runs.
+- Next executable action: fix those four portrait failures against the current
+  bridge architecture, run focused source/strict compile gates, push and verify
+  the correction, synchronize PR #3677 and both continuity files, then manually
+  dispatch branch-local `xcode27-simulator.yml` and inspect exact-head evidence.
 
 This parallel record does not authorize the root task to edit portrait files.
 Capture/BLE publishes only stable typed contracts/fixtures for the portrait
