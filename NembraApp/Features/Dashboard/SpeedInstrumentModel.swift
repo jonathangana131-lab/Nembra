@@ -420,9 +420,9 @@ final class DashboardEnergyRailModel {
     private enum Timing {
         static let riseNanoseconds: UInt64 = 220_000_000
         static let fallNanoseconds: UInt64 = 150_000_000
-        // NembraCore owns accepted-peak bookkeeping. The app schedules only the
-        // bounded redraw at its package-defined expiry; it never computes, extends,
-        // persists, or relabels the accepted peak itself.
+        // NembraCore owns accepted-peak bookkeeping. The app schedules redraws at
+        // receipt-derived candidate expiry boundaries, then asks the package whether
+        // the held peak still exists. Candidate wakes never become peak evidence.
         static let peakHoldNanoseconds: UInt64 = 2_000_000_000
         static let freshnessNanoseconds: UInt64 = 30_000_000_000
     }
@@ -444,6 +444,7 @@ final class DashboardEnergyRailModel {
     @ObservationIgnored private var rejectedCurrentReceipt = false
     @ObservationIgnored private var animationEndTask: Task<Void, Never>?
     @ObservationIgnored private var peakEndTask: Task<Void, Never>?
+    @ObservationIgnored private var peakWakeDeadlines: [UInt64] = []
     @ObservationIgnored private var freshnessTask: Task<Void, Never>?
 
     init() {
@@ -734,7 +735,7 @@ final class DashboardEnergyRailModel {
         for receipt: Receipt,
         animationDurationNanoseconds: UInt64
     ) {
-        cancelScheduledWakes()
+        cancelAnimationAndFreshnessWakes()
         shouldTick = animationDurationNanoseconds > 0
 
         if animationDurationNanoseconds > 0 {
@@ -745,15 +746,7 @@ final class DashboardEnergyRailModel {
             }
         }
 
-        if let peakDelay = delayFromReceipt(
-            receipt,
-            offsetNanoseconds: Timing.peakHoldNanoseconds
-        ) {
-            peakEndTask = scheduleWake(afterNanoseconds: peakDelay) { model in
-                model.peakEndTask = nil
-                model.revision &+= 1
-            }
-        }
+        enqueuePeakCandidate(for: receipt)
 
         if let delay = delayFromReceipt(
             receipt,
@@ -764,6 +757,51 @@ final class DashboardEnergyRailModel {
                 model.freshnessTask = nil
                 model.revision &+= 1
             }
+        }
+    }
+
+    /// Every accepted receipt contributes only a candidate peak-expiry boundary.
+    /// The app never decides which receipt owns the peak. The earliest outstanding
+    /// candidate wake is preserved across lower receipts; when it fires, NembraCore
+    /// is queried for the actual held peak. If the package still holds a newer peak,
+    /// the next candidate is scheduled. When the package removes the marker, all
+    /// later candidates are discarded. This keeps the package the sole peak authority
+    /// without one sleeping task per telemetry callback.
+    private func enqueuePeakCandidate(for receipt: Receipt) {
+        guard let deadline = deadlineFromReceipt(
+            receipt,
+            offsetNanoseconds: Timing.peakHoldNanoseconds
+        ) else { return }
+
+        if !peakWakeDeadlines.contains(deadline) {
+            peakWakeDeadlines.append(deadline)
+            peakWakeDeadlines.sort()
+        }
+        scheduleNextPeakWakeIfNeeded()
+    }
+
+    private func scheduleNextPeakWakeIfNeeded() {
+        guard peakEndTask == nil, let deadline = peakWakeDeadlines.first else { return }
+        let now = DispatchTime.now().uptimeNanoseconds
+        let delay = deadline > now ? deadline - now : 0
+
+        peakEndTask = scheduleWake(afterNanoseconds: delay) { model in
+            model.peakEndTask = nil
+            let wakeUptime = DispatchTime.now().uptimeNanoseconds
+            model.peakWakeDeadlines.removeAll { $0 <= wakeUptime }
+            model.revision &+= 1
+
+            guard let gauge = model.gauge,
+                  let scale = model.scale,
+                  gauge.cockpitSnapshot(
+                    atUptimeNanoseconds: wakeUptime,
+                    scale: scale
+                  ).energyRailPresentation.acceptedPeakMarkerFraction != nil else {
+                model.peakWakeDeadlines.removeAll()
+                return
+            }
+
+            model.scheduleNextPeakWakeIfNeeded()
         }
     }
 
@@ -784,26 +822,40 @@ final class DashboardEnergyRailModel {
         }
     }
 
-    private func delayFromReceipt(
+    private func deadlineFromReceipt(
         _ receipt: Receipt,
         offsetNanoseconds: UInt64
     ) -> UInt64? {
         guard receipt.receivedAtUptimeNanoseconds <= UInt64.max - offsetNanoseconds - 1 else {
             return nil
         }
-        let deadline = receipt.receivedAtUptimeNanoseconds + offsetNanoseconds + 1
+        return receipt.receivedAtUptimeNanoseconds + offsetNanoseconds + 1
+    }
+
+    private func delayFromReceipt(
+        _ receipt: Receipt,
+        offsetNanoseconds: UInt64
+    ) -> UInt64? {
+        guard let deadline = deadlineFromReceipt(receipt, offsetNanoseconds: offsetNanoseconds) else {
+            return nil
+        }
         let now = DispatchTime.now().uptimeNanoseconds
         return deadline > now ? deadline - now : 0
     }
 
-    private func cancelScheduledWakes() {
+    private func cancelAnimationAndFreshnessWakes() {
         animationEndTask?.cancel()
-        peakEndTask?.cancel()
         freshnessTask?.cancel()
         animationEndTask = nil
-        peakEndTask = nil
         freshnessTask = nil
         shouldTick = false
+    }
+
+    private func cancelScheduledWakes() {
+        cancelAnimationAndFreshnessWakes()
+        peakEndTask?.cancel()
+        peakEndTask = nil
+        peakWakeDeadlines.removeAll()
     }
 
     private func failClosedForCurrentProjection() {
@@ -811,7 +863,6 @@ final class DashboardEnergyRailModel {
         rejectedCurrentReceipt = true
         revision &+= 1
     }
-
 }
 
 struct DashboardPropulsionGeometry {
@@ -1304,9 +1355,10 @@ enum DashboardSpeedUnitPresentation {
     }
 }
 
-/// Deterministic, non-overlapping cockpit instrument bands. The clearances
-/// mirror the separately rendered top identity and bottom durable ledger; only
-/// presentation geometry lives here, never telemetry or evidence authority.
+/// Deterministic, non-overlapping cockpit instrument bands. In compact landscape
+/// space the primary speed instrument wins: internal clearances shrink first and
+/// then the Energy Rail may compress before the readable speed band is starved.
+/// This is presentation geometry only; no telemetry or evidence authority lives here.
 struct DashboardInstrumentVerticalLayout: Equatable {
     let speedFrame: CGRect
     let energyRailFrame: CGRect
@@ -1321,23 +1373,31 @@ struct DashboardInstrumentVerticalLayout: Equatable {
             return
         }
 
-        let topClearance = min(
-            usesAccessibilityLayout ? 86 : 54,
-            size.height * 0.25
-        )
-        let bottomClearance = min(
-            usesAccessibilityLayout ? 108 : 62,
-            size.height * 0.36
-        )
+        let desiredTopClearance = usesAccessibilityLayout ? 86.0 : 54.0
+        let desiredBottomClearance = usesAccessibilityLayout ? 108.0 : 62.0
+        let minimumSpeedHeight = usesAccessibilityLayout ? 92.0 : 112.0
+        let compactRailFloor = usesAccessibilityLayout ? 44.0 : 64.0
+        let desiredGap = usesAccessibilityLayout ? 8.0 : 10.0
+        let minimumContentHeight = minimumSpeedHeight + compactRailFloor + desiredGap
+        let desiredTotalClearance = desiredTopClearance + desiredBottomClearance
+        let maximumTotalClearance = max(0, size.height - minimumContentHeight)
+        let clearanceScale = desiredTotalClearance > 0
+            ? min(1, maximumTotalClearance / desiredTotalClearance)
+            : 0
+        let topClearance = desiredTopClearance * clearanceScale
+        let bottomClearance = desiredBottomClearance * clearanceScale
         let availableHeight = max(0, size.height - topClearance - bottomClearance)
-        let gap = min(usesAccessibilityLayout ? 8 : 10, availableHeight * 0.08)
+        let speedReservation = min(minimumSpeedHeight, availableHeight)
+        let gapCapacity = max(0, availableHeight - speedReservation)
+        let gap = min(desiredGap, gapCapacity)
+        let maximumRailHeightForSpeed = max(0, availableHeight - gap - speedReservation)
         let desiredRailHeight = usesAccessibilityLayout ? 74.0 : 98.0
-        let minimumRailHeight = usesAccessibilityLayout ? 64.0 : 82.0
         let proportionalRailHeight = availableHeight * (usesAccessibilityLayout ? 0.36 : 0.39)
-        let railHeight = min(
-            max(0, availableHeight - gap),
-            min(desiredRailHeight, max(minimumRailHeight, proportionalRailHeight))
+        let preferredRailHeight = min(
+            desiredRailHeight,
+            max(compactRailFloor, proportionalRailHeight)
         )
+        let railHeight = min(maximumRailHeightForSpeed, preferredRailHeight)
         let speedHeight = max(0, availableHeight - gap - railHeight)
 
         speedFrame = CGRect(
