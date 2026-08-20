@@ -1,6 +1,8 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
+import tempfile
 import unittest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "es80_field_authorization_rendezvous.py"
@@ -82,6 +84,43 @@ class SignerRendezvousTests(unittest.TestCase):
                     rendezvous.verify_rendezvous_bytes(
                         rendezvous.canonical_json_bytes(changed)
                     )
+
+    def test_cli_reader_is_descriptor_bound_bounded_and_single_link(self) -> None:
+        data = rendezvous.canonical_json_bytes(self.value)
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            valid = root / "rendezvous.json"
+            valid.write_bytes(data)
+            valid.chmod(0o600)
+            self.assertEqual(rendezvous._read_exact(valid), data)
+
+            symlink = root / "symlink.json"
+            symlink.symlink_to(valid)
+            with self.assertRaises(rendezvous.SignerRendezvousError):
+                rendezvous._read_exact(symlink)
+
+            hardlink = root / "hardlink.json"
+            os.link(valid, hardlink)
+            with self.assertRaises(rendezvous.SignerRendezvousError):
+                rendezvous._read_exact(valid)
+            hardlink.unlink()
+
+            oversized = root / "oversized.json"
+            oversized.write_bytes(b"x" * (rendezvous.MAX_DOCUMENT_BYTES + 1))
+            oversized.chmod(0o600)
+            with self.assertRaises(rendezvous.SignerRendezvousError):
+                rendezvous._read_exact(oversized)
+
+            writable = root / "writable.json"
+            writable.write_bytes(data)
+            writable.chmod(0o622)
+            with self.assertRaises(rendezvous.SignerRendezvousError):
+                rendezvous._read_exact(writable)
+
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertNotIn("candidate.read_bytes()", source)
+        self.assertIn("os.O_NOFOLLOW", source)
+        self.assertIn("os.fstat(descriptor)", source)
 
     def test_python_wire_constants_match_swift_exporter(self) -> None:
         source = SWIFT_SOURCE.read_text(encoding="utf-8")
