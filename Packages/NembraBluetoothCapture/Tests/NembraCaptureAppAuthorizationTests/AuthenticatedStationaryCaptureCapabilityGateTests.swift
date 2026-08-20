@@ -47,6 +47,31 @@ struct AuthenticatedStationaryCaptureCapabilityGateTests {
         #expect(gate.stage == .off1Started)
     }
 
+    @Test("one verifier-minted capability cannot fork into two OFF1 gates")
+    func capabilityCannotForkAcrossGates() throws {
+        let capability = try makeCapability()
+        let firstClock = GateTestClock(wall: 2_001_000, uptime: 11_000_000_000)
+        let secondClock = GateTestClock(wall: 2_001_000, uptime: 11_000_000_000)
+        let first = makeGate(capability: capability, clock: firstClock)
+        let second = makeGate(capability: capability, clock: secondClock)
+
+        try first.admitOFF1Start()
+        #expect(first.stage == .off1Started)
+
+        #expect(throws: AuthenticatedStationaryCaptureCapabilityGateError.capabilityAlreadyClaimed) {
+            try second.admitOFF1Start()
+        }
+        #expect(second.stage == .revoked)
+
+        first.revoke()
+        #expect(first.stage == .revoked)
+        let third = makeGate(capability: capability, clock: secondClock)
+        #expect(throws: AuthenticatedStationaryCaptureCapabilityGateError.capabilityAlreadyClaimed) {
+            try third.admitOFF1Start()
+        }
+        #expect(third.stage == .revoked)
+    }
+
     @Test("revocation is terminal across every later boundary")
     func revocationIsTerminal() throws {
         let capability = try makeCapability()
@@ -95,21 +120,21 @@ struct AuthenticatedStationaryCaptureCapabilityGateTests {
 
     @Test("exact verifier wall and monotonic expiry instants are already expired")
     func exactExpiryBoundariesAreExclusive() throws {
-        let capability = try makeCapability()
-
+        let wallCapability = try makeCapability()
         let wallClock = GateTestClock(wall: 2_001_000, uptime: 11_000_000_000)
-        let wallGate = makeGate(capability: capability, clock: wallClock)
+        let wallGate = makeGate(capability: wallCapability, clock: wallClock)
         try wallGate.admitOFF1Start()
-        wallClock.wall = capability.expiresAtUnixMilliseconds
+        wallClock.wall = wallCapability.expiresAtUnixMilliseconds
         #expect(throws: AuthenticatedStationaryCaptureCapabilityGateError.authorizationExpired) {
             try wallGate.admitAuthenticationStart()
         }
         #expect(wallGate.stage == .revoked)
 
+        let uptimeCapability = try makeCapability()
         let uptimeClock = GateTestClock(wall: 2_001_000, uptime: 11_000_000_000)
-        let uptimeGate = makeGate(capability: capability, clock: uptimeClock)
+        let uptimeGate = makeGate(capability: uptimeCapability, clock: uptimeClock)
         try uptimeGate.admitOFF1Start()
-        uptimeClock.uptime = capability.expiresAtUptimeNanoseconds
+        uptimeClock.uptime = uptimeCapability.expiresAtUptimeNanoseconds
         #expect(throws: AuthenticatedStationaryCaptureCapabilityGateError.authorizationExpired) {
             try uptimeGate.admitAuthenticationStart()
         }
@@ -135,6 +160,8 @@ struct AuthenticatedStationaryCaptureCapabilityGateTests {
         #expect(!source.contains("AuthenticatedStationaryCaptureAttemptCapability("))
         #expect(source.contains("func revoke()"))
         #expect(source.contains("try validateCapabilityIsCurrent()"))
+        #expect(source.contains("capability.consumptionRequest.requestIdentitySHA256"))
+        #expect(source.contains("claimedOFF1ConsumptionRequestIdentities.insert(identity).inserted"))
         #expect(source.contains("nowWall < capability.expiresAtUnixMilliseconds"))
         #expect(source.contains("nowUptime < capability.expiresAtUptimeNanoseconds"))
         #expect(!source.contains("nowWall <= capability.expiresAtUnixMilliseconds"))
@@ -186,7 +213,7 @@ struct AuthenticatedStationaryCaptureCapabilityGateTests {
             "version": 1,
             "procedureID": AuthenticatedStationaryCaptureFieldAuthorizationVerifier.procedureID,
             "decision": "GO",
-            "authorizationID": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+            "authorizationID": UUID().uuidString.lowercased(),
             "attemptChallengeSHA256": attempt.challengeSHA256,
             "issuedAtUnixMilliseconds": 2_000_100,
             "notBeforeUnixMilliseconds": 2_000_100,
