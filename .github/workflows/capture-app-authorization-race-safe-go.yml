@@ -181,7 +181,7 @@ jobs:
 
           while IFS= read -r changed; do
             case "$changed" in
-              "$APP_SOURCE"|NembraApp/*|NembraCapture.xcodeproj/*|Packages/*|Package.swift|Package.resolved|project.yml|TuyaCapturePrivateConfig/*)
+              "$APP_SOURCE"|"$SOURCE_WORKFLOW"|"$SELF_WORKFLOW"|scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py|NembraApp/*|NembraCapture.xcodeproj/*|Packages/*|Package.swift|Package.resolved|project.yml|TuyaCapturePrivateConfig/*)
                 printf 'Overlapping build/authority path moved while Xcode evidence ran: %s\n' "$changed" >&2
                 exit 1
                 ;;
