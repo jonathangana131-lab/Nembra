@@ -13,9 +13,9 @@ Updated: 2026-08-19
   `3f0814ac70211f68b7af1a6913c78c91a810f663` (contains implementation
   checkpoint `0b7e3b27de5e9b547911558ae8ed4cb852becb59`).
 - Latest pushed portrait implementation checkpoint:
-  `15aff85c4a98abd5c37dfb12a677a1a8555de4df` (remote-verified).
+  `72ba15f1844ef489fca64cecf5f9b207a2bef533` (remote-verified).
 - Latest remote branch tip verified before this continuity update:
-  `15aff85c4a98abd5c37dfb12a677a1a8555de4df`.
+  `72ba15f1844ef489fca64cecf5f9b207a2bef533`.
 - Draft portrait PR: [#3677](https://github.com/jonathangana131-lab/Nembra/pull/3677).
 
 This file is the portrait workstream recovery authority. The root
@@ -94,6 +94,29 @@ Recovery: checkout remote `agent/portrait-home-1-0-polish` at
 not restore the removed legacy vector scooter code; it was rejected, unused,
 and is not evidence of an ES80.
 
+## Completed and pushed accessibility correction
+
+Implementation commit `72ba15f1844ef489fca64cecf5f9b207a2bef533` is
+pushed and remote-verified:
+
+- `NembraApp/Features/Home/VehicleHeroView.swift` gives the exact failing
+  Vehicle Controls node a native circular prominent-glass surface with a
+  contrast-safe neutral/dark pair and no custom outline; the percent suffix now
+  uses regular optical weight while retained truth stays explicit;
+- `NembraApp/Features/Home/HomeView.swift` gives the exact low-battery readiness
+  separator an opaque instrument-neutral role;
+- `NembraApp/App/AppRootView.swift` replaces duplicate Ride timeline
+  `ViewThatFits` candidates with one vertically expanding native semantic Text
+  pair, retaining the 72-point Navigation-launcher clearance;
+- focused Home/Ride source contracts preserve all unchanged runtime audits and
+  forbid the failed custom-outline, thin-glyph, duplicate-candidate, combined,
+  ignored, or labeled-pair approaches;
+- `docs/coordination/UI_CONTRACTS.md` records the narrow shared-AppRoot
+  ownership boundary for sibling integration.
+
+Recovery: checkout remote `agent/portrait-home-1-0-polish` at `72ba15f18…`.
+No implementation change from this correction remains local-only.
+
 ## Tests and CI
 
 Latest completed baseline run:
@@ -115,6 +138,12 @@ and UI-test targets. The two new snapshot XCTest methods were compiled but were
 not executed locally; exact-head hosted Xcode 27 must execute them. Local Xcode
 26 is never release authority.
 
+Current accessibility-correction evidence: all five touched Swift files parse;
+focused Home source tests pass 5/5 and Ride Window source tests pass 1/1;
+`git diff --check` and the scoped secret/private-path scan pass; a strict Swift
+6 generic-Simulator `build-for-testing` exits 0 for app/unit/UI targets. The
+production UI audits require exact-head Xcode 27 and are not locally accepted.
+
 Exact-head hosted Xcode 27 workflow run
 [`32318006928`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32318006928)
 is terminal **failure** at remote tip `bec498463…`. It genuinely ran on Xcode
@@ -127,11 +156,19 @@ fifth failure is cockpit-owned animation quiescence. Artifact
 The run validates the first checkpoint only, not pushed isolation checkpoint
 `15aff85c4…`, and it is not portrait acceptance.
 
+Branch workflow run
+[`32321129658`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32321129658)
+was dispatched at exact ancestor continuity SHA `7ce2c762…`; its Mac job passed
+checkout/project/Core validation and entered app/UI execution before this newer
+implementation push. Whether it completes or is superseded, its result does not
+transfer to `72ba15f18…`.
+
 ## Blockers
 
-- **Code/CI:** the four portrait-owned failures from run `32318006928` require
-  code fixes and an exact-head rerun. Xcode 27 must also prove XXXL reflow,
-  first-fold geometry, retained truth, snapshots, and render-island behavior.
+- **Code/CI:** commit `72ba15f18…` addresses the four portrait-owned failures
+  from run `32318006928`, but exact-head Xcode 27 must prove closure. It must
+  also prove XXXL reflow, first-fold geometry, retained truth, snapshots, and
+  render-island behavior.
 - **User/asset rights:** final Home needs a user-owned/commissioned high-resolution
   actual ES80 side photo or written AOVOPRO permission with full provenance.
 - **Capture/BLE:** physical fields remain unavailable until the Capture/BLE
@@ -141,8 +178,10 @@ The run validates the first checkpoint only, not pushed isolation checkpoint
 
 ## Exact next executable action
 
-1. Fix the four portrait-owned failures from run `32318006928` against the
-   current render-isolated implementation without weakening any audit. Run:
+1. Dispatch `xcode27-simulator.yml` at the latest portrait branch after this
+   continuity push. Confirm exact checkout, Xcode 27/iOS 27/iPhone 12, then
+   inspect the four unchanged production audits and retained screenshots.
+2. For local recovery or preflight, run:
 
    ```sh
    xcrun swiftc -frontend -parse NembraApp/Features/Home/HomeView.swift NembraApp/Features/Home/VehicleHeroView.swift NembraAppTests/NembraAppTests.swift
@@ -151,12 +190,12 @@ The run validates the first checkpoint only, not pushed isolation checkpoint
    git diff --check
    ```
 
-2. Commit/push the focused accessibility correction, verify the remote SHA,
-   update both continuity files and PR body, then dispatch exact-head
-   `xcode27-simulator.yml` on the portrait branch.
 3. The new run must execute the two snapshot unit tests and the unchanged
    Home/Ride production audits. Do not transfer ancestor run `32318006928` to
    the new SHA.
+4. After exact accessibility/runtime proof, return to the selected-reference
+   Home hero fidelity queue; do not widen into other portrait tabs while Home
+   still lacks a production-cleared high-resolution truthful ES80 asset.
 
 ## Rejected approaches
 
@@ -174,11 +213,11 @@ The run validates the first checkpoint only, not pushed isolation checkpoint
 
 ## Unverified assumptions and evidence required
 
-- The canonical icon-only `Label` did not eliminate the hosted
-  `slider.horizontal.3` contrast failure; the production control treatment
-  needs a stronger pixel-level correction without hiding the audit node.
-- The opaque instrument token and deeper copy well did not close every hosted
-  state: low battery still fails on a separator and retained battery on `%`.
+- The prominent neutral glass, opaque separator, and regular-weight percent
+  directly address the exact hosted nodes, but only an exact-head Xcode 27
+  audit can prove the composited pixels now pass.
+- The single stacked Ride timeline removes inactive candidate identities, but
+  exact Xcode 27 must still prove Dynamic Type and VoiceOver ordering.
 - Production adaptive range remains unwired; `Unavailable` is currently correct.
 - The render-isolation slice is intended to keep battery/grounding Canvases
   unchanged across speed/power-only receipts. Source tests are green and the
