@@ -98,7 +98,8 @@ struct AuthenticatedStationaryCaptureAuthorizationInboxTests {
         #expect(source.contains("sameSnapshot(before, afterRead)"))
         #expect(source.contains("Darwin.unlinkat(directoryFD, filename, 0)"))
         #expect(source.contains("afterUnlink.st_nlink == 0"))
-        #expect(source.contains("sameSnapshotExceptLinkCount(before, afterUnlink)"))
+        #expect(source.contains("sameInode(before, afterUnlink)"))
+        #expect(!source.contains("sameSnapshotExceptLinkCount"))
         #expect(!source.contains("Data(contentsOf: fileURL"))
         #expect(!source.contains("resourceValues(forKeys:"))
     }
