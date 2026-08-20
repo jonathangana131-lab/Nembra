@@ -156,6 +156,19 @@ public struct AuthenticatedStationaryCaptureSignerRendezvousOutbox: Sendable {
     }
 
     private func openFieldAuthorizationDirectory(createIfMissing: Bool) throws -> Int32 {
+        if createIfMissing {
+            let applicationSupportCreationResult = applicationSupportURL
+                .withUnsafeFileSystemRepresentation { path -> Int32 in
+                    guard let path else { return -1 }
+                    if Darwin.mkdir(path, mode_t(0o700)) == 0 { return 0 }
+                    return errno == EEXIST ? 0 : -1
+                }
+            guard applicationSupportCreationResult == 0 else {
+                throw AuthenticatedStationaryCaptureSignerRendezvousOutboxError
+                    .applicationSupportUnavailable
+            }
+        }
+
         let baseFD = applicationSupportURL.withUnsafeFileSystemRepresentation { path -> Int32 in
             guard let path else { return -1 }
             return Darwin.open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
