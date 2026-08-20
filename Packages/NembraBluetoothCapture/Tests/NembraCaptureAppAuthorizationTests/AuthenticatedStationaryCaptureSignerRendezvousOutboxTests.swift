@@ -35,6 +35,28 @@ struct AuthenticatedStationaryCaptureSignerRendezvousOutboxTests {
         }
     }
 
+    @Test("symlinked application-support root is rejected before directory traversal")
+    func rejectsSymlinkedApplicationSupportRoot() throws {
+        let parent = try temporaryDirectory()
+        let elsewhere = try temporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: parent)
+            try? FileManager.default.removeItem(at: elsewhere)
+        }
+        let linkedRoot = parent.appendingPathComponent("ApplicationSupport")
+        try FileManager.default.createSymbolicLink(
+            at: linkedRoot,
+            withDestinationURL: elsewhere
+        )
+        let outbox = AuthenticatedStationaryCaptureSignerRendezvousOutbox(
+            applicationSupportURL: linkedRoot
+        )
+
+        #expect(throws: AuthenticatedStationaryCaptureSignerRendezvousOutboxError.applicationSupportUnavailable) {
+            _ = try outbox.publish(makeRendezvous())
+        }
+    }
+
     @Test("symlinked app-controlled directory is rejected")
     func rejectsSymlinkedDirectory() throws {
         let root = try temporaryDirectory()
@@ -82,7 +104,7 @@ struct AuthenticatedStationaryCaptureSignerRendezvousOutboxTests {
         #expect(FileManager.default.fileExists(atPath: file.path))
     }
 
-    @Test("source uses directory-relative no-follow publication and retirement")
+    @Test("source binds publication success to the descriptor-backed pathname inode")
     func sourcePinsCustodyContract() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -97,7 +119,9 @@ struct AuthenticatedStationaryCaptureSignerRendezvousOutboxTests {
 
         #expect(source.contains("O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC"))
         #expect(source.contains("Darwin.mkdirat"))
-        #expect(source.contains("O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC"))
+        #expect(source.contains("Darwin.open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)"))
+        #expect(source.contains("Darwin.fstatat(directoryFD, Self.filename, &published, AT_SYMLINK_NOFOLLOW)"))
+        #expect(source.contains("pathStillNamesDescriptor(directoryFD: directoryFD, descriptor: descriptor)"))
         #expect(source.contains("Darwin.unlinkat(directoryFD, Self.filename, 0)"))
         #expect(source.contains("after.st_nlink == 0"))
         #expect(!source.contains("write(to:"))
