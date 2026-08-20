@@ -1,8 +1,15 @@
 name: Capture app authorization race-safe GO
-# Retriggered after writer convergence at carrier 203d4ffd07849f83c171d7e70b070f189a22548b.
-# GO retry after main-actor authorization-session construction fix at 728b8c1afa78186dc1077f5bd310a1c4999318b6.
+# Carrier-native sole writer. Pull-request execution is intentional so same-repo
+# carrier updates create observable Xcode-27 runs; publication remains exact-head
+# and fail-closed across overlapping product/authority movement.
 
 on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - main
+    paths:
+      - .github/workflows/capture-app-authorization-race-safe-go.yml
   push:
     branches:
       - product/capture-1-0-main-20260818
@@ -12,12 +19,17 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: capture-app-authorization-race-safe-go
+  cancel-in-progress: false
+
 jobs:
   materialize-test-publish:
     runs-on: xcode-27
     timeout-minutes: 45
     env:
       TARGET_BRANCH: product/capture-1-0-main-20260818
+      TRIGGER_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
       SOURCE_WORKFLOW: .github/workflows/capture-app-authorization-close-one-shot.yml
       SELF_WORKFLOW: .github/workflows/capture-app-authorization-race-safe-go.yml
@@ -26,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: true
 
@@ -34,7 +46,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$TRIGGER_SHA"
           test -f "$APP_SOURCE"
           test -f "$SOURCE_WORKFLOW"
           test -f "$SELF_WORKFLOW"
@@ -147,7 +159,7 @@ jobs:
                 exit 1
                 ;;
             esac
-          done < <(git diff --name-only "$GITHUB_SHA" "$remote_head")
+          done < <(git diff --name-only "$TRIGGER_SHA" "$remote_head")
 
           git reset --hard "$remote_head"
           cp "$RUNNER_TEMP/tested-NembraCaptureEntrypoint.swift" "$APP_SOURCE"
@@ -163,4 +175,4 @@ jobs:
           git commit -m 'feat(capture): wire one-time field authorization into SecureLink'
           materialized="$(git rev-parse HEAD)"
           git push --force-with-lease="refs/heads/$TARGET_BRANCH:$remote_head" origin HEAD:"$TARGET_BRANCH"
-          printf 'NEMBRA_CAPTURE_APP_AUTHORIZATION_RACE_SAFE materialized=%s absorbed=%s trigger=%s physicalAuthorityCreated=false\n' "$materialized" "$remote_head" "$GITHUB_SHA"
+          printf 'NEMBRA_CAPTURE_APP_AUTHORIZATION_RACE_SAFE materialized=%s absorbed=%s trigger=%s physicalAuthorityCreated=false\n' "$materialized" "$remote_head" "$TRIGGER_SHA"
