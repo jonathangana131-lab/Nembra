@@ -21,6 +21,23 @@ artifacts/
 Artifacts/
 *.log
 
+# Physical Capture exports can retain device-local identifiers and raw protocol
+# evidence. Keep their app-generated names and the dedicated private staging
+# directory out of Git; only reviewed, pseudonymized fixtures belong in tests.
+Nembra-Capture-*
+Nembra-Secure-Link-*
+Nembra-ES80-Fingerprint-*
+Nembra-ES80-Capture-*
+CaptureEvidencePrivate/
+*.nembra-capture-evidence.json
+*.nembra-capture-evidence.ndjson
+*.ipa
+*.mobileprovision
+*.p12
+*.p8
+*.pem
+*.key
+
 # Capture's one-time private Tuya field workspace. These files can contain the
 # app-specific security SDK, encoded app identity, and resolved private build
 # graph. They must never be committed or uploaded as CI artifacts.
