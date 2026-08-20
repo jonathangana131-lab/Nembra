@@ -482,7 +482,7 @@ def self_test() -> None:
         "finalGORecordSHA256": digest("7"),
         "intendedDevicePseudonymSHA256": digest("8"),
     })
-    with tempfile.TemporaryDirectory(prefix="nembra-auth-self-test-") as name:
+    with tempfile.TemporaryDirectory(prefix="nembra-auth-self-test-", dir=Path.home()) as name:
         directory = Path(name); os.chmod(directory, 0o700)
         key = directory / "ephemeral-test-key.pem"; public = directory / "ephemeral-test-public.pem"
         _run_openssl(openssl, ["ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", str(key)])
