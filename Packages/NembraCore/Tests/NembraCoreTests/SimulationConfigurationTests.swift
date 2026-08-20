@@ -4,18 +4,29 @@ import Testing
 
 @Suite("Simulation configuration safety")
 struct SimulationConfigurationTests {
+    private func expectExplicitResolution(
+        _ actual: ScooterSimulationConfigurationResolution,
+        hostOrSimulator expected: ScooterSimulationConfigurationResolution
+    ) {
+#if os(iOS) && !targetEnvironment(simulator)
+        #expect(actual == .disabled)
+#else
+        #expect(actual == expected)
+#endif
+    }
+
     @Test("no explicit configuration keeps simulation disabled")
     func noConfiguration() {
         #expect(ScooterSimulationConfiguration.resolve(arguments: ["Nembra"], environment: [:]) == .disabled)
     }
 
-    @Test("valid environment configuration has priority")
+    @Test("valid environment configuration has priority where synthetic scenarios are allowed")
     func environmentPriority() {
         let result = ScooterSimulationConfiguration.resolve(
             arguments: ["Nembra", "--nembra-simulation=riding"],
             environment: [ScooterSimulationConfiguration.environmentKey: "low-battery"]
         )
-        #expect(result == .selected(.lowBattery))
+        expectExplicitResolution(result, hostOrSimulator: .selected(.lowBattery))
     }
 
     @Test("invalid environment configuration fails closed instead of falling through")
@@ -24,42 +35,50 @@ struct SimulationConfigurationTests {
             arguments: ["Nembra", "--nembra-simulation=riding"],
             environment: [ScooterSimulationConfiguration.environmentKey: "low-batery"]
         )
-        #expect(result == .invalid(source: .environment, rawValue: "low-batery"))
+        expectExplicitResolution(
+            result,
+            hostOrSimulator: .invalid(source: .environment, rawValue: "low-batery")
+        )
     }
 
-    @Test("valid launch argument selects one exact scenario")
+    @Test("valid launch argument selects one exact scenario only where synthetic scenarios are allowed")
     func validLaunchArgument() {
         let result = ScooterSimulationConfiguration.resolve(
             arguments: ["Nembra", "--nembra-simulation=cold-disconnected"],
             environment: [:]
         )
-        #expect(result == .selected(.coldDisconnected))
+        expectExplicitResolution(result, hostOrSimulator: .selected(.coldDisconnected))
     }
 
     @Test("missing or unknown launch argument values fail closed")
     func malformedLaunchArguments() {
-        #expect(
+        expectExplicitResolution(
             ScooterSimulationConfiguration.resolve(
                 arguments: ["Nembra", "--nembra-simulation"],
                 environment: [:]
-            ) == .invalid(source: .launchArgument, rawValue: "--nembra-simulation")
+            ),
+            hostOrSimulator: .invalid(source: .launchArgument, rawValue: "--nembra-simulation")
         )
-        #expect(
+        expectExplicitResolution(
             ScooterSimulationConfiguration.resolve(
                 arguments: ["Nembra", "--nembra-simulation=warp-speed"],
                 environment: [:]
-            ) == .invalid(source: .launchArgument, rawValue: "warp-speed")
+            ),
+            hostOrSimulator: .invalid(source: .launchArgument, rawValue: "warp-speed")
         )
     }
 
-    @Test("duplicate simulation launch arguments are rejected as ambiguous")
+    @Test("duplicate simulation launch arguments are rejected as ambiguous where parsing is allowed")
     func duplicateArgumentsRejected() {
         let raw = "--nembra-simulation=riding --nembra-simulation=low-battery"
         let result = ScooterSimulationConfiguration.resolve(
             arguments: ["Nembra", "--nembra-simulation=riding", "--nembra-simulation=low-battery"],
             environment: [:]
         )
-        #expect(result == .invalid(source: .launchArgument, rawValue: raw))
+        expectExplicitResolution(
+            result,
+            hostOrSimulator: .invalid(source: .launchArgument, rawValue: raw)
+        )
     }
 
     @Test("physical iOS simulation authority remains compile-time fenced")
@@ -75,18 +94,30 @@ struct SimulationConfigurationTests {
         let source = String(decoding: try Data(contentsOf: sourceURL), as: UTF8.self)
 
         #expect(source.contains("#if os(iOS) && !targetEnvironment(simulator)"))
-        #expect(source.contains("return .disabled\n#endif"))
+        #expect(source.contains("private static let runtimeAllowsSyntheticScenarios"))
+        #expect(source.contains("guard runtimeAllowsSyntheticScenarios else { return .disabled }"))
         #expect(source.contains("Synthetic vehicle authority is a Simulator/host-test facility only."))
     }
 
 #if os(iOS) && !targetEnvironment(simulator)
-    @Test("physical iOS rejects explicit synthetic scenarios")
-    func physicalIOSRejectsSyntheticScenario() {
-        let result = ScooterSimulationConfiguration.resolve(
+    @Test("physical iOS rejects every explicit synthetic configuration before parsing")
+    func physicalIOSRejectsExplicitSyntheticConfiguration() {
+        let environmentResult = ScooterSimulationConfiguration.resolve(
             arguments: ["Nembra", "--nembra-simulation=riding"],
             environment: [ScooterSimulationConfiguration.environmentKey: "low-battery"]
         )
-        #expect(result == .disabled)
+        let malformedResult = ScooterSimulationConfiguration.resolve(
+            arguments: ["Nembra", "--nembra-simulation=warp-speed"],
+            environment: [:]
+        )
+        let duplicateResult = ScooterSimulationConfiguration.resolve(
+            arguments: ["Nembra", "--nembra-simulation=riding", "--nembra-simulation=low-battery"],
+            environment: [:]
+        )
+
+        #expect(environmentResult == .disabled)
+        #expect(malformedResult == .disabled)
+        #expect(duplicateResult == .disabled)
     }
 #endif
 }
