@@ -1,9 +1,9 @@
-name: Capture carrier authority materialize once
+name: Capture recovery authority materialize once
 
 on:
   push:
     branches:
-      - product/capture-1-0-main-20260818
+      - recovery/capture-authority-lifecycle-current-gpt56sol-20260819
     paths:
       - .github/workflows/capture-carrier-authority-materialize-once.yml
 
@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: capture-carrier-authority-materializer
+  group: capture-recovery-authority-materializer-gpt56sol
   cancel-in-progress: true
 
 jobs:
@@ -19,15 +19,15 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 30
     env:
-      TARGET_BRANCH: product/capture-1-0-main-20260818
+      TARGET_BRANCH: recovery/capture-authority-lifecycle-current-gpt56sol-20260819
       AUTHORING_WORKFLOW: .github/workflows/capture-carrier-authority-materialize-once.yml
       APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
       EXPECTED_SOURCE_BLOB: 627c17949d15aaf26ca28c12abb9bb684ab0e731
     steps:
-      - name: Checkout carrier with write credentials
+      - name: Checkout recovery branch with write credentials
         uses: actions/checkout@v6
         with:
-          ref: product/capture-1-0-main-20260818
+          ref: recovery/capture-authority-lifecycle-current-gpt56sol-20260819
           fetch-depth: 0
           persist-credentials: true
 
@@ -102,7 +102,7 @@ jobs:
           path.write_text(source, encoding="utf-8")
           PY
 
-      - name: Materialize against latest carrier with compare-and-swap
+      - name: Materialize against recovery branch with compare-and-swap
         shell: bash
         run: |
           set -euo pipefail
@@ -150,12 +150,12 @@ jobs:
             git fetch origin "$TARGET_BRANCH"
             if [[ "$(git rev-parse FETCH_HEAD)" == "$base" ]]; then
               git push origin HEAD:"$TARGET_BRANCH"
-              printf 'CAPTURE_CARRIER_AUTHORITY_MATERIALIZED=%s base=%s physicalAuthorityCreated=false\n' "$materialized" "$base"
+              printf 'CAPTURE_RECOVERY_AUTHORITY_MATERIALIZED=%s base=%s physicalAuthorityCreated=false\n' "$materialized" "$base"
               exit 0
             fi
 
-            echo "Carrier advanced after tests; retrying from latest exact head."
+            echo "Recovery branch advanced after tests; retrying from latest exact head."
           done
 
-          echo "Carrier did not stabilize within bounded retries; no overwrite performed." >&2
+          echo "Recovery branch did not stabilize within bounded retries; no overwrite performed." >&2
           exit 1
