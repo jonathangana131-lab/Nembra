@@ -446,11 +446,13 @@ final class NembraAppTests: XCTestCase {
             store.simulatorPowerStoreProjection.currentness == .live
         }
         XCTAssertTrue(initialLiveArrived)
+        let initialReceipt = try XCTUnwrap(store.simulatorPowerStoreProjection.observation)
 
         await service.simulateRide(speedKilometersPerHour: 36, elapsedSeconds: 0)
         let highArrived = await waitUntil {
-            store.simulatorPowerStoreProjection.currentness == .live
-                && (store.simulatorPowerStoreProjection.observation?.watts ?? 0) > 0
+            guard store.simulatorPowerStoreProjection.currentness == .live,
+                  let receipt = store.simulatorPowerStoreProjection.observation else { return false }
+            return receipt.receiptSequenceNumber > initialReceipt.receiptSequenceNumber
         }
         XCTAssertTrue(highArrived)
         let highProjection = store.simulatorPowerStoreProjection
