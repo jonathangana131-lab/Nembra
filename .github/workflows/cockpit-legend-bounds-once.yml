@@ -1,4 +1,5 @@
 name: Cockpit compact Energy Rail legend bounds one-shot
+# GO trigger after the one-shot workflow exists on this branch; no product authority change.
 
 on:
   push:
@@ -35,7 +36,7 @@ jobs:
           set -euo pipefail
           test "$(git branch --show-current)" = "$TARGET_BRANCH"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          test "$(git rev-parse HEAD^^)" = "$EXPECTED_PARENT"
           changed="$(git diff --name-only "$EXPECTED_PARENT"...HEAD)"
           test "$changed" = "$SELF_WORKFLOW"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
