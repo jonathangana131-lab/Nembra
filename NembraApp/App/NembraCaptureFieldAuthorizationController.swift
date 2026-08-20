@@ -17,8 +17,7 @@ final class NembraCaptureFieldAuthorizationController {
 
     var stage: AuthenticatedStationaryCaptureAppSession.Stage { session.stage }
 
-    @discardableResult
-    func prepareAttemptFromInbox()
+    private func prepareAttemptFromInbox()
         throws -> AuthenticatedStationaryCaptureAppSession.SignerRendezvous
     {
         let manifestData = try AuthenticatedStationaryCaptureAuthorizationInbox()
@@ -26,17 +25,36 @@ final class NembraCaptureFieldAuthorizationController {
         return try session.prepare(installManifestData: manifestData)
     }
 
-    /// Returns the exact non-authorizing bytes that should be copied FROM the still-running app
+    /// Publishes the exact non-authorizing bytes that should be copied FROM the still-running app
     /// container to the independent field signer. The process-local attempt remains alive inside
-    /// `session`; exporting this document does not grant OFF1 or expose the opaque capability.
+    /// `session`; publication does not grant OFF1 or expose the opaque capability. Publication
+    /// failure terminally retires the attempt so a consumed manifest/challenge cannot become an
+    /// invisible retry path.
+    @discardableResult
     func prepareSignerRendezvousDocumentFromInbox() throws -> Data {
         let rendezvous = try prepareAttemptFromInbox()
-        return try AuthenticatedStationaryCaptureSignerRendezvousDocument.encode(rendezvous)
+        do {
+            return try AuthenticatedStationaryCaptureSignerRendezvousOutbox()
+                .publish(rendezvous)
+        } catch {
+            session.revoke()
+            throw error
+        }
     }
 
+    /// Takes the returned signed envelope, retires the exact outbound rendezvous inode, then asks
+    /// the package session to verify/consume the envelope. If rendezvous retirement fails, the
+    /// attempt is revoked before the envelope can become authority.
     func authorizeFromInbox() throws {
+        let outbox = try AuthenticatedStationaryCaptureSignerRendezvousOutbox()
         let envelopeData = try AuthenticatedStationaryCaptureAuthorizationInbox()
             .takeAuthorizationEnvelope()
+        do {
+            try outbox.retirePublishedRendezvous()
+        } catch {
+            session.revoke()
+            throw error
+        }
         try session.acceptEnvelope(envelopeData)
     }
 
