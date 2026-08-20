@@ -58,14 +58,14 @@ class AppAuthorizationLifecycleWiringTests(unittest.TestCase):
     def test_authentication_requires_authorization_before_connection(self) -> None:
         section = self.section(
             "func authenticate()",
-            "private func beginOfficialConnection(candidate: CaptureTargetDevice)",
+            "private func beginOfficialConnection(candidate: Candidate)",
         )
         self.assertIn("admitAuthenticationStart()", section)
         self.assert_fail_closed_near(section, "admitAuthenticationStart()")
 
     def test_official_connection_requires_authorization_before_driver_creation(self) -> None:
         section = self.section(
-            "private func beginOfficialConnection(candidate: CaptureTargetDevice)",
+            "private func beginOfficialConnection(candidate: Candidate)",
             "private func authenticated(token: TuyaReadOnlyConnectionToken)",
         )
         admission = section.index("admitOfficialConnectionStart()")
