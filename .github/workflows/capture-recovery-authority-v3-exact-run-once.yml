@@ -1,0 +1,119 @@
+name: Capture recovery authority v3 exact run once
+
+on:
+  push:
+    branches:
+      - recovery/capture-authority-v3-exact-gpt56sol-20260819
+    paths:
+      - .github/workflows/capture-recovery-authority-v3-exact-run-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-recovery-authority-v3-exact-gpt56sol
+  cancel-in-progress: true
+
+jobs:
+  materialize-test-publish:
+    runs-on: xcode-27
+    timeout-minutes: 35
+    env:
+      TARGET_BRANCH: recovery/capture-authority-v3-exact-gpt56sol-20260819
+      SELF: .github/workflows/capture-recovery-authority-v3-exact-run-once.yml
+      REVIEWED_V3: .github/workflows/capture-carrier-authority-v3-go-trigger.yml
+      APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
+      EXPECTED_REVIEWED_V3_BLOB: 2d61be8fc08738584c7c9475bd560ce2c6375edf
+      EXPECTED_SOURCE_BLOB: 627c17949d15aaf26ca28c12abb9bb684ab0e731
+    steps:
+      - name: Checkout isolated exact recovery head
+        uses: actions/checkout@v6
+        with:
+          ref: recovery/capture-authority-v3-exact-gpt56sol-20260819
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind reviewed V3 transform and exact app subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git branch --show-current)" = "$TARGET_BRANCH"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD:"$REVIEWED_V3")" = "$EXPECTED_REVIEWED_V3_BLOB"
+          test "$(git rev-parse HEAD:"$APP_SOURCE")" = "$EXPECTED_SOURCE_BLOB"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf '%s\n' "$GITHUB_SHA" > "${RUNNER_TEMP}/recovery_base.sha"
+
+      - name: Execute exact reviewed V3 transform bytes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/capture-carrier-authority-v3-go-trigger.yml').read_text(encoding='utf-8')
+          start = "      - name: Apply reviewed V2 transform plus v3 fail-closed corrections\n        shell: python\n        run: |\n"
+          end = "\n      - name: Verify exact fail-closed lifecycle contracts\n"
+          if workflow.count(start) != 1 or workflow.count(end) != 1:
+              raise SystemExit('reviewed V3 transform markers changed; refusing')
+          body = workflow.split(start, 1)[1].split(end, 1)[0]
+          lines = body.splitlines()
+          if any(line and not line.startswith('          ') for line in lines):
+              raise SystemExit(f'unexpected reviewed V3 indentation; refusing')
+          script = '\n'.join(line[10:] if line else '' for line in lines) + '\n'
+          exec(compile(script, '<reviewed-capture-authority-v3>', 'exec'), {'__name__': '__main__'})
+
+      - name: Verify exact fail-closed lifecycle contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git status --porcelain=v1 | awk '{print $2}' | sort)"
+          test "$changed" = "$APP_SOURCE"
+          git diff --check
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
+          (
+            cd Packages/NembraBluetoothCapture
+            swift test --filter AuthenticatedStationaryCaptureAppSessionTests
+            swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
+            swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthorizationInboxAppAdapter
+            swift test --filter TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
+          )
+          grep -Fq 'advanceInboxHandoffIfAvailable()' "$APP_SOURCE"
+          grep -Fq 'fieldAuthorization.stage == .armed' "$APP_SOURCE"
+          grep -Fq 'fieldAuthorization.stage != .armed' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()' "$APP_SOURCE"
+          test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE")" = 0
+          test "$(grep -Fc 'AuthenticatedStationaryCaptureAttemptCapability' "$APP_SOURCE")" = 0
+          test "$(grep -Fc 'AuthenticatedStationaryCaptureCapabilityGate' "$APP_SOURCE")" = 0
+
+      - name: Build standalone Capture on Xcode 27
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "${RUNNER_TEMP}/NembraCaptureRecoveryAuthorityV3Exact" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Publish only the exact tested recovery descendant
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="$(cat "${RUNNER_TEMP}/recovery_base.sha")"
+          git fetch origin "$TARGET_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$base"
+          rm "$SELF"
+          git add -- "$APP_SOURCE" "$SELF"
+          git diff --cached --check
+          permanent="$(git diff --cached --name-only HEAD^..HEAD 2>/dev/null || true)"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat(capture): wire authorized SecureLink lifecycle v3 exact'
+          materialized="$(git rev-parse HEAD)"
+          git fetch origin "$TARGET_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$base"
+          git push origin HEAD:"$TARGET_BRANCH"
+          printf 'CAPTURE_RECOVERY_AUTHORITY_V3_EXACT=%s base=%s physicalAuthorityCreated=false\n' "$materialized" "$base"
