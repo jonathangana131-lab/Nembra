@@ -4,6 +4,78 @@ import Testing
 
 @Suite("Authenticated stationary authorization inbox")
 struct AuthenticatedStationaryCaptureAuthorizationInboxTests {
+    @Test("handoff directory is securely provisioned before the first manifest exists")
+    func handoffDirectoryBootstrap() throws {
+        let applicationSupport = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nembra-authorization-app-support-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: applicationSupport,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: NSNumber(value: 0o700)]
+        )
+        defer { try? FileManager.default.removeItem(at: applicationSupport) }
+
+        let inbox = AuthenticatedStationaryCaptureAuthorizationInbox(
+            applicationSupportURL: applicationSupport
+        )
+        try inbox.prepareHandoffDirectory()
+        try inbox.prepareHandoffDirectory()
+
+        let handoffDirectory = applicationSupport.appendingPathComponent(
+            AuthenticatedStationaryCaptureAuthorizationInbox.directoryName,
+            isDirectory: true
+        )
+        var isDirectory: ObjCBool = false
+        #expect(FileManager.default.fileExists(
+            atPath: handoffDirectory.path,
+            isDirectory: &isDirectory
+        ))
+        #expect(isDirectory.boolValue)
+        let attributes = try FileManager.default.attributesOfItem(atPath: handoffDirectory.path)
+        let permissions = try #require(attributes[.posixPermissions] as? NSNumber)
+        #expect((permissions.intValue & 0o022) == 0)
+
+        #expect(throws: AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(
+            AuthenticatedStationaryCaptureAuthorizationInbox.installManifestFilename
+        )) {
+            _ = try inbox.takeInstallManifest()
+        }
+    }
+
+    @Test("handoff bootstrap rejects a symlinked directory component")
+    func handoffDirectorySymlinkRejected() throws {
+        let applicationSupport = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nembra-authorization-app-support-\(UUID().uuidString)")
+        let escape = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nembra-authorization-escape-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: applicationSupport,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: NSNumber(value: 0o700)]
+        )
+        try FileManager.default.createDirectory(
+            at: escape,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: NSNumber(value: 0o700)]
+        )
+        defer {
+            try? FileManager.default.removeItem(at: applicationSupport)
+            try? FileManager.default.removeItem(at: escape)
+        }
+        try FileManager.default.createSymbolicLink(
+            at: applicationSupport.appendingPathComponent("NembraCapture"),
+            withDestinationURL: escape
+        )
+
+        let inbox = AuthenticatedStationaryCaptureAuthorizationInbox(
+            applicationSupportURL: applicationSupport
+        )
+        #expect(throws: AuthenticatedStationaryCaptureAuthorizationInboxError
+            .directoryCustodyRejected("NembraCapture")) {
+            try inbox.prepareHandoffDirectory()
+        }
+    }
+
     @Test("descriptor-bound take returns exact bytes and retires the handoff")
     func exactOneShotTake() throws {
         try withInboxDirectory { directory, inbox in
@@ -91,6 +163,9 @@ struct AuthenticatedStationaryCaptureAuthorizationInboxTests {
             )
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
+        #expect(source.contains("Darwin.mkdirat(currentFD, component, mode_t(0o700))"))
+        #expect(source.contains("O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC"))
+        #expect(source.contains("(metadata.st_mode & mode_t(0o022)) == 0"))
         #expect(source.contains("O_RDONLY | O_NOFOLLOW | O_CLOEXEC"))
         #expect(source.contains("Darwin.fstat(descriptor, &before)"))
         #expect(source.contains("Darwin.fstat(descriptor, &afterRead)"))
