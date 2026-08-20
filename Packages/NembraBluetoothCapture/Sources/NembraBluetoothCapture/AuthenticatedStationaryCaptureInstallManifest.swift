@@ -184,7 +184,7 @@ public enum AuthenticatedStationaryCaptureInstallManifestVerifier {
             .normalizedFullGitCommitSHA(wire.sourceCommitSHA) == wire.sourceCommitSHA else {
             throw AuthenticatedStationaryCaptureInstallManifestError.invalidSourceCommitSHA
         }
-        guard isValidBuildIdentifier(wire.buildIdentifier) else {
+        guard wire.buildIdentifier == canonicalBuildIdentifier(for: wire.sourceCommitSHA) else {
             throw AuthenticatedStationaryCaptureInstallManifestError.invalidBuildIdentifier
         }
         guard PassiveBluetoothCaptureRuntimeBuildIdentityReader
@@ -226,6 +226,10 @@ public enum AuthenticatedStationaryCaptureInstallManifestVerifier {
         )
     }
 
+    private static func canonicalBuildIdentifier(for sourceCommitSHA: String) -> String {
+        "Capture Build V14-\(sourceCommitSHA.prefix(12))"
+    }
+
     private static func isCanonicalSHA256(_ value: String) -> Bool {
         value.utf8.count == 64 && value.utf8.allSatisfy {
             (0x30 ... 0x39).contains($0) || (0x61 ... 0x66).contains($0)
@@ -240,16 +244,6 @@ public enum AuthenticatedStationaryCaptureInstallManifestVerifier {
         return value.utf8.allSatisfy {
             (0x30 ... 0x39).contains($0) || (0x41 ... 0x5A).contains($0)
                 || (0x61 ... 0x7A).contains($0) || $0 == 0x2D || $0 == 0x2E
-        }
-    }
-
-    private static func isValidBuildIdentifier(_ value: String) -> Bool {
-        guard !value.isEmpty, value.utf8.count <= 128,
-              value == value.trimmingCharacters(in: .whitespacesAndNewlines) else {
-            return false
-        }
-        return !value.unicodeScalars.contains { scalar in
-            CharacterSet.controlCharacters.contains(scalar)
         }
     }
 
