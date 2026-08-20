@@ -113,8 +113,8 @@ public final class AuthenticatedStationaryCaptureCapabilityGate {
         let nowUptime = uptimeNanoseconds()
         guard nowWall > 0,
               nowUptime > 0,
-              nowWall <= capability.expiresAtUnixMilliseconds,
-              nowUptime <= capability.expiresAtUptimeNanoseconds else {
+              nowWall < capability.expiresAtUnixMilliseconds,
+              nowUptime < capability.expiresAtUptimeNanoseconds else {
             revoke()
             throw AuthenticatedStationaryCaptureCapabilityGateError.authorizationExpired
         }
