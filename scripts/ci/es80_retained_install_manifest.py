@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Validate exact retained-install subject bindings for ES80 authenticated-stationary Capture.
+"""Build or validate the canonical retained-install manifest consumed by Capture.
 
 This module is deliberately non-authorizing. It does not verify a signature, install an app,
-contact a device, grant OFF1, or establish Bluetooth/physical truth. It only provides a closed,
-canonical manifest that another independently accepted authority can bind to exact reviewed bytes.
+contact a device, grant OFF1, or establish Bluetooth/physical truth. It owns the Python side of the
+same byte-level manifest contract decoded by `AuthenticatedStationaryCaptureInstallManifestVerifier`
+in Swift so the installer and running app cannot disagree about one supposedly canonical record.
 """
 from __future__ import annotations
 
@@ -15,12 +16,11 @@ import sys
 import uuid
 from typing import Any
 
-SCHEMA = "nembra.es80-authenticated-stationary-retained-install-manifest"
+SCHEMA = "nembra.es80-authenticated-stationary-install-manifest"
 SCHEMA_VERSION = 1
-MANIFEST_KIND = "retained-install-exact-subject-bindings-not-authorization"
 PROCEDURE_ID = "ES80-AUTHENTICATED-STATIONARY-v1"
 BUNDLE_IDENTIFIER = "com.jonathangana131.nembra.capturelearn"
-MAX_MANIFEST_BYTES = 32_768
+MAX_MANIFEST_BYTES = 16_384
 
 SHA40 = re.compile(r"^[0-9a-f]{40}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -30,11 +30,11 @@ UUID4 = re.compile(
 
 BINDING_KEYS = (
     "procedureID",
-    "bundleIdentifier",
     "sourceCommitSHA",
+    "bundleIdentifier",
     "buildIdentifier",
     "buildInstanceID",
-    "signedInstallableSHA256",
+    "retainedIPASHA256",
     "executableSHA256",
     "infoPlistSHA256",
     "tuyaDependencyLockSHA256",
@@ -44,9 +44,9 @@ BINDING_KEYS = (
     "intendedDevicePseudonymSHA256",
     "authorizationEnvelopeSHA256",
 )
-MANIFEST_KEYS = {"schema", "version", "manifestKind", *BINDING_KEYS}
+MANIFEST_KEYS = {"schema", "version", *BINDING_KEYS}
 DIGEST_KEYS = (
-    "signedInstallableSHA256",
+    "retainedIPASHA256",
     "executableSHA256",
     "infoPlistSHA256",
     "tuyaDependencyLockSHA256",
@@ -63,7 +63,9 @@ class RetainedInstallManifestError(RuntimeError):
 
 
 def canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+    # Match JSONEncoder(outputFormatting: [.sortedKeys, .withoutEscapingSlashes]) exactly for this
+    # ASCII-only closed schema: compact object, sorted keys, and no trailing newline.
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
 
 
 def _reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -119,7 +121,6 @@ def build_manifest(bindings: dict[str, Any]) -> bytes:
     manifest = {
         "schema": SCHEMA,
         "version": SCHEMA_VERSION,
-        "manifestKind": MANIFEST_KIND,
         **bindings,
     }
     encoded = canonical_json_bytes(manifest)
@@ -141,8 +142,6 @@ def verify_manifest_bytes(data: bytes) -> dict[str, Any]:
         raise RetainedInstallManifestError("manifest is not canonical JSON")
     if value.get("schema") != SCHEMA or type(value.get("version")) is not int or value["version"] != SCHEMA_VERSION:
         raise RetainedInstallManifestError("manifest schema/version is unsupported")
-    if value.get("manifestKind") != MANIFEST_KIND:
-        raise RetainedInstallManifestError("manifest kind is not explicitly non-authorizing")
     return _validate_bindings(value)
 
 
@@ -172,11 +171,11 @@ def _read_manifest(path: Path) -> bytes:
 def _self_test() -> None:
     example = {
         "procedureID": PROCEDURE_ID,
-        "bundleIdentifier": BUNDLE_IDENTIFIER,
         "sourceCommitSHA": "1" * 40,
+        "bundleIdentifier": BUNDLE_IDENTIFIER,
         "buildIdentifier": "Capture Build manifest-self-test",
         "buildInstanceID": "12345678-1234-4abc-8def-123456789abc",
-        "signedInstallableSHA256": "2" * 64,
+        "retainedIPASHA256": "2" * 64,
         "executableSHA256": "3" * 64,
         "infoPlistSHA256": "4" * 64,
         "tuyaDependencyLockSHA256": "5" * 64,
