@@ -21,6 +21,8 @@ on:
       - scripts/ci/tests/test_es80_retained_install_installer_chronology.py
       - scripts/ci/es80_field_authorization_rendezvous.py
       - scripts/ci/tests/test_es80_field_authorization_rendezvous.py
+      - scripts/ci/es80_sign_field_authorization_from_rendezvous.py
+      - scripts/ci/tests/test_es80_sign_field_authorization_from_rendezvous.py
       - NembraApp/App/NembraCaptureEntrypoint.swift
       - NembraApp/App/NembraCaptureFieldAuthorizationController.swift
       - NembraCapture.xcodeproj/project.pbxproj
@@ -76,7 +78,9 @@ jobs:
             scripts/ci/tests/test_es80_retained_install_cross_binding.py \
             scripts/ci/tests/test_es80_retained_install_installer_chronology.py \
             scripts/ci/es80_field_authorization_rendezvous.py \
-            scripts/ci/tests/test_es80_field_authorization_rendezvous.py
+            scripts/ci/tests/test_es80_field_authorization_rendezvous.py \
+            scripts/ci/es80_sign_field_authorization_from_rendezvous.py \
+            scripts/ci/tests/test_es80_sign_field_authorization_from_rendezvous.py
 
       - name: Run focused preflight, retained-install, app-wiring, and handoff regressions
         run: |
@@ -87,6 +91,7 @@ jobs:
           python3 scripts/ci/tests/test_es80_retained_install_installer_chronology.py -v
           python3 scripts/ci/es80_field_authorization_rendezvous.py --self-test
           python3 scripts/ci/tests/test_es80_field_authorization_rendezvous.py -v
+          python3 scripts/ci/tests/test_es80_sign_field_authorization_from_rendezvous.py -v
           python3 scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py -v
           python3 scripts/ci/tests/test_es80_today_field_candidate_preflight.py -v
           python3 scripts/ci/tests/test_es80_today_field_candidate_developer_dir_handoff.py -v
