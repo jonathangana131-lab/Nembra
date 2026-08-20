@@ -26,9 +26,7 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
     }
 
     private let sourceCommitSHA = "0123456789abcdef0123456789abcdef01234567"
-    // Deliberately not UUIDv4. Runtime build identity treats the value as an opaque UUID-shaped
-    // rendezvous key, and the install manifest must preserve rather than reinterpret that contract.
-    private let buildInstanceID = "12345678-90ab-cdef-1234-567890abcdef"
+    private let buildInstanceID = "12345678-90ab-4def-9234-567890abcdef"
     private let executableSHA256 =
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     private let infoPlistSHA256 =
@@ -99,8 +97,7 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
         #expect(python.contains("value.get(\"bundleIdentifier\") != BUNDLE_IDENTIFIER"))
         #expect(python.contains("expected_build_identifier = f\"Capture Build V14-{source[:12]}\""))
         #expect(python.contains("or value == \"0\" * 64"))
-        #expect(python.contains("[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"))
-        #expect(!python.contains("-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-"))
+        #expect(python.contains("-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-"))
         #expect(!python.contains("manifestKind"))
         #expect(!python.contains("signedInstallableSHA256"))
         #expect(!python.contains("\"authorizationEnvelopeSHA256\","))
@@ -195,7 +192,7 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
         }
     }
 
-    @Test("bundle and source-bound build label are exact while build instance stays opaque")
+    @Test("bundle, source-bound build label, and UUIDv4 build instance are exact")
     func runtimeBindingVocabulary() throws {
         #expect(throws: ManifestError.invalidBundleIdentifier) {
             try Verifier.decodeCanonical(canonicalData(
@@ -211,14 +208,21 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
 
         #expect(throws: ManifestError.invalidBuildInstanceID) {
             try Verifier.decodeCanonical(canonicalData(
-                wire(buildInstanceID: "12345678-90ab-zzzz-1234-567890abcdef")
+                wire(buildInstanceID: "12345678-90ab-zzzz-9234-567890abcdef")
             ))
         }
 
-        let generic = try Verifier.decodeCanonical(canonicalData(
-            wire(buildInstanceID: "12345678-1234-abcd-1def-123456789abc")
-        ))
-        #expect(generic.buildInstanceID == "12345678-1234-abcd-1def-123456789abc")
+        #expect(throws: ManifestError.invalidBuildInstanceID) {
+            try Verifier.decodeCanonical(canonicalData(
+                wire(buildInstanceID: "12345678-1234-1bcd-8def-123456789abc")
+            ))
+        }
+
+        #expect(throws: ManifestError.invalidBuildInstanceID) {
+            try Verifier.decodeCanonical(canonicalData(
+                wire(buildInstanceID: "12345678-1234-4bcd-1def-123456789abc")
+            ))
+        }
     }
 
     @Test("manifest input is bounded before JSON parsing")
