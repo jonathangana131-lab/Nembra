@@ -50,6 +50,17 @@ final class RideUITests: XCTestCase {
         XCTAssertTrue(ridesTab.waitForExistence(timeout: 5))
         ridesTab.tap()
 
+        let journalHeader = app.descendants(matching: .any)["rides.journal-header"]
+        XCTAssertTrue(
+            journalHeader.waitForExistence(timeout: 5),
+            "Rides must present the Nembra-owned journal hierarchy instead of falling back to a generic archive surface."
+        )
+        XCTAssertEqual(journalHeader.label, "Ride journal")
+        XCTAssertTrue(
+            (journalHeader.value as? String ?? "").localizedCaseInsensitiveContains("saved ride"),
+            "The journal header must expose its durable saved-ride count semantically."
+        )
+
         let row = app.descendants(matching: .any)["rides.completed-row"]
         XCTAssertTrue(
             row.waitForExistence(timeout: 8),
@@ -60,6 +71,14 @@ final class RideUITests: XCTestCase {
         XCTAssertTrue(
             row.label.localizedCaseInsensitiveContains("Ride on"),
             "A completed ride row must expose one concise Nembra-owned ride identity."
+        )
+        XCTAssertTrue(
+            rowValue.localizedCaseInsensitiveContains("scooter distance"),
+            "The journal row must preserve the accepted scooter odometer distance as its own evidence source."
+        )
+        XCTAssertTrue(
+            rowValue.localizedCaseInsensitiveContains("GPS recorded distance"),
+            "The journal row must preserve quality-screened GPS distance as a separate evidence source."
         )
         XCTAssertFalse(
             rowValue.localizedCaseInsensitiveContains("Completed ride"),
