@@ -127,7 +127,7 @@ public struct AuthenticatedStationaryCaptureAuthorizationInbox: Sendable {
 
         var afterUnlink = stat()
         guard Darwin.fstat(descriptor, &afterUnlink) == 0,
-              sameSnapshotExceptLinkCount(before, afterUnlink),
+              sameInode(before, afterUnlink),
               afterUnlink.st_nlink == 0 else {
             throw AuthenticatedStationaryCaptureAuthorizationInboxError.subjectChangedDuringRead(filename)
         }
@@ -176,19 +176,19 @@ public struct AuthenticatedStationaryCaptureAuthorizationInbox: Sendable {
     }
 
     private func sameSnapshot(_ lhs: stat, _ rhs: stat) -> Bool {
-        sameSnapshotExceptLinkCount(lhs, rhs) && lhs.st_nlink == rhs.st_nlink
-    }
-
-    private func sameSnapshotExceptLinkCount(_ lhs: stat, _ rhs: stat) -> Bool {
-        lhs.st_dev == rhs.st_dev
-            && lhs.st_ino == rhs.st_ino
+        sameInode(lhs, rhs)
             && lhs.st_mode == rhs.st_mode
             && lhs.st_uid == rhs.st_uid
             && lhs.st_gid == rhs.st_gid
+            && lhs.st_nlink == rhs.st_nlink
             && lhs.st_size == rhs.st_size
             && lhs.st_mtimespec.tv_sec == rhs.st_mtimespec.tv_sec
             && lhs.st_mtimespec.tv_nsec == rhs.st_mtimespec.tv_nsec
             && lhs.st_ctimespec.tv_sec == rhs.st_ctimespec.tv_sec
             && lhs.st_ctimespec.tv_nsec == rhs.st_ctimespec.tv_nsec
+    }
+
+    private func sameInode(_ lhs: stat, _ rhs: stat) -> Bool {
+        lhs.st_dev == rhs.st_dev && lhs.st_ino == rhs.st_ino
     }
 }
