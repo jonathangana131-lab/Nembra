@@ -289,6 +289,17 @@ struct AuthenticatedStationaryCaptureFieldAuthorizationTests {
         ) {
             _ = try verify(try fixture.replacingPayload(json(longLived)), store: store)
         }
+
+        var staleAttempt = fixture.payload
+        staleAttempt["issuedAtUnixMilliseconds"] = 2_100_000
+        staleAttempt["notBeforeUnixMilliseconds"] = 2_100_000
+        staleAttempt["expiresAtUnixMilliseconds"] = 2_900_001
+        #expect(
+            throws: AuthenticatedStationaryCaptureFieldAuthorizationError
+                .authorizationLifetimeExceeded
+        ) {
+            _ = try verify(try fixture.replacingPayload(json(staleAttempt)), store: store)
+        }
         #expect(store.requests.isEmpty)
     }
 

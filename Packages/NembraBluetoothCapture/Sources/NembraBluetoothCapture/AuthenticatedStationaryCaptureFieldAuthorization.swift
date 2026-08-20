@@ -409,6 +409,11 @@ public enum AuthenticatedStationaryCaptureFieldAuthorizationVerifier {
             <= maximumAuthorizationLifetimeMilliseconds else {
             throw AuthenticatedStationaryCaptureFieldAuthorizationError.authorizationLifetimeExceeded
         }
+        guard payload.expiresAtUnixMilliseconds
+            - attempt.startedAtWallClockUnixMilliseconds
+            <= maximumAuthorizationLifetimeMilliseconds else {
+            throw AuthenticatedStationaryCaptureFieldAuthorizationError.authorizationLifetimeExceeded
+        }
         guard nowWallClockUnixMilliseconds >= payload.notBeforeUnixMilliseconds else {
             throw AuthenticatedStationaryCaptureFieldAuthorizationError.authorizationNotYetValid
         }
