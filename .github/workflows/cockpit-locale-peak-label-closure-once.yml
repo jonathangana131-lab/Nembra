@@ -1,0 +1,326 @@
+name: Cockpit locale and compact peak closure one-shot
+
+on:
+  push:
+    branches:
+      - product/cockpit-energy-rail-mainline-20260820
+    paths:
+      - .github/workflows/cockpit-locale-peak-label-closure-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TARGET_BRANCH: product/cockpit-energy-rail-mainline-20260820
+      EXPECTED_PARENT: 008d637b2d304623a2006ded19c4d87033772ce9
+      SELF_WORKFLOW: .github/workflows/cockpit-locale-peak-label-closure-once.yml
+      ROLLING_SOURCE: NembraApp/Features/Dashboard/RollingSpeedValueView.swift
+      INSTRUMENT_SOURCE: NembraApp/Features/Dashboard/SpeedInstrumentModel.swift
+      APP_TESTS: NembraAppTests/NembraAppTests.swift
+
+    steps:
+      - name: Checkout exact bounded authoring head
+        uses: actions/checkout@v6
+        with:
+          ref: product/cockpit-energy-rail-mainline-20260820
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind one-shot authoring lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git branch --show-current)" = "$TARGET_BRANCH"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          changed="$(git diff --name-only "$EXPECTED_PARENT"...HEAD)"
+          test "$changed" = "$SELF_WORKFLOW"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize reviewed cockpit fixes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(source: str, old: str, new: str, label: str) -> str:
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one anchor, found {count}")
+              return source.replace(old, new, 1)
+
+          rolling_path = Path("NembraApp/Features/Dashboard/RollingSpeedValueView.swift")
+          rolling = rolling_path.read_text(encoding="utf-8")
+          rolling = replace_once(
+              rolling,
+              "import NembraCore\nimport SwiftUI\n",
+              "import Foundation\nimport NembraCore\nimport SwiftUI\n",
+              "rolling imports",
+          )
+          rolling = replace_once(
+              rolling,
+              r'''struct RollingSpeedValueView: View {
+              @Environment(\.accessibilityReduceMotion) private var reduceMotion
+          ''',
+              r'''struct RollingSpeedValueView: View {
+              @Environment(\.accessibilityReduceMotion) private var reduceMotion
+              @Environment(\.locale) private var locale
+          ''',
+              "rolling locale environment",
+          )
+          rolling = replace_once(
+              rolling,
+              '''    static func supports(_ value: Double?) -> Bool {
+              guard let value, value.isFinite, value >= 0, value < 999.95 else { return false }
+              return true
+          }
+
+              private var validatedRenderValue: Double? {
+          ''',
+              '''    static func supports(_ value: Double?) -> Bool {
+              guard let value, value.isFinite, value >= 0, value < 999.95 else { return false }
+              return true
+          }
+
+              static func decimalSeparator(for locale: Locale) -> String {
+              locale.decimalSeparator ?? "."
+          }
+
+              private var validatedRenderValue: Double? {
+          ''',
+              "rolling decimal helper",
+          )
+          rolling = replace_once(
+              rolling,
+              '                Text(".")\n',
+              '                Text(Self.decimalSeparator(for: locale))\n',
+              "visible decimal separator",
+          )
+          rolling_path.write_text(rolling, encoding="utf-8")
+
+          instrument_path = Path("NembraApp/Features/Dashboard/SpeedInstrumentModel.swift")
+          instrument = instrument_path.read_text(encoding="utf-8")
+          marker_policy = '''enum DashboardPowerPeakMarkerPolicy {
+              static let minimumSeparation = 0.025
+
+              static func visiblePeakFraction(current: Double?, peak: Double?) -> Double? {
+              guard let current,
+                    let peak,
+                    current.isFinite,
+                    peak.isFinite,
+                    (0...1).contains(current),
+                    (0...1).contains(peak),
+                    peak - current >= minimumSeparation else {
+                  return nil
+              }
+              return peak
+          }
+          }
+
+          private struct DashboardEnergyRailView: View {
+          '''
+          marker_with_label_policy = '''enum DashboardPowerPeakMarkerPolicy {
+              static let minimumSeparation = 0.025
+
+              static func visiblePeakFraction(current: Double?, peak: Double?) -> Double? {
+              guard let current,
+                    let peak,
+                    current.isFinite,
+                    peak.isFinite,
+                    (0...1).contains(current),
+                    (0...1).contains(peak),
+                    peak - current >= minimumSeparation else {
+                  return nil
+              }
+              return peak
+          }
+          }
+
+          enum DashboardPowerPeakLabelPolicy {
+              static func frameHeight(for pointSize: CGFloat) -> CGFloat {
+              max(14, ceil(pointSize * 1.55))
+          }
+
+              static func centerY(
+              peakY: CGFloat,
+              railHeight: CGFloat,
+              pointSize: CGFloat,
+              usesAccessibilityLayout: Bool
+          ) -> CGFloat? {
+              guard peakY.isFinite,
+                    railHeight.isFinite,
+                    pointSize.isFinite,
+                    railHeight > 0,
+                    pointSize > 0 else {
+                  return nil
+              }
+
+              let labelHeight = frameHeight(for: pointSize)
+              // At the 44pt accessibility floor, keeping the transient text would collide with
+              // the rail's lower legend/control boundary. Preserve the peak marker and omit only
+              // the redundant visual label until the rail has enough vertical room.
+              guard railHeight >= max(56, labelHeight * 3) else { return nil }
+
+              let inset = max(3, labelHeight * 0.15)
+              let minimumCenter = inset + labelHeight / 2
+              let maximumCenter = railHeight - inset - labelHeight / 2
+              guard maximumCenter >= minimumCenter else { return nil }
+
+              let desiredCenter = peakY + (usesAccessibilityLayout ? 25 : 21)
+              return min(max(desiredCenter, minimumCenter), maximumCenter)
+          }
+          }
+
+          private struct DashboardEnergyRailView: View {
+          '''
+          instrument = replace_once(
+              instrument,
+              marker_policy,
+              marker_with_label_policy,
+              "peak label policy insertion",
+          )
+          old_peak_label = '''            if let peak = distinctPeakFraction(from: current) {
+              let peakPoint = geometry.point(at: Double(peak))
+              Text("RECENT PEAK")
+                  .font(.system(size: microLabelSize, weight: .bold, design: .default))
+                  .tracking(0.8)
+                  .foregroundStyle(NembraColor.secondaryText.opacity(0.88))
+                  .position(
+                      x: min(max(peakPoint.x, 42), size.width - 42),
+                      y: peakPoint.y + (dynamicTypeSize.isAccessibilitySize ? 25 : 21)
+                  )
+                  .accessibilityHidden(true)
+          }
+          '''
+          new_peak_label = '''            if let peak = distinctPeakFraction(from: current) {
+              let peakPoint = geometry.point(at: Double(peak))
+              if let peakLabelY = DashboardPowerPeakLabelPolicy.centerY(
+                  peakY: peakPoint.y,
+                  railHeight: size.height,
+                  pointSize: microLabelSize,
+                  usesAccessibilityLayout: dynamicTypeSize.isAccessibilitySize
+              ) {
+                  Text("RECENT PEAK")
+                      .font(.system(size: microLabelSize, weight: .bold, design: .default))
+                      .tracking(0.8)
+                      .foregroundStyle(NembraColor.secondaryText.opacity(0.88))
+                      .frame(height: DashboardPowerPeakLabelPolicy.frameHeight(for: microLabelSize))
+                      .position(
+                          x: min(max(peakPoint.x, 42), size.width - 42),
+                          y: peakLabelY
+                      )
+                      .accessibilityHidden(true)
+              }
+          }
+          '''
+          instrument = replace_once(
+              instrument,
+              old_peak_label,
+              new_peak_label,
+              "bounded peak label",
+          )
+          instrument_path.write_text(instrument, encoding="utf-8")
+
+          tests_path = Path("NembraAppTests/NembraAppTests.swift")
+          tests = tests_path.read_text(encoding="utf-8")
+          tests = replace_once(
+              tests,
+              "import CoreGraphics\nimport Dispatch\nimport XCTest\n",
+              "import CoreGraphics\nimport Dispatch\nimport Foundation\nimport XCTest\n",
+              "test Foundation import",
+          )
+          units_anchor = '''    func testCockpitSpeedUnitsResolveFromPreferenceAndSystemPolicy() {
+          '''
+          locale_test = '''    func testCockpitRollingSpeedDecimalSeparatorMatchesLocale() {
+              XCTAssertEqual(
+                  RollingSpeedValueView.decimalSeparator(for: Locale(identifier: "en_US")),
+                  "."
+              )
+              XCTAssertEqual(
+                  RollingSpeedValueView.decimalSeparator(for: Locale(identifier: "de_DE")),
+                  ","
+              )
+          }
+
+              func testCockpitSpeedUnitsResolveFromPreferenceAndSystemPolicy() {
+          '''
+          tests = replace_once(
+              tests,
+              units_anchor,
+              locale_test,
+              "locale regression test",
+          )
+          semantics_anchor = '''    func testPowerSemanticsKeepAcceptedNowSeparateFromIlluminationAndPeak() {
+          '''
+          peak_test = '''    func testPowerPeakLabelPolicyStaysInsideRailOrOmitsCompactLabel() throws {
+              XCTAssertNil(
+                  DashboardPowerPeakLabelPolicy.centerY(
+                      peakY: 25.5,
+                      railHeight: 44,
+                      pointSize: 13,
+                      usesAccessibilityLayout: true
+                  ),
+                  "The 44pt accessibility rail must omit the transient peak label instead of drawing it into the controls below."
+              )
+
+              let pointSize: CGFloat = 10
+              let railHeight: CGFloat = 82
+              let labelHeight = DashboardPowerPeakLabelPolicy.frameHeight(for: pointSize)
+              let centerY = try XCTUnwrap(
+                  DashboardPowerPeakLabelPolicy.centerY(
+                      peakY: 45,
+                      railHeight: railHeight,
+                      pointSize: pointSize,
+                      usesAccessibilityLayout: false
+                  )
+              )
+              XCTAssertGreaterThanOrEqual(centerY - labelHeight / 2, 0)
+              XCTAssertLessThanOrEqual(centerY + labelHeight / 2, railHeight)
+          }
+
+              func testPowerSemanticsKeepAcceptedNowSeparateFromIlluminationAndPeak() {
+          '''
+          tests = replace_once(
+              tests,
+              semantics_anchor,
+              peak_test,
+              "compact peak label regression test",
+          )
+          tests_path.write_text(tests, encoding="utf-8")
+
+      - name: Enforce bounded source delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          actual="$(git diff --name-only | sort)"
+          expected="$(printf '%s\n' "$APP_TESTS" "$INSTRUMENT_SOURCE" "$ROLLING_SOURCE" | sort)"
+          test "$actual" = "$expected"
+          grep -Fq '@Environment(\.locale) private var locale' "$ROLLING_SOURCE"
+          grep -Fq 'decimalSeparator(for locale: Locale)' "$ROLLING_SOURCE"
+          test "$(grep -Fc 'Text(".")' "$ROLLING_SOURCE" || true)" = 0
+          grep -Fq 'DashboardPowerPeakLabelPolicy.centerY' "$INSTRUMENT_SOURCE"
+          grep -Fq 'railHeight >= max(56, labelHeight * 3)' "$INSTRUMENT_SOURCE"
+          grep -Fq 'testCockpitRollingSpeedDecimalSeparatorMatchesLocale' "$APP_TESTS"
+          grep -Fq 'testPowerPeakLabelPolicyStaysInsideRailOrOmitsCompactLabel' "$APP_TESTS"
+
+      - name: Publish only if branch is still this exact head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin "$TARGET_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          git rm -- "$SELF_WORKFLOW"
+          git add -- "$ROLLING_SOURCE" "$INSTRUMENT_SOURCE" "$APP_TESTS"
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(cockpit): localize speed and bound peak label'
+          final_head="$(git rev-parse HEAD)"
+          git fetch origin "$TARGET_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          git push origin HEAD:"$TARGET_BRANCH"
+          printf 'NEMBRA_COCKPIT_REVIEW_FIX final=%s trigger=%s physicalTelemetryAuthorityCreated=false\n' "$final_head" "$GITHUB_SHA" | tee -a "$GITHUB_STEP_SUMMARY"
