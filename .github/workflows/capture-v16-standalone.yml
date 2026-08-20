@@ -98,6 +98,8 @@ jobs:
           swift test --filter TuyaAuthenticatedReadOnlyCommandFenceSourceTests
           swift test --filter CaptureFirstFoldCopySourceTests
           swift test --filter CaptureSimulatorQAHarnessSourceTests
+          swift test --filter ThisDeviceAuthorizationConsumptionStoreTests
+          swift test --filter AuthenticatedStationaryCaptureCapabilityGateTests
 
       - name: Validate one-time field handoff without private inputs
         run: |
