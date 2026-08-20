@@ -6,7 +6,9 @@ import NembraCaptureAppAuthorization
 /// This type intentionally owns no parallel authority state. The package session remains the
 /// single source of truth for manifest validation, signer rendezvous, opaque capability custody,
 /// ordered lifecycle admission, sealing, and terminal revocation. Stable manifest and later
-/// envelope bytes enter only through the descriptor-bound one-shot app-container inbox.
+/// envelope bytes enter only through the descriptor-bound one-shot app-container inbox. A prepared
+/// signer rendezvous is atomically published to the same app-container handoff directory so the
+/// field Mac can copy exact canonical bytes FROM the still-running app.
 @MainActor
 final class NembraCaptureFieldAuthorizationController {
     private let session: AuthenticatedStationaryCaptureAppSession
@@ -23,12 +25,20 @@ final class NembraCaptureFieldAuthorizationController {
     {
         let manifestData = try AuthenticatedStationaryCaptureAuthorizationInbox()
             .takeInstallManifest()
-        return try session.prepare(installManifestData: manifestData)
+        let rendezvous = try session.prepare(installManifestData: manifestData)
+        do {
+            try AuthenticatedStationaryCaptureSignerRendezvousOutbox().publish(rendezvous)
+            return rendezvous
+        } catch {
+            // An unpublished challenge has no supported signer rendezvous. Revoke this process-local
+            // attempt so hidden awaiting-envelope authority cannot survive a failed file handoff.
+            session.revoke()
+            throw error
+        }
     }
 
-    /// Returns the exact non-authorizing bytes that should be copied FROM the still-running app
-    /// container to the independent field signer. The process-local attempt remains alive inside
-    /// `session`; exporting this document does not grant OFF1 or expose the opaque capability.
+    /// Compatibility/testing view of the exact bytes already published by `prepareAttemptFromInbox`.
+    /// Production field transport reads the atomic app-container file rather than caller-owned Data.
     func prepareSignerRendezvousDocumentFromInbox() throws -> Data {
         let rendezvous = try prepareAttemptFromInbox()
         return try AuthenticatedStationaryCaptureSignerRendezvousDocument.encode(rendezvous)
