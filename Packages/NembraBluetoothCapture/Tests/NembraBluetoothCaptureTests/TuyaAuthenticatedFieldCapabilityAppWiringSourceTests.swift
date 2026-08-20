@@ -179,7 +179,7 @@ struct CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWirin
         let app = try appSource()
         let foreground = try appSection(
             from: "func appDidLoseForeground()",
-            through: "func prepareForShare()"
+            through: "var privateConfig: Bool"
         )
         let viewExit = try appSection(
             from: "func abandonCorrelationForViewExit()",
