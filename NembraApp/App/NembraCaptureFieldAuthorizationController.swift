@@ -9,6 +9,15 @@ import NembraCaptureAppAuthorization
 /// envelope bytes enter only through the descriptor-bound one-shot app-container inbox.
 @MainActor
 final class NembraCaptureFieldAuthorizationController {
+    enum HandoffProgress: Equatable {
+        case waitingForManifest
+        case waitingForEnvelope
+        case armed
+        case lifecycleInProgress
+        case sealed
+        case revoked
+    }
+
     private let session: AuthenticatedStationaryCaptureAppSession
 
     init(session: AuthenticatedStationaryCaptureAppSession = .init()) {
@@ -56,6 +65,49 @@ final class NembraCaptureFieldAuthorizationController {
             throw error
         }
         try session.acceptEnvelope(envelopeData)
+    }
+
+    /// Advances only the non-authorizing app-container handoff that is valid for the current
+    /// single-use session stage. A legitimately absent next file is a wait state, not a failure and
+    /// not authority. Any present-but-invalid/custody-violating manifest or envelope is propagated
+    /// to the caller; verification code remains responsible for terminal revocation where required.
+    ///
+    /// This seam is intentionally idempotent while waiting: the manifest is consumed exactly once,
+    /// then only an envelope can advance the session. It never retries a rejected envelope against
+    /// the same challenge and never resets a revoked session.
+    @discardableResult
+    func advanceInboxHandoffIfAvailable() throws -> HandoffProgress {
+        switch session.stage {
+        case .idle:
+            do {
+                _ = try prepareSignerRendezvousDocumentFromInbox()
+                return .waitingForEnvelope
+            } catch AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(let subject)
+                where subject == AuthenticatedStationaryCaptureAuthorizationInbox.installManifestFilename {
+                return .waitingForManifest
+            }
+
+        case .awaitingEnvelope:
+            do {
+                try authorizeFromInbox()
+                return .armed
+            } catch AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(let subject)
+                where subject == AuthenticatedStationaryCaptureAuthorizationInbox.authorizationEnvelopeFilename {
+                return .waitingForEnvelope
+            }
+
+        case .armed:
+            return .armed
+
+        case .off1Started, .authenticationAdmitted, .officialConnectionAdmitted, .observationAdmitted:
+            return .lifecycleInProgress
+
+        case .sealed:
+            return .sealed
+
+        case .revoked:
+            return .revoked
+        }
     }
 
     func admitOFF1Start() throws {
