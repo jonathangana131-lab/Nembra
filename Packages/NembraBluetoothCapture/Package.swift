@@ -11,6 +11,10 @@ let package = Package(
         .library(
             name: "NembraBluetoothCapture",
             targets: ["NembraBluetoothCapture"]
+        ),
+        .library(
+            name: "NembraCaptureAppAuthorization",
+            targets: ["NembraCaptureAppAuthorization"]
         )
     ],
     dependencies: [
@@ -23,12 +27,20 @@ let package = Package(
                 .product(name: "NembraCore", package: "NembraCore")
             ]
         ),
+        .target(
+            name: "NembraCaptureAppAuthorization",
+            dependencies: ["NembraBluetoothCapture"]
+        ),
         .testTarget(
             name: "NembraBluetoothCaptureTests",
             dependencies: [
                 "NembraBluetoothCapture",
                 .product(name: "NembraCore", package: "NembraCore")
             ]
+        ),
+        .testTarget(
+            name: "NembraCaptureAppAuthorizationTests",
+            dependencies: ["NembraCaptureAppAuthorization"]
         )
     ]
 )
