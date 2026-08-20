@@ -1,0 +1,69 @@
+name: Capture Signer Bundle Layout Exact-Head
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/ci/es80_sign_field_authorization_from_rendezvous.py'
+      - 'scripts/ci/tests/test_es80_sign_field_authorization_from_rendezvous.py'
+      - 'scripts/ci/tests/test_es80_signer_bundle_repository_layout.py'
+      - '.github/workflows/capture-signer-bundle-layout-exact-head.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  signer-bundle-layout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Resolve immutable requested head
+        id: exact
+        shell: bash
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          DISPATCH_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          sha="$PR_HEAD_SHA"
+          if [[ -z "$sha" ]]; then
+            sha="$DISPATCH_SHA"
+          fi
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout exact head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.exact.outputs.sha }}
+          fetch-depth: 1
+
+      - name: Prove exact checkout
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ steps.exact.outputs.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain=v1)"
+
+      - name: Validate signer bundle custody contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/es80_sign_field_authorization_from_rendezvous.py
+          python3 -m unittest \
+            scripts.ci.tests.test_es80_sign_field_authorization_from_rendezvous \
+            scripts.ci.tests.test_es80_signer_bundle_repository_layout \
+            scripts.ci.tests.test_es80_field_authorization_signer_custody_source
+          test -z "$(git status --porcelain=v1)"
+
+      - name: Preserve exact-head identity
+        if: always()
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ steps.exact.outputs.sha }}
+        run: |
+          set -euo pipefail
+          printf 'expected_sha=%s\n' "$EXPECTED_SHA"
+          printf 'actual_sha=%s\n' "$(git rev-parse HEAD)"
