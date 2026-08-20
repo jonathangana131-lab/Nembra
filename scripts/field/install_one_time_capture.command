@@ -27,12 +27,15 @@ die() { builtin printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 
 # Exact-retained-IPA installer migration checkpoint.
 #
-# The current-procedure envelope signer/verifier and evidence schema exist, but the independently
-# reviewed production trust root, app adapter, and install-manifest contract do not. Until those
-# remaining authority boundaries exist, this script may authenticate caller-supplied files but must
-# not interpret them, rebuild an app, contact a device, or install.
-# The unconditional stop below is deliberately before every legacy build/install statement.
-RETAINED_INSTALL_CONTRACT_STATUS="blocked-missing-pinned-trust-and-install-manifest"
+# The retained-install manifest contract and app authorization adapter now exist. The production
+# trust root is still intentionally unpinned and the standalone app has not yet closed the full
+# capability lifecycle through OFF1 -> authentication -> connection -> observation -> seal/revoke.
+# This checkpoint therefore authenticates the stable pre-attempt subjects, validates one canonical
+# retained-install manifest from exact accepted Git verifier bytes, and then stops. It must never
+# require the future per-attempt authorization envelope before installation because that envelope
+# can exist only after the installed app creates its fresh process-local challenge.
+# The unconditional stop below remains before every legacy build/install/device statement.
+RETAINED_INSTALL_CONTRACT_STATUS="blocked-missing-pinned-trust-and-capability-wiring"
 
 validate_retained_input() {
   local label="$1"
@@ -119,6 +122,19 @@ finally:
 PY
 }
 
+capture_retained_contract_source_base64() {
+  local source_sha="$1"
+  local path="$2"
+  local blob encoded decoded_blob
+  blob="$(GIT_NO_REPLACE_OBJECTS=1 git -C "$ROOT" rev-parse "$source_sha:$path" 2>/dev/null)" || die "Accepted retained-contract verifier is missing from the exact Git tree: $path"
+  [[ "$blob" =~ ^[0-9a-f]{40}$ ]] || die "Accepted retained-contract verifier Git identity is malformed: $path"
+  encoded="$(GIT_NO_REPLACE_OBJECTS=1 git -C "$ROOT" cat-file blob "$blob" | /usr/bin/base64 | /usr/bin/tr -d '\r\n')" || die "Could not capture accepted retained-contract verifier bytes: $path"
+  [[ -n "$encoded" ]] || die "Accepted retained-contract verifier has no captured execution bytes: $path"
+  decoded_blob="$(printf '%s' "$encoded" | /usr/bin/base64 -D | GIT_NO_REPLACE_OBJECTS=1 git -C "$ROOT" hash-object --stdin 2>/dev/null)" || die "Could not authenticate captured retained-contract verifier bytes: $path"
+  [[ "$decoded_blob" == "$blob" ]] || die "Captured retained-contract verifier bytes do not match the exact accepted Git object: $path"
+  printf '%s' "$encoded"
+}
+
 run_retained_input_self_test() {
   local test_root test_file test_digest
   test_root="$(/usr/bin/mktemp -d "/private/tmp/nembra-retained-install-self-test.XXXXXX")"
@@ -151,6 +167,17 @@ case "${1:-}" in
   *) die "Only --dry-run or --self-test is accepted; private values and hashes must not be placed on argv." ;;
 esac
 
+: "${NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA:?Set NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA to the exact accepted Capture source SHA.}"
+[[ "$NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA" =~ ^[0-9A-Fa-f]{40}$ ]] || die "NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA must be exactly 40 hex characters."
+RETAINED_SOURCE_SHA="$(printf '%s' "$NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA" | /usr/bin/tr '[:upper:]' '[:lower:]')"
+CURRENT_SOURCE_SHA="$(git rev-parse HEAD | /usr/bin/tr '[:upper:]' '[:lower:]')"
+[[ "$CURRENT_SOURCE_SHA" == "$RETAINED_SOURCE_SHA" ]] || die "Current checkout $CURRENT_SOURCE_SHA does not match retained-manifest source $RETAINED_SOURCE_SHA."
+[[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Working tree has local changes. Commit or stash them before retained-manifest admission."
+say "Exact retained-manifest source matched: $RETAINED_SOURCE_SHA"
+
+RETAINED_MANIFEST_VERIFIER_PATH="scripts/ci/es80_retained_install_manifest.py"
+RETAINED_MANIFEST_VERIFIER_SOURCE_B64="$(capture_retained_contract_source_base64 "$RETAINED_SOURCE_SHA" "$RETAINED_MANIFEST_VERIFIER_PATH")"
+
 : "${NEMBRA_RETAINED_IPA_PATH:?Set NEMBRA_RETAINED_IPA_PATH to the absolute retained accepted signed IPA path.}"
 : "${NEMBRA_RETAINED_IPA_SHA256:?Set NEMBRA_RETAINED_IPA_SHA256 to its independently accepted SHA-256.}"
 : "${NEMBRA_ACCEPTED_BUILD_SUBJECT_PATH:?Set NEMBRA_ACCEPTED_BUILD_SUBJECT_PATH to the absolute accepted build subject path.}"
@@ -163,8 +190,8 @@ esac
 : "${NEMBRA_ACCEPTED_TUYA_LOCK_SUBJECT_SHA256:?Set NEMBRA_ACCEPTED_TUYA_LOCK_SUBJECT_SHA256.}"
 : "${NEMBRA_INTENDED_DEVICE_PSEUDONYMOUS_BINDING_PATH:?Set NEMBRA_INTENDED_DEVICE_PSEUDONYMOUS_BINDING_PATH to its absolute private path.}"
 : "${NEMBRA_INTENDED_DEVICE_PSEUDONYMOUS_BINDING_SHA256:?Set NEMBRA_INTENDED_DEVICE_PSEUDONYMOUS_BINDING_SHA256.}"
-: "${NEMBRA_CURRENT_PROCEDURE_AUTHORIZATION_ENVELOPE_PATH:?Set NEMBRA_CURRENT_PROCEDURE_AUTHORIZATION_ENVELOPE_PATH to its absolute private path.}"
-: "${NEMBRA_CURRENT_PROCEDURE_AUTHORIZATION_ENVELOPE_SHA256:?Set NEMBRA_CURRENT_PROCEDURE_AUTHORIZATION_ENVELOPE_SHA256.}"
+: "${NEMBRA_RETAINED_INSTALL_MANIFEST_PATH:?Set NEMBRA_RETAINED_INSTALL_MANIFEST_PATH to the absolute canonical retained-install manifest path.}"
+: "${NEMBRA_RETAINED_INSTALL_MANIFEST_SHA256:?Set NEMBRA_RETAINED_INSTALL_MANIFEST_SHA256 to its independently accepted SHA-256.}"
 
 validate_retained_input "retained accepted signed IPA" "$NEMBRA_RETAINED_IPA_PATH" "$NEMBRA_RETAINED_IPA_SHA256" public 1073741824
 validate_retained_input "accepted build subject" "$NEMBRA_ACCEPTED_BUILD_SUBJECT_PATH" "$NEMBRA_ACCEPTED_BUILD_SUBJECT_SHA256" public 16777216
@@ -172,10 +199,67 @@ validate_retained_input "accepted evidence subject" "$NEMBRA_ACCEPTED_EVIDENCE_S
 validate_retained_input "accepted Final-GO subject" "$NEMBRA_ACCEPTED_FINAL_GO_SUBJECT_PATH" "$NEMBRA_ACCEPTED_FINAL_GO_SUBJECT_SHA256" private 16777216
 validate_retained_input "accepted Tuya-lock subject" "$NEMBRA_ACCEPTED_TUYA_LOCK_SUBJECT_PATH" "$NEMBRA_ACCEPTED_TUYA_LOCK_SUBJECT_SHA256" public 4194304
 validate_retained_input "intended-device pseudonymous binding" "$NEMBRA_INTENDED_DEVICE_PSEUDONYMOUS_BINDING_PATH" "$NEMBRA_INTENDED_DEVICE_PSEUDONYMOUS_BINDING_SHA256" private 1048576
-validate_retained_input "current-procedure authorization envelope" "$NEMBRA_CURRENT_PROCEDURE_AUTHORIZATION_ENVELOPE_PATH" "$NEMBRA_CURRENT_PROCEDURE_AUTHORIZATION_ENVELOPE_SHA256" private 16777216
+validate_retained_input "retained-install manifest" "$NEMBRA_RETAINED_INSTALL_MANIFEST_PATH" "$NEMBRA_RETAINED_INSTALL_MANIFEST_SHA256" private 16384
 
+if ! /usr/bin/env -i \
+  PATH=/usr/bin:/bin \
+  LC_ALL=C \
+  NEMBRA_RETAINED_INSTALL_MANIFEST_PATH="$NEMBRA_RETAINED_INSTALL_MANIFEST_PATH" \
+  NEMBRA_RETAINED_INSTALL_MANIFEST_SHA256="$NEMBRA_RETAINED_INSTALL_MANIFEST_SHA256" \
+  NEMBRA_RETAINED_IPA_SHA256="$NEMBRA_RETAINED_IPA_SHA256" \
+  NEMBRA_ACCEPTED_BUILD_SUBJECT_SHA256="$NEMBRA_ACCEPTED_BUILD_SUBJECT_SHA256" \
+  NEMBRA_ACCEPTED_EVIDENCE_SUBJECT_SHA256="$NEMBRA_ACCEPTED_EVIDENCE_SUBJECT_SHA256" \
+  NEMBRA_ACCEPTED_FINAL_GO_SUBJECT_SHA256="$NEMBRA_ACCEPTED_FINAL_GO_SUBJECT_SHA256" \
+  NEMBRA_ACCEPTED_TUYA_LOCK_SUBJECT_SHA256="$NEMBRA_ACCEPTED_TUYA_LOCK_SUBJECT_SHA256" \
+  NEMBRA_INTENDED_DEVICE_PSEUDONYMOUS_BINDING_SHA256="$NEMBRA_INTENDED_DEVICE_PSEUDONYMOUS_BINDING_SHA256" \
+  NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA="$RETAINED_SOURCE_SHA" \
+  /usr/bin/python3 -I -B - "$RETAINED_MANIFEST_VERIFIER_SOURCE_B64" <<'PY'
+import base64
+import hashlib
+import hmac
+import os
+import sys
+from pathlib import Path
+
+source = base64.b64decode(sys.argv[1], validate=True)
+namespace = {
+    "__name__": "nembra_retained_install_manifest_verifier",
+    "__file__": "<accepted-retained-install-manifest-verifier>",
+}
+exec(compile(source, namespace["__file__"], "exec", dont_inherit=True), namespace)
+read_manifest = namespace.get("_read_manifest")
+verify_manifest = namespace.get("verify_manifest_bytes")
+if not callable(read_manifest) or not callable(verify_manifest):
+    raise RuntimeError("accepted retained-install verifier is missing required entry points")
+
+data = read_manifest(Path(os.environ["NEMBRA_RETAINED_INSTALL_MANIFEST_PATH"]))
+expected_manifest_digest = os.environ["NEMBRA_RETAINED_INSTALL_MANIFEST_SHA256"].lower()
+actual_manifest_digest = hashlib.sha256(data).hexdigest()
+if not hmac.compare_digest(actual_manifest_digest, expected_manifest_digest):
+    raise RuntimeError("retained-install manifest digest changed after custody admission")
+value = verify_manifest(data)
+expected = {
+    "retainedIPASHA256": os.environ["NEMBRA_RETAINED_IPA_SHA256"].lower(),
+    "externalBuildRecordSHA256": os.environ["NEMBRA_ACCEPTED_BUILD_SUBJECT_SHA256"].lower(),
+    "signedBuildEvidenceSHA256": os.environ["NEMBRA_ACCEPTED_EVIDENCE_SUBJECT_SHA256"].lower(),
+    "finalGORecordSHA256": os.environ["NEMBRA_ACCEPTED_FINAL_GO_SUBJECT_SHA256"].lower(),
+    "tuyaDependencyLockSHA256": os.environ["NEMBRA_ACCEPTED_TUYA_LOCK_SUBJECT_SHA256"].lower(),
+    "intendedDevicePseudonymSHA256": os.environ[
+        "NEMBRA_INTENDED_DEVICE_PSEUDONYMOUS_BINDING_SHA256"
+    ].lower(),
+    "sourceCommitSHA": os.environ["NEMBRA_CAPTURE_EXPECTED_SOURCE_SHA"].lower(),
+}
+for key, expected_value in expected.items():
+    if value.get(key) != expected_value:
+        raise RuntimeError(f"retained-install manifest exact-subject mismatch at {key}")
+PY
+then
+  die "The retained-install manifest failed canonical exact-subject validation. No install authority was created."
+fi
+unset RETAINED_MANIFEST_VERIFIER_SOURCE_B64 RETAINED_MANIFEST_VERIFIER_PATH
+say "Canonical retained-install manifest matched every admitted stable subject (NOT INSTALL AUTHORITY)"
 say "Exact retained input bytes passed bounded path/hash/mode admission"
-die "Installation remains blocked: the pinned production trust root, app adapter, and workflow artifact manifest contract are absent. No app was rebuilt or installed. Status: $RETAINED_INSTALL_CONTRACT_STATUS"
+die "Installation remains blocked: production trust is unpinned and end-to-end capability lifecycle/final field acceptance are incomplete. The retained manifest is evidence only. No app was rebuilt, contacted, or installed. Status: $RETAINED_INSTALL_CONTRACT_STATUS"
 
 # The only positional input is a public Git commit. Private values are read
 # from narrow local files or hidden prompts and never accepted on argv.
