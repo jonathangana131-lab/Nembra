@@ -23,11 +23,13 @@ on:
       - scripts/ci/tests/test_es80_field_authorization_rendezvous.py
       - scripts/ci/es80_sign_field_authorization_from_rendezvous.py
       - scripts/ci/tests/test_es80_sign_field_authorization_from_rendezvous.py
+      - scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py
       - NembraApp/App/NembraCaptureEntrypoint.swift
       - NembraApp/App/NembraCaptureFieldAuthorizationController.swift
       - NembraCapture.xcodeproj/project.pbxproj
       - Packages/NembraBluetoothCapture/Sources/NembraCaptureAppAuthorization/AuthenticatedStationaryCaptureSignerRendezvousDocument.swift
       - scripts/field/install_one_time_capture.command
+      - docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md
       - docs/ES80_AUTHENTICATED_STATIONARY_RETAINED_INSTALL_MANIFEST.md
       - docs/ES80_TODAY_SIGNED_FIELD_CANDIDATE_PRODUCTION.md
       - docs/ES80_TODAY_PRIVATE_DEVICE_INPUT_CUSTODY.md
@@ -80,7 +82,8 @@ jobs:
             scripts/ci/es80_field_authorization_rendezvous.py \
             scripts/ci/tests/test_es80_field_authorization_rendezvous.py \
             scripts/ci/es80_sign_field_authorization_from_rendezvous.py \
-            scripts/ci/tests/test_es80_sign_field_authorization_from_rendezvous.py
+            scripts/ci/tests/test_es80_sign_field_authorization_from_rendezvous.py \
+            scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py
 
       - name: Run focused preflight, retained-install, app-wiring, and handoff regressions
         run: |
@@ -92,6 +95,7 @@ jobs:
           python3 scripts/ci/es80_field_authorization_rendezvous.py --self-test
           python3 scripts/ci/tests/test_es80_field_authorization_rendezvous.py -v
           python3 scripts/ci/tests/test_es80_sign_field_authorization_from_rendezvous.py -v
+          python3 scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py -v
           python3 scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py -v
           python3 scripts/ci/tests/test_es80_today_field_candidate_preflight.py -v
           python3 scripts/ci/tests/test_es80_today_field_candidate_developer_dir_handoff.py -v
