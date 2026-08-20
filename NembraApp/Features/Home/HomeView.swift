@@ -5,6 +5,8 @@ struct HomeView: View {
     @Environment(VehicleStore.self) private var vehicle
     @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var pendingLockConfirmation: Bool?
 
     var body: some View {
@@ -16,7 +18,7 @@ struct HomeView: View {
                     connectionRecovery
                 }
 
-                statusPanel
+                machineHero
                 controlsSection
 
                 if !supportedModes.isEmpty {
@@ -88,6 +90,8 @@ struct HomeView: View {
         )
     }
 
+    // MARK: - Machine identity
+
     private var vehicleHeader: some View {
         Group {
             if dynamicTypeSize.isAccessibilitySize {
@@ -137,135 +141,243 @@ struct HomeView: View {
         }
     }
 
-    private var statusPanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if vehicle.state.connection != .connected && hasRetainedSummaryData {
-                Label("Last known vehicle data", systemImage: "clock.arrow.circlepath")
-                    .font(.caption.weight(.medium))
+    // MARK: - Hero energy system
+
+    private var machineHero: some View {
+        VStack(alignment: .leading, spacing: dynamicTypeSize.isAccessibilitySize ? 20 : 16) {
+            HStack(alignment: .center, spacing: 10) {
+                Text("ENERGY")
+                    .font(.caption2.weight(.bold))
+                    .tracking(1.4)
                     .foregroundStyle(.secondary)
-                    .accessibilityHint("These values may be stale until the scooter reconnects.")
+
+                Spacer(minLength: 8)
+
+                dataFreshnessBadge
             }
 
             if dynamicTypeSize.isAccessibilitySize {
-                VStack(spacing: 0) {
-                    statusMetric(
-                        title: "Battery",
-                        value: batteryText,
-                        icon: batteryIcon,
-                        accessibilityIdentifier: "home.metric.battery",
-                        accessibilityValue: batteryAccessibilityValue,
-                        valueStyle: batteryValueStyle
-                    )
-                    accessibilityMetricDivider
-                    statusMetric(
-                        title: "Trip",
-                        value: tripDistanceText,
-                        icon: "point.bottomleft.forward.to.point.topright.scurvepath",
-                        accessibilityTitle: "Scooter Trip",
-                        accessibilityIdentifier: "home.metric.trip"
-                    )
-                    accessibilityMetricDivider
-                    statusMetric(
-                        title: "Mode",
-                        value: vehicle.state.rideMode?.displayName ?? "—",
-                        icon: "gauge.with.dots.needle.67percent",
-                        accessibilityIdentifier: "home.metric.mode"
-                    )
+                VStack(alignment: .leading, spacing: 18) {
+                    batteryInstrument
+                    Divider()
+                    heroContextMetrics
                 }
             } else {
-                HStack(spacing: 0) {
-                    statusMetric(
-                        title: "Battery",
-                        value: batteryText,
-                        icon: batteryIcon,
-                        accessibilityIdentifier: "home.metric.battery",
-                        accessibilityValue: batteryAccessibilityValue,
-                        valueStyle: batteryValueStyle
-                    )
-                    metricDivider
-                    statusMetric(
-                        title: "Trip",
-                        value: tripDistanceText,
-                        icon: "point.bottomleft.forward.to.point.topright.scurvepath",
-                        accessibilityTitle: "Scooter Trip",
-                        accessibilityIdentifier: "home.metric.trip"
-                    )
-                    metricDivider
-                    statusMetric(
-                        title: "Mode",
-                        value: vehicle.state.rideMode?.displayName ?? "—",
-                        icon: "gauge.with.dots.needle.67percent",
-                        accessibilityIdentifier: "home.metric.mode"
-                    )
+                HStack(alignment: .center, spacing: 12) {
+                    batteryInstrument
+                        .layoutPriority(1)
+                    Spacer(minLength: 6)
+                    heroContextMetrics
+                        .frame(width: 112, alignment: .leading)
                 }
             }
+
+            machineReadinessStrip
         }
-        .padding(16)
-        .background(
-            Color(uiColor: .secondarySystemBackground),
-            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
-        )
+        .padding(dynamicTypeSize.isAccessibilitySize ? 20 : 22)
+        .background(heroSurface, in: RoundedRectangle(cornerRadius: NembraMetrics.heroRadius, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(.primary.opacity(0.045))
+            RoundedRectangle(cornerRadius: NembraMetrics.heroRadius, style: .continuous)
+                .strokeBorder(Color.primary.opacity(reduceTransparency ? 0.12 : 0.07))
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("home.machine-hero")
+    }
+
+    private var heroSurface: Color {
+        reduceTransparency
+            ? Color(uiColor: .secondarySystemBackground)
+            : Color.primary.opacity(0.045)
+    }
+
+    private var dataFreshnessBadge: some View {
+        Group {
+            if vehicle.state.dataAvailability == .retained && hasRetainedSummaryData {
+                Label("LAST KNOWN", systemImage: "clock.arrow.circlepath")
+                    .accessibilityLabel("Last known vehicle data")
+                    .accessibilityHint("These values may be stale until fresh scooter data arrives.")
+            } else if vehicle.state.connection == .connected && vehicle.state.dataAvailability == .live {
+                Label("LIVE", systemImage: "wave.3.right")
+                    .accessibilityLabel("Live vehicle data")
+            } else {
+                Label("WAITING", systemImage: "ellipsis")
+                    .accessibilityLabel("Waiting for vehicle data")
+            }
+        }
+        .font(.caption2.weight(.bold))
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+    }
+
+    private var batteryInstrument: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: batteryIcon)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(batteryValueStyle)
+                    .accessibilityHidden(true)
+
+                Text(batteryText)
+                    .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 44 : 50, weight: .semibold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(batteryValueStyle)
+                    .contentTransition(reduceMotion ? .identity : .numericText())
+                    .minimumScaleFactor(0.68)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+
+            Text("BATTERY")
+                .font(.caption2.weight(.bold))
+                .tracking(1.2)
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Battery")
+        .accessibilityValue(batteryAccessibilityValue)
+        .accessibilityIdentifier("home.metric.battery")
+    }
+
+    private var heroContextMetrics: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            heroContextMetric(
+                title: "Trip",
+                value: tripDistanceText,
+                icon: "point.bottomleft.forward.to.point.topright.scurvepath",
+                accessibilityTitle: "Scooter Trip",
+                identifier: "home.metric.trip"
+            )
+
+            heroContextMetric(
+                title: "Mode",
+                value: vehicle.state.rideMode?.displayName ?? "—",
+                icon: "gauge.with.dots.needle.67percent",
+                identifier: "home.metric.mode"
+            )
         }
     }
 
-    private var metricDivider: some View {
-        Divider()
-            .frame(height: 44)
-            .padding(.horizontal, 12)
-    }
-
-    private var accessibilityMetricDivider: some View {
-        Divider()
-            .padding(.vertical, 12)
-    }
-
-    private func statusMetric(
+    private func heroContextMetric(
         title: String,
         value: String,
         icon: String,
         accessibilityTitle: String? = nil,
-        accessibilityIdentifier: String,
-        accessibilityValue: String? = nil,
-        valueStyle: Color = .primary
+        identifier: String
     ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label(title, systemImage: icon)
-                .font(.caption)
-                .foregroundStyle(title == "Battery" && isBatteryLow ? valueStyle : .secondary)
-                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
-                .fixedSize(horizontal: false, vertical: true)
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 19)
+                .accessibilityHidden(true)
 
-            Text(value)
-                .font(.title3.weight(.semibold).monospacedDigit())
-                .foregroundStyle(valueStyle)
-                .contentTransition(.numericText())
-                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
-                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.72)
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(value)
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(.primary)
+                    .contentTransition(reduceMotion ? .identity : .numericText())
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                    .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.72)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(title.uppercased())
+                    .font(.caption2.weight(.bold))
+                    .tracking(0.8)
+                    .foregroundStyle(.secondary)
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityTitle ?? title)
-        .accessibilityValue(accessibilityValue ?? value)
-        .accessibilityIdentifier(accessibilityIdentifier)
+        .accessibilityValue(value)
+        .accessibilityIdentifier(identifier)
     }
+
+    private var machineReadinessStrip: some View {
+        HStack(spacing: 10) {
+            Image(systemName: readinessIcon)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 28, height: 28)
+                .background(Color.primary.opacity(0.055), in: Circle())
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(readinessTitle)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(readinessDetail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("home.machine-readiness")
+    }
+
+    private var readinessIcon: String {
+        if vehicle.state.connection == .connected && vehicle.state.dataAvailability == .live {
+            return "checkmark"
+        }
+        if vehicle.state.connection == .connecting || vehicle.state.connection == .reconnecting {
+            return "arrow.triangle.2.circlepath"
+        }
+        return "bolt.horizontal"
+    }
+
+    private var readinessTitle: String {
+        if vehicle.state.connection == .connected && vehicle.state.dataAvailability == .live {
+            return "Vehicle live"
+        }
+        if vehicle.state.connection == .connected {
+            return "Vehicle connected"
+        }
+        if vehicle.state.connection == .connecting || vehicle.state.connection == .reconnecting {
+            return "Restoring vehicle link"
+        }
+        return "Vehicle offline"
+    }
+
+    private var readinessDetail: String {
+        if vehicle.state.connection == .connected && vehicle.state.dataAvailability == .live {
+            return "Fresh vehicle evidence is available."
+        }
+        if vehicle.state.connection == .connected && hasRetainedSummaryData {
+            return "Last known values remain read-only while fresh vehicle data is unavailable."
+        }
+        if vehicle.state.connection == .connected {
+            return "Waiting for fresh vehicle data before live status is shown."
+        }
+        if hasRetainedSummaryData {
+            return "Last known values remain read-only until the scooter reconnects."
+        }
+        return "Connect the scooter before using vehicle controls."
+    }
+
+    // MARK: - Confirmed controls
 
     private var controlsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeader(title: "Controls")
+            sectionHeader(title: "Quick Controls")
 
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(spacing: 12) {
-                    actionControls
-                }
-            } else {
-                HStack(spacing: 12) {
-                    actionControls
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(spacing: 12) {
+                        actionControls
+                    }
+                } else {
+                    HStack(spacing: 12) {
+                        actionControls
+                    }
                 }
             }
+            .padding(8)
+            .background(
+                reduceTransparency ? Color(uiColor: .secondarySystemBackground) : Color.primary.opacity(0.035),
+                in: RoundedRectangle(cornerRadius: NembraMetrics.heroRadius, style: .continuous)
+            )
         }
     }
 
@@ -363,6 +475,8 @@ struct HomeView: View {
         .accessibilityValue(pending ? "Requesting confirmation" : "")
     }
 
+    // MARK: - Ride mode
+
     private var modeSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             sectionHeader(title: "Ride Mode")
@@ -434,6 +548,8 @@ struct HomeView: View {
         .accessibilityIdentifier("home.mode.\(mode.displayName.lowercased())")
     }
 
+    // MARK: - Vehicle detail
+
     private var vehicleSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             sectionHeader(title: "Vehicle")
@@ -478,9 +594,10 @@ struct HomeView: View {
     }
 
     private func sectionHeader(title: String) -> some View {
-        Text(title)
-            .font(.headline)
-            .foregroundStyle(.primary)
+        Text(title.uppercased())
+            .font(.caption.weight(.bold))
+            .tracking(1.0)
+            .foregroundStyle(.secondary)
     }
 
     @ViewBuilder
@@ -519,6 +636,8 @@ struct HomeView: View {
             .accessibilityElement(children: .combine)
         }
     }
+
+    // MARK: - Connection recovery
 
     private var connectionRecovery: some View {
         let presentation = connectionRecoveryPresentation
@@ -696,6 +815,8 @@ struct HomeView: View {
             )
         }
     }
+
+    // MARK: - Truthful display helpers
 
     private struct VehicleDetailItem {
         let title: String
