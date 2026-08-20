@@ -27,7 +27,7 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
     }
 
     private let sourceCommitSHA = "0123456789abcdef0123456789abcdef01234567"
-    private let buildInstanceID = "12345678-90ab-cdef-1234-567890abcdef"
+    private let buildInstanceID = "12345678-90ab-4def-9234-567890abcdef"
     private let executableSHA256 =
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     private let infoPlistSHA256 =
@@ -35,6 +35,8 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
 
     private func wire(
         sourceCommitSHA: String? = nil,
+        bundleIdentifier: String? = nil,
+        buildInstanceID: String? = nil,
         retainedIPASHA256: String? = nil
     ) -> TestWire {
         TestWire(
@@ -42,9 +44,9 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
             version: Verifier.schemaVersion,
             procedureID: AuthenticatedStationaryCaptureFieldAuthorizationVerifier.procedureID,
             sourceCommitSHA: sourceCommitSHA ?? self.sourceCommitSHA,
-            bundleIdentifier: "com.nembra.capture",
+            bundleIdentifier: bundleIdentifier ?? Verifier.requiredBundleIdentifier,
             buildIdentifier: "capture-v14-0123456789ab",
-            buildInstanceID: buildInstanceID,
+            buildInstanceID: buildInstanceID ?? self.buildInstanceID,
             retainedIPASHA256: retainedIPASHA256 ?? String(repeating: "1", count: 64),
             executableSHA256: executableSHA256,
             infoPlistSHA256: infoPlistSHA256,
@@ -70,7 +72,7 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
 
         #expect(manifest.procedureID == AuthenticatedStationaryCaptureFieldAuthorizationVerifier.procedureID)
         #expect(manifest.sourceCommitSHA == sourceCommitSHA)
-        #expect(manifest.bundleIdentifier == "com.nembra.capture")
+        #expect(manifest.bundleIdentifier == Verifier.requiredBundleIdentifier)
         #expect(manifest.buildIdentifier == "capture-v14-0123456789ab")
         #expect(manifest.buildInstanceID == buildInstanceID)
         #expect(manifest.retainedIPASHA256 == String(repeating: "1", count: 64))
@@ -146,6 +148,30 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
         #expect(throws: ManifestError.invalidSourceCommitSHA) {
             try Verifier.decodeCanonical(canonicalData(
                 wire(sourceCommitSHA: sourceCommitSHA.uppercased())
+            ))
+        }
+    }
+
+    @Test("Swift rejects semantic identities that the Python manifest contract rejects")
+    func rejectsPythonParitySemanticDrift() throws {
+        #expect(throws: ManifestError.invalidBundleIdentifier) {
+            try Verifier.decodeCanonical(canonicalData(
+                wire(bundleIdentifier: "com.nembra.capture")
+            ))
+        }
+        #expect(throws: ManifestError.invalidBuildInstanceID) {
+            try Verifier.decodeCanonical(canonicalData(
+                wire(buildInstanceID: "12345678-90ab-1def-9234-567890abcdef")
+            ))
+        }
+        #expect(throws: ManifestError.invalidSourceCommitSHA) {
+            try Verifier.decodeCanonical(canonicalData(
+                wire(sourceCommitSHA: String(repeating: "0", count: 40))
+            ))
+        }
+        #expect(throws: ManifestError.invalidDigestField("retainedIPASHA256")) {
+            try Verifier.decodeCanonical(canonicalData(
+                wire(retainedIPASHA256: String(repeating: "0", count: 64))
             ))
         }
     }
