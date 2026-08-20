@@ -1,3 +1,4 @@
+import Foundation
 import NembraCaptureAppAuthorization
 
 /// Standalone-app adapter around the package-owned authenticated Capture session.
@@ -23,6 +24,14 @@ final class NembraCaptureFieldAuthorizationController {
         let manifestData = try AuthenticatedStationaryCaptureAuthorizationInbox()
             .takeInstallManifest()
         return try session.prepare(installManifestData: manifestData)
+    }
+
+    /// Returns the exact non-authorizing bytes that should be copied FROM the still-running app
+    /// container to the independent field signer. The process-local attempt remains alive inside
+    /// `session`; exporting this document does not grant OFF1 or expose the opaque capability.
+    func prepareSignerRendezvousDocumentFromInbox() throws -> Data {
+        let rendezvous = try prepareAttemptFromInbox()
+        return try AuthenticatedStationaryCaptureSignerRendezvousDocument.encode(rendezvous)
     }
 
     func authorizeFromInbox() throws {
