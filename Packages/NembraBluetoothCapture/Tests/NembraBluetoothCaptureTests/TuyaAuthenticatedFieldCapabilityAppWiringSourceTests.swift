@@ -23,24 +23,37 @@ struct TuyaAuthenticatedFieldCapabilityAppWiringSourceTests {
         let correlation = try #require(section.range(of: "beginCorrelationSeries()"))
 
         #expect(admission.lowerBound < correlation.lowerBound)
+        #expect(hasFailClosedGateResolution(before: admission.lowerBound, in: section))
     }
 
     @Test("authentication and official SDK connection both consume their ordered capability admissions")
     func authenticationAndOfficialConnectionAreCapabilityGated() throws {
-        let section = try section(
+        let authentication = try section(
             from: "func authenticate()",
-            through: "private func authenticated(token: TuyaReadOnlyConnectionToken)"
+            through: "private func beginOfficialConnection(candidate: CaptureTargetDevice)"
         )
         let authenticationAdmission = try #require(
-            section.range(of: "admitAuthenticationStart()")
+            authentication.range(of: "admitAuthenticationStart()")
+        )
+        #expect(hasFailClosedGateResolution(
+            before: authenticationAdmission.lowerBound,
+            in: authentication
+        ))
+
+        let connection = try section(
+            from: "private func beginOfficialConnection(candidate: CaptureTargetDevice)",
+            through: "private func authenticated(token: TuyaReadOnlyConnectionToken)"
         )
         let connectionAdmission = try #require(
-            section.range(of: "admitOfficialConnectionStart()")
+            connection.range(of: "admitOfficialConnectionStart()")
         )
-        let connect = try #require(section.range(of: "newDriver.connect("))
+        let connect = try #require(connection.range(of: "newDriver.connect("))
 
-        #expect(authenticationAdmission.lowerBound < connectionAdmission.lowerBound)
         #expect(connectionAdmission.lowerBound < connect.lowerBound)
+        #expect(hasFailClosedGateResolution(
+            before: connectionAdmission.lowerBound,
+            in: connection
+        ))
     }
 
     @Test("authenticated transport cannot become observation before capability admission")
@@ -53,6 +66,7 @@ struct TuyaAuthenticatedFieldCapabilityAppWiringSourceTests {
         let promotion = try #require(section.range(of: "phase = .observing"))
 
         #expect(admission.lowerBound < promotion.lowerBound)
+        #expect(hasFailClosedGateResolution(before: admission.lowerBound, in: section))
     }
 
     @Test("accepted artifact promotion seals capability only after package accepted-prefix sealing")
@@ -67,6 +81,22 @@ struct TuyaAuthenticatedFieldCapabilityAppWiringSourceTests {
 
         #expect(packageSeal.lowerBound < capabilitySeal.lowerBound)
         #expect(capabilitySeal.lowerBound < acceptedPromotion.lowerBound)
+        #expect(hasFailClosedGateResolution(before: capabilitySeal.lowerBound, in: section))
+    }
+
+    @Test("a missing lifecycle gate can never be skipped by optional chaining")
+    func missingGateFailsClosedInsteadOfSilentlySkippingAdmission() throws {
+        let app = try source()
+
+        for forbidden in [
+            "fieldAuthorizationGate?.admitOFF1Start()",
+            "fieldAuthorizationGate?.admitAuthenticationStart()",
+            "fieldAuthorizationGate?.admitOfficialConnectionStart()",
+            "fieldAuthorizationGate?.admitObservationStart()",
+            "fieldAuthorizationGate?.seal()",
+        ] {
+            #expect(!app.contains(forbidden), "Optional authority admission would fail open: \(forbidden)")
+        }
     }
 
     @Test("unfinished authority has an app lifecycle revocation path")
@@ -74,8 +104,23 @@ struct TuyaAuthenticatedFieldCapabilityAppWiringSourceTests {
         let app = try source()
 
         #expect(app.contains(".revoke()"))
+        #expect(app.contains("fieldAuthorizationGate = nil"))
         #expect(app.contains("func appDidLoseForeground()"))
         #expect(app.contains("func abandonCorrelationForViewExit()"))
+    }
+
+    private func hasFailClosedGateResolution(
+        before boundary: String.Index,
+        in section: String
+    ) -> Bool {
+        let prefix = String(section[..<boundary])
+        if prefix.contains("requireFieldAuthorizationGate(") {
+            return true
+        }
+        guard let guardRange = prefix.range(of: "guard let", options: .backwards) else {
+            return false
+        }
+        return prefix[guardRange.lowerBound...].contains("fieldAuthorizationGate")
     }
 
     private func section(from startMarker: String, through endMarker: String) throws -> String {
