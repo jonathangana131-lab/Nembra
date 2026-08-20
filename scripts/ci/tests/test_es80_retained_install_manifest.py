@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -139,9 +140,36 @@ class RetainedInstallManifestTests(unittest.TestCase):
         value = manifest.verify_manifest_bytes(manifest.build_manifest(generic))
         self.assertEqual(value["buildInstanceID"], generic["buildInstanceID"])
 
+    def test_manifest_reader_rejects_symlinked_or_multi_link_paths(self) -> None:
+        data = manifest.build_manifest(self.bindings)
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name).resolve()
+            real_dir = root / "real"
+            real_dir.mkdir()
+            subject = real_dir / "manifest.json"
+            subject.write_bytes(data)
+
+            final_symlink = root / "final-symlink.json"
+            final_symlink.symlink_to(subject)
+            with self.assertRaises(manifest.RetainedInstallManifestError):
+                manifest._read_manifest(final_symlink)
+
+            parent_symlink = root / "parent-symlink"
+            parent_symlink.symlink_to(real_dir, target_is_directory=True)
+            with self.assertRaises(manifest.RetainedInstallManifestError):
+                manifest._read_manifest(parent_symlink / "manifest.json")
+
+            hard_link = root / "hard-link.json"
+            os.link(subject, hard_link)
+            with self.assertRaises(manifest.RetainedInstallManifestError):
+                manifest._read_manifest(hard_link)
+
+            with self.assertRaises(manifest.RetainedInstallManifestError):
+                manifest._read_manifest(Path("relative-manifest.json"))
+
     def test_cli_validation_never_reports_install_or_physical_authority(self) -> None:
         with tempfile.TemporaryDirectory() as name:
-            path = Path(name) / "manifest.json"
+            path = Path(name).resolve() / "manifest.json"
             path.write_bytes(manifest.build_manifest(self.bindings))
             result = subprocess.run(
                 [sys.executable, str(SCRIPT), "--validate", str(path)],
