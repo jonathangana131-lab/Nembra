@@ -17,11 +17,15 @@ class SignerExecutionCustodyTests(unittest.TestCase):
             self.assertNotEqual(bundle, wrapper.HERE)
             self.assertTrue(bundle.is_dir())
             for relative in wrapper.EXECUTION_SOURCES:
-                snapshot = bundle / Path(relative).name
+                snapshot = bundle / relative
                 self.assertTrue(snapshot.is_file())
                 blob_id = wrapper._git_text("rev-parse", "--verify", f"HEAD:{relative}")
                 expected = wrapper._git_bytes("cat-file", "blob", blob_id)
                 self.assertEqual(snapshot.read_bytes(), expected)
+                self.assertFalse(
+                    (bundle / Path(relative).name).exists(),
+                    "accepted execution sources must retain repository-relative layout",
+                )
 
     def test_mutated_checkout_is_rejected_before_execution_bundle(self) -> None:
         relative = wrapper.EXECUTION_SOURCES[1]
@@ -51,7 +55,7 @@ class SignerExecutionCustodyTests(unittest.TestCase):
             not_before="2026-08-20T01:00:00Z",
             expires_at="2026-08-20T01:05:00Z",
         )
-        signer = Path("/private/snapshot/es80_field_authorization_envelope.py")
+        signer = Path("/private/snapshot/scripts/ci/es80_field_authorization_envelope.py")
         command = wrapper.build_signer_command(
             args,
             {"attemptChallengeSHA256": "b" * 64},
@@ -62,7 +66,7 @@ class SignerExecutionCustodyTests(unittest.TestCase):
         self.assertEqual(command[1], str(signer))
         self.assertIn("--private-key", command)
         self.assertIn(str(args.private_key), command)
-        self.assertNotIn(str(wrapper.HERE / wrapper.SIGNER_BASENAME), command)
+        self.assertNotIn(str(wrapper.HERE / wrapper.SIGNER_RELATIVE_PATH.name), command)
 
     def test_source_has_no_mutable_signer_launch_or_environment_inheritance(self) -> None:
         source = SCRIPT.read_text(encoding="utf-8")
@@ -74,6 +78,8 @@ class SignerExecutionCustodyTests(unittest.TestCase):
         self.assertIn("_git_blob_sha(blob) != blob_id", source)
         self.assertIn("worktree != blob", source)
         self.assertIn("with accepted_execution_bundle() as bundle:", source)
+        self.assertIn("bundle / SIGNER_RELATIVE_PATH", source)
+        self.assertIn("bundle / RENDEZVOUS_RELATIVE_PATH", source)
         self.assertIn('"PYTHONNOUSERSITE": "1"', source)
         self.assertIn('"PYTHONPATH": ""', source)
         self.assertNotIn("sys.executable,", source)
