@@ -4,50 +4,37 @@ Status: **SOFTWARE CONTRACT ONLY — NOT INSTALL AUTHORITY / NOT PHYSICAL GO**
 
 Procedure: `ES80-AUTHENTICATED-STATIONARY-v1`
 
-## Purpose
+## One canonical contract
 
-`AuthenticatedStationaryCaptureInstallManifestVerifier` in Swift and
-`scripts/ci/es80_retained_install_manifest.py` now define **one byte-identical closed canonical
-record** for the retained-IPA handoff. The installer and running Capture app must not maintain two
-incompatible meanings of “canonical manifest.”
+The package-owned authority is
+`AuthenticatedStationaryCaptureInstallManifestVerifier` in `NembraBluetoothCapture`.
 
-The shared record binds:
+`scripts/ci/es80_retained_install_manifest.py` is an offline mirror of that exact wire contract for
+installer/workflow tooling. It must not invent a second manifest shape. Both sides use:
 
-- schema/version and procedure identity;
-- exact Capture bundle identity;
-- full source commit;
-- build identifier and build-instance ID;
-- retained signed IPA SHA-256 (`retainedIPASHA256`);
-- executable and raw `Info.plist` SHA-256;
-- reviewed Tuya dependency lock SHA-256;
-- external build record SHA-256;
-- signed build-evidence SHA-256;
-- Final-GO record SHA-256;
-- intended-device pseudonymous binding SHA-256;
-- current-procedure authorization-envelope SHA-256.
+- schema `nembra.es80-authenticated-stationary-install-manifest`, version `1`;
+- compact sorted-key JSON with no trailing newline;
+- the same 16 KiB input bound;
+- procedure, source, bundle, build identifier, and build-instance identity;
+- retained IPA, executable, raw `Info.plist`, reviewed Tuya lock, external build record, signed
+  build evidence, Final-GO record, intended-device pseudonym, and authorization-envelope digests.
 
-Canonical bytes use the same contract as Swift `JSONEncoder` with `.sortedKeys` and
-`.withoutEscapingSlashes`: compact UTF-8 JSON with no trailing newline. The schema is
-`nembra.es80-authenticated-stationary-install-manifest`, version `1`.
-
-The manifest intentionally has no `decision`, `GO`, `authorized`, or caller-selected trust-root
-field. Structural validation remains non-authorizing.
+The retained IPA field is named `retainedIPASHA256` on both sides.
 
 ## Authority boundary
 
-The manifest is deliberately **not** a trust root, signature verifier, Final-GO publisher, installer,
-Bluetooth capability, or physical authorization. Structural validation cannot make independently
-untrusted inputs trustworthy.
+The manifest is evidence and cross-binding input only. It is deliberately **not** a trust root,
+signature verifier, Final-GO publisher, installer, Bluetooth capability, or physical authorization.
+Structural validation cannot make independently untrusted inputs trustworthy.
 
-A future installer/app integration must obtain expected values from separately accepted subjects,
-verify the exact manifest bytes and retained IPA, verify the current-procedure authorization through
-the independently reviewed pinned public key, and only then allow the verifier-minted opaque
-one-attempt capability to advance through the app lifecycle gate.
+The offline mirror additionally provides `verify_manifest_against_expected`: installer code can use
+that only with values independently derived from already accepted subjects. Matching caller-supplied
+files to each other is not sufficient authority.
 
-The production trust root remains absent and the app authorization adapter is not yet wired, so
-physical Capture remains **NO-GO**. Do not weaken or self-repin an independently accepted
-workflow/build-graph custody boundary merely because this manifest or another Capture source file
-changes.
+A future installer integration remains blocked until the repository's pinned trust root, app
+authorization adapter, runtime/build identity handoff, accepted signed-install provenance, and
+applicable exact-source execution evidence are independently closed. Do not self-repin an accepted
+workflow/build-graph custody boundary merely because package/runtime source moved.
 
 ## Validation
 
@@ -57,12 +44,8 @@ Focused contract checks:
 python3 -m unittest scripts/ci/tests/test_es80_retained_install_manifest.py
 python3 scripts/ci/es80_retained_install_manifest.py --self-test
 python3 -m py_compile scripts/ci/es80_retained_install_manifest.py scripts/ci/tests/test_es80_retained_install_manifest.py
-swift test --package-path Packages/NembraBluetoothCapture --filter AuthenticatedStationaryCaptureInstallManifest
 ```
 
-The Python regression suite also pins the shared schema/field/canonicalization contract against the
-Swift verifier source so future format drift fails loudly.
-
-Passing these checks proves only the software manifest grammar and exact-binding behavior. It does
-not prove Xcode, signing, installation, an intended iPhone, Tuya authentication, BLE continuity,
-ES80 identity, telemetry semantics, command safety, or physical readiness.
+Passing these checks proves only wire-format parity, manifest grammar, and exact-binding comparison
+behavior. It does not prove Xcode, signing, installation, an intended iPhone, Tuya authentication,
+BLE continuity, ES80 identity, telemetry semantics, command safety, or physical readiness.
