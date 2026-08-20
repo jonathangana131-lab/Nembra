@@ -12,7 +12,7 @@ public struct AuthenticatedStationaryCaptureInstallManifest: Equatable, Sendable
     public let bundleIdentifier: String
     public let buildIdentifier: String
     public let buildInstanceID: String
-    public let retainedIPASHA256: String
+    public let signedInstallableSHA256: String
     public let executableSHA256: String
     public let infoPlistSHA256: String
     public let tuyaDependencyLockSHA256: String
@@ -29,7 +29,7 @@ public struct AuthenticatedStationaryCaptureInstallManifest: Equatable, Sendable
         bundleIdentifier: String,
         buildIdentifier: String,
         buildInstanceID: String,
-        retainedIPASHA256: String,
+        signedInstallableSHA256: String,
         executableSHA256: String,
         infoPlistSHA256: String,
         tuyaDependencyLockSHA256: String,
@@ -45,7 +45,7 @@ public struct AuthenticatedStationaryCaptureInstallManifest: Equatable, Sendable
         self.bundleIdentifier = bundleIdentifier
         self.buildIdentifier = buildIdentifier
         self.buildInstanceID = buildInstanceID
-        self.retainedIPASHA256 = retainedIPASHA256
+        self.signedInstallableSHA256 = signedInstallableSHA256
         self.executableSHA256 = executableSHA256
         self.infoPlistSHA256 = infoPlistSHA256
         self.tuyaDependencyLockSHA256 = tuyaDependencyLockSHA256
@@ -89,6 +89,7 @@ public enum AuthenticatedStationaryCaptureInstallManifestError: Error, Equatable
     case unexpectedManifestField(String)
     case nonCanonicalManifest
     case unsupportedSchema
+    case unsupportedManifestKind
     case unsupportedProcedure
     case invalidBundleIdentifier
     case invalidSourceCommitSHA
@@ -97,23 +98,27 @@ public enum AuthenticatedStationaryCaptureInstallManifestError: Error, Equatable
     case invalidDigestField(String)
 }
 
-/// Strict decoder for the workflow/install manifest. This decoder deliberately accepts one
-/// canonical JSON shape only so a retained manifest has one stable byte identity and cannot hide
-/// alternate spellings, duplicate keys, unknown fields, or normalized-after-the-fact digests.
+/// Strict decoder for the workflow/install manifest. The accepted bytes intentionally match
+/// `scripts/ci/es80_retained_install_manifest.py`: UTF-8, sorted keys, two-space indentation,
+/// Python-style `": "` separators, and one trailing newline. Keeping one cross-language byte
+/// grammar prevents the installer and running app from accepting different manifests.
 public enum AuthenticatedStationaryCaptureInstallManifestVerifier {
-    public static let schema = "nembra.es80-authenticated-stationary-install-manifest"
+    public static let schema = "nembra.es80-authenticated-stationary-retained-install-manifest"
     public static let schemaVersion = 1
-    public static let maximumManifestByteCount = 16_384
+    public static let manifestKind = "retained-install-exact-subject-bindings-not-authorization"
+    public static let bundleIdentifier = "com.jonathangana131.nembra.capturelearn"
+    public static let maximumManifestByteCount = 32_768
 
     private struct Wire: Codable {
         let schema: String
         let version: Int
+        let manifestKind: String
         let procedureID: String
-        let sourceCommitSHA: String
         let bundleIdentifier: String
+        let sourceCommitSHA: String
         let buildIdentifier: String
         let buildInstanceID: String
-        let retainedIPASHA256: String
+        let signedInstallableSHA256: String
         let executableSHA256: String
         let infoPlistSHA256: String
         let tuyaDependencyLockSHA256: String
@@ -125,11 +130,11 @@ public enum AuthenticatedStationaryCaptureInstallManifestVerifier {
     }
 
     private static let allowedKeys: Set<String> = [
-        "schema", "version", "procedureID", "sourceCommitSHA", "bundleIdentifier",
-        "buildIdentifier", "buildInstanceID", "retainedIPASHA256", "executableSHA256",
-        "infoPlistSHA256", "tuyaDependencyLockSHA256", "externalBuildRecordSHA256",
-        "signedBuildEvidenceSHA256", "finalGORecordSHA256", "intendedDevicePseudonymSHA256",
-        "authorizationEnvelopeSHA256",
+        "schema", "version", "manifestKind", "procedureID", "sourceCommitSHA",
+        "bundleIdentifier", "buildIdentifier", "buildInstanceID", "signedInstallableSHA256",
+        "executableSHA256", "infoPlistSHA256", "tuyaDependencyLockSHA256",
+        "externalBuildRecordSHA256", "signedBuildEvidenceSHA256", "finalGORecordSHA256",
+        "intendedDevicePseudonymSHA256", "authorizationEnvelopeSHA256",
     ]
 
     public static func decodeCanonical(
@@ -166,34 +171,35 @@ public enum AuthenticatedStationaryCaptureInstallManifestVerifier {
             throw AuthenticatedStationaryCaptureInstallManifestError.malformedManifest
         }
 
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        guard try encoder.encode(wire) == data else {
+        guard try canonicalManifestData(wire) == data else {
             throw AuthenticatedStationaryCaptureInstallManifestError.nonCanonicalManifest
         }
         guard wire.schema == schema, wire.version == schemaVersion else {
             throw AuthenticatedStationaryCaptureInstallManifestError.unsupportedSchema
         }
+        guard wire.manifestKind == manifestKind else {
+            throw AuthenticatedStationaryCaptureInstallManifestError.unsupportedManifestKind
+        }
         guard wire.procedureID == AuthenticatedStationaryCaptureFieldAuthorizationVerifier.procedureID else {
             throw AuthenticatedStationaryCaptureInstallManifestError.unsupportedProcedure
         }
-        guard isValidBundleIdentifier(wire.bundleIdentifier) else {
+        guard wire.bundleIdentifier == bundleIdentifier else {
             throw AuthenticatedStationaryCaptureInstallManifestError.invalidBundleIdentifier
         }
         guard PassiveBluetoothCaptureRuntimeBuildIdentityReader
-            .normalizedFullGitCommitSHA(wire.sourceCommitSHA) == wire.sourceCommitSHA else {
+            .normalizedFullGitCommitSHA(wire.sourceCommitSHA) == wire.sourceCommitSHA,
+              wire.sourceCommitSHA != String(repeating: "0", count: 40) else {
             throw AuthenticatedStationaryCaptureInstallManifestError.invalidSourceCommitSHA
         }
         guard isValidBuildIdentifier(wire.buildIdentifier) else {
             throw AuthenticatedStationaryCaptureInstallManifestError.invalidBuildIdentifier
         }
-        guard PassiveBluetoothCaptureRuntimeBuildIdentityReader
-            .normalizedBuildInstanceID(wire.buildInstanceID) == wire.buildInstanceID else {
+        guard isCanonicalUUIDv4(wire.buildInstanceID) else {
             throw AuthenticatedStationaryCaptureInstallManifestError.invalidBuildInstanceID
         }
 
         let digestFields: [(String, String)] = [
-            ("retainedIPASHA256", wire.retainedIPASHA256),
+            ("signedInstallableSHA256", wire.signedInstallableSHA256),
             ("executableSHA256", wire.executableSHA256),
             ("infoPlistSHA256", wire.infoPlistSHA256),
             ("tuyaDependencyLockSHA256", wire.tuyaDependencyLockSHA256),
@@ -203,7 +209,7 @@ public enum AuthenticatedStationaryCaptureInstallManifestVerifier {
             ("intendedDevicePseudonymSHA256", wire.intendedDevicePseudonymSHA256),
             ("authorizationEnvelopeSHA256", wire.authorizationEnvelopeSHA256),
         ]
-        if let invalid = digestFields.first(where: { !isCanonicalSHA256($0.1) }) {
+        if let invalid = digestFields.first(where: { !isCanonicalNonzeroSHA256($0.1) }) {
             throw AuthenticatedStationaryCaptureInstallManifestError.invalidDigestField(invalid.0)
         }
 
@@ -213,7 +219,7 @@ public enum AuthenticatedStationaryCaptureInstallManifestVerifier {
             bundleIdentifier: wire.bundleIdentifier,
             buildIdentifier: wire.buildIdentifier,
             buildInstanceID: wire.buildInstanceID,
-            retainedIPASHA256: wire.retainedIPASHA256,
+            signedInstallableSHA256: wire.signedInstallableSHA256,
             executableSHA256: wire.executableSHA256,
             infoPlistSHA256: wire.infoPlistSHA256,
             tuyaDependencyLockSHA256: wire.tuyaDependencyLockSHA256,
@@ -226,21 +232,62 @@ public enum AuthenticatedStationaryCaptureInstallManifestVerifier {
         )
     }
 
-    private static func isCanonicalSHA256(_ value: String) -> Bool {
-        value.utf8.count == 64 && value.utf8.allSatisfy {
-            (0x30 ... 0x39).contains($0) || (0x61 ... 0x66).contains($0)
+    private static func canonicalManifestData(_ wire: Wire) throws -> Data {
+        let fields: [(String, String)] = [
+            ("schema", try encodedJSONString(wire.schema)),
+            ("version", String(wire.version)),
+            ("manifestKind", try encodedJSONString(wire.manifestKind)),
+            ("procedureID", try encodedJSONString(wire.procedureID)),
+            ("bundleIdentifier", try encodedJSONString(wire.bundleIdentifier)),
+            ("sourceCommitSHA", try encodedJSONString(wire.sourceCommitSHA)),
+            ("buildIdentifier", try encodedJSONString(wire.buildIdentifier)),
+            ("buildInstanceID", try encodedJSONString(wire.buildInstanceID)),
+            ("signedInstallableSHA256", try encodedJSONString(wire.signedInstallableSHA256)),
+            ("executableSHA256", try encodedJSONString(wire.executableSHA256)),
+            ("infoPlistSHA256", try encodedJSONString(wire.infoPlistSHA256)),
+            ("tuyaDependencyLockSHA256", try encodedJSONString(wire.tuyaDependencyLockSHA256)),
+            ("externalBuildRecordSHA256", try encodedJSONString(wire.externalBuildRecordSHA256)),
+            ("signedBuildEvidenceSHA256", try encodedJSONString(wire.signedBuildEvidenceSHA256)),
+            ("finalGORecordSHA256", try encodedJSONString(wire.finalGORecordSHA256)),
+            ("intendedDevicePseudonymSHA256", try encodedJSONString(wire.intendedDevicePseudonymSHA256)),
+            ("authorizationEnvelopeSHA256", try encodedJSONString(wire.authorizationEnvelopeSHA256)),
+        ].sorted { $0.0 < $1.0 }
+
+        var lines = ["{"]
+        for (index, field) in fields.enumerated() {
+            let comma = index == fields.count - 1 ? "" : ","
+            lines.append("  \(try encodedJSONString(field.0)): \(field.1)\(comma)")
         }
+        lines.append("}")
+        return Data((lines.joined(separator: "\n") + "\n").utf8)
     }
 
-    private static func isValidBundleIdentifier(_ value: String) -> Bool {
-        guard !value.isEmpty, value.utf8.count <= 255,
-              value == value.trimmingCharacters(in: .whitespacesAndNewlines) else {
-            return false
+    private static func encodedJSONString(_ value: String) throws -> String {
+        let data = try JSONSerialization.data(
+            withJSONObject: [value],
+            options: [.withoutEscapingSlashes]
+        )
+        guard let array = String(data: data, encoding: .utf8),
+              array.first == "[", array.last == "]" else {
+            throw AuthenticatedStationaryCaptureInstallManifestError.malformedManifest
         }
-        return value.utf8.allSatisfy {
-            (0x30 ... 0x39).contains($0) || (0x41 ... 0x5A).contains($0)
-                || (0x61 ... 0x7A).contains($0) || $0 == 0x2D || $0 == 0x2E
-        }
+        return String(array.dropFirst().dropLast())
+    }
+
+    private static func isCanonicalNonzeroSHA256(_ value: String) -> Bool {
+        value != String(repeating: "0", count: 64)
+            && value.utf8.count == 64
+            && value.utf8.allSatisfy {
+                (0x30 ... 0x39).contains($0) || (0x61 ... 0x66).contains($0)
+            }
+    }
+
+    private static func isCanonicalUUIDv4(_ value: String) -> Bool {
+        guard PassiveBluetoothCaptureRuntimeBuildIdentityReader
+            .normalizedBuildInstanceID(value) == value else { return false }
+        let bytes = Array(value.utf8)
+        guard bytes[14] == 0x34 else { return false }
+        return [0x38, 0x39, 0x61, 0x62].contains(bytes[19])
     }
 
     private static func isValidBuildIdentifier(_ value: String) -> Bool {
