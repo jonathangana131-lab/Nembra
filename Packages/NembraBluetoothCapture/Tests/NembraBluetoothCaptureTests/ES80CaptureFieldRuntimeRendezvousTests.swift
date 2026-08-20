@@ -32,7 +32,7 @@ struct ES80CaptureFieldRuntimeRendezvousTests {
         )
     }
 
-    @Test("authenticated preflight exposes the exact running-build rendezvous before OFF 1")
+    @Test("authenticated preflight exposes exact running-build metadata and one-time authority before OFF1")
     func authenticatedPreflightShowsExactRunningBuildTuple() throws {
         let source = try Self.fieldEntrypointSource()
 
@@ -43,7 +43,8 @@ struct ES80CaptureFieldRuntimeRendezvousTests {
         #expect(source.contains("LabeledContent(\"Build\", value: test.fieldBuildIdentifier)"))
         #expect(source.contains("LabeledContent(\"Source commit\", value: test.fieldBuildSourceCommitSHA)"))
         #expect(source.contains("LabeledContent(\"Procedure\", value: test.fieldProcedureIdentifier)"))
-        #expect(source.contains("requirementRow(\"Capture build\", ready: test.fieldBuildIsAuthoritative)"))
+        #expect(source.contains("requirementRow(\"Capture build metadata\", ready: test.fieldBuildMetadataReady)"))
+        #expect(source.contains("requirementRow(\"One-time field authorization\", ready: test.fieldAuthorizationReady)"))
         #expect(source.contains("if authorityReady {"))
         #expect(source.contains("stationarySafetyLaunch = .begin"))
         #expect(source.contains("StationarySafetyConfirmationSheet(launch: launch)"))
@@ -52,35 +53,45 @@ struct ES80CaptureFieldRuntimeRendezvousTests {
         #expect(source.contains("\"I confirm — begin at OFF1\""))
     }
 
-    @Test("field rendezvous consumes the centralized build-authorization gate without minting replacement authority in the view")
-    func rendezvousConsumesCurrentBuildIdentityOnly() throws {
+    @Test("field rendezvous treats build tuple as prerequisite and verifier-owned session as authority")
+    func rendezvousConsumesMetadataAndIndependentSessionAuthority() throws {
         let source = try Self.fieldEntrypointSource()
 
-        #expect(source.contains("var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }"))
+        #expect(source.contains("var fieldBuildMetadataReady: Bool { buildIdentity.hasCompleteFieldBuildMetadata }"))
+        #expect(source.contains("var fieldAuthorizationReady: Bool { fieldAuthorization.stage == .armed }"))
+        #expect(!source.contains("buildIdentity.isAuthoritativeFieldBuild"))
+        #expect(!source.contains("fieldBuildIsAuthoritative"))
         #expect(!source.contains("PassiveBluetoothCaptureRuntimeBuildIdentityReader"))
         #expect(!source.contains("PassiveBluetoothExperimentOneFieldExecutionGate.ResearchBuild("))
         #expect(!source.contains("permitsPhysicalProcedure = true"))
         #expect(!source.contains("UserDefaults"))
 
         let start = try #require(source.range(of: "private func beginBaselineAfterCurrentOperatorAttestation()"))
-        let guardRange = try #require(
+        let metadataRange = try #require(
             source.range(
-                of: "guard buildIdentity.isAuthoritativeFieldBuild else",
+                of: "guard buildIdentity.hasCompleteFieldBuildMetadata else",
                 range: start.lowerBound..<source.endIndex
             )
         )
-        let configRange = try #require(
+        let admissionRange = try #require(
             source.range(
-                of: "guard privateConfig, sdkAccountLoggedIn else",
-                range: guardRange.upperBound..<source.endIndex
+                of: "try self.fieldAuthorization.admitOFF1Start()",
+                range: metadataRange.upperBound..<source.endIndex
             )
         )
-        #expect(start.lowerBound < guardRange.lowerBound)
-        #expect(guardRange.lowerBound < configRange.lowerBound)
+        let correlationRange = try #require(
+            source.range(
+                of: "self.beginCorrelationSeries()",
+                range: admissionRange.upperBound..<source.endIndex
+            )
+        )
+        #expect(start.lowerBound < metadataRange.lowerBound)
+        #expect(metadataRange.lowerBound < admissionRange.lowerBound)
+        #expect(admissionRange.lowerBound < correlationRange.lowerBound)
         #expect(source.contains("field_build_identity_unavailable"))
     }
 
-    @Test("well-formed caller-constructible metadata remains mechanically locked before OFF 1")
+    @Test("caller-constructible metadata never mints physical authority without signed one-time session")
     func callerConstructibleMetadataCannotMintPhysicalAuthority() throws {
         let source = try Self.fieldEntrypointSource()
         let identity = try Self.buildIdentitySource()
@@ -93,14 +104,13 @@ struct ES80CaptureFieldRuntimeRendezvousTests {
             )
         )
         let ready = source[readyStart.lowerBound..<readyEnd.lowerBound]
-        #expect(ready.contains("test.fieldBuildIsAuthoritative"))
+        #expect(ready.contains("test.fieldBuildMetadataReady"))
+        #expect(ready.contains("test.fieldAuthorizationReady"))
         #expect(ready.contains("test.privateConfig"))
         #expect(ready.contains("test.sdkAccountLoggedIn"))
         #expect(ready.contains("test.sdkDeviceMembershipVerified"))
         #expect(ready.contains("test.accountIdentityLeaseIsAuthorized"))
 
-        // The tuple is still validated and retained as useful provenance, and its runtime-facing
-        // keys/label exactly match the package verifier and external build-record contract.
         #expect(identity.contains("var hasCompleteFieldBuildMetadata: Bool"))
         #expect(identity.contains("static let buildInstanceIDInfoKey = \"NembraCaptureBuildInstanceID\""))
         #expect(identity.contains("static let sourceCommitSHAInfoKey = \"NembraCaptureBuildCommitSHA\""))
@@ -112,8 +122,9 @@ struct ES80CaptureFieldRuntimeRendezvousTests {
         #expect(identity.contains("let expectedIdentifier = \"Capture Build V14-\\(sourceCommitSHA.prefix(12))\""))
         #expect(identity.contains("return buildIdentifier == expectedIdentifier"))
 
-        // But self-described plist/build-setting metadata is not an independent trust anchor.
+        // The legacy self-authority predicate remains deliberately hard false; app runtime no longer
+        // consumes it. Independent authority is the package verifier-owned one-time session.
         #expect(identity.contains("var isAuthoritativeFieldBuild: Bool {\n        false\n    }"))
-        #expect(identity.contains("independent physical-build authorization is not available yet"))
+        #expect(!source.contains("buildIdentity.isAuthoritativeFieldBuild"))
     }
 }
