@@ -93,6 +93,29 @@ struct AuthenticatedStationaryCaptureCapabilityGateTests {
         #expect(gate.stage == .revoked)
     }
 
+    @Test("exact verifier wall and monotonic expiry instants are already expired")
+    func exactExpiryBoundariesAreExclusive() throws {
+        let capability = try makeCapability()
+
+        let wallClock = GateTestClock(wall: 2_001_000, uptime: 11_000_000_000)
+        let wallGate = makeGate(capability: capability, clock: wallClock)
+        try wallGate.admitOFF1Start()
+        wallClock.wall = capability.expiresAtUnixMilliseconds
+        #expect(throws: AuthenticatedStationaryCaptureCapabilityGateError.authorizationExpired) {
+            try wallGate.admitAuthenticationStart()
+        }
+        #expect(wallGate.stage == .revoked)
+
+        let uptimeClock = GateTestClock(wall: 2_001_000, uptime: 11_000_000_000)
+        let uptimeGate = makeGate(capability: capability, clock: uptimeClock)
+        try uptimeGate.admitOFF1Start()
+        uptimeClock.uptime = capability.expiresAtUptimeNanoseconds
+        #expect(throws: AuthenticatedStationaryCaptureCapabilityGateError.authorizationExpired) {
+            try uptimeGate.admitAuthenticationStart()
+        }
+        #expect(uptimeGate.stage == .revoked)
+    }
+
     @Test("gate source never exposes or reconstructs the opaque verifier capability")
     func sourceContract() throws {
         let root = URL(fileURLWithPath: #filePath)
@@ -112,6 +135,10 @@ struct AuthenticatedStationaryCaptureCapabilityGateTests {
         #expect(!source.contains("AuthenticatedStationaryCaptureAttemptCapability("))
         #expect(source.contains("func revoke()"))
         #expect(source.contains("try validateCapabilityIsCurrent()"))
+        #expect(source.contains("nowWall < capability.expiresAtUnixMilliseconds"))
+        #expect(source.contains("nowUptime < capability.expiresAtUptimeNanoseconds"))
+        #expect(!source.contains("nowWall <= capability.expiresAtUnixMilliseconds"))
+        #expect(!source.contains("nowUptime <= capability.expiresAtUptimeNanoseconds"))
     }
 
     private func makeGate(
