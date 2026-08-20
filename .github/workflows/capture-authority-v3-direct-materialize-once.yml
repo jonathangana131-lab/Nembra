@@ -1,4 +1,4 @@
-name: Capture authority v3 direct materialize once
+name: Capture authority direct materialize once
 
 on:
   push:
@@ -11,21 +11,19 @@ permissions:
   contents: write
 
 concurrency:
-  group: capture-authority-v3-direct-materialize-once
+  group: capture-authority-direct-materialize-once
   cancel-in-progress: false
 
 jobs:
   materialize:
     runs-on: xcode-27
-    timeout-minutes: 35
+    timeout-minutes: 40
     env:
       TARGET_BRANCH: product/capture-1-0-main-20260818
       APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
-      REVIEWED_AUTHORING_WORKFLOW: .github/workflows/capture-carrier-authority-v2-materialize-once.yml
+      AUTHORING_WORKFLOW: .github/workflows/capture-app-authorization-close-one-shot.yml
       SELF_WORKFLOW: .github/workflows/capture-authority-v3-direct-materialize-once.yml
-      EXPECTED_PARENT: a3ecb0edfb0c97ced237a580c3bd2151594f77a3
       EXPECTED_SOURCE_BLOB: 627c17949d15aaf26ca28c12abb9bb684ab0e731
-      EXPECTED_AUTHORING_BLOB: 59d38ec605728302604ed2b3321b6bd4558dbdda
     steps:
       - name: Checkout immutable trigger
         uses: actions/checkout@v6
@@ -34,78 +32,57 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Bind exact reviewed carrier subject
+      - name: Bind immutable source and reviewed authoring transform
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.sha }}"
-          read -r head parent extra <<<"$(git rev-list --parents -n 1 HEAD)"
-          test "$parent" = "$EXPECTED_PARENT"
-          test -z "${extra:-}"
           test "$(git rev-parse HEAD:"$APP_SOURCE")" = "$EXPECTED_SOURCE_BLOB"
-          test "$(git rev-parse HEAD:"$REVIEWED_AUTHORING_WORKFLOW")" = "$EXPECTED_AUTHORING_BLOB"
-          test -e "$SELF_WORKFLOW"
+          test -f "$AUTHORING_WORKFLOW"
+          test -f "$SELF_WORKFLOW"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Materialize reviewed V2 transform plus V3 fail-closed corrections
+      - name: Materialize reviewed end-to-end app authorization transform
         shell: python
         run: |
           from pathlib import Path
 
           app = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
-          authoring = Path(".github/workflows/capture-carrier-authority-v2-materialize-once.yml").read_text(encoding="utf-8")
-          start = '          cat > "${RUNNER_TEMP}/materialize_capture_authority_v2.py" <<\'PY\'\n'
-          end = '          PY\n\n      - name: Materialize against latest reviewed carrier source\n'
+          authoring = Path(".github/workflows/capture-app-authorization-close-one-shot.yml").read_text(encoding="utf-8")
+          start = "      - name: Materialize field authorization into real SecureLink lifecycle\n        shell: python\n        run: |\n"
+          end = "\n      - name: Enforce truth-preserving source shape\n"
           if authoring.count(start) != 1 or authoring.count(end) != 1:
-              raise SystemExit("reviewed V2 transform markers changed; refusing")
+              raise SystemExit("reviewed app-authorization transform markers changed; refusing")
           body = authoring.split(start, 1)[1].split(end, 1)[0]
           lines = body.splitlines()
           if any(line and not line.startswith("          ") for line in lines):
-              raise SystemExit("unexpected V2 transform indentation; refusing")
+              raise SystemExit("unexpected app-authorization transform indentation; refusing")
           script = "\n".join(line[10:] if line else "" for line in lines) + "\n"
-          exec(compile(script, "capture-authority-v2", "exec"), {"__name__": "__main__"})
+          exec(compile(script, "capture-app-authorization-close-one-shot", "exec"), {"__name__": "__main__"})
 
-          source = app.read_text(encoding="utf-8")
-
-          old_failed = '''            if phase == .failed {\n                fieldAuthorization.revoke()\n                operatorSafetyAttemptID = nil\n'''
-          new_failed = '''            if phase == .failed {\n                if fieldAuthorization.stage != .armed {\n                    fieldAuthorization.revoke()\n                }\n                operatorSafetyAttemptID = nil\n'''
-          if source.count(old_failed) != 1:
-              raise SystemExit(f"armed-preservation anchor count was {source.count(old_failed)}; refusing")
-          source = source.replace(old_failed, new_failed, 1)
-
-          old_authorization_seal = '''                            try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()\n\n                            self.sealedAcceptedEventPrefix = acceptedEventPrefixAtCut\n'''
-          new_authorization_seal = '''                            do {\n                                try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()\n                            } catch {\n                                self.currentConnectionToken = nil\n                                self.localBLESettlementToken = nil\n                                self.sdkLocalBLEOnline = false\n                                self.driver = nil\n                                self.fieldAuthorization.revoke()\n                                self.failLocally(\n                                    "Accepted observation was frozen, but its one-attempt field authorization could not be sealed: \\(error.localizedDescription). Relaunch Capture before another attempt.",\n                                    "field_authorization_exact_artifact_seal_failed"\n                                )\n                                return\n                            }\n\n                            self.sealedAcceptedEventPrefix = acceptedEventPrefixAtCut\n'''
-          if source.count(old_authorization_seal) != 1:
-              raise SystemExit(f"authorization-seal anchor count was {source.count(old_authorization_seal)}; refusing")
-          source = source.replace(old_authorization_seal, new_authorization_seal, 1)
-
-          old_seal_failure = '''                            self.currentConnectionToken = nil\n                            self.localBLESettlementToken = nil\n                            self.sdkLocalBLEOnline = false\n                            self.driver = nil\n                            self.fieldAuthorization.revoke()\n                            self.phase = .failed\n                            self.message = "Accepted observation could not freeze and seal one exact authorized artifact: \\(error.localizedDescription). Relaunch Capture before another attempt."\n                            self.log("field_authorization_exact_artifact_seal_failed", [\n                                "generation": String(token.diagnosticGeneration)\n                            ])\n                            return\n'''
-          new_seal_failure = '''                            self.currentConnectionToken = nil\n                            self.localBLESettlementToken = nil\n                            self.sdkLocalBLEOnline = false\n                            self.driver = nil\n                            self.fieldAuthorization.revoke()\n                            self.failLocally(\n                                "Accepted observation could not freeze and seal one exact authorized artifact: \\(error.localizedDescription). Relaunch Capture before another attempt.",\n                                "field_authorization_exact_artifact_seal_failed"\n                            )\n                            return\n'''
-          if source.count(old_seal_failure) != 1:
-              raise SystemExit(f"seal-failure lifecycle anchor count was {source.count(old_seal_failure)}; refusing")
-          source = source.replace(old_seal_failure, new_seal_failure, 1)
-
-          app.write_text(source, encoding="utf-8")
-
-      - name: Verify source shape and fail-closed authority ordering
+      - name: Enforce truth-preserving source shape
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git status --porcelain=v1 | awk '{print $2}')" = "$APP_SOURCE"
+          changed="$(git status --porcelain=v1 | awk '{print $2}' | sort)"
+          test "$changed" = "$APP_SOURCE"
           git diff --check
-          grep -Fq 'advanceInboxHandoffIfAvailable()' "$APP_SOURCE"
+          grep -Fq 'advanceFieldAuthorizationHandoffIfAvailable()' "$APP_SOURCE"
           grep -Fq 'fieldAuthorization.stage == .armed' "$APP_SOURCE"
           grep -Fq 'fieldAuthorization.stage != .armed' "$APP_SOURCE"
-          grep -Fq 'admitOFF1Start()' "$APP_SOURCE"
-          grep -Fq 'admitAuthenticationStart()' "$APP_SOURCE"
-          grep -Fq 'admitOfficialConnectionStart()' "$APP_SOURCE"
-          grep -Fq 'admitObservationStart()' "$APP_SOURCE"
-          grep -Fq 'sealAfterAcceptedArtifactFreeze()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitOFF1Start()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitAuthenticationStart()' "$APP_SOURCE"
+          grep -Fq 'try fieldAuthorization.admitOfficialConnectionStart()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitObservationStart()' "$APP_SOURCE"
+          grep -Fq 'try self.freezeAcceptedArtifactForAuthorizationSeal()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()' "$APP_SOURCE"
+          grep -Fq 'requirementRow("One-time field authorization", ready: test.fieldAuthorizationReady)' "$APP_SOURCE"
           test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE")" = 0
           test "$(grep -Fc 'AuthenticatedStationaryCaptureAttemptCapability' "$APP_SOURCE")" = 0
           test "$(grep -Fc 'AuthenticatedStationaryCaptureCapabilityGate' "$APP_SOURCE")" = 0
+          cp "$APP_SOURCE" "${RUNNER_TEMP}/NembraCaptureEntrypoint.patched.swift"
 
-      - name: Run focused authorization contracts
+      - name: Run focused authorization and immutable-artifact contracts
         shell: bash
         run: |
           set -euo pipefail
@@ -126,27 +103,47 @@ jobs:
             -scheme 'Nembra Capture' \
             -configuration Debug \
             -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath "${RUNNER_TEMP}/NembraCaptureAuthorityV3Direct" \
+            -derivedDataPath "${RUNNER_TEMP}/NembraCaptureAuthorityDirect" \
             CODE_SIGNING_ALLOWED=NO \
             build
 
-      - name: Publish exact tested production source and retire materializers
+      - name: Publish tested source over non-overlapping carrier churn
         shell: bash
         run: |
           set -euo pipefail
+          patched="${RUNNER_TEMP}/NembraCaptureEntrypoint.patched.swift"
+          test -s "$patched"
+
           git fetch origin "$TARGET_BRANCH"
-          test "$(git rev-parse FETCH_HEAD)" = "${{ github.sha }}"
-          rm "$REVIEWED_AUTHORING_WORKFLOW" "$SELF_WORKFLOW"
-          git add -- "$APP_SOURCE" "$REVIEWED_AUTHORING_WORKFLOW" "$SELF_WORKFLOW"
-          staged="$(git diff --cached --name-only | sort)"
-          expected="$(printf '%s\n%s\n%s\n' "$APP_SOURCE" "$REVIEWED_AUTHORING_WORKFLOW" "$SELF_WORKFLOW" | sort)"
-          test "$staged" = "$expected"
+          remote_head="$(git rev-parse FETCH_HEAD)"
+          remote_source_blob="$(git rev-parse FETCH_HEAD:"$APP_SOURCE")"
+          test "$remote_source_blob" = "$EXPECTED_SOURCE_BLOB"
+
+          git reset --hard FETCH_HEAD
+          cp "$patched" "$APP_SOURCE"
+          rm -f "$AUTHORING_WORKFLOW" "$SELF_WORKFLOW"
+          git add -- "$APP_SOURCE" "$AUTHORING_WORKFLOW" "$SELF_WORKFLOW"
           git diff --cached --check
+
+          staged="$(git diff --cached --name-only)"
+          printf '%s\n' "$staged" | grep -Fxq "$APP_SOURCE"
+          while IFS= read -r path; do
+            case "$path" in
+              "$APP_SOURCE"|"$AUTHORING_WORKFLOW"|"$SELF_WORKFLOW") ;;
+              *) printf 'unexpected staged path: %s\n' "$path" >&2; exit 1 ;;
+            esac
+          done <<< "$staged"
+
+          test "$(git rev-parse HEAD:"$APP_SOURCE")" = "$EXPECTED_SOURCE_BLOB"
+          test "$(git hash-object "$APP_SOURCE")" != "$EXPECTED_SOURCE_BLOB"
+          test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE")" = 0
+
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'feat(capture): wire authorized SecureLink lifecycle v3 directly'
+          git commit -m 'feat(capture): wire one-time field authorization into SecureLink'
           materialized="$(git rev-parse HEAD)"
+
           git fetch origin "$TARGET_BRANCH"
-          test "$(git rev-parse FETCH_HEAD)" = "${{ github.sha }}"
-          git push origin HEAD:"$TARGET_BRANCH"
-          printf 'CAPTURE_AUTHORITY_V3_DIRECT_MATERIALIZED=%s trigger=%s physicalAuthorityCreated=false\n' "$materialized" "${{ github.sha }}"
+          test "$(git rev-parse FETCH_HEAD)" = "$remote_head"
+          git push --force-with-lease="refs/heads/$TARGET_BRANCH:$remote_head" origin HEAD:"$TARGET_BRANCH"
+          printf 'NEMBRA_CAPTURE_APP_AUTHORIZATION materialized=%s absorbed=%s trigger=%s physicalAuthorityCreated=false\n' "$materialized" "$remote_head" "${{ github.sha }}"
