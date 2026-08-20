@@ -97,20 +97,8 @@ jobs:
 
           app = Path(os.environ["APP_SOURCE"])
           source = app.read_text(encoding="utf-8")
-          old = '''                            self.phase = .failed
-                            self.message = "The accepted evidence could not complete immutable artifact authorization sealing: \\(error.localizedDescription). Relaunch Capture before another attempt."
-                            self.log("field_authorization_or_artifact_freeze_rejected", [
-                                "generation": String(token.diagnosticGeneration),
-                                "error": error.localizedDescription
-                            ])
-                            return
-'''
-          new = '''                            self.failLocally(
-                                "The accepted evidence could not complete immutable artifact authorization sealing: \\(error.localizedDescription). Relaunch Capture before another attempt.",
-                                "field_authorization_or_artifact_freeze_rejected"
-                            )
-                            return
-'''
+          old = '''                            self.phase = .failed\n                            self.message = "The accepted evidence could not complete immutable artifact authorization sealing: \\(error.localizedDescription). Relaunch Capture before another attempt."\n                            self.log("field_authorization_or_artifact_freeze_rejected", [\n                                "generation": String(token.diagnosticGeneration),\n                                "error": error.localizedDescription\n                            ])\n                            return\n'''
+          new = '''                            self.failLocally(\n                                "The accepted evidence could not complete immutable artifact authorization sealing: \\(error.localizedDescription). Relaunch Capture before another attempt.",\n                                "field_authorization_or_artifact_freeze_rejected"\n                            )\n                            return\n'''
           if source.count(old) != 1:
               raise SystemExit(
                   f"accepted-artifact fail-closed correction anchor count was {source.count(old)}; refusing"
