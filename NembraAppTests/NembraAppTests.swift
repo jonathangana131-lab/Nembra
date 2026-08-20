@@ -1,5 +1,6 @@
 import CoreGraphics
 import Dispatch
+import Foundation
 import XCTest
 @testable import Nembra
 
@@ -187,6 +188,17 @@ final class NembraAppTests: XCTestCase {
         XCTAssertFalse(DashboardSpeedDisplayPolicy.admitsCanonicalKilometersPerHour(999.95))
     }
 
+    func testCockpitRollingSpeedDecimalSeparatorMatchesLocale() {
+        XCTAssertEqual(
+            RollingSpeedValueView.decimalSeparator(for: Locale(identifier: "en_US")),
+            "."
+        )
+        XCTAssertEqual(
+            RollingSpeedValueView.decimalSeparator(for: Locale(identifier: "de_DE")),
+            ","
+        )
+    }
+
     func testCockpitSpeedUnitsResolveFromPreferenceAndSystemPolicy() {
         XCTAssertTrue(DashboardSpeedUnitPresentation.usesMetric(
             preferenceRawValue: NembraUnitsPreference.system.rawValue,
@@ -243,6 +255,32 @@ final class NembraAppTests: XCTestCase {
                 XCTAssertLessThanOrEqual(locatorEdge.y, size.height)
             }
         }
+    }
+
+    func testPowerPeakLabelPolicyStaysInsideRailOrOmitsCompactLabel() throws {
+        XCTAssertNil(
+            DashboardPowerPeakLabelPolicy.centerY(
+                peakY: 25.5,
+                railHeight: 44,
+                pointSize: 13,
+                usesAccessibilityLayout: true
+            ),
+            "The 44pt accessibility rail must omit the transient peak label instead of drawing it into the controls below."
+        )
+
+        let pointSize: CGFloat = 10
+        let railHeight: CGFloat = 82
+        let labelHeight = DashboardPowerPeakLabelPolicy.frameHeight(for: pointSize)
+        let centerY = try XCTUnwrap(
+            DashboardPowerPeakLabelPolicy.centerY(
+                peakY: 45,
+                railHeight: railHeight,
+                pointSize: pointSize,
+                usesAccessibilityLayout: false
+            )
+        )
+        XCTAssertGreaterThanOrEqual(centerY - labelHeight / 2, 0)
+        XCTAssertLessThanOrEqual(centerY + labelHeight / 2, railHeight)
     }
 
     func testPowerSemanticsKeepAcceptedNowSeparateFromIlluminationAndPeak() {

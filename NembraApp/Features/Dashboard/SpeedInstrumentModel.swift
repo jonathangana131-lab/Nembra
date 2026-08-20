@@ -1015,6 +1015,41 @@ enum DashboardPowerPeakMarkerPolicy {
     }
 }
 
+enum DashboardPowerPeakLabelPolicy {
+    static func frameHeight(for pointSize: CGFloat) -> CGFloat {
+        max(14, ceil(pointSize * 1.55))
+    }
+
+    static func centerY(
+        peakY: CGFloat,
+        railHeight: CGFloat,
+        pointSize: CGFloat,
+        usesAccessibilityLayout: Bool
+    ) -> CGFloat? {
+        guard peakY.isFinite,
+              railHeight.isFinite,
+              pointSize.isFinite,
+              railHeight > 0,
+              pointSize > 0 else {
+            return nil
+        }
+
+        let labelHeight = frameHeight(for: pointSize)
+        // At the 44pt accessibility floor, the transient text collides with the
+        // rail's lower legend/control boundary. Keep the peak marker and omit only
+        // this redundant visual label until the rail has enough vertical room.
+        guard railHeight >= max(56, labelHeight * 3) else { return nil }
+
+        let inset = max(3, labelHeight * 0.15)
+        let minimumCenter = inset + labelHeight / 2
+        let maximumCenter = railHeight - inset - labelHeight / 2
+        guard maximumCenter >= minimumCenter else { return nil }
+
+        let desiredCenter = peakY + (usesAccessibilityLayout ? 25 : 21)
+        return min(max(desiredCenter, minimumCenter), maximumCenter)
+    }
+}
+
 private struct DashboardEnergyRailView: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
@@ -1130,15 +1165,22 @@ private struct DashboardEnergyRailView: View {
             )
             .accessibilityHidden(true)
 
-            if let peak = distinctPeakFraction(from: current) {
+            if let peak = distinctPeakFraction(from: current),
+               let peakLabelY = DashboardPowerPeakLabelPolicy.centerY(
+                   peakY: geometry.point(at: Double(peak)).y,
+                   railHeight: size.height,
+                   pointSize: microLabelSize,
+                   usesAccessibilityLayout: dynamicTypeSize.isAccessibilitySize
+               ) {
                 let peakPoint = geometry.point(at: Double(peak))
                 Text("RECENT PEAK")
                     .font(.system(size: microLabelSize, weight: .bold, design: .default))
                     .tracking(0.8)
                     .foregroundStyle(NembraColor.secondaryText.opacity(0.88))
+                    .frame(height: DashboardPowerPeakLabelPolicy.frameHeight(for: microLabelSize))
                     .position(
                         x: min(max(peakPoint.x, 42), size.width - 42),
-                        y: peakPoint.y + (dynamicTypeSize.isAccessibilitySize ? 25 : 21)
+                        y: peakLabelY
                     )
                     .accessibilityHidden(true)
             }

@@ -1,3 +1,4 @@
+import Foundation
 import NembraCore
 import SwiftUI
 
@@ -6,6 +7,7 @@ import SwiftUI
 /// Render values never flow back into telemetry or ride evidence.
 struct RollingSpeedValueView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.locale) private var locale
 
     let value: Double?
     let integerPointSize: CGFloat
@@ -28,6 +30,10 @@ struct RollingSpeedValueView: View {
     static func supports(_ value: Double?) -> Bool {
         guard let value, value.isFinite, value >= 0, value < 999.95 else { return false }
         return true
+    }
+
+    static func decimalSeparator(for locale: Locale) -> String {
+        locale.decimalSeparator ?? "."
     }
 
     private var validatedRenderValue: Double? {
@@ -57,7 +63,7 @@ struct RollingSpeedValueView: View {
                     }
                 }
 
-                Text(".")
+                Text(Self.decimalSeparator(for: locale))
                     .font(.system(size: fractionPointSize, weight: .light, design: .default))
                     .fontWidth(.expanded)
                     .padding(.horizontal, -2)
