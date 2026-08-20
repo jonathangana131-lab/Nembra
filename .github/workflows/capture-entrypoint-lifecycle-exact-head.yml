@@ -1,0 +1,95 @@
+name: Capture Entrypoint Authorization Exact-Head
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - product/capture-1-0-main-20260818
+    paths:
+      - 'NembraApp/App/NembraCaptureEntrypoint.swift'
+      - 'NembraApp/App/NembraCaptureFieldAuthorizationController.swift'
+      - 'NembraCapture.xcodeproj/**'
+      - 'Packages/NembraBluetoothCapture/**'
+      - 'scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py'
+      - '.github/workflows/capture-entrypoint-lifecycle-exact-head.yml'
+  push:
+    branches:
+      - product/capture-1-0-main-20260818
+    paths:
+      - 'NembraApp/App/NembraCaptureEntrypoint.swift'
+      - 'NembraApp/App/NembraCaptureFieldAuthorizationController.swift'
+      - 'NembraCapture.xcodeproj/**'
+      - 'Packages/NembraBluetoothCapture/**'
+      - 'scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py'
+      - '.github/workflows/capture-entrypoint-lifecycle-exact-head.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-entrypoint-authorization-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exact-head:
+    runs-on: xcode-27
+    timeout-minutes: 35
+    env:
+      SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
+    steps:
+      - name: Checkout immutable subject
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact subject and software-only boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          test "$actual" = "$SUBJECT_SHA"
+          test -f "$APP_SOURCE"
+          test -f scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
+          test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE" || true)" = 0
+          printf 'NEMBRA_CAPTURE_ENTRYPOINT_AUTH_SUBJECT=%s physicalAuthorityCreated=false deviceContacted=false\n' "$actual"
+
+      - name: Enforce real app lifecycle source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
+
+      - name: Run focused authorization contracts
+        working-directory: Packages/NembraBluetoothCapture
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --filter AuthenticatedStationaryCaptureAppSessionTests
+          swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthorizationInboxAppAdapter
+          swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
+          swift test --filter TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
+
+      - name: Build standalone Capture on Xcode 27
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/NembraCaptureEntrypointAuthorization" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Preserve truth boundary
+        if: success()
+        shell: bash
+        run: |
+          printf '%s\n' 'PROVEN: the bound exact software subject satisfies the real app authorization lifecycle source contract, focused package contracts, and standalone Xcode 27 build.'
+          printf '%s\n' 'NOT PROVEN: production trust root, signed install custody, live app-container transfer, physical iPhone/ES80 authorization, telemetry semantics, commands, or physical GO.'
