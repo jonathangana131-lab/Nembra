@@ -2,6 +2,7 @@ name: Capture app authorization race-safe GO
 # Carrier-native sole writer. Pull-request execution is intentional so same-repo
 # carrier updates create observable Xcode-27 runs; publication remains exact-head
 # and fail-closed across overlapping product/authority movement.
+# Rearmed from exact carrier 8d0c775b849ebf4a2f081af52d8728c66be46817 to materialize the still-missing real entrypoint lifecycle.
 
 on:
   pull_request:
