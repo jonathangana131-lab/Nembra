@@ -78,7 +78,12 @@ final class NembraCaptureFieldAuthorizationController {
         try session.sealAfterAcceptedArtifactFreeze()
     }
 
+    /// Revocation is authoritative even if non-authorizing transport cleanup fails. Best-effort
+    /// retirement prevents an abandoned rendezvous from blocking the next legitimate field attempt;
+    /// a custody failure leaves the stale file in place and therefore still fails closed on publish.
     func revoke() {
         session.revoke()
+        try? AuthenticatedStationaryCaptureSignerRendezvousOutbox()
+            .retirePublishedRendezvous()
     }
 }
