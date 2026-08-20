@@ -21,8 +21,8 @@ This repository file is the recovery authority. Chat/task summaries are suppleme
 - Pull request: [#3675 — Finish Capture checkpoint and production Nembra surfaces](https://github.com/jonathangana131-lab/Nembra/pull/3675)
 - PR base: `main`
 - PR state: draft until all exact-current-head acceptance gates below are green and inspected
-- Latest pushed Capture implementation checkpoint recorded here: `2cdff58225b90499808d1ba728714b9289a143f1`
-- Latest pushed continuity checkpoint preceding this update: `5bded19e10c768f1376b43cc85deb6e2d4633314`
+- Latest pushed Capture implementation checkpoint recorded here: `4ab4c9056a2d60e9f3031db15e25273705f11819`
+- Latest pushed continuity checkpoint preceding this update: `2a0e11e2be85d961386a058e0da0cf6f0ddf8189`
 - Recovery rule: after cloning, run `git rev-parse HEAD` and `git ls-remote origin refs/heads/product/capture-1-0-main-20260818`; if either is newer than the recorded checkpoints, inspect those commits and update this file before development.
 
 The file cannot self-embed the SHA of the commit containing its own changed bytes. Therefore the SHAs above name the latest pushed implementation and meaningful continuity checkpoints this document has audited; the remote branch HEAD is the authority for any later continuity-only commit.
@@ -86,6 +86,13 @@ Attempted follow-up `b16cec4c437b848339bd5b154ed43edf66220b2b` repinned the TODA
 
 Corrective checkpoint `2cdff58225b90499808d1ba728714b9289a143f1` restores the accepted trusted-workflow blob `34a1b6af…` and accepted subject module blob `94d19c0c…` rather than self-repinning an external authority. Final-GO executable-bundle custody, pin, trusted-subject, and hardened suites passed **27/27** locally. The new authorization tests remain outside that accepted trusted workflow until a new independent acceptance process deliberately reviews and republishes the whole executable bundle.
 
+Checkpoint `4ab4c9056a2d60e9f3031db15e25273705f11819` closes the evidenced compact-landscape UI-test reveal race without changing the product surface or weakening its final hittability assertion:
+
+- hosted V16 run `32321917923` queried `nembra.capture.correlation.confirm` six times, issued zero scroll gestures, then failed before the compact screenshot; its portrait sibling test performed a real ScrollView swipe and passed;
+- `NembraCaptureUITests/NembraCaptureUITests.swift` now performs an actual upward gesture after the initial stable hittability wait fails, then performs a stable recheck after every gesture;
+- `ES80CaptureRepresentativeViewportAcceptanceTests.swift` rejects the unstable `for … where !element.isHittable` form and requires both scroll paths plus the post-gesture stable wait inside the loop;
+- both files parse, `git diff --check` and whitespace checks pass. A focused SwiftPM run was stopped during compilation to honor the user's no-wait instruction; no pass is claimed. Exact-head Xcode 27 V16 remains the runtime authority.
+
 Checkpoint `0b7e3b27…` closes the exact `cf817a8b…` integration failures without beginning new portrait or cockpit feature work:
 
 - `NembraApp/Features/Home/HomeView.swift` removes compounded dimming from retained percentage and adaptive-range qualifier text while preserving explicit retained/currentness semantics.
@@ -124,7 +131,7 @@ Local proportional evidence for `245fb44a…`: all five changed Swift files pars
 
 ## Work in progress
 
-No intentional implementation or evidence change is local-only after `2cdff58225b90499808d1ba728714b9289a143f1`; that implementation commit is pushed and `git ls-remote` verified. This document is the continuity-only consolidation follow-up and will be pushed separately; because it cannot contain its own commit SHA, the remote branch HEAD is the recovery authority as described above.
+No intentional implementation or evidence change is local-only after `4ab4c9056a2d60e9f3031db15e25273705f11819`; that implementation commit is pushed. This document is the continuity-only follow-up and will be pushed separately; because it cannot contain its own commit SHA, the remote branch HEAD is the recovery authority as described above.
 
 The typed observation and guided plan are package foundations only. They are not yet wired into `NembraCaptureEntrypoint`, durable private storage, the P0/P1 export bundle, a sanitizer, protocol-claim cross-verification, or a production decoder. No physical session or semantic fixture exists, and no sibling UI branch should consume these raw types.
 
@@ -132,10 +139,10 @@ The current root Capture/Bluetooth lane is stopped for consolidation. The author
 
 ## Exact CI and retained evidence
 
-The current implementation checkpoint is exact `2cdff58225b90499808d1ba728714b9289a143f1` (authorization foundation `9659fbbed…`, live-attempt bound from `6d3a6f78…`, and restored accepted Final-GO custody):
+The current implementation checkpoint is exact `4ab4c9056a2d60e9f3031db15e25273705f11819` (authorization/custody foundation through `2cdff5822…` plus the compact-landscape reveal correction):
 
-- Exact-head `2cdff5822…` workflows were newly dispatched at consolidation: TODAY preflight `32326934619` is green; V16 `32326934655`, visual `32326934630`, field provenance `32326934676`, Xcode 27 Simulator `32326934618`, and TODAY Final GO `32326934696` were pending/in progress. Their terminal results do not exist yet and must be inspected before relying on this head.
-- [`Xcode 27 PR Exact-Head QA` run `32326934633`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32326934633) was skipped by its event/admission policy.
+- The checkpoint was pushed and an immediate non-waiting Actions query returned no exact-head runs yet. Inspect the newly dispatched exact-head Capture lanes when resuming; do not transfer ancestor results.
+- The immediately preceding continuity head `2a0e11e2b…` had green TODAY preflight, Final-GO, and field-provenance lanes while its V16 and visual lanes were still running. Those are ancestor evidence only after `4ab4c9056…`.
 
 The immediately preceding continuity head `cb00ee46a0fe3ecc53b7143fb61939615102919b` had green TODAY, field-provenance, standalone-visual, and admission-only Xcode workflows, but V16 run [`32321917923`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32321917923) was genuinely red: 12/13 UI tests passed and `testSyntheticCorrelationToObservationFitsCompactLandscape` failed at the final `waitForHittable` assertion for the confirmation control after bounded scroll attempts. Its retained artifact is `nembra-capture-synthetic-ui-cb00ee46a0fe3ecc53b7143fb61939615102919b`, ID `9390495057`, digest `sha256:4a4922697e6a009aea09494b159e845d35453da97542e1617c7130afbaa984ee`. Visual artifact `9390242263` has digest `sha256:3574059741e1c4e2f5ac0dccc5952ef77841ff763e5c9b5ac122a8606b4848ab`. This ancestor failure is an unresolved UI-test/product-reachability blocker, not physical evidence and not silently waived by the new authorization code.
 
@@ -159,7 +166,7 @@ The latest completed baseline is exact `cf817a8b1c1f74640055af317671497a202e4f74
 
 ### Code/CI work
 
-- Monitor and record exact `2cdff5822…` Capture/Xcode 27 terminal results. Only hosted Xcode 27 is release authority; package greens do not prove the standalone app consumes the new contracts. Separately diagnose the `cb00ee46a…` compact-landscape confirmation-control reachability failure without weakening the hittability contract.
+- Monitor and record exact `4ab4c9056…` Capture/Xcode 27 terminal results. Only hosted Xcode 27 is release authority. The compact-landscape helper race is source-corrected, but acceptance remains pending until V16 proves the confirmation, observation transition, stop, completion control, and retained compact screenshot on iPhone 12/iOS 27.
 - Complete the new `ES80-AUTHENTICATED-STATIONARY-v1` field-authorization chain. The closed verifier and offline helpers now exist, but the production trust anchor is nil, no app-owned durable consumption adapter is wired, the hard-false build gate remains, and the retained-IPA installer stops before all device work because the trusted install manifest/cross-binding contract is absent.
 - Wire the accepted typed SDK event into an atomic private journal and later bundle cross-verifier. Never use receipt hashes as signatures or application-level SDK values as raw FD50 bytes.
 - Build the smallest app-owned guided coordinator and private export/import only after field authorization is fail-closed. Arbitrary payload changes cannot auto-confirm mode/light/brake until a verified correlation exists.
@@ -182,10 +189,10 @@ The latest completed baseline is exact `cf817a8b1c1f74640055af317671497a202e4f74
 
 ## Exact next executable action
 
-1. In a new unified-owner checkout, verify remote head, read both continuity files, inspect implementation `9659fbbed…`, live-attempt fix `6d3a6f78…`, rejected repin `b16cec4c4…`, and corrective custody checkpoint `2cdff5822…`. Run `swift test --package-path Packages/NembraBluetoothCapture --filter 'AuthenticatedStationaryCaptureFieldAuthorizationTests|TuyaFieldInstallerRetainedIPAAdmissionSourceTests'` plus `python3 scripts/ci/tests/test_es80_authenticated_stationary_offline_authorization.py`. Review the Swift/Python compact sorted JSON contract; do not alter the independently accepted Final-GO executable bundle without a new external acceptance process.
-2. Arrange independent private-key custody and review the matching public P-256 X9.63 bytes. Only then replace the nil `AuthenticatedStationaryCaptureFieldAuthorizationTrustAnchor` in source. Add `NembraCaptureFieldAuthorizationStore` with an atomic ThisDeviceOnly Keychain `consumeIfUnseen` implementation and wire the opaque capability through every OFF1/authentication/connection/seal boundary in `NembraCaptureEntrypoint`. Process/background/expiry/build drift must revoke it. Never flip `isAuthoritativeFieldBuild` or add a Boolean/plist/environment bypass.
-3. Define and verify the exact trusted-workflow install manifest that cross-binds retained IPA, signed evidence, Final-GO, Tuya lock, pseudonym, authorization envelope, source/build/runtime, bundle, procedure, and intended device. Then delete the installer's unreachable legacy Debug rebuild block and install only the exact retained accepted signed IPA. Until then `scripts/field/install_one_time_capture.command` must keep stopping before device contact.
-4. Diagnose `testSyntheticCorrelationToObservationFitsCompactLandscape` at `NembraCaptureUITests.swift:309` using the retained `cb00ee46a…` artifact. Preserve the final hittability assertion and fix the real scroll/compact-layout reachability issue. Run the exact-head hosted Xcode 27 Capture workflows and record terminal run IDs/artifacts.
+1. Verify the remote head and exact `4ab4c9056…` V16 result. If red, inspect the new xcresult before changing the final hittability gate; if green, record its run/artifact in both continuity files.
+2. Implement only the app-owned atomic replay store as the next authorization batch: a `NembraCaptureAppAuthorization` SwiftPM target whose `ThisDeviceAuthorizationConsumptionStore` performs one generic-password `SecItemAdd` using account `requestIdentitySHA256`, a fixed versioned service, `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, and no synchronization/access-group/delete/update fallback. Inject only the add operation for deterministic tests. This batch must not enable OFF1, change `isAuthoritativeFieldBuild`, or add a debug success path.
+3. Reconcile the runtime identity contract (`NembraCaptureBuildCommitSHA` / build instance versus the current source-commit-only stamping), define the independently accepted signed install-manifest/envelope handoff, and only then arrange external private-key custody and pin the reviewed public P-256 key.
+4. Define and verify the exact trusted-workflow install manifest that cross-binds retained IPA, signed evidence, Final-GO, Tuya lock, pseudonym, authorization envelope, source/build/runtime, bundle, procedure, and intended device. Then delete the installer's unreachable legacy Debug rebuild block and install only the exact retained accepted signed IPA. Until then `scripts/field/install_one_time_capture.command` must keep stopping before device contact.
 5. After authorization/install closure, wire the real SDK callback into `TuyaStructuredApplicationEvidenceEvent` and an atomic private journal, then implement bundle cross-verification, human summary, sanitized fixture derivation, and the guided coordinator. No physical mapping or decoder promotion occurs before an accepted P0/P1 artifact.
 6. When a BLE mapping or privacy-safe fixture becomes stable and production-consumable, update `docs/ES80_PROTOCOL_MAP.md`, sync PR #3675, and notify the portrait/cockpit tasks through repository docs/PR notes. Do not merge until current-head Capture and integrated product gates are green and inspected; use a merge commit, not squash.
 
