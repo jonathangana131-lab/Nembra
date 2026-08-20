@@ -72,6 +72,18 @@ class AppAuthorizationLifecycleWiringTests(unittest.TestCase):
         )
         self.assertIn("fieldAuthorization.stage == .armed", retry)
 
+    def test_failed_transition_preserves_only_unspent_armed_authorization(self) -> None:
+        failed = self.section(
+            "if phase == .failed {",
+            "operatorSafetyAttemptID = nil",
+        )
+        self.assertIn("fieldAuthorization.stage != .armed", failed)
+        self.assertIn("fieldAuthorization.revoke()", failed)
+        self.assertLess(
+            failed.index("fieldAuthorization.stage != .armed"),
+            failed.index("fieldAuthorization.revoke()"),
+        )
+
     def test_authentication_requires_authorization_before_connection(self) -> None:
         section = self.section(
             "func authenticate()",
