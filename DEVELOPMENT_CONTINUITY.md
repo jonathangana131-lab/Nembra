@@ -1,198 +1,161 @@
-# Nembra development continuity
+# Nembra 1.0 unified development continuity
 
-Status: active recovery authority. Update this file after every meaningful checkpoint and before pausing, handing off, merging, or ending a development session.
+Status: active canonical recovery authority. Update this file after every meaningful pushed checkpoint and before pausing, handing off, merging, or ending a development session.
 
 ## Resume protocol
 
 Before changing code in a resumed task:
 
-1. Read this file completely.
-2. Read `docs/design-reference/horizon-v4-final/NEMBRA_HORIZON_V4_PRODUCTION_HANDOFF.md` and `docs/NEMBRA_V2_PRODUCTION_FOUNDATION.md` completely.
-3. Run `git status --short`, `git log -5 --oneline --decorate`, `git fetch origin`, and compare `HEAD` with the branch and PR head below.
-4. Inspect the current PR and exact-head Actions results. Evidence from an ancestor SHA does not transfer to a newer head.
-5. Continue the exact next action recorded below. Do not restart planning or revive rejected V2/V3 cockpit work.
+1. Read this file, `AGENTS.md`, `docs/NEMBRA_V2_PRODUCTION_FOUNDATION.md`, `docs/design-reference/horizon-v4-final/NEMBRA_HORIZON_V4_PRODUCTION_HANDOFF.md`, `docs/design-reference/nembra-1.0-gold-glass/NEMBRA_SELECTED_UI_HANDOFF.md`, `docs/CAPTURE_BLUETOOTH_CONTINUITY.md`, and `docs/ES80_PROTOCOL_MAP.md` completely.
+2. Use the isolated unified worktree and branch below. Never continue product development in the original Capture checkout or either predecessor UI worktree.
+3. Run `git status --short --branch`, `git log -5 --oneline --decorate`, `git fetch origin`, and compare local `HEAD` with the remote unified branch.
+4. Inspect PRs #3675, #3676, and #3677 plus exact-head Actions. Ancestor, queued, skipped, admission-only, superseded, or cancelled results do not transfer to a newer SHA.
+5. Continue the exact next action below. Do not restart planning, revive rejected V2/V3/V4 cockpit pixels, or duplicate work already preserved in a predecessor checkpoint.
 
-This repository file is the recovery authority. Chat/task summaries are supplementary.
+This repository document is the recovery authority. Chat summaries are supplementary.
 
-## Authoritative GitHub state
+## Authoritative repository state
 
 - Repository: `jonathangana131-lab/Nembra`
-- Branch: `product/capture-1-0-main-20260818`
-- Pull request: [#3675 — Finish Capture checkpoint and production Nembra surfaces](https://github.com/jonathangana131-lab/Nembra/pull/3675)
-- PR base: `main`
-- PR state: draft until all exact-current-head acceptance gates below are green and inspected
-- Latest pushed Capture implementation checkpoint recorded here: `5c32d29d5327e4c54d0f3a70b548da6eeeb537a5`
-- Latest pushed continuity checkpoint preceding this update: `3f0814ac70211f68b7af1a6913c78c91a810f663`
-- Recovery rule: after cloning, run `git rev-parse HEAD` and `git ls-remote origin refs/heads/product/capture-1-0-main-20260818`; if either is newer than the recorded checkpoints, inspect those commits and update this file before development.
+- Unified release branch: `release/nembra-1-0-unified`
+- Unified isolated worktree: local directory `Nembra-unified-1-0`
+- Latest remotely verified unified branch checkpoint before this continuity update: `cb00ee46a0fe3ecc53b7143fb61939615102919b`
+- Source integration branch: `product/capture-1-0-main-20260818`
+- Source integration PR: [#3675](https://github.com/jonathangana131-lab/Nembra/pull/3675), draft, base `main`
+- Portrait predecessor PR: [#3677](https://github.com/jonathangana131-lab/Nembra/pull/3677), branch `agent/portrait-home-1-0-polish`, remote tip `0a418aef716fb9053cc9d67064fd56bd87f27677`
+- Cockpit predecessor PR: [#3676](https://github.com/jonathangana131-lab/Nembra/pull/3676), branch `agent/cockpit-1-0-redesign`, remote tip `75edf0fcb231e28b3d9fbd7b7acc7592bdac1a48`
+- Physical Capture status: **NO-GO**. Public CI, Simulator, source tests, signed-build tooling, and historical artifacts do not authorize a scooter session.
 
-The file cannot self-embed the SHA of the commit containing its own changed bytes. Therefore the SHAs above name the latest pushed implementation and meaningful continuity checkpoints this document has audited; the remote branch HEAD is the authority for any later continuity-only commit.
+A commit cannot embed its own resulting SHA. The SHA above names the last remotely verified predecessor/base checkpoint audited by this file; `git ls-remote origin refs/heads/release/nembra-1-0-unified` is authoritative for any later continuity-only commit.
 
-## Current focused aspect and production acceptance gate
+## Integrated provenance at the unified base
 
-The integration branch still carries the complete Nembra 1.0 objective, but implementation ownership is now deliberately split:
+The unified branch begins at Capture continuity checkpoint `cb00ee46a…`, which contains:
 
-1. **Nembra Capture 1.0 software checkpoint** — safe, fail-closed, one-time Bluetooth evidence utility. Software acceptance requires exact-head Capture source/provenance suites, standalone public/synthetic UI matrix, iPhone 12/iOS 27 visual evidence, artifact custody, and truthful nonphysical authority boundaries. Physical/private status remains **NO-GO** until the separate documented intended-account/intended-scooter field procedure has authorized prerequisites and a real device run.
-2. **Portrait Home and menus** — owned by the isolated Codex task `01a01c57-b619-7262-8971-ba9044659a29`. The root branch does not duplicate that implementation. Its PR is an integration input and must preserve the selected Home truth/accessibility/performance contracts.
-3. **Landscape cockpit and feature lab** — owned by the isolated Codex task `01a01c57-590f-7c21-8071-39e8bfdd78e8`. Horizon V4 remains requirements-only and visually rejected. The user-approved post-V4 direction is the Energy Chamber family recorded under `docs/design-reference/horizon-post-v4-studies/`; its live-power gauge and typography still require redesign and exact Xcode 27 proof.
+- Capture typed/guided implementation `5c32d29d5327e4c54d0f3a70b548da6eeeb537a5`;
+- Capture integration continuity `3f0814ac70211f68b7af1a6913c78c91a810f663`;
+- shared accessibility/idleness checkpoint `0b7e3b27de5e9b547911558ae8ed4cb852becb59`;
+- the truth, persistence, orientation, simulation, and UI foundation inherited from PR #3675.
 
-The root task is now the dedicated **Capture + Bluetooth truth** workstream and integration owner. It must finish the smallest reliable one-time companion capture, preserve raw evidence without guessing, produce a versioned machine-readable export plus human summary/protocol map, integrate only high-confidence mappings into production decoding, and notify both sibling branches through repository docs/PR notes when stable contracts or fixtures are available.
+The two predecessor UI branches were created before `5c32d29d…`. Their branch snapshots appear to delete the newer Capture files. Integrate their owned commits onto the unified branch; never merge or replace the unified tree with either older snapshot.
 
-The current focused production gate is the current-procedure field-authorization and private-evidence path: an exact retained GitHub-hosted Xcode 27 signed IPA, short-lived single-use externally signed P-256 authorization bound to an app-generated attempt challenge and `ES80-AUTHENTICATED-STATIONARY-v1`, lossless real `dpsUpdate` journaling, cross-verified export/import, and a stationary user flow that cannot begin OFF1 or send a write without the verified opaque attempt capability. Until that chain and a real intended-iPhone/intended-ES80 run exist, physical Capture remains **NO-GO**.
+## Workstream ownership matrix
 
-The current Home screenshot is a functional checkpoint only and is explicitly **not visually accepted**. Home visual acceptance additionally requires one fresh exact-head Xcode 27 iPhone 12 screenshot placed side-by-side with `docs/design-reference/nembra-1.0-gold-glass/selected-home-gold-glass.png` and proving all of the following together:
+The durable matrix is `docs/coordination/UNIFIED_WORKSTREAM_OWNERSHIP.md`.
 
-- a dimensional battery instrument with fine SOC-clipped ribs/micro-lines, gold gradient/highlight, deep graphite empty region, metallic rim/inner depth, and terminal detail;
-- refined SF battery/range typography with state-appropriate contrast and hierarchy for learned, unavailable, low, reconnecting, and retained/stale states;
-- a provenance-documented, high-resolution, truthful ES80 side render with premium graphite material/lighting and no invented/counterfeit geometry;
-- zero intersection between the scooter and percentage, range/unavailable copy, status text, or accessibility content in every deterministic state;
-- separate tire contact shadows, a longer deck shadow, ambient occlusion, restrained warm under-deck light, and a believable floor/reflection plane;
-- native Liquid Glass depth/specular/environmental response on actual interactive controls/actions and the system floating tab bar, without glass-coating telemetry or passive content;
-- one integrated lighting scene: warm energy light may influence the scooter, floor, contact shadows, and nearby functional glass edges while primary information stays white, secondary information cool grey, connection health green, and energy/active state gold.
+1. **Capture/BLE truth** owns `Packages/NembraBluetoothCapture/`, the standalone Capture entry/runtime, field scripts, Capture tests, and Capture/protocol ledgers. It may publish typed verified decoder contracts but never presentation guesses.
+2. **Portrait** owns Home, Rides, Vehicle, Settings, portrait design tokens, and portrait-only secondary views. It consumes only stable shared truth contracts.
+3. **Cockpit** owns Dashboard/Drive and later Navigation/Explore presentation, high-frequency instrument rendering, cockpit accessibility, and cockpit performance evidence.
+4. **Unified parent** is the only authority for shared bootstrap/root wiring, shared app/unit/UI test files, persistence contracts, project/workflow integration, conflict resolution, canonical continuity, PR synchronization, and final acceptance.
 
-Do not merge PR #3675 or claim either aspect complete until the latest remote head—not an ancestor—meets these gates.
+No two writers may edit the same shared file concurrently. Lane commits return to the unified parent for review and integration.
 
-## Completed and pushed work
+## Current focused aspects and production acceptance gates
 
-The current pushed implementation checkpoint includes:
+### A. Capture + ES80 Bluetooth truth
 
-- Capture authority, provenance, immutable artifact sealing/validation, recoverable sharing, public/synthetic UI, field handoff and exact-head workflows under `NembraApp/App/NembraCaptureEntrypoint.swift`, `Packages/NembraBluetoothCapture/`, `NembraCaptureUITests/`, `Scripts/`, `.github/workflows/`, and the canonical Capture docs.
-- Selected portrait Home/Rides/Vehicle/Settings implementation under `NembraApp/Features/Home/`, `NembraApp/App/AppRootView.swift`, and `NembraApp/Features/Settings/`, with selected references under `docs/design-reference/nembra-1.0-gold-glass/`.
-- Existing cockpit functional implementation, exact-scene orientation ownership, idle animation shutdown, and product performance harness under `NembraApp/Features/Dashboard/`, `NembraApp/App/DashboardSessionStore.swift`, `NembraUITests/`, `scripts/ci/xcode27_product_simulator_capture.sh`, `scripts/ci/validate_xcode27_dashboard_performance.py`, and `.github/workflows/xcode27-simulator.yml`. Its current visuals are not 1.0 acceptance.
-- Automatic-capture readiness/candidate journal, crash-safe daily ride segments, ride history/route persistence, and road-exploration provenance foundations under `Packages/NembraCore/Sources/NembraCore/` and their focused tests.
-- Horizon functional/state requirements under `docs/design-reference/horizon-v4-final/NEMBRA_HORIZON_V4_PRODUCTION_HANDOFF.md`; V2/V3/V4 cockpit PNGs are rejection/history evidence only.
+Deliver the smallest reliable one-time companion that guides one stationary session, preserves lossless evidence, exports/imports a versioned private bundle plus human summary, and produces a confidence-rated protocol map. Only `verified` mappings may enter production decoders. Unknown writes, DP queries, controls, unbind/reset, and firmware/OTA remain forbidden.
 
-Checkpoint `5c32d29d…` establishes the first Capture/Bluetooth-truth foundation without promoting any scooter semantic:
+Current gate: close the independently signed, short-lived, single-use `ES80-AUTHENTICATED-STATIONARY-v1` authorization and exact retained-IPA installer chain; then wire typed real `dpsUpdate` evidence into private durable custody and a cross-verified guided bundle. Physical execution still requires the intended account, private Tuya inputs, intended iPhone 12/iOS 27, intended stationary charger-disconnected scooter, and explicit current-attempt authority.
 
-- `Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaStructuredApplicationEvidence.swift` defines lossless typed Tuya SDK application observations with fresh pseudonymous session identity, connection generation, delivery sequence, monotonic and wall receipts, closed recursive values, canonical JSON, replay validation, event/payload SHA-256 identities, and a 1 MiB canonical boundary. It permanently states `rawTransportBytesAvailable=false` and `authorizesProductionTelemetry=false`; private strings remain exact and therefore Git-sensitive.
-- `Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ES80GuidedCapturePlan.swift` defines a bounded, observation-only mode/headlight/brake before/during/after plan. It retains repeated receipts, accepts only typed events at the live mutation boundary, caps each window at 2,048 receipts and canonical plans at 8 MiB, requires explicit operator confirmation while fields are unmapped, rejects zero chronology, and makes decoded unfinished state inert/terminal across process import. It exposes no query/write/firmware/command authority. Charger transition and wheel motion remain deferred to separate safety procedures.
-- Exact focused tests live in `Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaStructuredApplicationEvidenceTests.swift` and `ES80GuidedCapturePlanTests.swift`.
-- `docs/CAPTURE_BLUETOOTH_CONTINUITY.md` is the dedicated recovery/evidence ledger. `docs/ES80_PROTOCOL_MAP.md` is the sole semantic claim ledger; every production-consumable ES80 field remains `unknown`.
-- `.gitignore` excludes known Capture bundles, the dedicated private evidence root, reserved `.nembra-capture-evidence.json` / `.ndjson` exports, signing material, provisioning material, and private dependency workspaces. Renaming sensitive evidence never makes it safe to commit.
+### B. Portrait Home and menus
 
-Local proportional evidence for `5c32d29d…`: the root-owned combined SwiftPM run passed **33/33 tests in 2 suites**; the focused guided suite passed 21/21 and typed evidence suite passed 12/12; all four new Swift files parse; tracked/untracked whitespace and cached diff checks pass; secret/private-path scan is clean; and a final independent read-only adversarial audit returned GO after imported-state, arbitrary-change auto-advance, receipt-minting, chronology, and resource-bound fixes. This is package/static evidence only; GitHub-hosted Xcode 27 remains build/release authority.
+Finish Home before widening. Preserve truthful battery/range, durable Today, confirmed controls, automatic-recording readiness, recovery states, and narrow render invalidation. The visual authority is the selected portrait source plus gold handoff; the temporary 500×500 grey/red ES80 raster is not production-cleared.
 
-Checkpoint `0b7e3b27…` closes the exact `cf817a8b…` integration failures without beginning new portrait or cockpit feature work:
+Current gate: integrate predecessor checkpoint `0a418aef…`, run exact-head Xcode 27/iPhone 12 audits and screenshots for connected, retained, low, error, ride, and Accessibility XXXL states, then perform a same-state side-by-side design QA loop. No Home visual acceptance exists until the battery, typography, approved scooter asset, zero copy occlusion, grounding/light, native glass, accessibility, first-fold/tab clearance, and runtime performance all pass.
 
-- `NembraApp/Features/Home/HomeView.swift` removes compounded dimming from retained percentage and adaptive-range qualifier text while preserving explicit retained/currentness semantics.
-- `NembraApp/App/AppRootView.swift` removes shared labeled-pair identities from both `ViewThatFits` timeline alternatives so Xcode audits the visible native semantic-font `Text` nodes in title-then-timestamp order.
-- `NembraUITests/NembraUITests.swift` makes the deterministic landscape screenshot terminal in its fixture, then strengthens the separately passing battery-hitch test to prove the real Home control restores portrait and removes the cockpit. This avoids the evidenced hosted-XCUI post-screenshot animation-idle deadlock without disabling motion, raising timeouts, or weakening product assertions.
-- Focused source contracts are updated under `Packages/NembraCore/Tests/NembraCoreTests/HomeAccessibilityMetricLayoutSourceTests.swift` and `RideWindowNavigationClearanceSourceTests.swift`.
-- `docs/design-reference/horizon-post-v4-studies/` preserves four original `1844 × 853` studies with hashes and generation provenance. The user selected the Energy Chamber material/composition family; its ambiguous/fabricated live-power scale, NOW locator, and generic typography are explicitly rejected pending redesign. The one-value battery contract remains percentage **or** range inside the same battery while SOC fill always means charge.
+### C. Landscape Cockpit / Drive / Navigation / Explore
 
-Proportional local evidence for `0b7e3b27…`: all five changed Swift files parse; `git diff --check` passes; focused Home/Ride source tests pass 4/4; secret/path scan is clean; and a diagnostic local generic-iOS-Simulator `build-for-testing` exits 0 for app, unit-test, and UI-test targets. Local Xcode 26.1 is compile evidence only, never release authority.
+Horizon V4 retains requirements only and is visually rejected. The selected Energy Chamber family supplies material/composition direction, not pixel authority. Drive must establish one-value battery, enormous rolling speed, truthful current/peak propulsion, durable facts, recording truth, exact-scene orientation, accessibility, and an idle-free high-frequency render island before Navigation or Explore widens.
 
-Checkpoint `1095f367…` specifically fixes the steady-state Dashboard animation/idleness timeout and Ride-window timeline accessibility semantics:
+Current gate: integrate predecessor checkpoint `75edf0fc…`, run exact-head Xcode 27/iPhone 12 landscape functional, accessibility, screenshot, and Release clock/Hitch Time Ratio evidence, compare the same-state runtime with the refined internal study, and iterate remaining P0/P1/P2 visual differences. Physical speed/power/odometer/range remain unavailable until verified upstream contracts exist.
 
-- `NembraApp/Features/Dashboard/SpeedInstrumentModel.swift`
-- `NembraUITests/NembraUITests.swift`
-- `NembraApp/App/AppRootView.swift`
-- `Packages/NembraCore/Tests/NembraCoreTests/RideWindowNavigationClearanceSourceTests.swift`
+## Completed work and exact paths
 
-Checkpoint `a381a30f…` implements the first focused Home energy-material correction without claiming visual acceptance:
+### Capture foundation already on the unified base
 
-- `NembraUITests/NembraUITests.swift` terminates the intentionally continuous render-stress fixture after its preserved 3×6-second measurement, post-update proof, QA screenshot, and metrics rather than waiting for impossible XCUI animation quiescence. Independent exact-scene portrait restoration coverage remains unchanged.
-- `NembraApp/App/AppRootView.swift` gives the explicit read-only Ride timeline label/value node the full existing padded-row accessibility focus shape without adding a button trait or changing layout.
-- `NembraApp/Features/Home/HomeView.swift` adds a synchronous, input-driven engineered battery Canvas with truthful SOC fill, SOC-clipped graphite copy well, gold/red dimensional fill, fine clipped ribs, metallic shell/rim/terminal, state-aware typography/contrast, early large-text reflow, a measured current-asset copy corridor, and separate blurred tire/deck/ambient/gold/floor grounding layers. It shortens the standard hero to restore populated-row/tab clearance and applies native glass only to the actionable saved-ride continuation.
-- `NembraApp/DesignSystem/NembraVisuals.swift` uses a stable dark Nembra fallback and boundary under Reduce Transparency/Show Borders rather than an adaptive light surface that could erase white glyphs.
-- `NembraUITests/NembraUITests.swift` adds standard accessibility auditing (including contrast), explicit Accessibility XXXL reachability/screenshots, and retained/low-battery contrast audits.
-- Focused source contracts are updated under `Packages/NembraCore/Tests/NembraCoreTests/HomeAccessibilityControlLayoutSourceTests.swift`, `HomeAccessibilityMetricLayoutSourceTests.swift`, and `RideWindowNavigationClearanceSourceTests.swift`.
+- `Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/TuyaStructuredApplicationEvidence.swift`
+- `Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/ES80GuidedCapturePlan.swift`
+- focused tests beside those sources
+- `docs/CAPTURE_BLUETOOTH_CONTINUITY.md`
+- `docs/ES80_PROTOCOL_MAP.md`
+- `.gitignore` private-evidence protections
 
-Historical checkpoint `245fb44a…` closed the five exact Xcode 27 accessibility failures in run `32306810002` without weakening the audits. Its labeled-pair timeline approach was later superseded by `0b7e3b27…` after exact Xcode 27 exposed an inactive-candidate audit failure:
+Checkpoint `5c32d29d…` passed 33/33 focused Swift tests across the typed-event and guided-plan suites, parser/diff/secret checks, and a final adversarial review. These are software contracts only; every production ES80 semantic remains unknown.
 
-- `NembraUITests/NembraUITests.swift` now launches Accessibility XXXL with UIKit's actual raw category identifier, `UICTContentSizeCategoryAccessibilityXXXL`; the prior expanded Swift-symbol spelling was read but did not activate the larger layout.
-- `NembraApp/Features/Home/HomeView.swift` removes compounded numeric opacity, retains truthful stale/range de-emphasis, uses a higher-contrast semantic low-battery red, and adds one restrained specular boundary around the native-glass Vehicle Controls button.
-- `NembraApp/App/AppRootView.swift` replaces the synthetic Ride timeline accessibility node with native scaling `Text` elements associated through `accessibilityLabeledPair`, while preserving `ViewThatFits`, timestamp truth, and the 72-point navigation-launcher clearance.
-- Focused source regressions remain under `Packages/NembraCore/Tests/NembraCoreTests/HomeAccessibilityMetricLayoutSourceTests.swift` and `RideWindowNavigationClearanceSourceTests.swift`.
-- `docs/design-reference/nembra-1.0-gold-glass/runtime-evidence/` retains the exact b319 selected-vs-runtime comparison and its explicit non-acceptance record so this visual diagnosis survives artifact expiry.
+### Predecessor checkpoints awaiting deliberate integration
 
-Local proportional evidence for `245fb44a…`: all five changed Swift files parse; `git diff --check` passes; Home source tests pass 5/5; Ride Window source test passes 1/1; a diagnostic generic-Simulator app build exits 0 under local Xcode 26.1; and an adversarial scope/secret audit is green. This local result is compile evidence only, not release authority.
+- Portrait implementation: `72ba15f1844ef489fca64cecf5f9b207a2bef533`; continuity tip `0a418aef…`. Owned paths include `HomeView.swift`, `VehicleHeroView.swift`, narrow `NembraVisuals.swift`/`AppRootView.swift` changes, focused app/UI/source tests, and portrait authority/continuity docs.
+- Cockpit implementation: `85dc4b70b7981502bd909dd6d7c628f7e8e4c700`; continuity tip `75edf0fc…`. Owned paths include `DashboardView.swift`, `RollingSpeedValueView.swift`, `SpeedInstrumentModel.swift`, narrow `AppBootstrap.swift`, focused app/UI tests, and cockpit authority/capability/continuity docs.
 
-## Work in progress
+Neither predecessor checkpoint is integrated into the unified branch yet. Their local/remote refs are clean and equal at the SHAs above.
 
-No intentional implementation or evidence change is local-only after `5c32d29d5327e4c54d0f3a70b548da6eeeb537a5`; that commit is pushed and `git ls-remote` verified. This document is the continuity-only follow-up and will be pushed separately; because it cannot contain its own commit SHA, the remote branch HEAD is the recovery authority as described above.
+## Work in progress and recovery
 
-The typed observation and guided plan are package foundations only. They are not yet wired into `NembraCaptureEntrypoint`, durable private storage, the P0/P1 export bundle, a sanitizer, protocol-claim cross-verification, or a production decoder. No physical session or semantic fixture exists, and no sibling UI branch should consume these raw types.
+- Unified worktree: clean at `cb00ee46…` before this documentation checkpoint; no unified implementation is local-only.
+- Original Capture worktree: one bounded installer/evidence slice is local-only while being finalized on `product/capture-1-0-main-20260818`:
+  - `scripts/field/install_one_time_capture.command`
+  - `Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerRetainedIPAAdmissionSourceTests.swift`
+  - `scripts/ci/es80_signed_field_artifact_evidence.py`
+  The Capture owner must run focused checks, update both continuity ledgers, commit explicit paths, push, and return a remote SHA before unified integration. Do not delete or overwrite this worktree.
+- Portrait and Cockpit predecessor worktrees are clean and remote-recoverable. Their review agents are read-only.
 
-The next active code batch is the current-procedure field-authorization foundation described under “Exact next executable action.” It is not yet committed or pushed. Root owns only Capture/Bluetooth and integration; portrait task `01a01c57-b619-7262-8971-ba9044659a29` and cockpit task `01a01c57-590f-7c21-8071-39e8bfdd78e8` retain their isolated UI ownership.
+## Exact CI and evidence snapshot
 
-## Exact CI and retained evidence
-
-The current implementation checkpoint is exact `5c32d29d5327e4c54d0f3a70b548da6eeeb537a5`:
-
-- [`Capture TODAY Final GO QA` run `32321764453`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32321764453): green software-contract authority only.
-- [`Capture TODAY Field Candidate Preflight QA` run `32321764641`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32321764641): green software-contract authority only.
-- [`Capture V16 Standalone Exact-Head` run `32321764574`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32321764574), [`Capture Standalone Visual Evidence` run `32321764568`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32321764568), and [`Capture Field Handoff Provenance` run `32321764666`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32321764666) were in progress when this continuity update was prepared; record their terminal results/artifacts in both continuity ledgers before relying on them.
-- [`Xcode 27 Simulator QA` run `32321764484`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32321764484) is queued. [`Xcode 27 PR Exact-Head QA` run `32321764522`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32321764522) was skipped under its event/admission policy.
-
-The latest completed Capture baseline is exact `3f0814ac70211f68b7af1a6913c78c91a810f663`: V16 `32315926223` passed 84 Swift checks, 9 Python checks, and 13/13 iPhone 12/iOS 27 UI tests with artifact `9388386960`, digest `sha256:dbf8a04f668f199e66f6cea9ad79da9444c4a89b0f2f1e38a6d427934bce3f65`; visual run `32315926201` passed with artifact `9388184207`, digest `sha256:3428770ac4077ac79d2109f7defe318d53fe18f65fd7d079a1933e669ae961e4`; field/TODAY lanes were green. These remain simulator/software evidence and do not authorize physical Capture.
-
-The latest completed baseline is exact `cf817a8b1c1f74640055af317671497a202e4f74`; its evidence is root-cause context only and does not transfer to `0b7e3b27…`:
-
-- All five Capture lanes were **green**: TODAY preflight `32310420811` (53/53), Final GO contracts `32310421001` (73/73), field provenance `32310420850` (12 Python + 39 Swift), standalone visual `32310420920` (artifact `9386365261`, digest `1f83a866c52bf7ff74def59728805c2a0ade8f04e86dc9236d4e6729d1ab93c2`), and V16 `32310420859` (84 Swift + 9 Python + 13/13 UI; artifact `9386603633`, digest `0265b7884a329610ce7fcd4c8e6297ba3f0943662fa5fb2c187fe6bdbfa6afea`). These prove software/simulator contracts only and do not authorize physical/private Capture.
-- [`Xcode 27 Simulator QA` run `32310434323`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32310434323) was a genuine exact-head **red** run: Core 1,355/1,355 and app/unit 76/76 passed; UI 17/22 passed.
-- Its five final failures were connected-Home contrast, low-battery qualifier contrast, retained percent contrast, Ride timeline Dynamic Type, and one Dashboard post-screenshot animation-idle timeout. The sustained Debug render test passed three approximately six-second clock samples, but no Hitch Time Ratio was emitted; Debug red prevented direct screenshots and the separate Release performance lane.
-- Artifact `9386781377`, digest `a51913e14e2ce7ed62bc4606be15819d894046e222e0cfad8544d6b8cbecc519`.
+- Capture `5c32d29d…`: TODAY Final GO `32321764453` green; TODAY Field Candidate Preflight `32321764641` green; Field Handoff Provenance `32321764666` green. V16 `32321764574`, visual `32321764568`, and product Xcode `32321764484` were cancelled by later branch movement after substantive early steps; they are not failures and not acceptance.
+- Latest fully completed Capture baseline `3f0814ac…`: V16 `32315926223` green with artifact `9388386960`; visual `32315926201` green with artifact `9388184207`; field/TODAY lanes green. This remains software/Simulator evidence only.
+- Portrait exact-head acceptance is pending. Run `32318006928` validated ancestor `bec498463…` and failed four portrait accessibility issues plus one cockpit issue; later `72ba15f18…` claims narrow fixes but has no authoritative terminal exact-tip run yet.
+- Cockpit exact-head acceptance is pending. `85dc4b70…` has parse, 49/49 focused package tests, strict local compile/build-for-testing, and scope/secret checks only. It has no exact-tip Xcode 27 screenshot/accessibility/Release hitch evidence.
 
 ## Known blockers
 
-### Code/CI work
+### Code / CI
 
-- Monitor and record exact `5c32d29d…` Capture/Xcode 27 terminal results. Only hosted Xcode 27 is release authority; package greens do not prove the standalone app consumes the new contracts.
-- Implement the new `ES80-AUTHENTICATED-STATIONARY-v1` field-authorization chain. The current hard-false build gate, nil historical trust anchor, stale reusable passive envelope, missing current signer/evidence helpers, and locally rebuilt Debug installer intentionally prevent OFF1 today.
-- Wire the accepted typed SDK event into an atomic private journal and later bundle cross-verifier. Never use receipt hashes as signatures or application-level SDK values as raw FD50 bytes.
-- Build the smallest app-owned guided coordinator and private export/import only after field authorization is fail-closed. Arbitrary payload changes cannot auto-confirm mode/light/brake until a verified correlation exists.
-- Keep PR description/checklist synchronized with this file after each pushed checkpoint.
-- Portrait Home/menu and cockpit implementation are owned by their two isolated tasks. Root must not overwrite those branches; integrate their PRs only after reviewing contracts, checks, and merge conflicts.
+- Integrate both predecessor lanes commit-by-commit without deleting the newer Capture foundation or weakening shared tests.
+- Close current Capture field authorization, exact retained-IPA admission, typed private journal, bundle verifier, summary, and guided coordinator.
+- Obtain exact unified-head Xcode 27 functional, UI, accessibility, screenshot, and Release performance evidence after each meaningful integration checkpoint.
+- Production adaptive range has no accepted physical runtime producer; numeric range remains unavailable.
+- Production automatic BLE ride capture, Navigation, and Explore lack verified hardware/provider/runtime wiring and must remain honest/degraded.
 
-### GitHub/external
+### User / physical Capture
 
-- Hosted `xcode-27` capacity can queue for roughly 30–90+ minutes. Queue delay is not a product failure.
-- PR remains draft. It requires a final exact-current-head ready-for-review rerun before merge.
+- Real Capture needs private Tuya provisioning/signing inputs, the intended SmartLife account and scooter membership, the intended iPhone 12/iOS 27, a stationary charger-disconnected scooter, and an explicitly authorized current attempt. No physical run is authorized yet.
 
-### User/physical Capture
+### User / asset rights
 
-- Physical Capture remains **NO-GO** without private Tuya provisioning/signing material, intended iPhone, intended SmartLife account, intended stationary charger-disconnected ES80, explicit current-attempt target confirmation, and execution of `ES80-AUTHENTICATED-STATIONARY-v1` by the authorized field operator.
-- Do not commit private credentials, raw sensitive Capture output, device identifiers, or field artifacts.
+- Final Home needs a user-owned/commissioned high-resolution side photograph of the actual ES80 configuration or written AOVOPRO media permission for a specific source with complete provenance. Do not AI-upscale or invent hardware detail.
 
-### User/asset-rights
+### External/provider
 
-- Final Home 1.0 scooter artwork requires either a user-owned/commissioned high-resolution side photograph of the actual ES80 configuration or written AOVOPRO media/license permission for a specific high-resolution source. The existing 500×500 raster is useful for temporary layout but its exact original URL, transformation chain, license, and permission are not retained; do not AI-generate or upscale invented hardware detail.
+- Explore needs a selected, licensed, versioned road graph and matcher policy. MapKit-rendered roads cannot become coverage evidence.
+- GitHub `xcode-27` capacity may queue. Queue delay is not a code failure.
 
 ## Exact next executable action
 
-1. Add `Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/AuthenticatedStationaryCaptureFieldAuthorization.swift` plus focused tests for a closed schema, independently pinned P-256 verifier, exact current procedure/bundle/build/runtime/dependency/evidence subjects, app-generated challenge, not-before/expiry, maximum one OFF1 start, replay rejection, and an opaque non-Codable authorized-attempt capability. The historical `ES80-FINGERPRINT-v1` envelope must remain non-authorizing.
-2. Add `NembraApp/App/NembraCaptureFieldAuthorizationStore.swift` and wire the capability through every OFF1/authentication/connection/seal boundary in `NembraApp/App/NembraCaptureEntrypoint.swift`. Durable consumption belongs in ThisDeviceOnly Keychain before OFF1; process/background/expiry/build drift invalidates the in-memory capability. Do not flip `NembraCaptureBuildIdentity.isAuthoritativeFieldBuild` or add a Boolean/plist/environment shortcut.
-3. Restore/adapt the missing current-procedure signer/evidence helpers named by `.github/workflows/capture-xcode27-trusted-command.yml`, with the private signing key kept external and mode 0600. Revise `scripts/field/install_one_time_capture.command` to install the exact retained accepted signed IPA rather than rebuilding Debug locally.
-4. Run focused authorization tests, existing Capture package/source/installer custody tests, parser/diff/secret checks, then push a coherent checkpoint and update both continuity ledgers. Monitor exact-head hosted Xcode 27 and record run IDs/artifacts.
-5. Next wire the real SDK callback into `TuyaStructuredApplicationEvidenceEvent` and an atomic private journal, then implement bundle cross-verification, human summary, sanitized fixture derivation, and the guided coordinator. No physical mapping or decoder promotion occurs before an accepted P0/P1 artifact.
-6. When a BLE mapping or privacy-safe fixture becomes stable and production-consumable, update `docs/ES80_PROTOCOL_MAP.md`, sync PR #3675, and notify the portrait/cockpit tasks through repository docs/PR notes. Do not merge until current-head Capture and integrated product gates are green and inspected; use a merge commit, not squash.
+1. Commit and push this unified coordination checkpoint on `release/nembra-1-0-unified`; verify the remote ref.
+2. Review the returned Portrait and Cockpit audit reports, then cherry-pick their owned commits in chronological order while keeping this canonical continuity file and the newer Capture files. Resolve shared `NembraAppTests.swift`, `NembraUITests.swift`, `AppRootView.swift`, `NembraVisuals.swift`, and UI-contract docs semantically.
+3. When the Capture owner returns a pushed SHA, inspect and cherry-pick that atomic installer/evidence checkpoint.
+4. Run Swift parsers on every changed Swift file, focused Capture/Core suites, `git diff --check`, secret/private-artifact scan, and diagnostic strict build-for-testing where practical. Commit and push the coherent unified baseline.
+5. Trigger the exact unified-head Xcode 27 workflow. Inspect the actual xcresults, screenshots, accessibility issues, and Release metrics; record run IDs/artifacts and update this file before the next code batch.
+6. Reassign three non-overlapping implementation milestones from that evidence: Capture authorization/journal, Home exact visual/accessibility closure, and Drive exact visual/performance closure. Navigation, Explore, and additional portrait tabs widen only after their vertical-slice gates pass.
 
 ## Rejected designs and approaches
 
-- Horizon V2 Orbit/Vector/Apex and the V2 Option 2 execution are rejected. Do not merge, polish, or use their geometry, typography, thin roads, debug labels, or metric strips.
-- Every Horizon V3 cockpit image/layout is rejected prototype history. Do not resurrect its clipped/crooked arc, map collisions, card structure, typography, or styling.
-- Horizon V4 retains requirements authority only. Its PNGs and current runtime visual execution are rejected pixel targets; `docs/design-reference/horizon-v4-final/V4_COCKPIT_VISUAL_REJECTED.md` is the durable rejection record.
-- The selected portrait package under `docs/design-reference/nembra-1.0-gold-glass/` is the sole Home/Rides/Vehicle/Settings composition authority.
-- The Energy Chamber family is the selected post-V4 material/composition direction, not a pixel-final screenshot. Its original `-18/18 kW` scale, ambiguous NOW locator, unreadable direction/intensity, and generic typography are rejected and must not ship.
-- Cockpit battery is one unified in-instrument value: percentage by default, tap to range, tap back. SOC fill always means charge; simultaneous/detached range is forbidden.
-- Do not convert Capture into a second product app or let hardware waiting freeze main-app work.
-- Do not fabricate BLE facts, range, route progress, ride totals, or road coverage. Simulator fixtures stay Debug+iOS-Simulator-only and visibly disclosed.
-- Do not glass-coat telemetry/content or use independent blur stacks; use native Liquid Glass only for functional chrome and grouped glass containers where required.
-- Do not use local Xcode 26 as release authority. GitHub-hosted Xcode 27/iPhone 12/iOS 27 evidence controls acceptance.
-- Do not squash-merge PR #3675; the planned integration uses a merge commit after final exact-head approval.
+- Horizon V2 Orbit/Vector/Apex and all V3/V4 cockpit visual execution are rejected. Do not resurrect their geometry, typography, cards, arcs, maps, battery pill, range duplication, mega-pill, or control layout.
+- The Energy Chamber family is a selected direction only. Its generated signed/fantasy power scales, ambiguous NOW marker, and generic typography are rejected.
+- Cockpit battery shows exactly one centered value: percentage by default or accepted range after tap. SOC fill always means charge. Simultaneous/detached range is forbidden.
+- Portrait Home retains its selected separate SOC/range hierarchy, but no range is fabricated.
+- Do not make Capture a second consumer app, send unknown/destructive writes, call SDK application values raw FD50 bytes, or let receipt hashes masquerade as signatures.
+- Do not glass-coat passive telemetry/content or build custom blur stacks. Native Liquid Glass belongs to functional chrome.
+- Do not fabricate BLE facts, power, speed, odometer, route progress, Today totals, or road coverage. Simulator fixtures remain visibly disclosed and never become physical truth.
+- Do not use local Xcode 26 as release authority, force-push predecessor branches, squash away required provenance, or merge a failing checkpoint.
 
 ## Unverified assumptions and evidence still required
 
-- The `0b7e3b27…` accessibility/test-harness fixes are statically and locally compile-verified, but exact Xcode 27 must prove the full audits and that the Release metric validator receives real clock and Hitch Time Ratio samples.
-- The Energy Chamber material/composition direction is user-approved, but its live-power visualization and typography are explicitly unfinished. The isolated cockpit task owns that implementation and must prove it with later exact-head screenshots/performance.
-- Native Ride Window title/timestamp Text nodes still need the exact Xcode 27 Dynamic Type and VoiceOver audit.
-- The retained b319 screenshot proves default 92%/unavailable copy is not visibly occluded, but it is not state-parallel with the selected 73%/learned-range reference and cannot prove other states, larger text, or populated-row clearance.
-- The current 500×500 `ES80Side` presentation asset is linked to AOVOPRO's official product page but is not production-cleared: the exact source/hash, retrieval date, masking steps, author/license, and written reproduction permission are missing. The user has also rejected its low-resolution grey/red treatment as final. A replacement needs a user-owned actual-scooter photo or written licensed high-resolution source, full provenance, truthful geometry, and visual review.
-- Battery microtexture, dimensional shell/rim, adaptive typography/contrast, SOC-clipped copy well, floor/contact lighting, and actionable continuation glass remain visually unfinished. The b319 comparison specifically records the overly bright double rim, wide copy well, uniform ribs, weak floor/contact grounding, temporary grey/red scooter, and flatter glass response.
-- The standard, retained, low-battery, and Accessibility XXXL Home audits need exact Xcode 27 execution at `0b7e3b27…`; later portrait work belongs to the isolated Home task.
-- No current GitHub-safe artifact proves a production ES80 packet mapping. CI proves software contracts and simulator fixtures, not physical BLE semantics. `docs/ES80_PROTOCOL_MAP.md` classifies every existing field/byte claim as observed fact, inference, hypothesis, contradiction, or unknown; every production semantic remains unknown.
-- `TuyaStructuredApplicationEvidenceEvent` and `ES80GuidedCapturePlan` are compile/test-verified package foundations but are not app-wired. Their hashes are deterministic evidence identities, not signatures; the future private bundle must cross-check every plan receipt against exact retained typed event bytes.
-- Field authorization is deliberately impossible on current production paths. The historical verifier has no production trust anchor or current-procedure challenge/expiry/replay binding, the current installer rebuilds Debug locally, and trusted workflow references two absent signer/evidence helpers. A new independently signed current-procedure capability is required rather than relaxing these blockers.
-- Production numeric adaptive range remains unavailable because no accepted physical estimator/identity/evidence pipeline is wired. Do not synthesize the reference image's `8.4 mi`.
-- Automatic capture is public-API best effort. Force-quit, restart-before-first-unlock, permissions, real ES80 restoration/reconnect, and background location behavior still require real-device evidence.
-- Explore domain foundations do not select a road-graph provider or license. No road may be marked covered without accepted map-matched evidence.
+- Portrait and Cockpit local strict builds/tests are not substitutes for exact unified-head Xcode 27 behavior.
+- The predecessor implementations may conflict in shared tests/root wiring; integration correctness is unproven until the combined build/test/runtime gate passes.
+- The selected Home and Energy Chamber references are visual targets/directions only; same-state runtime comparisons have not passed.
+- The temporary ES80 raster cannot close Home asset fidelity or rights.
+- No current GitHub-safe physical packet fixture proves a production ES80 semantic. Every field in `docs/ES80_PROTOCOL_MAP.md` remains unknown except transport topology facts.
+- Automatic capture remains public-API best effort; force-quit, first-unlock, restoration, real scooter reconnect, and background location still need physical-device evidence.
+- Explore has no selected licensed road dataset or scalable accepted matcher/overlay implementation.
