@@ -163,11 +163,12 @@ struct HomeView: View {
                     heroContextMetrics
                 }
             } else {
-                HStack(alignment: .center, spacing: 18) {
+                HStack(alignment: .center, spacing: 12) {
                     batteryInstrument
-                    Spacer(minLength: 16)
+                        .layoutPriority(1)
+                    Spacer(minLength: 6)
                     heroContextMetrics
-                        .frame(maxWidth: 142, alignment: .leading)
+                        .frame(width: 112, alignment: .leading)
                 }
             }
 
@@ -210,18 +211,19 @@ struct HomeView: View {
 
     private var batteryInstrument: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Image(systemName: batteryIcon)
-                    .font(.title2.weight(.semibold))
+                    .font(.title3.weight(.semibold))
                     .foregroundStyle(batteryValueStyle)
                     .accessibilityHidden(true)
 
                 Text(batteryText)
-                    .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 44 : 54, weight: .semibold, design: .rounded).monospacedDigit())
+                    .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 44 : 50, weight: .semibold, design: .rounded).monospacedDigit())
                     .foregroundStyle(batteryValueStyle)
                     .contentTransition(reduceMotion ? .identity : .numericText())
-                    .minimumScaleFactor(0.72)
+                    .minimumScaleFactor(0.68)
                     .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
 
             Text("BATTERY")
