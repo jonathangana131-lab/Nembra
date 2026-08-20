@@ -3,8 +3,9 @@
 
 This remains an orchestration wrapper, not a second signer. Before any private-key path is handed
 to signing code, it proves that this wrapper and every Python source that will parse or sign the
-request exactly match immutable Git blob objects at the checked-out HEAD. It then materializes those
-accepted object bytes into a private temporary execution bundle and invokes only that bundle.
+request exactly match immutable Git blob objects at the independently accepted source commit used
+by the retained-install chain. It then materializes those accepted object bytes into a private
+temporary execution bundle and invokes only that bundle.
 
 Cryptographic payload construction, signed-evidence parsing, signing, self-verification, and
 no-replace publication remain owned by `es80_field_authorization_envelope.py`.
@@ -32,6 +33,7 @@ PYTHON = Path("/usr/bin/python3")
 MAX_SOURCE_BYTES = 1_048_576
 SHA40 = re.compile(r"^[0-9a-f]{40}$")
 RFC3339_SECONDS = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+ACCEPTED_SOURCE_ENV = "NEMBRA_ACCEPTED_SOURCE_COMMIT_SHA"
 
 EXECUTION_SOURCES = (
     "scripts/ci/es80_sign_field_authorization_from_rendezvous.py",
@@ -134,8 +136,26 @@ def _read_exact_worktree(path: Path) -> bytes:
         os.close(descriptor)
 
 
-def _accepted_blob(relative_path: str) -> bytes:
-    blob_id = _git_text("rev-parse", "--verify", f"HEAD:{relative_path}")
+def _resolve_accepted_source_commit(raw: str) -> str:
+    """Resolve only the independently accepted full source commit used by the field chain."""
+    if not isinstance(raw, str) or SHA40.fullmatch(raw) is None:
+        raise SignerExecutionCustodyError(
+            f"{ACCEPTED_SOURCE_ENV} must be one canonical lowercase full Git commit SHA"
+        )
+    if raw == "0" * 40:
+        raise SignerExecutionCustodyError(f"{ACCEPTED_SOURCE_ENV} cannot be the zero SHA")
+    resolved = _git_text("rev-parse", "--verify", f"{raw}^{{commit}}")
+    if resolved != raw:
+        raise SignerExecutionCustodyError(
+            "independently accepted source commit resolved to a different Git object"
+        )
+    return resolved
+
+
+def _accepted_blob(relative_path: str, accepted_source_sha: str) -> bytes:
+    blob_id = _git_text(
+        "rev-parse", "--verify", f"{accepted_source_sha}:{relative_path}"
+    )
     if not SHA40.fullmatch(blob_id):
         raise SignerExecutionCustodyError("execution source Git blob identity is invalid")
     blob = _git_bytes("cat-file", "blob", blob_id)
@@ -151,13 +171,13 @@ def _accepted_blob(relative_path: str) -> bytes:
 
 
 @contextmanager
-def accepted_execution_bundle() -> Iterator[Path]:
-    """Freeze all code that can see the private-key path before signing begins."""
-    head = _git_text("rev-parse", "--verify", "HEAD^{commit}")
-    if not SHA40.fullmatch(head):
-        raise SignerExecutionCustodyError("repository HEAD is not one canonical full Git commit")
-
-    blobs = {relative: _accepted_blob(relative) for relative in EXECUTION_SOURCES}
+def accepted_execution_bundle(accepted_source_sha: str) -> Iterator[Path]:
+    """Freeze code from the independently accepted commit before signing begins."""
+    source_commit = _resolve_accepted_source_commit(accepted_source_sha)
+    blobs = {
+        relative: _accepted_blob(relative, source_commit)
+        for relative in EXECUTION_SOURCES
+    }
     with tempfile.TemporaryDirectory(prefix="nembra-es80-field-signer-") as directory:
         root = Path(directory)
         os.chmod(root, 0o700)
@@ -262,8 +282,9 @@ def parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
+    accepted_source_sha = os.environ.get(ACCEPTED_SOURCE_ENV, "")
     try:
-        with accepted_execution_bundle() as bundle:
+        with accepted_execution_bundle(accepted_source_sha) as bundle:
             helper = _load_rendezvous_helper(bundle / RENDEZVOUS_BASENAME)
             rendezvous = helper.verify_rendezvous_bytes(helper._read_exact(args.rendezvous))
             validate_signing_chronology(
