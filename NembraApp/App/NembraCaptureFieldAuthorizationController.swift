@@ -19,13 +19,27 @@ final class NembraCaptureFieldAuthorizationController {
     }
 
     private let session: AuthenticatedStationaryCaptureAppSession
+    private let transferDirectoryPreparationError: (any Error)?
 
     init() {
         self.session = AuthenticatedStationaryCaptureAppSession()
+        do {
+            // The external appDataContainer transport cannot place the first retained manifest into
+            // a directory that does not yet exist. Prepare only that owner-controlled directory at
+            // app-controller construction time; this creates no subject, challenge, or authority.
+            try AuthenticatedStationaryCaptureSignerRendezvousOutbox()
+                .prepareAuthorizationTransferDirectory()
+            self.transferDirectoryPreparationError = nil
+        } catch {
+            // Preserve the exact bootstrap failure for the first handoff advance. Do not silently
+            // fall back to another path or let OFF1 proceed around failed filesystem custody.
+            self.transferDirectoryPreparationError = error
+        }
     }
 
     init(session: AuthenticatedStationaryCaptureAppSession) {
         self.session = session
+        self.transferDirectoryPreparationError = nil
     }
 
     var stage: AuthenticatedStationaryCaptureAppSession.Stage { session.stage }
@@ -106,6 +120,11 @@ final class NembraCaptureFieldAuthorizationController {
     /// the same challenge and never resets a revoked session.
     @discardableResult
     func advanceInboxHandoffIfAvailable() throws -> HandoffProgress {
+        if let transferDirectoryPreparationError {
+            session.revoke()
+            throw transferDirectoryPreparationError
+        }
+
         switch session.stage {
         case .idle:
             do {
