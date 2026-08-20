@@ -177,7 +177,8 @@ def _validate_payload(value: dict[str, Any], evidence: dict[str, Any], evidence_
             or len(value["buildIdentifier"].encode()) > 128 \
             or value["buildIdentifier"] != value["buildIdentifier"].strip():
         raise AuthorizationEnvelopeError("build identifier is invalid")
-    if not isinstance(value.get("buildInstanceID"), str) or not UUID4.fullmatch(value["buildInstanceID"]):
+    if not isinstance(value.get("buildInstanceID"), str) \
+            or not artifact_evidence.BUILD_INSTANCE.fullmatch(value["buildInstanceID"]):
         raise AuthorizationEnvelopeError("build instance ID is invalid")
     for key in (
         "executableSHA256", "infoPlistSHA256", "tuyaDependencyLockSHA256",
@@ -442,7 +443,9 @@ def self_test() -> None:
         "bundleIdentifier": BUNDLE_ID,
         "sourceCommitSHA": "1" * 40,
         "buildIdentifier": "capture-auth-self-test",
-        "buildInstanceID": "12345678-1234-4234-9234-123456789abc",
+        # Keep this deliberately non-v4: authorization IDs remain UUIDv4, while the build-instance
+        # rendezvous is only UUID-shaped and opaque under the runtime/install-manifest contract.
+        "buildInstanceID": "12345678-1234-abcd-8def-123456789abc",
         "signedInstallableKind": "ipa",
         "signedInstallableSHA256": digest("2"),
         "executableSHA256": digest("3"),
