@@ -7,7 +7,10 @@ These flags are deliberately simple so humans, ChatGPT/Codex sessions, and miles
 ```text
 NEMBRA_1_0_RELEASED: false
 CAPTURE_USER_INPUT_READY: false
+TRUNK_HEALTH_MODE: convergence
 ```
+
+`TRUNK_HEALTH_MODE` is an operational health hint, not a release or physical-authority flag. Live GitHub always outranks this line. Root `AGENTS.md` defines when agents must enter/exit convergence mode.
 
 ## Meaning of `NEMBRA_1_0_RELEASED`
 
@@ -42,11 +45,26 @@ When this flag becomes true, the same change/handoff must record:
 - what remains forbidden (especially writes/queries/commands not explicitly authorized);
 - how the resulting private/sensitive evidence must be handled.
 
-## Current truth at creation
+## Current trunk-health snapshot
 
-- `main` is still the post-swarm-cutover development trunk at `0bc188e41c10e4deb7e8c2d214e216f6ea5b24e6`.
-- Draft PR #3678 is the current large Nembra 1.0 unified integration candidate; it is not release acceptance.
-- Draft PR #3675 is the current Capture/Bluetooth checkpoint; it explicitly reports physical/private Capture as **NO-GO** because production trust/app capability/private physical evidence are not complete.
-- Therefore both flags are correctly `false` today.
+At this update, Nembra is intentionally in **CONVERGENCE MODE**:
+
+- development `main` is `d8d2053549cb87b35f98280f8c749437ecb74efe`;
+- there are 9 open PRs;
+- draft PR #3675 (Capture carrier) is 210 commits / 241 changed files against `main` and has accumulated substantial ordinary software work off-trunk;
+- draft PR #3678 (Nembra 1.0 unified candidate) is 83 commits / 218 changed files against `main`;
+- several open child PRs target the Capture carrier rather than `main`.
+
+That exceeds the trunk-health signals in root `AGENTS.md`. Broad `Go` agents should therefore prioritize shrinking the open queue, closing superseded children, and transplanting/integrating coherent safe development slices onto `main` before creating ordinary new work.
+
+This does **not** mean merging the entire Capture authority chain blindly. Live trust roots, signing/private-key authority, physical authorization, scooter operations, and exact physical evidence remain strict. Fail-closed/non-authorizing foundations and ordinary product/UI/runtime slices should not be trapped off-trunk merely because the strict physical chain is unfinished.
+
+When the queue/divergence becomes healthy again, change `TRUNK_HEALTH_MODE` to `normal` in the same integration window.
+
+## Current milestone truth
+
+- Draft PR #3678 remains a Nembra 1.0 unified integration candidate; it is not release acceptance.
+- Draft PR #3675 remains the active Capture/Bluetooth carrier and still reports physical/private Capture as **NO-GO**.
+- Therefore `NEMBRA_1_0_RELEASED` and `CAPTURE_USER_INPUT_READY` are both correctly `false` today.
 
 Every broad autonomous `Go` run should re-evaluate these flags after meaningful integration and before final handoff. Live GitHub/evidence outranks this timestamped prose if it becomes stale.
