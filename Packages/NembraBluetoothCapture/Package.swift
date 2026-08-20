@@ -10,7 +10,10 @@ let package = Package(
     products: [
         .library(
             name: "NembraBluetoothCapture",
-            targets: ["NembraBluetoothCapture"]
+            targets: [
+                "NembraBluetoothCapture",
+                "NembraCaptureAppAuthorization"
+            ]
         ),
         .library(
             name: "NembraCaptureAppAuthorization",
