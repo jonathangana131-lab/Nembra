@@ -152,6 +152,9 @@ case "${1:-}" in
   *) die "Only --dry-run or --self-test is accepted; private values and hashes must not be placed on argv." ;;
 esac
 
+: "${NEMBRA_ACCEPTED_SOURCE_COMMIT_SHA:?Set NEMBRA_ACCEPTED_SOURCE_COMMIT_SHA to the independently accepted lowercase 40-hex source commit.}"
+[[ "$NEMBRA_ACCEPTED_SOURCE_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]] || die "NEMBRA_ACCEPTED_SOURCE_COMMIT_SHA must be one canonical lowercase full Git commit SHA."
+[[ "$NEMBRA_ACCEPTED_SOURCE_COMMIT_SHA" != "0000000000000000000000000000000000000000" ]] || die "NEMBRA_ACCEPTED_SOURCE_COMMIT_SHA cannot be the zero SHA."
 : "${NEMBRA_RETAINED_IPA_PATH:?Set NEMBRA_RETAINED_IPA_PATH to the absolute retained accepted signed IPA path.}"
 : "${NEMBRA_RETAINED_IPA_SHA256:?Set NEMBRA_RETAINED_IPA_SHA256 to its independently accepted SHA-256.}"
 : "${NEMBRA_RETAINED_INSTALL_MANIFEST_PATH:?Set NEMBRA_RETAINED_INSTALL_MANIFEST_PATH to the absolute canonical retained-install manifest path.}"
@@ -176,14 +179,15 @@ validate_retained_input "accepted Tuya-lock subject" "$NEMBRA_ACCEPTED_TUYA_LOCK
 validate_retained_input "intended-device pseudonymous binding" "$NEMBRA_INTENDED_DEVICE_PSEUDONYMOUS_BINDING_PATH" "$NEMBRA_INTENDED_DEVICE_PSEUDONYMOUS_BINDING_SHA256" private 1048576
 
 # Re-read only the small JSON subjects through no-follow descriptors and prove they all name one
-# identical retained install. The independently accepted IPA/Tuya/device digests are inputs; the IPA
-# itself is never loaded into this Python process. The two Python verifier modules are captured from
-# immutable Git object bytes and executed in memory; a mutable checkout pathname is never imported.
+# identical retained install. The independently accepted source commit plus IPA/Tuya/device digests
+# are inputs; the IPA itself is never loaded into this Python process. Both verifier modules are
+# captured from the independently accepted source commit's immutable Git-object bytes and executed
+# in memory; neither mutable checkout paths nor the checkout HEAD select verifier authority.
 /usr/bin/env -i \
   PATH=/usr/bin:/bin \
   LC_ALL=C \
   /usr/bin/python3 -I -B - \
-    "$ROOT" \
+    "$ROOT" "$NEMBRA_ACCEPTED_SOURCE_COMMIT_SHA" \
     "$NEMBRA_RETAINED_INSTALL_MANIFEST_PATH" "$NEMBRA_RETAINED_INSTALL_MANIFEST_SHA256" \
     "$NEMBRA_ACCEPTED_BUILD_SUBJECT_PATH" "$NEMBRA_ACCEPTED_BUILD_SUBJECT_SHA256" \
     "$NEMBRA_ACCEPTED_EVIDENCE_SUBJECT_PATH" "$NEMBRA_ACCEPTED_EVIDENCE_SUBJECT_SHA256" \
@@ -201,13 +205,16 @@ import types
 from pathlib import PurePath
 
 (
-    root_raw,
+    root_raw, accepted_source_sha,
     manifest_path, manifest_sha,
     build_path, build_sha,
     evidence_path, evidence_sha,
     final_go_path, final_go_sha,
     retained_ipa_sha, tuya_lock_sha, device_binding_sha,
 ) = sys.argv[1:]
+
+if re.fullmatch(r"[0-9a-f]{40}", accepted_source_sha) is None or accepted_source_sha == "0" * 40:
+    raise RuntimeError("independently accepted source commit is not canonical")
 
 
 def read_exact(path_raw: str, expected: str, maximum: int, access_policy: str) -> bytes:
@@ -271,13 +278,14 @@ def git(*arguments: str, input_data: bytes | None = None) -> bytes:
     return completed.stdout
 
 
-head = git("rev-parse", "HEAD").decode("ascii").strip().lower()
-if re.fullmatch(r"[0-9a-f]{40}", head) is None:
-    raise RuntimeError("field checkout HEAD is not one canonical Git commit")
+resolved_source = git("rev-parse", "--verify", f"{accepted_source_sha}^{{commit}}") \
+    .decode("ascii").strip().lower()
+if not hmac.compare_digest(resolved_source, accepted_source_sha):
+    raise RuntimeError("independently accepted source SHA did not resolve to that exact commit")
 
 
 def immutable_git_source(path: str) -> bytes:
-    blob = git("rev-parse", f"{head}:{path}").decode("ascii").strip().lower()
+    blob = git("rev-parse", f"{accepted_source_sha}:{path}").decode("ascii").strip().lower()
     if re.fullmatch(r"[0-9a-f]{40}", blob) is None:
         raise RuntimeError(f"verifier source is not a canonical Git blob: {path}")
     source = git("cat-file", "blob", blob)
@@ -293,7 +301,7 @@ def execute_module(name: str, path: str, source: bytes) -> types.ModuleType:
     except UnicodeDecodeError as error:
         raise RuntimeError(f"verifier source is not UTF-8: {path}") from error
     module = types.ModuleType(name)
-    module.__file__ = f"<git:{head}:{path}>"
+    module.__file__ = f"<git:{accepted_source_sha}:{path}>"
     sys.modules[name] = module
     exec(compile(text, module.__file__, "exec"), module.__dict__)
     return module
@@ -316,6 +324,7 @@ helper.verify_cross_binding(
     external_build_record_data=read_exact(build_path, build_sha, 1_048_576, "public"),
     signed_build_evidence_data=read_exact(evidence_path, evidence_sha, 1_048_576, "public"),
     final_go_record_data=read_exact(final_go_path, final_go_sha, 1_048_576, "private"),
+    accepted_source_commit_sha=accepted_source_sha,
     accepted_install_manifest_sha256=manifest_sha.lower(),
     accepted_retained_ipa_sha256=retained_ipa_sha.lower(),
     accepted_external_build_record_sha256=build_sha.lower(),
@@ -326,6 +335,6 @@ helper.verify_cross_binding(
 )
 PY
 
-say "Stable retained-install subjects cross-bound to one canonical manifest"
+say "Stable retained-install subjects cross-bound to one canonical manifest and accepted source commit"
 say "PREINSTALL_RETAINED_SUBJECTS_BOUND_NOT_INSTALL_AUTHORITY"
 die "Installation remains blocked: the production trust root and standalone app capability lifecycle are not independently accepted. The per-attempt authorization envelope must be created only after the installed app emits its fresh challenge. No device was contacted and no app was installed. Status: $RETAINED_INSTALL_CONTRACT_STATUS"
