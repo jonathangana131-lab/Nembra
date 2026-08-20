@@ -4,8 +4,8 @@ import Testing
 
 @Suite("Capture root product surface")
 struct TuyaCaptureRootProductSurfaceSourceTests {
-    @Test("public launch is guided and cannot bootstrap account or Bluetooth authority")
-    func publicRootIsGuidedPreflight() throws {
+    @Test("incomplete build metadata is guided and metadata-ready setup still cannot mint Bluetooth authority")
+    func rootIsGuidedPreflight() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let root = String(try section(
             in: app,
@@ -16,10 +16,14 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
         #expect(root.contains(".navigationTitle(\"Nembra Capture\")"))
         #expect(root.contains("Text(\"Link your scooter\")"))
         #expect(root.contains(".onAppear { synchronizeSDKSession() }"))
-        #expect(root.contains("guard fieldBuildIsAuthoritative else { return }\n        sdkAccount.bootstrap()"))
+        #expect(root.contains("guard fieldBuildMetadataReady else { return }\n        sdkAccount.bootstrap()"))
+        #expect(root.contains("private var fieldBuildMetadataReady: Bool { buildIdentity.hasCompleteFieldBuildMetadata }"))
         #expect(root.contains("Label(\"Review field requirements\", systemImage: \"lock.shield\")"))
-        #expect(root.contains("This public build cannot authorize Bluetooth or collect physical evidence."))
+        #expect(root.contains("Build metadata ready"))
+        #expect(root.contains("one-time field authorization checks are still required before Bluetooth"))
         #expect(root.contains("No scooter command, DP query, or second Bluetooth ownership path is authorized here."))
+        #expect(!root.contains("buildIdentity.isAuthoritativeFieldBuild"))
+        #expect(!root.contains("fieldBuildIsAuthoritative"))
         #expect(!root.contains("TuyaAccountBridge"))
         #expect(!root.contains("Create approval QR"))
         #expect(!root.contains("Paste user code"))
