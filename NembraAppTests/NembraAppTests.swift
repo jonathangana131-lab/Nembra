@@ -1,3 +1,4 @@
+import Dispatch
 import XCTest
 @testable import Nembra
 
@@ -115,6 +116,20 @@ final class NembraAppTests: XCTestCase {
         }
     }
 
+    func testCompactAccessibilityCockpitReservesReadableSpeedBeforeRail() {
+        let layout = DashboardInstrumentVerticalLayout(
+            size: CGSize(width: 796, height: 200),
+            usesAccessibilityLayout: true
+        )
+
+        XCTAssertGreaterThanOrEqual(layout.speedFrame.height, 92)
+        XCTAssertGreaterThanOrEqual(layout.energyRailFrame.height, 44)
+        XCTAssertFalse(layout.speedFrame.intersects(layout.energyRailFrame))
+        XCTAssertLessThan(layout.speedFrame.maxY, layout.energyRailFrame.minY)
+        XCTAssertGreaterThanOrEqual(layout.speedFrame.minY, 0)
+        XCTAssertLessThanOrEqual(layout.energyRailFrame.maxY, 200)
+    }
+
     func testCockpitRenderScheduleMountsTimelineOnlyForAcceptedLiveSettling() {
         XCTAssertEqual(
             DashboardInstrumentRenderSchedule.resolve(
@@ -189,6 +204,74 @@ final class NembraAppTests: XCTestCase {
             systemUsesMetric: true
         ))
     }
+
+#if targetEnvironment(simulator)
+    @MainActor
+    func testEnergyRailPeakExpiryWakeIsNotExtendedByLowerReceipt() async throws {
+        let service = SimulatedScooterService(
+            initialState: SimulatedScooterService.state(for: .riding),
+            commandLatencyNanoseconds: 0
+        )
+        let store = VehicleStore(
+            service: service,
+            initialState: await service.snapshot(),
+            shouldAutoConnectOnStart: false,
+            speedInstrumentInterpolationPolicy: .simulatorQA
+        )
+        await store.start()
+
+        XCTAssertTrue(await waitUntil {
+            store.simulatorPowerStoreProjection.currentness == .live
+        })
+
+        await service.simulateRide(speedKilometersPerHour: 36, elapsedSeconds: 0)
+        let highArrived = await waitUntil {
+            store.simulatorPowerStoreProjection.currentness == .live
+                && (store.simulatorPowerStoreProjection.observation?.watts ?? 0) > 0
+        }
+        XCTAssertTrue(highArrived)
+        let highProjection = store.simulatorPowerStoreProjection
+        let highReceipt = try XCTUnwrap(highProjection.observation)
+
+        let model = DashboardEnergyRailModel()
+        model.synchronize(highProjection, sourceCapabilityIsOwned: true)
+
+        try await Task.sleep(nanoseconds: 600_000_000)
+        await service.simulateRide(speedKilometersPerHour: 5, elapsedSeconds: 0)
+        let lowerArrived = await waitUntil {
+            guard let receipt = store.simulatorPowerStoreProjection.observation else { return false }
+            return receipt.receiptSequenceNumber > highReceipt.receiptSequenceNumber
+        }
+        XCTAssertTrue(lowerArrived)
+        let lowerProjection = store.simulatorPowerStoreProjection
+        let lowerReceipt = try XCTUnwrap(lowerProjection.observation)
+        XCTAssertLessThan(lowerReceipt.watts, highReceipt.watts)
+
+        model.synchronize(lowerProjection, sourceCapabilityIsOwned: true)
+        XCTAssertTrue(await waitUntil(timeoutNanoseconds: 500_000_000) {
+            !model.shouldTick
+        })
+        let revisionAfterLowerSettled = model.revision
+
+        let expectedHighExpiry = highReceipt.receivedAtUptimeNanoseconds + 2_000_000_001
+        let observationDeadline = expectedHighExpiry + 120_000_000
+        let now = DispatchTime.now().uptimeNanoseconds
+        if observationDeadline > now {
+            try await Task.sleep(nanoseconds: observationDeadline - now)
+        }
+
+        XCTAssertTrue(
+            model.revision > revisionAfterLowerSettled,
+            "A lower receipt must not postpone the redraw at the held high peak's package-owned expiry boundary."
+        )
+        let expired = model.presentation(
+            atUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+            prefersReducedMotion: false
+        )
+        XCTAssertNil(expired.acceptedPeakFraction)
+        model.stop()
+    }
+#endif
 
     func testSimulationScenarioLaunchArgumentParsing() {
         let scenario = AppBootstrap.simulationScenario(
@@ -709,6 +792,20 @@ final class NembraAppTests: XCTestCase {
         XCTAssertNil(model.latestMeasurementSource)
         XCTAssertNil(model.latestMeasurementUptimeNanoseconds)
         XCTAssertFalse(model.isAnimationActive)
+    }
+
+    @MainActor
+    private func waitUntil(
+        timeoutNanoseconds: UInt64 = 1_000_000_000,
+        pollNanoseconds: UInt64 = 10_000_000,
+        condition: @escaping @MainActor () -> Bool
+    ) async -> Bool {
+        let start = DispatchTime.now().uptimeNanoseconds
+        while DispatchTime.now().uptimeNanoseconds - start < timeoutNanoseconds {
+            if condition() { return true }
+            try? await Task.sleep(nanoseconds: pollNanoseconds)
+        }
+        return condition()
     }
 
     private func speedSample(
