@@ -83,6 +83,17 @@ class RetainedInstallInstallerChronologyTests(unittest.TestCase):
         self.assertIn("hmac.compare_digest(digest.hexdigest(), expected)", self.source)
         self.assertIn("identity(after) != identity(before)", self.source)
 
+    def test_verifier_modules_execute_from_authenticated_immutable_git_bytes(self) -> None:
+        self.assertIn('"GIT_NO_REPLACE_OBJECTS": "1"', self.source)
+        self.assertIn('git("rev-parse", "HEAD")', self.source)
+        self.assertIn('git("cat-file", "blob", blob)', self.source)
+        self.assertIn('git("hash-object", "--stdin", input_data=source)', self.source)
+        self.assertIn("immutable_git_source(manifest_source_path)", self.source)
+        self.assertIn("immutable_git_source(helper_source_path)", self.source)
+        self.assertIn('exec(compile(text, module.__file__, "exec"), module.__dict__)', self.source)
+        self.assertNotIn("spec_from_file_location", self.source)
+        self.assertNotIn("helper_path = root /", self.source)
+
 
 if __name__ == "__main__":
     unittest.main()
