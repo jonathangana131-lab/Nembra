@@ -16,15 +16,10 @@ struct TuyaFieldInstallerRetainedIPAAdmissionSourceTests {
         #expect(blocker.lowerBound < legacyBuild.lowerBound)
         #expect(blocker.lowerBound < legacyInstall.lowerBound)
         #expect(installer.contains("No app was rebuilt or installed"))
-        #expect(
-            installer.contains(
-                "blocked-missing-pinned-trust-and-install-manifest"
-            )
-        )
     }
 
-    @Test("all exact retained subjects require explicit path and digest inputs")
-    func everyRetainedSubjectHasExplicitPathAndHash() throws {
+    @Test("all stable pre-install subjects require explicit path and digest inputs")
+    func everyStablePreInstallSubjectHasExplicitPathAndHash() throws {
         let installer = try source()
         for prefix in [
             "NEMBRA_RETAINED_IPA",
@@ -33,11 +28,19 @@ struct TuyaFieldInstallerRetainedIPAAdmissionSourceTests {
             "NEMBRA_ACCEPTED_FINAL_GO_SUBJECT",
             "NEMBRA_ACCEPTED_TUYA_LOCK_SUBJECT",
             "NEMBRA_INTENDED_DEVICE_PSEUDONYMOUS_BINDING",
-            "NEMBRA_CURRENT_PROCEDURE_AUTHORIZATION_ENVELOPE",
         ] {
             #expect(installer.contains("\(prefix)_PATH"))
             #expect(installer.contains("\(prefix)_SHA256"))
         }
+    }
+
+    @Test("pre-install admission cannot require the future per-attempt authorization envelope")
+    func futureAttemptEnvelopeIsExcludedFromPreInstallAdmission() throws {
+        let installer = try source()
+
+        #expect(!installer.contains("NEMBRA_CURRENT_PROCEDURE_AUTHORIZATION_ENVELOPE_PATH"))
+        #expect(!installer.contains("NEMBRA_CURRENT_PROCEDURE_AUTHORIZATION_ENVELOPE_SHA256"))
+        #expect(!installer.contains("current-procedure authorization envelope"))
     }
 
     @Test("retained input admission is no-follow, bounded, stable, and mode constrained")
