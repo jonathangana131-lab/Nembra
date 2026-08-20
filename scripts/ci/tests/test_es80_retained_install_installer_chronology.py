@@ -22,6 +22,7 @@ class RetainedInstallInstallerChronologyTests(unittest.TestCase):
 
     def test_preinstall_contract_requires_canonical_manifest_and_stable_subjects(self) -> None:
         for required in (
+            "NEMBRA_ACCEPTED_SOURCE_COMMIT_SHA",
             "NEMBRA_RETAINED_IPA_PATH",
             "NEMBRA_RETAINED_IPA_SHA256",
             "NEMBRA_RETAINED_INSTALL_MANIFEST_PATH",
@@ -33,6 +34,7 @@ class RetainedInstallInstallerChronologyTests(unittest.TestCase):
             "NEMBRA_INTENDED_DEVICE_PSEUDONYMOUS_BINDING_PATH",
             "es80_retained_install_cross_binding.py",
             "verify_cross_binding(",
+            "accepted_source_commit_sha=accepted_source_sha",
             "PREINSTALL_RETAINED_SUBJECTS_BOUND_NOT_INSTALL_AUTHORITY",
         ):
             with self.subTest(required=required):
@@ -83,14 +85,19 @@ class RetainedInstallInstallerChronologyTests(unittest.TestCase):
         self.assertIn("hmac.compare_digest(digest.hexdigest(), expected)", self.source)
         self.assertIn("identity(after) != identity(before)", self.source)
 
-    def test_verifier_modules_execute_from_authenticated_immutable_git_bytes(self) -> None:
+    def test_verifier_modules_execute_from_independently_accepted_git_commit(self) -> None:
         self.assertIn('"GIT_NO_REPLACE_OBJECTS": "1"', self.source)
-        self.assertIn('git("rev-parse", "HEAD")', self.source)
+        self.assertIn(
+            'git("rev-parse", "--verify", f"{accepted_source_sha}^{{commit}}")',
+            self.source,
+        )
+        self.assertIn('f"{accepted_source_sha}:{path}"', self.source)
         self.assertIn('git("cat-file", "blob", blob)', self.source)
         self.assertIn('git("hash-object", "--stdin", input_data=source)', self.source)
         self.assertIn("immutable_git_source(manifest_source_path)", self.source)
         self.assertIn("immutable_git_source(helper_source_path)", self.source)
         self.assertIn('exec(compile(text, module.__file__, "exec"), module.__dict__)', self.source)
+        self.assertNotIn('git("rev-parse", "HEAD")', self.source)
         self.assertNotIn("spec_from_file_location", self.source)
         self.assertNotIn("helper_path = root /", self.source)
 
