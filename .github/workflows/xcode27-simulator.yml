@@ -131,14 +131,14 @@ jobs:
           python3 scripts/ci/validate_xcode27_dashboard_performance.py --self-test
 
       - name: Probe devicectl app-container transfer contract
-        run: scripts/ci/xcode27_devicectl_manifest_transport_contract.sh
+        run: bash scripts/ci/xcode27_devicectl_manifest_transport_contract.sh
 
       - name: Validate core package
         working-directory: Packages/NembraCore
         run: swift test
 
       - name: Build, test, and capture Simulator states
-        run: scripts/ci/xcode27_product_simulator_capture.sh
+        run: bash scripts/ci/xcode27_product_simulator_capture.sh
 
       - name: Upload Simulator screenshots and logs
         if: always()
