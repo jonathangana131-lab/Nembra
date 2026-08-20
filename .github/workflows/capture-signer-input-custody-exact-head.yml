@@ -98,7 +98,8 @@ jobs:
             scripts/ci/tests/test_es80_sign_field_authorization_execution_custody.py \
             scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py
           /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_evidence.py --self-test
-          /usr/bin/python3 scripts/ci/es80_field_authorization_envelope.py --self-test
+          test -d /private/tmp
+          TMPDIR=/private/tmp /usr/bin/python3 scripts/ci/es80_field_authorization_envelope.py --self-test
           /usr/bin/python3 -I scripts/ci/tests/test_es80_signed_field_artifact_path_custody.py
           /usr/bin/python3 -I scripts/ci/tests/test_es80_sign_field_authorization_execution_custody.py
           /usr/bin/python3 -I scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py
