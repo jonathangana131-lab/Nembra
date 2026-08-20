@@ -311,6 +311,7 @@ enum DashboardEnergyRailCurrentness: Equatable {
 
 struct DashboardEnergyRailVisualState: Equatable {
     static let maximumDisplayWatts = 99_999.0
+    static let fractionConsistencyTolerance = 0.001
 
     let currentness: DashboardEnergyRailCurrentness
     let acceptedWatts: Double?
@@ -380,6 +381,14 @@ struct DashboardEnergyRailVisualState: Equatable {
                   let scaleOrigin,
                   let scaleCeilingWatts = validWatts(scaleCeilingWatts),
                   scaleCeilingWatts > 0 else {
+                return .unavailable
+            }
+            let expectedAcceptedFraction = min(1, acceptedWatts / scaleCeilingWatts)
+            guard abs(acceptedCurrentFraction - expectedAcceptedFraction)
+                    <= Self.fractionConsistencyTolerance else {
+                // NOW is accepted telemetry, not an arbitrary caller-supplied
+                // marker. Preserve above-envelope watts by saturating at one,
+                // but reject a position that contradicts the admitted scale.
                 return .unavailable
             }
             return DashboardEnergyRailVisualState(
@@ -850,12 +859,20 @@ struct DashboardPropulsionGeometry {
 
 private struct DashboardRollingPowerValueView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .headline) private var scaledPointSize: CGFloat = 18
 
     let value: Double
 
     var body: some View {
         Text(validatedText)
-            .font(.system(size: 18, weight: .semibold, design: .default))
+            .font(
+                .system(
+                    size: min(scaledPointSize, dynamicTypeSize.isAccessibilitySize ? 28 : 20),
+                    weight: .semibold,
+                    design: .default
+                )
+            )
             .fontWidth(.expanded)
             .monospacedDigit()
             .contentTransition(reduceMotion ? .identity : .numericText(value: value))
@@ -951,6 +968,9 @@ private struct DashboardEnergyRailView: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .caption2) private var scaledMicroLabelSize: CGFloat = 8
+    @ScaledMetric(relativeTo: .caption) private var scaledSmallLabelSize: CGFloat = 9
 
     let state: DashboardEnergyRailVisualState
     let isSimulatorQA: Bool
@@ -995,13 +1015,13 @@ private struct DashboardEnergyRailView: View {
                 }
 
                 Text("0")
-                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .font(.system(size: smallLabelSize, weight: .semibold, design: .monospaced))
                     .foregroundStyle(NembraColor.secondaryText.opacity(0.88))
                     .position(x: geometry.start.x, y: geometry.start.y + 17)
                     .accessibilityHidden(true)
 
                 Text("PROPULSION  →")
-                    .font(.system(size: 9, weight: .bold, design: .default))
+                    .font(.system(size: smallLabelSize, weight: .bold, design: .default))
                     .tracking(1.5)
                     .foregroundStyle(NembraColor.secondaryText.opacity(0.88))
                     .position(x: proxy.size.width * 0.24, y: proxy.size.height * 0.90)
@@ -1009,7 +1029,7 @@ private struct DashboardEnergyRailView: View {
 
                 if let scaleText = semantics.scaleText {
                     Text(scaleText)
-                        .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                        .font(.system(size: microLabelSize, weight: .semibold, design: .monospaced))
                         .tracking(0.5)
                         .foregroundStyle(NembraColor.secondaryText.opacity(0.88))
                         .position(x: proxy.size.width * 0.78, y: proxy.size.height * 0.90)
@@ -1040,35 +1060,46 @@ private struct DashboardEnergyRailView: View {
             VStack(spacing: 0) {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text("NOW")
-                        .font(.system(size: 8, weight: .black, design: .default))
+                        .font(.system(size: microLabelSize, weight: .black, design: .default))
                         .tracking(1.1)
                         .foregroundStyle(NembraColor.gold)
                     DashboardRollingPowerValueView(value: watts)
                     Text("W")
-                        .font(.system(size: 9, weight: .bold, design: .default))
+                        .font(.system(size: smallLabelSize, weight: .bold, design: .default))
                         .foregroundStyle(NembraColor.secondaryText)
                 }
                 Text("ACCEPTED")
-                    .font(.system(size: 7, weight: .bold, design: .default))
+                    .font(.system(size: microLabelSize, weight: .bold, design: .default))
                     .tracking(0.8)
                     .foregroundStyle(NembraColor.secondaryText.opacity(0.88))
             }
-            .position(x: labelX, y: max(15, point.y - 27))
+            .position(
+                x: labelX,
+                y: max(dynamicTypeSize.isAccessibilitySize ? 22 : 15, point.y - (dynamicTypeSize.isAccessibilitySize ? 33 : 27))
+            )
             .accessibilityHidden(true)
 
             if let peak = distinctPeakFraction(from: current) {
                 let peakPoint = geometry.point(at: Double(peak))
                 Text("RECENT PEAK")
-                    .font(.system(size: 7, weight: .bold, design: .default))
+                    .font(.system(size: microLabelSize, weight: .bold, design: .default))
                     .tracking(0.8)
                     .foregroundStyle(NembraColor.secondaryText.opacity(0.88))
                     .position(
                         x: min(max(peakPoint.x, 42), size.width - 42),
-                        y: peakPoint.y + 21
+                        y: peakPoint.y + (dynamicTypeSize.isAccessibilitySize ? 25 : 21)
                     )
                     .accessibilityHidden(true)
             }
         }
+    }
+
+    private var microLabelSize: CGFloat {
+        min(scaledMicroLabelSize, dynamicTypeSize.isAccessibilitySize ? 13 : 10)
+    }
+
+    private var smallLabelSize: CGFloat {
+        min(scaledSmallLabelSize, dynamicTypeSize.isAccessibilitySize ? 15 : 11)
     }
 
     private func drawIllumination(
@@ -1273,6 +1304,57 @@ enum DashboardSpeedUnitPresentation {
     }
 }
 
+/// Deterministic, non-overlapping cockpit instrument bands. The clearances
+/// mirror the separately rendered top identity and bottom durable ledger; only
+/// presentation geometry lives here, never telemetry or evidence authority.
+struct DashboardInstrumentVerticalLayout: Equatable {
+    let speedFrame: CGRect
+    let energyRailFrame: CGRect
+
+    init(size: CGSize, usesAccessibilityLayout: Bool) {
+        guard size.width.isFinite,
+              size.height.isFinite,
+              size.width > 0,
+              size.height > 0 else {
+            speedFrame = .zero
+            energyRailFrame = .zero
+            return
+        }
+
+        let topClearance = min(
+            usesAccessibilityLayout ? 58 : 54,
+            size.height * 0.25
+        )
+        let bottomClearance = min(
+            usesAccessibilityLayout ? 108 : 62,
+            size.height * 0.36
+        )
+        let availableHeight = max(0, size.height - topClearance - bottomClearance)
+        let gap = min(usesAccessibilityLayout ? 8 : 10, availableHeight * 0.08)
+        let desiredRailHeight = usesAccessibilityLayout ? 74.0 : 98.0
+        let minimumRailHeight = usesAccessibilityLayout ? 64.0 : 82.0
+        let proportionalRailHeight = availableHeight * (usesAccessibilityLayout ? 0.36 : 0.39)
+        let railHeight = min(
+            max(0, availableHeight - gap),
+            min(desiredRailHeight, max(minimumRailHeight, proportionalRailHeight))
+        )
+        let speedHeight = max(0, availableHeight - gap - railHeight)
+
+        speedFrame = CGRect(
+            x: 0,
+            y: topClearance,
+            width: size.width,
+            height: speedHeight
+        )
+        energyRailFrame = CGRect(
+            x: 0,
+            y: speedFrame.maxY + gap,
+            width: size.width,
+            height: railHeight
+        )
+    }
+}
+
 /// Narrow high-frequency render island for speed and propulsion motion. The
 /// animation timeline exists only while an accepted projection is visually
 /// settling; the steady-state instrument has no animation schedule to keep the
@@ -1407,20 +1489,16 @@ struct DashboardSpeedInstrumentView: View {
         usesMetric: Bool
     ) -> some View {
         GeometryReader { proxy in
+            let layout = DashboardInstrumentVerticalLayout(
+                size: proxy.size,
+                usesAccessibilityLayout: dynamicTypeSize.isAccessibilitySize
+            )
             let integerSize = if dynamicTypeSize.isAccessibilitySize {
-                max(90, min(128, min(proxy.size.width * 0.18, proxy.size.height * 0.36)))
+                min(96, max(68, layout.speedFrame.height * 0.60))
             } else {
-                max(98, min(154, min(proxy.size.width * 0.205, proxy.size.height * 0.43)))
+                min(126, max(84, layout.speedFrame.height * 0.72))
             }
-            let fractionSize = max(38, integerSize * 0.34)
-            let gaugeHeight = dynamicTypeSize.isAccessibilitySize
-                ? max(70, min(80, proxy.size.height * 0.21))
-                : max(82, min(104, proxy.size.height * 0.27))
-            // Reserve independent vertical bands for the speed caption, NOW
-            // locator, and the accessibility footer. These are presentation
-            // coordinates only; accepted telemetry remains unchanged.
-            let speedCenterY = proxy.size.height * (dynamicTypeSize.isAccessibilitySize ? 0.25 : 0.32)
-            let gaugeCenterY = proxy.size.height * (dynamicTypeSize.isAccessibilitySize ? 0.57 : 0.69)
+            let fractionSize = max(dynamicTypeSize.isAccessibilitySize ? 24 : 30, integerSize * 0.34)
 
             ZStack {
                 speedReadout(
@@ -1430,14 +1508,24 @@ struct DashboardSpeedInstrumentView: View {
                     fractionSize: fractionSize,
                     usesMetric: usesMetric
                 )
-                .position(x: proxy.size.width / 2, y: speedCenterY)
+                .frame(
+                    width: layout.speedFrame.width,
+                    height: layout.speedFrame.height
+                )
+                .position(x: layout.speedFrame.midX, y: layout.speedFrame.midY)
 
                 DashboardEnergyRailView(
                     state: energyRailState,
                     isSimulatorQA: vehicle.profile == .simulatorQA
                 )
-                    .frame(width: proxy.size.width, height: gaugeHeight)
-                    .position(x: proxy.size.width / 2, y: gaugeCenterY)
+                    .frame(
+                        width: layout.energyRailFrame.width,
+                        height: layout.energyRailFrame.height
+                    )
+                    .position(
+                        x: layout.energyRailFrame.midX,
+                        y: layout.energyRailFrame.midY
+                    )
             }
         }
     }

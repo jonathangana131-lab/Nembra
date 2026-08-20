@@ -513,7 +513,7 @@ final class NembraAppTests: XCTestCase {
         let invalidOptionalPeak = DashboardEnergyRailVisualState(
             currentness: .live,
             acceptedWatts: 320,
-            acceptedCurrentFraction: 0.5,
+            acceptedCurrentFraction: 320.0 / 650.0,
             illuminatedFraction: 0.4,
             acceptedPeakFraction: .nan,
             scaleOrigin: .simulator,
@@ -521,6 +521,49 @@ final class NembraAppTests: XCTestCase {
         ).validatedForPresentation
         XCTAssertEqual(invalidOptionalPeak.currentness, .live)
         XCTAssertNil(invalidOptionalPeak.acceptedPeakFraction)
+
+        let contradictoryNowPosition = DashboardEnergyRailVisualState(
+            currentness: .live,
+            acceptedWatts: 320,
+            acceptedCurrentFraction: 0.9,
+            illuminatedFraction: 0.4,
+            acceptedPeakFraction: nil,
+            scaleOrigin: .simulator,
+            scaleCeilingWatts: 650
+        )
+        XCTAssertEqual(contradictoryNowPosition.validatedForPresentation, .unavailable)
+
+        let aboveEnvelope = DashboardEnergyRailVisualState(
+            currentness: .live,
+            acceptedWatts: 1_200,
+            acceptedCurrentFraction: 1,
+            illuminatedFraction: 0.9,
+            acceptedPeakFraction: 1,
+            scaleOrigin: .simulator,
+            scaleCeilingWatts: 1_000
+        ).validatedForPresentation
+        XCTAssertEqual(aboveEnvelope.currentness, .live)
+        XCTAssertEqual(aboveEnvelope.acceptedWatts, 1_200)
+        XCTAssertEqual(aboveEnvelope.acceptedCurrentFraction, 1)
+    }
+
+    func testCockpitInstrumentBandsStaySeparatedAtIPhone12LandscapeSizes() {
+        for usesAccessibilityLayout in [false, true] {
+            let layout = DashboardInstrumentVerticalLayout(
+                size: CGSize(width: 796, height: 372),
+                usesAccessibilityLayout: usesAccessibilityLayout
+            )
+
+            XCTAssertFalse(layout.speedFrame.isEmpty)
+            XCTAssertFalse(layout.energyRailFrame.isEmpty)
+            XCTAssertFalse(layout.speedFrame.intersects(layout.energyRailFrame))
+            XCTAssertLessThan(layout.speedFrame.maxY, layout.energyRailFrame.minY)
+            XCTAssertGreaterThanOrEqual(layout.speedFrame.minY, usesAccessibilityLayout ? 58 : 54)
+            XCTAssertLessThanOrEqual(
+                layout.energyRailFrame.maxY,
+                usesAccessibilityLayout ? 264 : 310
+            )
+        }
     }
 
     func testCockpitRenderScheduleMountsTimelineOnlyForAcceptedLiveSettling() {

@@ -766,10 +766,10 @@ final class NembraUITests: XCTestCase {
             ]
         )
 
-        // Keep capture terminal: exact hosted evidence shows a later XCUI event
-        // can otherwise block on the landscape animation-idle notification.
+        // The defer owns terminal cleanup exactly once. Exact hosted evidence
+        // shows a second explicit termination can itself wait on landscape
+        // animation idleness after the kept screenshot.
         keepScreenshot(named: "Cockpit Drive Accessibility XXXL - Simulator QA Only")
-        app.terminate()
     }
 
     @MainActor
