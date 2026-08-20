@@ -37,10 +37,10 @@ if missing:
 # it in subcommand help; otherwise leave the raw help artifact for exact-head review rather than
 # inventing an unsupported enum value.
 if "appDataContainer" not in text:
-    print("DEVICETCTL_APP_DATA_DOMAIN_NOT_ENUMERATED_IN_SUBCOMMAND_HELP")
+    print("DEVICECTL_APP_DATA_DOMAIN_NOT_ENUMERATED_IN_SUBCOMMAND_HELP")
 else:
-    print("DEVICETCTL_APP_DATA_DOMAIN_ENUMERATED")
-print("DEVICETCTL_COPY_TO_CONTRACT_PRESENT")
+    print("DEVICECTL_APP_DATA_DOMAIN_ENUMERATED")
+print("DEVICECTL_COPY_TO_CONTRACT_PRESENT")
 PY
 
-printf '%s\n' 'DEVICETCTL_MANIFEST_TRANSPORT_PROBE_COMPLETE'
+printf '%s\n' 'DEVICECTL_MANIFEST_TRANSPORT_PROBE_COMPLETE'
