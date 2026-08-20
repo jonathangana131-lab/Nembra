@@ -1,6 +1,8 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
+import tempfile
 import unittest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "es80_field_authorization_rendezvous.py"
@@ -30,8 +32,17 @@ class SignerRendezvousTests(unittest.TestCase):
             ),
         }
 
+    def canonical_document(self) -> bytes:
+        return rendezvous.canonical_json_bytes(self.value)
+
+    def write_document(self, root: Path, name: str = "rendezvous.json") -> Path:
+        path = root / name
+        path.write_bytes(self.canonical_document())
+        path.chmod(0o600)
+        return path.resolve()
+
     def test_canonical_round_trip_is_closed_and_nonauthorizing(self) -> None:
-        data = rendezvous.canonical_json_bytes(self.value)
+        data = self.canonical_document()
         decoded = rendezvous.verify_rendezvous_bytes(data)
         self.assertEqual(decoded, self.value)
         self.assertFalse(data.endswith(b"\n"))
@@ -98,6 +109,58 @@ class SignerRendezvousTests(unittest.TestCase):
             with self.subTest(key=key):
                 self.assertIn(key, source)
         self.assertNotIn("startedAtUptimeNanoseconds:", source)
+
+    def test_regular_single_link_document_is_read_from_one_descriptor(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = self.write_document(Path(temporary).resolve())
+            data = rendezvous._read_exact(path)
+        self.assertEqual(data, self.canonical_document())
+
+    def test_final_symlink_is_rejected_without_following_it(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            target = self.write_document(root, "target.json")
+            link = root / "rendezvous.json"
+            link.symlink_to(target)
+            with self.assertRaises(rendezvous.SignerRendezvousError):
+                rendezvous._read_exact(link)
+
+    def test_parent_symlink_is_rejected_without_path_reopen(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            real = root / "real"
+            real.mkdir(mode=0o700)
+            self.write_document(real)
+            alias = root / "alias"
+            alias.symlink_to(real, target_is_directory=True)
+            with self.assertRaises(rendezvous.SignerRendezvousError):
+                rendezvous._read_exact(alias / "rendezvous.json")
+
+    def test_hard_link_alias_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            target = self.write_document(root, "target.json")
+            alias = root / "rendezvous.json"
+            os.link(target, alias)
+            with self.assertRaises(rendezvous.SignerRendezvousError):
+                rendezvous._read_exact(alias)
+
+    def test_group_or_world_writable_document_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            path = self.write_document(root)
+            path.chmod(0o620)
+            with self.assertRaises(rendezvous.SignerRendezvousError):
+                rendezvous._read_exact(path)
+
+    def test_source_never_reopens_validated_path_with_pathlib(self) -> None:
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('getattr(os, "O_NOFOLLOW", None)', source)
+        self.assertIn("os.fstat(descriptor)", source)
+        self.assertIn("identity(after) != identity(before)", source)
+        self.assertNotIn("candidate.read_bytes()", source)
+        self.assertNotIn("candidate.is_file()", source)
+        self.assertNotIn("candidate.is_symlink()", source)
 
 
 if __name__ == "__main__":
