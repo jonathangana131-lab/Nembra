@@ -37,12 +37,9 @@ remote branch `agent/cockpit-1-0-redesign`, targeting
 
 - Latest pushed Cockpit authority/audit checkpoint recorded here:
   `71fe1c4cb2bf0c8ed3a1476eab75970ee7ab49b6`
-- Latest pushed Cockpit implementation checkpoint recorded here: pending the
-  coherent post-V4 Drive source commit currently being validated on the isolated
-  branch. The precommit six-file source/test candidate diff is
-  `c291e740a274b2deb5ab4c97fe719fbe961cb3ef4e2c36110543fb9b25e63458`;
-  it is not continuity-secured until the branch commit is pushed and the remote
-  ref is verified.
+- Latest pushed Cockpit implementation checkpoint recorded here:
+  `85dc4b70b7981502bd909dd6d7c628f7e8e4c700`; local and remote branch refs
+  were verified equal after push.
 - Cockpit recovery authority:
   `docs/continuity/COCKPIT_EXPERIENCE.md`
 - Typed truth matrix:
@@ -140,8 +137,8 @@ Hosted evidence is in progress and is not yet transferable:
 - `Capture V16 Standalone Exact-Head` run [`32310195334`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32310195334), `Capture Field Handoff Provenance` run [`32310195368`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32310195368), and `Capture Standalone Visual Evidence` run [`32310195430`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32310195430) are running/queued at the same exact SHA.
 - `Capture TODAY Field Candidate Preflight QA` run [`32310195345`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32310195345) and `Capture TODAY Final GO QA` run [`32310195336`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32310195336) are green at exact `245fb44a…`; they remain nonphysical/non-authorizing contract evidence.
 
-Separately, the isolated Cockpit branch contains a compile-clean but not-yet-pushed
-Drive candidate in `AppBootstrap.swift`, the three Dashboard source files,
+Separately, the isolated Cockpit branch contains a compile-clean, pushed Drive
+checkpoint in `AppBootstrap.swift`, the three Dashboard source files,
 `NembraAppTests.swift`, `NembraUITests.swift`, and the two continuity records.
 Local Xcode 26.1 diagnostic evidence: all Swift files parse; focused NembraCore
 truth suites pass 49/49; strict app build and strict app/unit/UI
@@ -197,7 +194,14 @@ The latest completed exact-head baseline is `b3199bea8a7bde4c10da54d7444e4fb57eb
 4. If the product run is red, apply only the narrow evidenced fix in the files named by the failure. Preserve the passing battery-toggle, exact-scene portrait restoration, telemetry truth, daily continuity, and performance gates.
 5. Before every new checkpoint, run parsers, `git diff --check`, the three focused source suites, and a secret/scope audit; commit/push intentionally, verify the remote branch SHA, then update this file and PR #3675 again.
 6. Do not merge until every exact-current-head gate is green and inspected. Home remains visually unfinished while the temporary unlicensed/low-resolution ES80 asset is present even if functional CI turns green.
-7. After this bounded truth/CI checkpoint is stable, start the next deep product aspect with multiple internal iPhone 12 landscape cockpit studies from the retained requirements and selected Home language. V4 remains requirements-only/rejected visually, and the cockpit battery remains one value inside one instrument: percentage by default, tap to range, tap back, with SOC fill unchanged.
+7. The isolated Cockpit branch has already completed multiple internal studies and
+   pushed its first post-V4 Drive vertical slice. Its next action is target-branch
+   integration followed by exact-head Xcode 27 screenshots, accessibility, and
+   Release hitch evidence, then same-state visual iteration. Do not restart studies
+   or widen into Navigation/Explore until Drive passes that gate. V4 remains
+   requirements-only/rejected visually, and the cockpit battery remains one value
+   inside one instrument: percentage by default, tap to range, tap back, with SOC
+   fill unchanged.
 
 ## Rejected designs and approaches
 
@@ -205,7 +209,10 @@ The latest completed exact-head baseline is `b3199bea8a7bde4c10da54d7444e4fb57eb
 - Every Horizon V3 cockpit image/layout is rejected prototype history. Do not resurrect its clipped/crooked arc, map collisions, card structure, typography, or styling.
 - Horizon V4 retains requirements authority only. Its PNGs and current runtime visual execution are rejected pixel targets; `docs/design-reference/horizon-v4-final/V4_COCKPIT_VISUAL_REJECTED.md` is the durable rejection record.
 - The selected portrait package under `docs/design-reference/nembra-1.0-gold-glass/` is the sole Home/Rides/Vehicle/Settings composition authority.
-- The next cockpit visual direction must be developed through several internal iPhone 12 landscape studies from retained requirements and the selected Home language. Do not present the first runnable layout as complete.
+- Four internal iPhone 12 landscape studies and a first post-V4 Drive vertical
+  slice now exist. The refined Energy Chamber is only an internal skeleton; refine
+  it from exact Xcode 27 comparison evidence and never present this first runnable
+  layout as complete.
 - Cockpit battery is one unified in-instrument value: percentage by default, tap to range, tap back. SOC fill always means charge; simultaneous/detached range is forbidden.
 - Do not convert Capture into a second product app or let hardware waiting freeze main-app work.
 - Do not fabricate BLE facts, range, route progress, ride totals, or road coverage. Simulator fixtures stay Debug+iOS-Simulator-only and visibly disclosed.
