@@ -46,9 +46,6 @@ class AppAuthorizationLifecycleWiringTests(unittest.TestCase):
         self.assertIn("fieldAuthorization", self.app)
 
     def test_real_entrypoint_drives_handoff_to_armed_before_off1(self) -> None:
-        # Lifecycle admissions are useless if the installed app never advances the retained manifest
-        # and signed envelope through the package-owned one-shot session. Presence is never authority;
-        # the entrypoint must consume the controller's verified handoff seam and gate OFF1 on `.armed`.
         self.assertIn("advanceInboxHandoffIfAvailable()", self.app)
         self.assertIn("fieldAuthorization.stage == .armed", self.app)
         handoff = self.app.index("advanceInboxHandoffIfAvailable()")
@@ -155,7 +152,7 @@ class AppAuthorizationLifecycleWiringTests(unittest.TestCase):
             self.assertNotIn(forbidden, self.app)
 
     def test_foreground_and_view_abandonment_revoke_unfinished_authority(self) -> None:
-        foreground = self.section("func appDidLoseForeground()", "func prepareForShare()")
+        foreground = self.section("func appDidLoseForeground()", "var privateConfig: Bool")
         view_exit = self.section(
             "func abandonCorrelationForViewExit()",
             "func appDidLoseForeground()",
