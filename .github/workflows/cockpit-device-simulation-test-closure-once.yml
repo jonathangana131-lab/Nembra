@@ -16,14 +16,14 @@ jobs:
     timeout-minutes: 10
     env:
       TARGET_BRANCH: sol/cockpit-physical-simulation-authority-fence-20260820
-      EXPECTED_PARENT: 7b11693a5ca3c804648ccbe018825c2be2260fd4
+      EXPECTED_PARENT: 9b9407a4a89f40501969ae7eb76a7639e8e654ed
       TEST_SOURCE: NembraAppTests/NembraAppTests.swift
       SELF_WORKFLOW: .github/workflows/cockpit-device-simulation-test-closure-once.yml
     steps:
       - name: Checkout exact bounded authoring head
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.sha }}
+          ref: sol/cockpit-physical-simulation-authority-fence-20260820
           fetch-depth: 0
           persist-credentials: true
 
