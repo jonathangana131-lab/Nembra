@@ -1,0 +1,103 @@
+name: Capture remove duplicate app timeout gpt56
+
+on:
+  push:
+    branches:
+      - capture/one-time-ble-dump-gpt56
+    paths:
+      - .github/workflows/capture-remove-duplicate-timeout-gpt56.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: xcode-27
+    timeout-minutes: 30
+    env:
+      TARGET_BRANCH: capture/one-time-ble-dump-gpt56
+      WORKFLOW_PATH: .github/workflows/capture-remove-duplicate-timeout-gpt56.yml
+      APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: capture/one-time-ble-dump-gpt56
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact branch authoring head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git branch --show-current)" = "$TARGET_BRANCH"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          test "$(git diff-tree --no-commit-id --name-only -r HEAD | sort)" = "$WORKFLOW_PATH"
+
+      - name: Remove competing app-owned observation timeout
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text(encoding="utf-8")
+          start_marker = """                if self.applicationUpdateAdmissionsInFlight == 0,\n                   (self.canonicalObservedAgeSeconds ?? 0) > 60,\n                   self.applicationUpdateCount == 0 {\n"""
+          end_marker = """\n                try? await Task.sleep(for: .seconds(1))\n"""
+          start = source.find(start_marker)
+          if start < 0:
+              raise SystemExit("duplicate app timeout start marker not found")
+          if source.find(start_marker, start + 1) >= 0:
+              raise SystemExit("duplicate app timeout start marker is not unique")
+          end = source.find(end_marker, start)
+          if end < 0:
+              raise SystemExit("watchdog sleep anchor not found after duplicate timeout")
+          removed = source[start:end]
+          required = [
+              "markApplicationObservationTimedOut(for: token)",
+              "authenticated_application_timeout",
+              "self.sdkLocalBLEOnline = false",
+          ]
+          for needle in required:
+              if needle not in removed:
+                  raise SystemExit(f"expected legacy timeout token missing: {needle}")
+          source = source[:start] + source[end:]
+          path.write_text(source, encoding="utf-8")
+
+      - name: Enforce physical-truth scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git status --porcelain=v1 | awk '{print $2}' | sort)"
+          test "$changed" = "$APP_SOURCE"
+          git diff --check
+          grep -Fq 'try await self.sessionLedger.observeCurrentConnection(for: token)' "$APP_SOURCE"
+          grep -Fq 'TuyaAuthenticatedReadOnlySessionLedger.MutationError.observationContinuityInvalidated' "$APP_SOURCE"
+          test "$(grep -Fc 'markApplicationObservationTimedOut(for: token)' "$APP_SOURCE")" = 0
+          test "$(grep -Fc 'authenticated_application_timeout' "$APP_SOURCE")" = 0
+          test "$(grep -Fc 'publishDps(' "$APP_SOURCE")" = 0
+          test "$(grep -Fc 'writeValue(' "$APP_SOURCE")" = 0
+
+      - name: Run focused authenticated read-only truth tests
+        working-directory: Packages/NembraBluetoothCapture
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --filter TuyaAuthenticatedReadOnlyPreflightTests
+          swift test --filter TuyaAuthenticatedReadOnlySessionLedgerTests
+          swift test --filter TuyaAuthenticatedTerminalHorizonTests
+          swift test --filter TuyaAlreadyTerminalObservationContinuitySourceTests
+          swift test --filter TuyaApplicationTimeoutPresentationRaceSourceTests
+
+      - name: Publish clean successor and retire authoring workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm "$WORKFLOW_PATH"
+          git add -- "$APP_SOURCE" "$WORKFLOW_PATH"
+          test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n%s\n' "$WORKFLOW_PATH" "$APP_SOURCE" | sort)"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Capture: let package own incomplete observation terminal'
+          trigger_sha="${GITHUB_SHA}"
+          git fetch origin "$TARGET_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$trigger_sha"
+          git push origin HEAD:"$TARGET_BRANCH"
