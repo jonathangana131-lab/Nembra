@@ -104,6 +104,7 @@ public enum AuthenticatedStationaryCaptureInstallManifestVerifier {
     public static let schema = "nembra.es80-authenticated-stationary-install-manifest"
     public static let schemaVersion = 1
     public static let maximumManifestByteCount = 16_384
+    public static let bundleIdentifier = "com.jonathangana131.nembra.capturelearn"
 
     private struct Wire: Codable {
         let schema: String
@@ -135,7 +136,7 @@ public enum AuthenticatedStationaryCaptureInstallManifestVerifier {
     public static func decodeCanonical(
         _ data: Data
     ) throws -> AuthenticatedStationaryCaptureInstallManifest {
-        guard data.count <= maximumManifestByteCount else {
+        guard !data.isEmpty, data.count <= maximumManifestByteCount else {
             throw AuthenticatedStationaryCaptureInstallManifestError.inputByteLimitExceeded
         }
         if let duplicate = PassiveBluetoothStrictJSON.duplicateTopLevelObjectKey(in: data) {
@@ -177,18 +178,18 @@ public enum AuthenticatedStationaryCaptureInstallManifestVerifier {
         guard wire.procedureID == AuthenticatedStationaryCaptureFieldAuthorizationVerifier.procedureID else {
             throw AuthenticatedStationaryCaptureInstallManifestError.unsupportedProcedure
         }
-        guard isValidBundleIdentifier(wire.bundleIdentifier) else {
+        guard wire.bundleIdentifier == bundleIdentifier else {
             throw AuthenticatedStationaryCaptureInstallManifestError.invalidBundleIdentifier
         }
         guard PassiveBluetoothCaptureRuntimeBuildIdentityReader
-            .normalizedFullGitCommitSHA(wire.sourceCommitSHA) == wire.sourceCommitSHA else {
+            .normalizedFullGitCommitSHA(wire.sourceCommitSHA) == wire.sourceCommitSHA,
+              wire.sourceCommitSHA != String(repeating: "0", count: 40) else {
             throw AuthenticatedStationaryCaptureInstallManifestError.invalidSourceCommitSHA
         }
-        guard isValidBuildIdentifier(wire.buildIdentifier) else {
+        guard wire.buildIdentifier == canonicalBuildIdentifier(for: wire.sourceCommitSHA) else {
             throw AuthenticatedStationaryCaptureInstallManifestError.invalidBuildIdentifier
         }
-        guard PassiveBluetoothCaptureRuntimeBuildIdentityReader
-            .normalizedBuildInstanceID(wire.buildInstanceID) == wire.buildInstanceID else {
+        guard isCanonicalUUIDv4(wire.buildInstanceID) else {
             throw AuthenticatedStationaryCaptureInstallManifestError.invalidBuildInstanceID
         }
 
@@ -203,7 +204,7 @@ public enum AuthenticatedStationaryCaptureInstallManifestVerifier {
             ("intendedDevicePseudonymSHA256", wire.intendedDevicePseudonymSHA256),
             ("authorizationEnvelopeSHA256", wire.authorizationEnvelopeSHA256),
         ]
-        if let invalid = digestFields.first(where: { !isCanonicalSHA256($0.1) }) {
+        if let invalid = digestFields.first(where: { !isCanonicalNonzeroSHA256($0.1) }) {
             throw AuthenticatedStationaryCaptureInstallManifestError.invalidDigestField(invalid.0)
         }
 
@@ -226,31 +227,25 @@ public enum AuthenticatedStationaryCaptureInstallManifestVerifier {
         )
     }
 
-    private static func isCanonicalSHA256(_ value: String) -> Bool {
-        value.utf8.count == 64 && value.utf8.allSatisfy {
-            (0x30 ... 0x39).contains($0) || (0x61 ... 0x66).contains($0)
-        }
+    private static func canonicalBuildIdentifier(for sourceCommitSHA: String) -> String {
+        "Capture Build V14-\(sourceCommitSHA.prefix(12))"
     }
 
-    private static func isValidBundleIdentifier(_ value: String) -> Bool {
-        guard !value.isEmpty, value.utf8.count <= 255,
-              value == value.trimmingCharacters(in: .whitespacesAndNewlines) else {
+    private static func isCanonicalUUIDv4(_ value: String) -> Bool {
+        guard PassiveBluetoothCaptureRuntimeBuildIdentityReader.normalizedBuildInstanceID(value) == value else {
             return false
         }
-        return value.utf8.allSatisfy {
-            (0x30 ... 0x39).contains($0) || (0x41 ... 0x5A).contains($0)
-                || (0x61 ... 0x7A).contains($0) || $0 == 0x2D || $0 == 0x2E
-        }
+        let bytes = Array(value.utf8)
+        guard bytes.count == 36, bytes[14] == 0x34 else { return false }
+        return [0x38, 0x39, 0x61, 0x62].contains(bytes[19])
     }
 
-    private static func isValidBuildIdentifier(_ value: String) -> Bool {
-        guard !value.isEmpty, value.utf8.count <= 128,
-              value == value.trimmingCharacters(in: .whitespacesAndNewlines) else {
-            return false
-        }
-        return !value.unicodeScalars.contains { scalar in
-            CharacterSet.controlCharacters.contains(scalar)
-        }
+    private static func isCanonicalNonzeroSHA256(_ value: String) -> Bool {
+        value.utf8.count == 64
+            && value != String(repeating: "0", count: 64)
+            && value.utf8.allSatisfy {
+                (0x30 ... 0x39).contains($0) || (0x61 ... 0x66).contains($0)
+            }
     }
 
     private static func sha256Hex(_ data: Data) -> String {
