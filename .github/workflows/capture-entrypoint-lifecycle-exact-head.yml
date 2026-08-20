@@ -5,12 +5,15 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     branches:
       - product/capture-1-0-main-20260818
+      - capture/app-container-directory-bootstrap-recovery-gpt56sol
     paths:
       - 'NembraApp/App/NembraCaptureEntrypoint.swift'
       - 'NembraApp/App/NembraCaptureFieldAuthorizationController.swift'
       - 'NembraCapture.xcodeproj/**'
       - 'Packages/NembraBluetoothCapture/**'
       - 'scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py'
+      - '.github/workflows/capture-app-authorization-close-one-shot.yml'
+      - '.github/workflows/capture-app-authorization-race-safe-go.yml'
       - '.github/workflows/capture-entrypoint-lifecycle-exact-head.yml'
   push:
     branches:
@@ -21,6 +24,8 @@ on:
       - 'NembraCapture.xcodeproj/**'
       - 'Packages/NembraBluetoothCapture/**'
       - 'scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py'
+      - '.github/workflows/capture-app-authorization-close-one-shot.yml'
+      - '.github/workflows/capture-app-authorization-race-safe-go.yml'
       - '.github/workflows/capture-entrypoint-lifecycle-exact-head.yml'
   workflow_dispatch:
 
@@ -38,6 +43,8 @@ jobs:
     env:
       SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
+      SOURCE_WORKFLOW: .github/workflows/capture-app-authorization-close-one-shot.yml
+      MATERIALIZER_WORKFLOW: .github/workflows/capture-app-authorization-race-safe-go.yml
     steps:
       - name: Checkout immutable subject
         uses: actions/checkout@v6
@@ -53,9 +60,60 @@ jobs:
           actual="$(git rev-parse --verify HEAD^{commit})"
           test "$actual" = "$SUBJECT_SHA"
           test -f "$APP_SOURCE"
+          test -f "$SOURCE_WORKFLOW"
+          test -f "$MATERIALIZER_WORKFLOW"
           test -f scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
           test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE" || true)" = 0
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
           printf 'NEMBRA_CAPTURE_ENTRYPOINT_AUTH_SUBJECT=%s physicalAuthorityCreated=false deviceContacted=false\n' "$actual"
+
+      - name: Materialize canonical lifecycle transform in exact-head workspace
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path(os.environ["MATERIALIZER_WORKFLOW"]).read_text(encoding="utf-8")
+          marker = "      - name: Materialize canonical lifecycle transform\n"
+          section = workflow.index(marker)
+          run_marker = "        run: |\n"
+          start = workflow.index(run_marker, section) + len(run_marker)
+          end = workflow.index("\n      - name:", start)
+          program = textwrap.dedent(workflow[start:end])
+          required = [
+              "SOURCE_WORKFLOW",
+              "admitOFF1Start",
+              "admitAuthenticationStart",
+              "admitOfficialConnectionStart",
+              "admitObservationStart",
+              "freezeAcceptedArtifactForAuthorizationSeal",
+              "sealAfterAcceptedArtifactFreeze",
+              "app.write_text(source, encoding=\"utf-8\")",
+          ]
+          for token in required:
+              if token not in program:
+                  raise SystemExit(f"race-safe materializer missing required token: {token}")
+          namespace = {
+              "__name__": "__main__",
+              "__file__": "<capture-entrypoint-lifecycle-exact-head-materializer>",
+          }
+          exec(compile(program, namespace["__file__"], "exec", dont_inherit=True), namespace)
+
+      - name: Enforce transformed exact-head authority shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test "$(git status --porcelain=v1 | awk '{print $2}' | sort | tr '\n' ' ' | sed 's/ $//')" = "$APP_SOURCE"
+          grep -Fq 'fieldAuthorization.stage == .armed' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitOFF1Start()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitAuthenticationStart()' "$APP_SOURCE"
+          grep -Fq 'try fieldAuthorization.admitOfficialConnectionStart()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitObservationStart()' "$APP_SOURCE"
+          grep -Fq 'try self.freezeAcceptedArtifactForAuthorizationSeal()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()' "$APP_SOURCE"
+          test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE")" = 0
 
       - name: Enforce real app lifecycle source contract
         shell: bash
@@ -71,12 +129,14 @@ jobs:
           swift test --filter AuthenticatedStationaryCaptureAppSessionTests
           swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthorizationInboxAppAdapter
           swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
+          swift test --filter CaptureAuthorizationTransferBootstrapSourceTests
           swift test --filter TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
 
       - name: Build standalone Capture on Xcode 27
         shell: bash
         run: |
           set -euo pipefail
+          test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE")" = 0
           xcodebuild -version
           xcodebuild \
             -project NembraCapture.xcodeproj \
@@ -91,5 +151,5 @@ jobs:
         if: success()
         shell: bash
         run: |
-          printf '%s\n' 'PROVEN: the bound exact software subject satisfies the real app authorization lifecycle source contract, focused package contracts, and standalone Xcode 27 build.'
+          printf '%s\n' 'PROVEN: the bound exact software subject satisfies the materialized real app authorization lifecycle source contract, focused package contracts, and standalone Xcode 27 build.'
           printf '%s\n' 'NOT PROVEN: production trust root, signed install custody, live app-container transfer, physical iPhone/ES80 authorization, telemetry semantics, commands, or physical GO.'
