@@ -21,6 +21,7 @@ die() { builtin printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 [[ "$(/usr/bin/uname -s)" == "Darwin" ]] || die "Run this on the intended field Mac."
 [[ -x /usr/bin/python3 ]] || die "System Python 3 is required."
 [[ -x /usr/bin/shasum ]] || die "System shasum is required."
+[[ -x /usr/bin/git ]] || die "System Git is required for immutable nested-tool custody."
 
 # PRE-INSTALL ONLY.
 #
@@ -120,7 +121,7 @@ PY
 }
 
 run_retained_input_self_test() {
-  local test_root test_file test_digest
+  local test_root test_file test_digest hard_link
   test_root="$(/usr/bin/mktemp -d "/private/tmp/nembra-retained-install-self-test.XXXXXX")"
   [[ "$test_root" == "/private/tmp/nembra-retained-install-self-test."* ]] || die "Self-test temporary path is invalid."
   /bin/chmod 700 "$test_root"
@@ -129,13 +130,22 @@ run_retained_input_self_test() {
   /bin/chmod 600 "$test_file"
   test_digest="$(/usr/bin/shasum -a 256 "$test_file" | /usr/bin/awk '{print $1}')"
   validate_retained_input "self-test subject" "$test_file" "$test_digest" private 1024
+
   /bin/ln -s "$test_file" "$test_root/substituted.json"
   if validate_retained_input "self-test substituted subject" "$test_root/substituted.json" "$test_digest" private 1024 2>/dev/null; then
     /bin/rm -rf -- "$test_root"
     die "Self-test accepted a symlinked retained subject."
   fi
+
+  hard_link="$test_root/hard-linked.json"
+  /bin/ln "$test_file" "$hard_link"
+  if validate_retained_input "self-test hard-linked subject" "$hard_link" "$test_digest" private 1024 2>/dev/null; then
+    /bin/rm -rf -- "$test_root"
+    die "Self-test accepted a multiply linked retained subject."
+  fi
+
   /bin/rm -rf -- "$test_root"
-  say "Retained-input no-follow/hash/mode self-test passed"
+  say "Retained-input no-follow/hash/mode/link self-test passed"
 }
 
 case "${1:-}" in
@@ -174,14 +184,52 @@ validate_retained_input "accepted Final-GO subject" "$NEMBRA_ACCEPTED_FINAL_GO_S
 validate_retained_input "accepted Tuya-lock subject" "$NEMBRA_ACCEPTED_TUYA_LOCK_SUBJECT_PATH" "$NEMBRA_ACCEPTED_TUYA_LOCK_SUBJECT_SHA256" public 4194304
 validate_retained_input "intended-device pseudonymous binding" "$NEMBRA_INTENDED_DEVICE_PSEUDONYMOUS_BINDING_PATH" "$NEMBRA_INTENDED_DEVICE_PSEUDONYMOUS_BINDING_SHA256" private 1048576
 
+# The semantic cross-binding code is part of the accepted Capture source, not caller data. Capture
+# exact nested-tool bytes from the immutable Git objects for the current clean checkout before any
+# import. A same-UID working-tree edit after this point therefore cannot replace the verifier logic.
+SOURCE_SHA="$(GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git -C "$ROOT" rev-parse --verify 'HEAD^{commit}' | /usr/bin/tr '[:upper:]' '[:lower:]')"
+[[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || die "Current Capture source commit identity is malformed."
+[[ -z "$(GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git -C "$ROOT" status --porcelain=v1 --untracked-files=all)" ]] || die "Capture checkout has local changes; nested authority code must come from one clean accepted source."
+
+NESTED_TOOL_ROOT="$(/usr/bin/mktemp -d "/private/tmp/nembra-retained-install-tools.XXXXXX")"
+[[ "$NESTED_TOOL_ROOT" == "/private/tmp/nembra-retained-install-tools."* ]] || die "Nested-tool temporary path is invalid."
+/bin/chmod 700 "$NESTED_TOOL_ROOT"
+cleanup_nested_tools() {
+  if [[ -n "${NESTED_TOOL_ROOT:-}" && -d "$NESTED_TOOL_ROOT" ]]; then
+    /bin/rm -rf -- "$NESTED_TOOL_ROOT"
+  fi
+}
+trap cleanup_nested_tools EXIT
+
+capture_accepted_git_tool() {
+  local repository_path="$1"
+  local destination="$2"
+  local blob actual_blob
+
+  blob="$(GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git -C "$ROOT" rev-parse "$SOURCE_SHA:$repository_path" 2>/dev/null)" || die "Accepted nested retained-install tool is missing: $repository_path"
+  [[ "$blob" =~ ^[0-9a-f]{40}$ ]] || die "Accepted nested retained-install tool Git identity is malformed: $repository_path"
+  GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git -C "$ROOT" cat-file blob "$blob" > "$destination" || die "Could not capture accepted nested retained-install tool: $repository_path"
+  /bin/chmod 600 "$destination"
+  actual_blob="$(GIT_NO_REPLACE_OBJECTS=1 /usr/bin/git -C "$ROOT" hash-object "$destination")" || die "Could not authenticate captured nested retained-install tool: $repository_path"
+  [[ "$actual_blob" == "$blob" ]] || die "Captured nested retained-install tool does not match its accepted Git object: $repository_path"
+}
+
+capture_accepted_git_tool \
+  "scripts/ci/es80_retained_install_cross_binding.py" \
+  "$NESTED_TOOL_ROOT/es80_retained_install_cross_binding.py"
+capture_accepted_git_tool \
+  "scripts/ci/es80_retained_install_manifest.py" \
+  "$NESTED_TOOL_ROOT/es80_retained_install_manifest.py"
+
 # Re-read only the small JSON subjects through no-follow descriptors and prove they all name one
 # identical retained install. The independently accepted IPA/Tuya/device digests are inputs; the IPA
-# itself is never loaded into this Python process.
+# itself is never loaded into this Python process. The semantic helper and its manifest dependency
+# are imported only from the Git-authenticated private snapshots captured above.
 /usr/bin/env -i \
   PATH=/usr/bin:/bin \
   LC_ALL=C \
   /usr/bin/python3 -I -B - \
-    "$ROOT" \
+    "$NESTED_TOOL_ROOT" "$SOURCE_SHA" \
     "$NEMBRA_RETAINED_INSTALL_MANIFEST_PATH" "$NEMBRA_RETAINED_INSTALL_MANIFEST_SHA256" \
     "$NEMBRA_ACCEPTED_BUILD_SUBJECT_PATH" "$NEMBRA_ACCEPTED_BUILD_SUBJECT_SHA256" \
     "$NEMBRA_ACCEPTED_EVIDENCE_SUBJECT_PATH" "$NEMBRA_ACCEPTED_EVIDENCE_SUBJECT_SHA256" \
@@ -197,7 +245,7 @@ import sys
 from pathlib import Path, PurePath
 
 (
-    root_raw,
+    tool_root_raw, source_sha,
     manifest_path, manifest_sha,
     build_path, build_sha,
     evidence_path, evidence_sha,
@@ -244,14 +292,14 @@ def read_exact(path_raw: str, expected: str, maximum: int) -> bytes:
     finally:
         os.close(descriptor)
 
-root = Path(root_raw)
-helper_path = root / "scripts/ci/es80_retained_install_cross_binding.py"
+tool_root = Path(tool_root_raw)
+helper_path = tool_root / "es80_retained_install_cross_binding.py"
 spec = importlib.util.spec_from_file_location("nembra_retained_install_cross_binding", helper_path)
 if spec is None or spec.loader is None:
     raise RuntimeError("retained-install cross-binding helper is unavailable")
 helper = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(helper)
-helper.verify_cross_binding(
+verified_manifest = helper.verify_cross_binding(
     install_manifest_data=read_exact(manifest_path, manifest_sha, 16_384),
     external_build_record_data=read_exact(build_path, build_sha, 1_048_576),
     signed_build_evidence_data=read_exact(evidence_path, evidence_sha, 1_048_576),
@@ -264,6 +312,8 @@ helper.verify_cross_binding(
     accepted_tuya_lock_sha256=tuya_lock_sha.lower(),
     accepted_intended_device_pseudonym_sha256=device_binding_sha.lower(),
 )
+if verified_manifest.get("sourceCommitSHA") != source_sha:
+    raise RuntimeError("retained manifest source commit does not match the accepted installer checkout")
 PY
 
 say "Stable retained-install subjects cross-bound to one canonical manifest"
