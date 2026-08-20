@@ -18,12 +18,13 @@ from typing import Any
 SCHEMA = "nembra.es80-authenticated-stationary-install-manifest"
 SCHEMA_VERSION = 1
 PROCEDURE_ID = "ES80-AUTHENTICATED-STATIONARY-v1"
+BUNDLE_IDENTIFIER = "com.jonathangana131.nembra.capturelearn"
 MAX_MANIFEST_BYTES = 16_384
 
 SHA40 = re.compile(r"^[0-9a-f]{40}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 BUILD_INSTANCE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 )
 
 BINDING_KEYS = (
@@ -76,53 +77,52 @@ def _reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return value
 
 
-def _canonical_sha256(value: object, label: str) -> str:
-    if not isinstance(value, str) or not SHA256.fullmatch(value):
-        raise RetainedInstallManifestError(f"{label} is not a canonical lowercase SHA-256")
+def _canonical_nonzero_sha256(value: object, label: str) -> str:
+    if (
+        not isinstance(value, str)
+        or not SHA256.fullmatch(value)
+        or value == "0" * 64
+    ):
+        raise RetainedInstallManifestError(
+            f"{label} is not a canonical nonzero lowercase SHA-256"
+        )
     return value
 
 
 def _canonical_build_instance(value: object) -> str:
     if not isinstance(value, str) or not BUILD_INSTANCE.fullmatch(value):
         raise RetainedInstallManifestError(
-            "buildInstanceID is not the canonical lowercase build-instance identity"
+            "buildInstanceID is not one canonical lowercase UUIDv4 build-instance identity"
         )
-    return value
-
-
-def _build_identifier(value: object) -> str:
-    if not isinstance(value, str) or not value or len(value.encode("utf-8")) > 128:
-        raise RetainedInstallManifestError("buildIdentifier is invalid")
-    if value != value.strip() or any(
-        ord(character) < 0x20 or 0x7F <= ord(character) <= 0x9F for character in value
-    ):
-        raise RetainedInstallManifestError("buildIdentifier is invalid")
-    return value
-
-
-def _bundle_identifier(value: object) -> str:
-    if not isinstance(value, str) or not value or len(value.encode("utf-8")) > 255:
-        raise RetainedInstallManifestError("bundleIdentifier is invalid")
-    if value != value.strip():
-        raise RetainedInstallManifestError("bundleIdentifier is invalid")
-    if not all(character.isascii() and (character.isalnum() or character in "-.") for character in value):
-        raise RetainedInstallManifestError("bundleIdentifier is invalid")
     return value
 
 
 def _validate_bindings(value: dict[str, Any]) -> dict[str, Any]:
     if value.get("procedureID") != PROCEDURE_ID:
         raise RetainedInstallManifestError("manifest names the wrong procedure")
+
     source = value.get("sourceCommitSHA")
-    if not isinstance(source, str) or not SHA40.fullmatch(source):
+    if (
+        not isinstance(source, str)
+        or not SHA40.fullmatch(source)
+        or source == "0" * 40
+    ):
         raise RetainedInstallManifestError(
-            "sourceCommitSHA is not one canonical lowercase full Git SHA"
+            "sourceCommitSHA is not one canonical nonzero lowercase full Git SHA"
         )
-    _bundle_identifier(value.get("bundleIdentifier"))
-    _build_identifier(value.get("buildIdentifier"))
+
+    if value.get("bundleIdentifier") != BUNDLE_IDENTIFIER:
+        raise RetainedInstallManifestError("manifest names the wrong Capture bundle")
+
+    expected_build_identifier = f"Capture Build V14-{source[:12]}"
+    if value.get("buildIdentifier") != expected_build_identifier:
+        raise RetainedInstallManifestError(
+            f"buildIdentifier must be exactly {expected_build_identifier!r} for sourceCommitSHA"
+        )
+
     _canonical_build_instance(value.get("buildInstanceID"))
     for key in DIGEST_KEYS:
-        _canonical_sha256(value.get(key), key)
+        _canonical_nonzero_sha256(value.get(key), key)
     return value
 
 
@@ -189,12 +189,13 @@ def _read_manifest(path: Path) -> bytes:
 
 
 def _self_test() -> None:
+    source = "1" * 40
     example = {
         "procedureID": PROCEDURE_ID,
-        "sourceCommitSHA": "1" * 40,
-        "bundleIdentifier": "com.jonathangana131.nembra.capturelearn",
-        "buildIdentifier": "Capture Build manifest-self-test",
-        "buildInstanceID": "12345678-1234-abcd-8def-123456789abc",
+        "sourceCommitSHA": source,
+        "bundleIdentifier": BUNDLE_IDENTIFIER,
+        "buildIdentifier": f"Capture Build V14-{source[:12]}",
+        "buildInstanceID": "12345678-1234-4abc-8def-123456789abc",
         "retainedIPASHA256": "2" * 64,
         "executableSHA256": "3" * 64,
         "infoPlistSHA256": "4" * 64,
