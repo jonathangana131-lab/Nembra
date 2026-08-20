@@ -1,0 +1,3 @@
+Temporary isolated V3 lifecycle materialization successor. Physical/private Capture remains NO-GO.
+Recovered from stale non-mergeable child after carrier exact-head gate repair.
+The carrier-owned workflow must materialize and then exact-head verify the deterministic app descendant before acceptance.
