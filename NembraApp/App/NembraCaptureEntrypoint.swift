@@ -2,6 +2,7 @@ import AuthenticationServices
 import CoreTransferable
 import Foundation
 import NembraBluetoothCapture
+import NembraCaptureAppAuthorization
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -753,6 +754,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             // Retain the receipt itself as failed-attempt diagnostic evidence; clearing the live
             // attempt identity makes the gate fail closed until a new explicit confirmation.
             if phase == .failed {
+                revokeFieldAuthorization()
                 operatorSafetyAttemptID = nil
                 operatorSafetyAttemptStartedAtUptimeNanoseconds = nil
             }
@@ -786,6 +788,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
     let tuyaUUID: String
 
     private let buildIdentity = NembraCaptureBuildIdentity.current
+    private let fieldAuthorizationAuthorizer = AuthenticatedStationaryCaptureAppAuthorizer()
+    private var fieldAuthorizationGate: AuthenticatedStationaryCaptureCapabilityGate?
     private var byID: [UUID: Candidate] = [:]
     private var correlationSession: PassiveBluetoothPowerCycleObservationSession?
     private var processCorrelationLease: UUID?
@@ -831,6 +835,40 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     deinit { watchdog?.cancel() }
 
+    /// Produces the process-local signer challenge only after the canonical retained-install
+    /// manifest has matched this running application. Returning the prepared attempt is not
+    /// physical authority; the independent signed envelope still has to verify through the
+    /// package-pinned production trust root.
+    func prepareFieldAuthorization(
+        installManifestData: Data
+    ) throws -> AuthenticatedStationaryCapturePreparedAttempt {
+        revokeFieldAuthorization()
+        return try fieldAuthorizationAuthorizer.beginAttempt(
+            installManifestData: installManifestData
+        )
+    }
+
+    /// Installs only the opaque lifecycle gate returned by the app-owned authorizer. The raw
+    /// verifier capability never enters this controller, so every physical boundary below must
+    /// consume the ordered gate transition.
+    func activateFieldAuthorization(
+        envelopeData: Data,
+        installManifestData: Data,
+        preparedAttempt: AuthenticatedStationaryCapturePreparedAttempt
+    ) throws {
+        revokeFieldAuthorization()
+        fieldAuthorizationGate = try fieldAuthorizationAuthorizer.authorize(
+            envelopeData: envelopeData,
+            installManifestData: installManifestData,
+            preparedAttempt: preparedAttempt
+        )
+    }
+
+    private func revokeFieldAuthorization() {
+        fieldAuthorizationGate?.revoke()
+        fieldAuthorizationGate = nil
+    }
+
     func activateMembershipRequestsForView() {
         // A fast inactive -> active transition must not reset the duplicate-retirement fence
         // while an authenticated generation is terminalizing. Once the official Tuya driver has
@@ -843,6 +881,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func abandonCorrelationForViewExit() {
+        revokeFieldAuthorization()
         // Close the screen-lifetime admission boundary before revoking every already-issued grant.
         // A later SwiftUI/account callback must not mint a replacement membership probe off-screen.
         acceptsViewScopedMembershipRequests = false
@@ -910,6 +949,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         // A sealed accepted artifact is immutable and already closed to new evidence. Backgrounding
         // after acceptance must not downgrade or rebuild that frozen result.
         guard phase != .accepted else { return }
+        revokeFieldAuthorization()
         guard !foregroundIntegrityLossHandled else { return }
         foregroundIntegrityLossHandled = true
 
@@ -1206,6 +1246,22 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 self.failLocally("Exact scooter membership could not be proven for this same current SDK account. Bluetooth correlation remains disabled.", "sdk_device_membership_required_before_scan")
                 return
             }
+            guard let fieldAuthorizationGate = self.fieldAuthorizationGate else {
+                self.failLocally(
+                    "The independently verified one-attempt field authorization is unavailable. OFF1 remains locked.",
+                    "field_authorization_missing_before_off1"
+                )
+                return
+            }
+            do {
+                try fieldAuthorizationGate.admitOFF1Start()
+            } catch {
+                self.failLocally(
+                    "The one-attempt field authorization rejected OFF1: \(error.localizedDescription)",
+                    "field_authorization_rejected_off1"
+                )
+                return
+            }
             self.beginCorrelationSeries()
         }
     }
@@ -1471,6 +1527,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func invalidateSDKMembership() {
+        revokeFieldAuthorization()
         let token = currentConnectionToken
         membershipRequestID = UUID()
         membershipBusy = false
@@ -1631,6 +1688,22 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 self.failLocally("Exact confirmed scooter/account authority could not be re-verified immediately before BLE authentication.", "sdk_device_membership_recheck_failed")
                 return
             }
+            guard let fieldAuthorizationGate = self.fieldAuthorizationGate else {
+                self.failLocally(
+                    "The independently verified one-attempt field authorization disappeared before authentication.",
+                    "field_authorization_missing_before_authentication"
+                )
+                return
+            }
+            do {
+                try fieldAuthorizationGate.admitAuthenticationStart()
+            } catch {
+                self.failLocally(
+                    "The one-attempt field authorization rejected authentication: \(error.localizedDescription)",
+                    "field_authorization_rejected_authentication"
+                )
+                return
+            }
             self.beginOfficialConnection(candidate: candidate)
         }
     }
@@ -1645,6 +1718,22 @@ private final class SecureLinkController: NSObject, ObservableObject {
               sdkAccountLoggedIn,
               accountIdentityLeaseIsAuthorized else {
             failLocally("Confirmed build or Tuya account/device authority changed before connection start.", "sdk_authority_changed")
+            return
+        }
+        guard let fieldAuthorizationGate else {
+            failLocally(
+                "The independently verified one-attempt field authorization disappeared before official Tuya connection.",
+                "field_authorization_missing_before_official_connection"
+            )
+            return
+        }
+        do {
+            try fieldAuthorizationGate.admitOfficialConnectionStart()
+        } catch {
+            failLocally(
+                "The one-attempt field authorization rejected official Tuya connection: \(error.localizedDescription)",
+                "field_authorization_rejected_official_connection"
+            )
             return
         }
         guard let newDriver = OfficialTuyaFactory.make() else {
@@ -1917,6 +2006,24 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     sdkLocalBLEOnline = promotionLocalBLEOnline
                     guard promotionLocalBLEOnline else {
                         await recordObservedTransportLoss(token: token)
+                        return
+                    }
+                    guard let fieldAuthorizationGate = self.fieldAuthorizationGate else {
+                        await self.invalidateInternalLifecycle(
+                            token: token,
+                            message: "The independently verified one-attempt field authorization disappeared before observation.",
+                            kind: "field_authorization_missing_before_observation"
+                        )
+                        return
+                    }
+                    do {
+                        try fieldAuthorizationGate.admitObservationStart()
+                    } catch {
+                        await self.invalidateInternalLifecycle(
+                            token: token,
+                            message: "The one-attempt field authorization rejected observation: \(error.localizedDescription)",
+                            kind: "field_authorization_rejected_observation"
+                        )
                         return
                     }
 
@@ -2414,6 +2521,32 @@ private final class SecureLinkController: NSObject, ObservableObject {
                             self.phase = .failed
                             self.message = "The current-attempt stationary safety declaration was no longer valid when acceptance sealed. Relaunch Capture before a new attempt; the package chronology remains diagnostic only."
                             self.log("operator_stationary_safety_attestation_lost_before_acceptance", [
+                                "generation": String(token.diagnosticGeneration)
+                            ])
+                            return
+                        }
+                        guard let fieldAuthorizationGate = self.fieldAuthorizationGate else {
+                            self.currentConnectionToken = nil
+                            self.localBLESettlementToken = nil
+                            self.sdkLocalBLEOnline = false
+                            self.driver = nil
+                            self.phase = .failed
+                            self.message = "The one-attempt field authorization disappeared after package sealing, so accepted promotion was denied. Relaunch Capture before another attempt."
+                            self.log("field_authorization_missing_at_acceptance_seal", [
+                                "generation": String(token.diagnosticGeneration)
+                            ])
+                            return
+                        }
+                        do {
+                            try fieldAuthorizationGate.seal()
+                        } catch {
+                            self.currentConnectionToken = nil
+                            self.localBLESettlementToken = nil
+                            self.sdkLocalBLEOnline = false
+                            self.driver = nil
+                            self.phase = .failed
+                            self.message = "The one-attempt field authorization could not seal after package acceptance: \(error.localizedDescription). Relaunch Capture before another attempt."
+                            self.log("field_authorization_rejected_acceptance_seal", [
                                 "generation": String(token.diagnosticGeneration)
                             ])
                             return
