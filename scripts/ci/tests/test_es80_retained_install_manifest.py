@@ -7,6 +7,11 @@ import tempfile
 import unittest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "es80_retained_install_manifest.py"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+SWIFT_MANIFEST = (
+    REPOSITORY_ROOT
+    / "Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/AuthenticatedStationaryCaptureInstallManifest.swift"
+)
 SPEC = importlib.util.spec_from_file_location("retained_install_manifest", SCRIPT)
 assert SPEC and SPEC.loader
 manifest = importlib.util.module_from_spec(SPEC)
@@ -17,11 +22,11 @@ class RetainedInstallManifestTests(unittest.TestCase):
     def setUp(self) -> None:
         self.bindings = {
             "procedureID": manifest.PROCEDURE_ID,
-            "bundleIdentifier": manifest.BUNDLE_IDENTIFIER,
             "sourceCommitSHA": "1" * 40,
+            "bundleIdentifier": manifest.BUNDLE_IDENTIFIER,
             "buildIdentifier": "Capture Build test",
             "buildInstanceID": "12345678-1234-4abc-8def-123456789abc",
-            "signedInstallableSHA256": "2" * 64,
+            "retainedIPASHA256": "2" * 64,
             "executableSHA256": "3" * 64,
             "infoPlistSHA256": "4" * 64,
             "tuyaDependencyLockSHA256": "5" * 64,
@@ -35,10 +40,30 @@ class RetainedInstallManifestTests(unittest.TestCase):
     def test_round_trip_is_closed_canonical_and_explicitly_nonauthorizing(self) -> None:
         data = manifest.build_manifest(self.bindings)
         value = manifest.verify_manifest_against_expected(data, self.bindings)
-        self.assertEqual(value["manifestKind"], manifest.MANIFEST_KIND)
+        self.assertEqual(value["schema"], manifest.SCHEMA)
+        self.assertEqual(value["version"], manifest.SCHEMA_VERSION)
         self.assertEqual(data, manifest.canonical_json_bytes(json.loads(data)))
+        self.assertFalse(data.endswith(b"\n"))
         self.assertNotIn(b'"decision"', data)
         self.assertNotIn(b'"GO"', data)
+        self.assertNotIn(b'"manifestKind"', data)
+
+    def test_python_wire_contract_matches_swift_decoder_contract(self) -> None:
+        source = SWIFT_MANIFEST.read_text(encoding="utf-8")
+        self.assertIn(f'public static let schema = "{manifest.SCHEMA}"', source)
+        self.assertIn(
+            f"public static let maximumManifestByteCount = {manifest.MAX_MANIFEST_BYTES // 1024}_384"
+            if manifest.MAX_MANIFEST_BYTES == 16_384
+            else f"public static let maximumManifestByteCount = {manifest.MAX_MANIFEST_BYTES}",
+            source,
+        )
+        for key in manifest.MANIFEST_KEYS:
+            with self.subTest(key=key):
+                self.assertIn(f'"{key}"', source)
+        self.assertNotIn('"manifestKind"', source)
+        self.assertNotIn('"signedInstallableSHA256"', source)
+        self.assertIn('"retainedIPASHA256"', source)
+        self.assertIn("encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]", source)
 
     def test_every_exact_binding_drift_is_rejected(self) -> None:
         data = manifest.build_manifest(self.bindings)
@@ -67,19 +92,23 @@ class RetainedInstallManifestTests(unittest.TestCase):
         with self.assertRaises(manifest.RetainedInstallManifestError):
             manifest.verify_manifest_bytes(manifest.canonical_json_bytes(value))
 
-        duplicate = b'{"schema":"x","schema":"y"}\n'
+        duplicate = b'{"schema":"x","schema":"y"}'
         with self.assertRaises(manifest.RetainedInstallManifestError):
             manifest.verify_manifest_bytes(duplicate)
 
-        compact = json.dumps(json.loads(data), sort_keys=True, separators=(",", ":")).encode()
+        pretty = (json.dumps(json.loads(data), indent=2, sort_keys=True) + "\n").encode()
         with self.assertRaises(manifest.RetainedInstallManifestError):
-            manifest.verify_manifest_bytes(compact)
+            manifest.verify_manifest_bytes(pretty)
+
+        newline = data + b"\n"
+        with self.assertRaises(manifest.RetainedInstallManifestError):
+            manifest.verify_manifest_bytes(newline)
 
     def test_malformed_identity_and_zero_digest_are_rejected(self) -> None:
         for key, value in (
             ("sourceCommitSHA", "A" * 40),
             ("buildInstanceID", "12345678-1234-1abc-8def-123456789abc"),
-            ("signedInstallableSHA256", "0" * 64),
+            ("retainedIPASHA256", "0" * 64),
             ("authorizationEnvelopeSHA256", "A" * 64),
         ):
             changed = dict(self.bindings)
