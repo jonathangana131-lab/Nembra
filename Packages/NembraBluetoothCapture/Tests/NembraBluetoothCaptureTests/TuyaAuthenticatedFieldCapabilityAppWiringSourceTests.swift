@@ -30,7 +30,7 @@ struct TuyaAuthenticatedFieldCapabilityAppWiringSourceTests {
     func authenticationAndOfficialConnectionAreCapabilityGated() throws {
         let authentication = try section(
             from: "func authenticate()",
-            through: "private func beginOfficialConnection(candidate: CaptureTargetDevice)"
+            through: "private func beginOfficialConnection(candidate: Candidate)"
         )
         let authenticationAdmission = try #require(
             authentication.range(of: "admitAuthenticationStart()")
@@ -41,7 +41,7 @@ struct TuyaAuthenticatedFieldCapabilityAppWiringSourceTests {
         ))
 
         let connection = try section(
-            from: "private func beginOfficialConnection(candidate: CaptureTargetDevice)",
+            from: "private func beginOfficialConnection(candidate: Candidate)",
             through: "private func authenticated(token: TuyaReadOnlyConnectionToken)"
         )
         let connectionAdmission = try #require(
