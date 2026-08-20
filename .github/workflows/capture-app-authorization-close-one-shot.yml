@@ -1,4 +1,5 @@
 # GO recovery trigger: materialize the stronger end-to-end app authorization closure.
+# GO retry: structural inbox source guard is now merged at carrier a3ecb0edfb0c97ced237a580c3bd2151594f77a3.
 name: Capture app authorization close one-shot
 
 on:
