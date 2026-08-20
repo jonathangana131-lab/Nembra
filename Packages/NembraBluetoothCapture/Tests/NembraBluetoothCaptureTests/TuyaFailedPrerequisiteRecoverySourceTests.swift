@@ -11,7 +11,7 @@ struct TuyaFailedPrerequisiteRecoverySourceTests {
         let body = String(surface)
 
         #expect(body.contains("case .failed:"))
-        #expect(body.contains("!test.fieldBuildIsAuthoritative || !test.privateConfig"))
+        #expect(body.contains("!test.fieldBuildMetadataReady || !test.privateConfig"))
         #expect(body.contains("failureRecoveryContextPanel"))
         #expect(body.contains("test.canRestartFromFreshOFF1 && (!sdkAccount.loggedIn || !test.sdkAccountLoggedIn)"))
         #expect(body.contains("sdkAuthorizationPanel"))
@@ -28,6 +28,7 @@ struct TuyaFailedPrerequisiteRecoverySourceTests {
             to: "var canRestartFromFreshOFF1: Bool"
         )
         #expect(restartAuthority.contains("phase == .failed"))
+        #expect(restartAuthority.contains("fieldAuthorization.stage == .armed"))
         #expect(restartAuthority.contains("currentConnectionToken == nil"))
         #expect(restartAuthority.contains("localBLESettlementToken == nil"))
         #expect(restartAuthority.contains("driver == nil"))
