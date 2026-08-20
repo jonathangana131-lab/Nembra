@@ -8,6 +8,9 @@ import tempfile
 import unittest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "es80_retained_install_manifest.py"
+CROSS_BINDING_TEST = Path(__file__).resolve().with_name(
+    "test_es80_retained_install_cross_binding.py"
+)
 PACKAGE_VERIFIER = (
     Path(__file__).resolve().parents[3]
     / "Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture"
@@ -183,6 +186,19 @@ class RetainedInstallManifestTests(unittest.TestCase):
         )
         self.assertNotIn("physical", result.stdout.lower())
         self.assertNotIn(" go", result.stdout.lower())
+
+    def test_cross_binding_suite_is_part_of_required_manifest_validation(self) -> None:
+        result = subprocess.run(
+            [sys.executable, "-I", str(CROSS_BINDING_TEST)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            result.returncode,
+            0,
+            msg=f"cross-binding suite failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}",
+        )
 
     def test_source_has_no_device_install_network_or_signing_primitive(self) -> None:
         source = SCRIPT.read_text(encoding="utf-8")
