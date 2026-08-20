@@ -53,7 +53,7 @@ jobs:
             scripts/ci/tests/test_es80_sign_field_authorization_execution_custody.py \
             scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py
           /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_evidence.py --self-test
-          /usr/bin/python3 -I scripts/ci/es80_field_authorization_envelope.py --self-test
+          /usr/bin/python3 scripts/ci/es80_field_authorization_envelope.py --self-test
           /usr/bin/python3 -I scripts/ci/tests/test_es80_signed_field_artifact_path_custody.py
           /usr/bin/python3 -I scripts/ci/tests/test_es80_sign_field_authorization_execution_custody.py
           /usr/bin/python3 -I scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py
@@ -75,8 +75,16 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD_SHA"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
-          xcodebuild -version
-          xcodebuild -version | grep -Eq '^Xcode 27([.]|$)'
+          xcode_version="$(xcodebuild -version)"
+          printf '%s\n' "$xcode_version"
+          xcode_first_line="${xcode_version%%$'\n'*}"
+          case "$xcode_first_line" in
+            "Xcode 27"|"Xcode 27."*) ;;
+            *)
+              echo "Expected Xcode 27, got: $xcode_first_line" >&2
+              exit 1
+              ;;
+          esac
 
       - name: Exercise signer custody contracts on Darwin
         run: |
@@ -90,7 +98,7 @@ jobs:
             scripts/ci/tests/test_es80_sign_field_authorization_execution_custody.py \
             scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py
           /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_evidence.py --self-test
-          /usr/bin/python3 -I scripts/ci/es80_field_authorization_envelope.py --self-test
+          /usr/bin/python3 scripts/ci/es80_field_authorization_envelope.py --self-test
           /usr/bin/python3 -I scripts/ci/tests/test_es80_signed_field_artifact_path_custody.py
           /usr/bin/python3 -I scripts/ci/tests/test_es80_sign_field_authorization_execution_custody.py
           /usr/bin/python3 -I scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py
