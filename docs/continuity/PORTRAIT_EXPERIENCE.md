@@ -5,8 +5,9 @@ Updated: 2026-08-19
 ## Recovery authority
 
 - Remote repository: `jonathangana131-lab/Nembra`
-- Integration target: `product/capture-1-0-main-20260818`
-- Portrait branch: `agent/portrait-home-1-0-polish`
+- Active unified branch: `release/nembra-1-0-unified`
+- Integration target: `main`
+- Preserved predecessor branch: `agent/portrait-home-1-0-polish`
 - Isolated worktree directory name used by this task:
   `Nembra-portrait-home-1-0` (local path intentionally not committed).
 - Rebased integration head:
@@ -14,11 +15,14 @@ Updated: 2026-08-19
   checkpoint `0b7e3b27de5e9b547911558ae8ed4cb852becb59`).
 - Latest pushed portrait implementation checkpoint:
   `72ba15f1844ef489fca64cecf5f9b207a2bef533` (remote-verified).
-- Latest remote branch tip verified before this continuity update:
-  `72ba15f1844ef489fca64cecf5f9b207a2bef533`.
+- Final predecessor continuity tip:
+  `0a418aef716fb9053cc9d67064fd56bd87f27677`.
+- Unified merge checkpoint containing the Portrait lane:
+  `d4d8f6c882dac1c2eda634bbdff9121c218fefbb`; the later combined unified
+  implementation checkpoint is `1847627d7c84b62e4f6a9633886d0e3dd756ddfc`.
 - Draft portrait PR: [#3677](https://github.com/jonathangana131-lab/Nembra/pull/3677).
 
-This file is the portrait workstream recovery authority. The root
+This file is the integrated Portrait scope recovery authority. The root
 `DEVELOPMENT_CONTINUITY.md` remains the integration-wide authority.
 
 ## Current focus and acceptance gate
@@ -165,10 +169,11 @@ transfer to `72ba15f18…`.
 
 ## Blockers
 
-- **Code/CI:** commit `72ba15f18…` addresses the four portrait-owned failures
-  from run `32318006928`, but exact-head Xcode 27 must prove closure. It must
-  also prove XXXL reflow, first-fold geometry, retained truth, snapshots, and
-  render-island behavior.
+- **Code/CI:** exact predecessor-tip Xcode 27 run `32322459434` built, passed
+  app tests 78/78, Accessibility XXXL Home, and Ride UI 5/5, but remains red on
+  three Portrait contrast nodes: `slider.horizontal.3`, the decorative middle
+  dot, and retained `Unavailable`. The unified head must close and re-prove
+  these without weakening the hosted audit.
 - **User/asset rights:** final Home needs a user-owned/commissioned high-resolution
   actual ES80 side photo or written AOVOPRO permission with full provenance.
 - **Capture/BLE:** physical fields remain unavailable until the Capture/BLE
@@ -178,9 +183,9 @@ transfer to `72ba15f18…`.
 
 ## Exact next executable action
 
-1. Dispatch `xcode27-simulator.yml` at the latest portrait branch after this
-   continuity push. Confirm exact checkout, Xcode 27/iOS 27/iPhone 12, then
-   inspect the four unchanged production audits and retained screenshots.
+1. Apply only the reviewed narrow fixes for the three exact contrast nodes on
+   `release/nembra-1-0-unified`, run proportional source checks, and push a
+   coherent checkpoint.
 2. For local recovery or preflight, run:
 
    ```sh
@@ -190,9 +195,10 @@ transfer to `72ba15f18…`.
    git diff --check
    ```
 
-3. The new run must execute the two snapshot unit tests and the unchanged
-   Home/Ride production audits. Do not transfer ancestor run `32318006928` to
-   the new SHA.
+3. Create/use the unified draft PR and explicitly dispatch
+   `xcode27-simulator.yml` at the exact unified SHA. The run must execute the
+   two snapshot unit tests and unchanged Home/Ride production audits; ancestor
+   results do not transfer.
 4. After exact accessibility/runtime proof, return to the selected-reference
    Home hero fidelity queue; do not widen into other portrait tabs while Home
    still lacks a production-cleared high-resolution truthful ES80 asset.
@@ -213,11 +219,9 @@ transfer to `72ba15f18…`.
 
 ## Unverified assumptions and evidence required
 
-- The prominent neutral glass, opaque separator, and regular-weight percent
-  directly address the exact hosted nodes, but only an exact-head Xcode 27
-  audit can prove the composited pixels now pass.
-- The single stacked Ride timeline removes inactive candidate identities, but
-  exact Xcode 27 must still prove Dynamic Type and VoiceOver ordering.
+- Exact-tip evidence proves Accessibility XXXL Home and the single stacked Ride
+  timeline now pass. It does not prove the remaining standard/low/retained
+  contrast nodes or unified-head behavior.
 - Production adaptive range remains unwired; `Unavailable` is currently correct.
 - The render-isolation slice is intended to keep battery/grounding Canvases
   unchanged across speed/power-only receipts. Source tests are green and the

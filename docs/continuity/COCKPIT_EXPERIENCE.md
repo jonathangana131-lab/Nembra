@@ -1,27 +1,30 @@
 # Nembra 1.0 cockpit experience continuity
 
-Status: active cockpit workstream recovery authority. Update after every
-meaningful pushed checkpoint and before pausing or handing off.
+Status: integrated Cockpit scope recovery authority under the unified release
+owner. Update after every meaningful pushed Cockpit checkpoint and before
+pausing or handing off.
 
 ## Resume protocol
 
-1. Work only in a dedicated worktree for branch
-   `agent/cockpit-1-0-redesign`; never edit the integration or portrait
-   worktrees directly.
+1. Resume in the dedicated unified worktree on branch
+   `release/nembra-1-0-unified`. The predecessor
+   `agent/cockpit-1-0-redesign` branch is preserved as provenance, not an active
+   implementation branch.
 2. Read `AGENTS.md`, `DEVELOPMENT_CONTINUITY.md`, this file,
    `docs/NEMBRA_V2_PRODUCTION_FOUNDATION.md`,
    `docs/design-reference/horizon-v4-final/NEMBRA_HORIZON_V4_PRODUCTION_HANDOFF.md`,
    and `docs/design/references/COCKPIT_DRIVE_STUDIES.md` completely.
-3. Fetch `origin/product/capture-1-0-main-20260818`; inspect branch divergence,
-   the cockpit PR, integration PR #3675, and exact-head CI before editing.
+3. Fetch `origin/release/nembra-1-0-unified`; inspect the unified draft PR,
+   predecessor PRs #3675/#3676/#3677, and exact-head CI before editing.
 4. Continue the exact next action below. Do not revive V2/V3/V4 geometry or
    duplicate Capture/BLE protocol discovery.
 
 ## GitHub state
 
 - Repository: `jonathangana131-lab/Nembra`
-- Cockpit branch: `agent/cockpit-1-0-redesign`
-- Integration target: `product/capture-1-0-main-20260818`
+- Active unified branch: `release/nembra-1-0-unified`
+- Preserved predecessor branch: `agent/cockpit-1-0-redesign`
+- Integration target: `main`
 - Integration PR: [#3675](https://github.com/jonathangana131-lab/Nembra/pull/3675)
 - Branch base at worktree creation: `cf817a8b1c1f74640055af317671497a202e4f74`
 - Latest pushed cockpit design/continuity checkpoint recorded here:
@@ -29,6 +32,8 @@ meaningful pushed checkpoint and before pausing or handing off.
 - Latest pushed cockpit implementation checkpoint recorded here:
   `85dc4b70b7981502bd909dd6d7c628f7e8e4c700`. Local and remote branch refs
   were verified equal after push.
+- Latest remotely verified unified implementation containing this checkpoint:
+  `1847627d7c84b62e4f6a9633886d0e3dd756ddfc`.
 - Cockpit PR: [#3676](https://github.com/jonathangana131-lab/Nembra/pull/3676)
 
 A Git commit cannot embed its own SHA without changing that SHA. This file
@@ -159,9 +164,9 @@ meets this gate.
 
 ## Work in progress
 
-The Drive implementation above is committed and remote-recoverable at
-`85dc4b70b7981502bd909dd6d7c628f7e8e4c700` in exactly these six source/test
-files plus the two recovery authorities:
+The Drive implementation above is integrated and remote-recoverable at unified
+checkpoint `1847627d7c84b62e4f6a9633886d0e3dd756ddfc`. Its owned source/test scope
+is:
 
 - `NembraApp/App/AppBootstrap.swift`
 - `NembraApp/Features/Dashboard/DashboardView.swift`
@@ -172,10 +177,10 @@ files plus the two recovery authorities:
 - `docs/continuity/COCKPIT_EXPERIENCE.md`
 - `DEVELOPMENT_CONTINUITY.md`
 
-No portrait implementation file, Navigation view, Explore view, Capture source,
-raw BLE decoder, package protocol mapping, or production telemetry authority has
-been changed. The implementation is continuity-secured; only this exact-SHA
-follow-up record remains to be committed, pushed, and remote-verified.
+The unified integration preserved Portrait and Capture work, semantically
+combined shared app/UI tests and UI contracts, omitted only byte-identical
+duplicate study rasters, and added a physical-device fail-closed test guard for
+Simulator launch parsing. No production telemetry authority was widened.
 
 ## Validation and CI truth
 
@@ -241,17 +246,16 @@ It is baseline evidence only and does not validate this branch. Artifact:
 
 ## Exact next executable action
 
-1. Commit this exact-SHA continuity update, push
-   `agent/cockpit-1-0-redesign`, and verify the remote ref.
-2. Fetch and merge the latest `origin/product/capture-1-0-main-20260818` without
-   force-pushing. Resolve shared `NembraUITests.swift` and continuity/design-doc
-   overlap by preserving both portrait fixes and the post-V4 Drive assertions;
-   rerun proportional checks and push the merge checkpoint.
-3. Trigger the draft-safe `/xcode27` PR workflow for PR #3676. Download its exact-
-   head artifact and verify source SHA, Xcode 27/iOS 27/iPhone 12 identity, Core/
-   app/UI results, Accessibility XXXL, one-value battery interaction, landscape
-   frame containment, three sustained render intervals, actual Release clock +
-   Hitch Time Ratio samples, and retained post-V4 screenshots.
+1. Finish the unified static/focused checks and any reviewed P0/P1 preflight
+   fix; push and update both this scope ledger and root continuity.
+2. Create the unified draft PR to `main`, then explicitly dispatch
+   `xcode27-simulator.yml` at the exact final unified SHA. Do not use the current
+   default-branch `/xcode27` wrapper as Release-performance authority.
+3. Download the exact-head artifact and verify source SHA,
+   Xcode 27/iOS 27/iPhone 12 identity, Core/app/UI results, Accessibility XXXL,
+   one-value battery interaction, landscape frame containment, three sustained
+   render intervals, actual Release clock + Hitch Time Ratio samples, and
+   retained post-V4 screenshots.
 4. Put the same-state runtime Drive screenshot beside the refined internal study
    in one comparison canvas, record visible mismatches, and iterate Drive. Do not
    widen into Navigation or Explore until the Drive acceptance gate is met.
