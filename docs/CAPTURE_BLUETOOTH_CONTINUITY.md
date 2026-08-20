@@ -7,14 +7,14 @@ Status: active dedicated recovery record for the Capture/Bluetooth-truth workstr
 - Repository: `jonathangana131-lab/Nembra`
 - Branch: `product/capture-1-0-main-20260818`
 - Draft PR: [#3675 — Finish Capture checkpoint and production Nembra surfaces](https://github.com/jonathangana131-lab/Nembra/pull/3675)
-- Audited remote head before this document was created: `3f0814ac70211f68b7af1a6913c78c91a810f663`
-- Latest audited implementation parent: `0b7e3b27de5e9b547911558ae8ed4cb852becb59`
+- Latest pushed implementation checkpoint: `5c32d29d5327e4c54d0f3a70b548da6eeeb537a5`
+- Last fully completed hosted Capture baseline: `3f0814ac70211f68b7af1a6913c78c91a810f663`
 - Physical status: **NO-GO**. CI and Simulator evidence are not hardware evidence or field authorization.
 - Current physical procedure: `ES80-AUTHENTICATED-STATIONARY-v1` in `docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md`
 - Current installer entry point: `scripts/field/install_one_time_capture.command`
 - Protocol ledger: `docs/ES80_PROTOCOL_MAP.md`
 
-After this file is committed, the live remote branch head supersedes the baseline SHA above. Verify `git ls-remote origin refs/heads/product/capture-1-0-main-20260818`, the PR head, and its exact-head checks before resuming.
+This file is updated by a continuity-only commit immediately after the implementation checkpoint and therefore cannot embed its own commit SHA. Verify `git ls-remote origin refs/heads/product/capture-1-0-main-20260818`, the PR head, and its exact-head checks before resuming; the remote branch head supersedes this file if newer.
 
 ## Acceptance boundary
 
@@ -105,6 +105,13 @@ Physical actions beyond the P0 untouched baseline—including mode, light, brake
 ## Exact CI snapshot
 
 Queried on 2026-08-19 PDT / 2026-08-20 UTC.
+
+### Implementation head `5c32d29d5327e4c54d0f3a70b548da6eeeb537a5`
+
+- Local focused evidence: root-owned combined SwiftPM passed 33/33 tests in the typed-event and guided-plan suites; the component runs passed 12/12 and 21/21. Four new Swift files parse, whitespace/diff/secret checks are green, and an independent post-fix adversarial audit returned GO. This is not Xcode 27 or physical evidence.
+- [Capture TODAY Final GO QA `32321764453`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32321764453) and [TODAY Field Candidate Preflight `32321764641`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32321764641): **green software contracts only**; neither authorizes physical Capture.
+- [Capture V16 Standalone Exact-Head `32321764574`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32321764574), [Capture Standalone Visual Evidence `32321764568`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32321764568), and [Capture Field Handoff Provenance `32321764666`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32321764666) were still running when this update was prepared.
+- [Xcode 27 Simulator QA `32321764484`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32321764484) was queued. [Xcode 27 PR Exact-Head QA `32321764522`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32321764522) was skipped by its event/admission policy.
 
 ### Remote head `3f0814ac70211f68b7af1a6913c78c91a810f663`
 
