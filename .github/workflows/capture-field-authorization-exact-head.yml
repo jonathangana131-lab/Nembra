@@ -15,6 +15,7 @@ on:
       - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedFieldCapability*'
       - 'scripts/ci/es80_*field_authorization*'
       - 'scripts/ci/tests/test_es80_*field_authorization*'
+      - 'scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py'
       - 'scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py'
       - '.github/workflows/capture-field-authorization-exact-head.yml'
   workflow_dispatch:
@@ -56,6 +57,12 @@ jobs:
             test "$actual" = "${{ github.event.pull_request.head.sha }}"
           fi
           printf 'NEMBRA_CAPTURE_FIELD_AUTHORIZATION_SUBJECT=%s physicalAuthorityCreated=false\n' "$actual"
+
+      - name: Run real-entrypoint lifecycle source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
 
       - name: Run package authorization and exact-freeze contracts
         working-directory: Packages/NembraBluetoothCapture
