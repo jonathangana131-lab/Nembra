@@ -22,19 +22,16 @@ if SPEC is None or SPEC.loader is None:
 manifest_contract = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(manifest_contract)
 
-EXTERNAL_SCHEMA_VERSION = 3
-FINAL_GO_SCHEMA_VERSION = 1
-EVIDENCE_SCHEMA_VERSION = 1
-RECIPE_ID = "ES80-FINGERPRINT-v1"
-PROCEDURE_VERSION = "V14"
+SUBJECT_SCHEMA_VERSION = 1
 EVIDENCE_KIND = "signed-field-artifact-digests-not-authorization"
 SIGNED_INSTALLABLE_KIND = "ipa"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 MAX_JSON_BYTES = 1024 * 1024
 
 EXTERNAL_KEYS = {
-    "schemaVersion", "buildIdentifier", "buildInstanceID", "sourceCommitSHA",
-    "executableSHA256", "infoPlistSHA256", "experimentRecipeID", "procedureVersion",
+    "schemaVersion", "procedureID", "bundleIdentifier", "sourceCommitSHA",
+    "buildIdentifier", "buildInstanceID", "executableSHA256", "infoPlistSHA256",
+    "tuyaDependencyLockSHA256",
 }
 FINAL_GO_KEYS = {
     "schemaVersion", "decision", "procedureID", "bundleIdentifier", "sourceCommitSHA",
@@ -88,6 +85,23 @@ def _digest(value: str, label: str) -> str:
     if not isinstance(value, str) or not SHA256.fullmatch(value) or value == "0" * 64:
         raise RetainedInstallCrossBindingError(f"{label} is not a canonical nonzero SHA-256")
     return value
+
+
+def _require_common_subject(
+    value: dict[str, Any], manifest: dict[str, Any], label: str
+) -> None:
+    if type(value.get("schemaVersion")) is not int or value["schemaVersion"] != SUBJECT_SCHEMA_VERSION:
+        raise RetainedInstallCrossBindingError(f"{label} schema is unsupported")
+    if value.get("procedureID") != manifest_contract.PROCEDURE_ID:
+        raise RetainedInstallCrossBindingError(f"{label} names the wrong procedure")
+    if value.get("bundleIdentifier") != manifest_contract.BUNDLE_IDENTIFIER:
+        raise RetainedInstallCrossBindingError(f"{label} names the wrong bundle")
+    for key in (
+        "sourceCommitSHA", "buildIdentifier", "buildInstanceID", "executableSHA256",
+        "infoPlistSHA256", "tuyaDependencyLockSHA256",
+    ):
+        if value.get(key) != manifest.get(key):
+            raise RetainedInstallCrossBindingError(f"{label} exact-subject mismatch at {key}")
 
 
 def verify_cross_binding(
@@ -158,57 +172,33 @@ def verify_cross_binding(
         if manifest.get(key) != expected:
             raise RetainedInstallCrossBindingError(f"manifest exact-subject mismatch at {key}")
 
-    if external.get("schemaVersion") != EXTERNAL_SCHEMA_VERSION:
-        raise RetainedInstallCrossBindingError("external build-record schema is unsupported")
-    if external.get("experimentRecipeID") != RECIPE_ID:
-        raise RetainedInstallCrossBindingError("external build record names the wrong recipe")
-    if external.get("procedureVersion") != PROCEDURE_VERSION:
-        raise RetainedInstallCrossBindingError("external build record names the wrong procedure version")
+    _require_common_subject(external, manifest, "external build record")
 
-    build_tuple_keys = (
-        "sourceCommitSHA", "buildIdentifier", "buildInstanceID", "executableSHA256",
-        "infoPlistSHA256",
-    )
-    for key in build_tuple_keys:
-        if external.get(key) != manifest.get(key):
-            raise RetainedInstallCrossBindingError(f"external build tuple mismatch at {key}")
-
-    if evidence.get("schemaVersion") != EVIDENCE_SCHEMA_VERSION:
-        raise RetainedInstallCrossBindingError("signed build-evidence schema is unsupported")
+    _require_common_subject(evidence, manifest, "signed build evidence")
     if evidence.get("evidenceKind") != EVIDENCE_KIND:
         raise RetainedInstallCrossBindingError("signed build evidence has an authorizing kind")
     if evidence.get("signedInstallableKind") != SIGNED_INSTALLABLE_KIND:
         raise RetainedInstallCrossBindingError("signed build evidence does not name an IPA")
-
     evidence_expected = {
-        "procedureID": manifest_contract.PROCEDURE_ID,
-        "bundleIdentifier": manifest_contract.BUNDLE_IDENTIFIER,
         "signedInstallableSHA256": independently_accepted["retainedIPASHA256"],
-        "tuyaDependencyLockSHA256": independently_accepted["tuyaDependencyLockSHA256"],
         "externalBuildRecordSHA256": independently_accepted["externalBuildRecordSHA256"],
         "finalGORecordSHA256": independently_accepted["finalGORecordSHA256"],
         "intendedDevicePseudonymSHA256": independently_accepted[
             "intendedDevicePseudonymSHA256"
         ],
-        **{key: manifest[key] for key in build_tuple_keys},
     }
     for key, expected in evidence_expected.items():
         if evidence.get(key) != expected:
             raise RetainedInstallCrossBindingError(f"signed build-evidence mismatch at {key}")
 
-    if final_go.get("schemaVersion") != FINAL_GO_SCHEMA_VERSION:
-        raise RetainedInstallCrossBindingError("Final-GO schema is unsupported")
+    _require_common_subject(final_go, manifest, "Final-GO record")
     if final_go.get("decision") != "GO":
         raise RetainedInstallCrossBindingError("Final-GO record does not contain GO")
     final_expected = {
-        "procedureID": manifest_contract.PROCEDURE_ID,
-        "bundleIdentifier": manifest_contract.BUNDLE_IDENTIFIER,
         "signedInstallableSHA256": independently_accepted["retainedIPASHA256"],
-        "tuyaDependencyLockSHA256": independently_accepted["tuyaDependencyLockSHA256"],
         "intendedDevicePseudonymSHA256": independently_accepted[
             "intendedDevicePseudonymSHA256"
         ],
-        **{key: manifest[key] for key in build_tuple_keys},
     }
     for key, expected in final_expected.items():
         if final_go.get(key) != expected:
