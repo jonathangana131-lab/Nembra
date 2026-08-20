@@ -181,11 +181,12 @@ jobs:
           grep -Fq 'try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()' "$APP_SOURCE"
           test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE")" = 0
 
-      - name: Run focused authorization and artifact contracts
+      - name: Run focused authorization, inbox, and artifact contracts
         working-directory: Packages/NembraBluetoothCapture
         run: |
           set -euo pipefail
           swift test --filter AuthenticatedStationaryCaptureAppSessionTests
+          swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthorizationInboxAppAdapter
           swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
           swift test --filter TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
 
