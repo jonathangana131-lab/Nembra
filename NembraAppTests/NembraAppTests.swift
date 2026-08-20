@@ -70,6 +70,126 @@ final class NembraAppTests: XCTestCase {
         XCTAssertTrue(VehicleProfile.maxshotV1SPro.capabilities.verifiedSpeedLimitSlotByRideMode.isEmpty)
     }
 
+    func testEnergyRailPresentationRejectsContradictoryNowPosition() {
+        let contradictory = DashboardEnergyRailVisualState(
+            currentness: .live,
+            acceptedWatts: 320,
+            acceptedCurrentFraction: 0.9,
+            illuminatedFraction: 0.4,
+            acceptedPeakFraction: nil,
+            scaleOrigin: .simulator,
+            scaleCeilingWatts: 650
+        )
+        XCTAssertEqual(contradictory.validatedForPresentation, .unavailable)
+
+        let aboveEnvelope = DashboardEnergyRailVisualState(
+            currentness: .live,
+            acceptedWatts: 1_200,
+            acceptedCurrentFraction: 1,
+            illuminatedFraction: 0.9,
+            acceptedPeakFraction: 1,
+            scaleOrigin: .simulator,
+            scaleCeilingWatts: 1_000
+        ).validatedForPresentation
+        XCTAssertEqual(aboveEnvelope.currentness, .live)
+        XCTAssertEqual(aboveEnvelope.acceptedWatts, 1_200)
+        XCTAssertEqual(aboveEnvelope.acceptedCurrentFraction, 1)
+    }
+
+    func testCockpitInstrumentBandsStaySeparatedAtIPhone12LandscapeSizes() {
+        for usesAccessibilityLayout in [false, true] {
+            let layout = DashboardInstrumentVerticalLayout(
+                size: CGSize(width: 796, height: 372),
+                usesAccessibilityLayout: usesAccessibilityLayout
+            )
+
+            XCTAssertFalse(layout.speedFrame.isEmpty)
+            XCTAssertFalse(layout.energyRailFrame.isEmpty)
+            XCTAssertFalse(layout.speedFrame.intersects(layout.energyRailFrame))
+            XCTAssertLessThan(layout.speedFrame.maxY, layout.energyRailFrame.minY)
+            XCTAssertGreaterThanOrEqual(layout.speedFrame.minY, usesAccessibilityLayout ? 86 : 54)
+            XCTAssertLessThanOrEqual(
+                layout.energyRailFrame.maxY,
+                usesAccessibilityLayout ? 264 : 310
+            )
+        }
+    }
+
+    func testCockpitRenderScheduleMountsTimelineOnlyForAcceptedLiveSettling() {
+        XCTAssertEqual(
+            DashboardInstrumentRenderSchedule.resolve(
+                prefersReducedMotion: false,
+                hasLiveSpeed: true,
+                speedIsSettling: true,
+                ownsLivePowerSource: false,
+                powerIsSettling: false
+            ),
+            .timeline
+        )
+        XCTAssertEqual(
+            DashboardInstrumentRenderSchedule.resolve(
+                prefersReducedMotion: false,
+                hasLiveSpeed: false,
+                speedIsSettling: false,
+                ownsLivePowerSource: true,
+                powerIsSettling: true
+            ),
+            .timeline
+        )
+        XCTAssertEqual(
+            DashboardInstrumentRenderSchedule.resolve(
+                prefersReducedMotion: true,
+                hasLiveSpeed: true,
+                speedIsSettling: true,
+                ownsLivePowerSource: true,
+                powerIsSettling: true
+            ),
+            .staticFrame
+        )
+        XCTAssertEqual(
+            DashboardInstrumentRenderSchedule.resolve(
+                prefersReducedMotion: false,
+                hasLiveSpeed: false,
+                speedIsSettling: true,
+                ownsLivePowerSource: false,
+                powerIsSettling: false
+            ),
+            .staticFrame
+        )
+    }
+
+    @MainActor
+    func testCockpitRollingSpeedSupportsThreeDigitsAndFailsClosedBeyondCapacity() {
+        XCTAssertTrue(RollingSpeedValueView.supports(0))
+        XCTAssertTrue(RollingSpeedValueView.supports(18.7))
+        XCTAssertTrue(RollingSpeedValueView.supports(123.4))
+        XCTAssertFalse(RollingSpeedValueView.supports(999.95))
+        XCTAssertFalse(RollingSpeedValueView.supports(.infinity))
+        XCTAssertFalse(RollingSpeedValueView.supports(-0.1))
+        XCTAssertFalse(RollingSpeedValueView.supports(nil))
+        XCTAssertTrue(DashboardSpeedDisplayPolicy.admitsCanonicalKilometersPerHour(123.4))
+        XCTAssertFalse(DashboardSpeedDisplayPolicy.admitsCanonicalKilometersPerHour(999.95))
+    }
+
+    func testCockpitSpeedUnitsResolveFromPreferenceAndSystemPolicy() {
+        XCTAssertTrue(DashboardSpeedUnitPresentation.usesMetric(
+            preferenceRawValue: NembraUnitsPreference.system.rawValue,
+            systemUsesMetric: true
+        ))
+        XCTAssertFalse(DashboardSpeedUnitPresentation.usesMetric(
+            preferenceRawValue: NembraUnitsPreference.system.rawValue,
+            systemUsesMetric: false
+        ))
+        XCTAssertTrue(DashboardSpeedUnitPresentation.usesMetric(
+            preferenceRawValue: NembraUnitsPreference.metric.rawValue,
+            systemUsesMetric: false
+        ))
+        XCTAssertFalse(DashboardSpeedUnitPresentation.usesMetric(
+            preferenceRawValue: NembraUnitsPreference.miles.rawValue,
+            systemUsesMetric: true
+        ))
+    }
+
     func testSimulationScenarioLaunchArgumentParsing() {
         let scenario = AppBootstrap.simulationScenario(
             arguments: ["Nembra", "--nembra-simulation=cold-disconnected"],
