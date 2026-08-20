@@ -57,6 +57,8 @@ scooter pixels, telemetry numbers, and route thumbnail are illustrative and do
 not grant hardware identity, protocol, or redistribution authority. It must not
 be copied into an asset catalog or shipped in the app.
 
-`NembraApp/Features/Home/VehicleHeroView.swift` contains an older generated/
-vector scooter treatment but is not selected or referenced by current Home.
-Do not resurrect it as a production asset.
+The rejected generated/vector scooter treatment formerly stored in
+`NembraApp/Features/Home/VehicleHeroView.swift` was unused and has been removed.
+That path now contains narrow Home Observation bridges plus value-only
+presentation/render leaves and no alternative scooter artwork. Do not restore
+the former vector treatment or misrepresent it as ES80 evidence.

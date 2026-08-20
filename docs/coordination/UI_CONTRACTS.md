@@ -39,3 +39,16 @@ unverified values. Shared files require a note here or in the PR before edits.
 Until Capture/BLE publishes a stable decoder/evidence contract, portrait shows
 unknown, unavailable, or retained values honestly and keeps dependent controls
 disabled. This branch does not duplicate capture tools or protocol inference.
+
+## Portrait render isolation
+
+- Home resolves connection and energy truth in narrow `@MainActor` Observation
+  bridges, then hands plain Equatable snapshots to render leaves.
+- The energy snapshot contains only authority-gated SOC/readout presentation,
+  accepted adaptive-range decision, and battery freshness. Speed, power,
+  odometer, trip, vehicle ride/start mode, and vehicle commands must not enter
+  it. The persisted percentage/range emphasis is an intentional energy input.
+- The heavy battery/scooter/grounding renderer must not retain `VehicleStore`,
+  `HorizonCockpitStore`, callbacks, `@State`, or a perpetual timeline.
+- This boundary reduces passive hero redraws; it is not a claim that every Home
+  section is isolated or that physical telemetry arrives at display cadence.

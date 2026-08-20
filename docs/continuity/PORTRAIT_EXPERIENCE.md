@@ -14,6 +14,9 @@ Updated: 2026-08-19
   checkpoint `0b7e3b27de5e9b547911558ae8ed4cb852becb59`).
 - Latest pushed portrait implementation checkpoint:
   `1149ea9babb7a49fd52cb927826b4a0a59c12820` (remote-verified).
+- Latest remote branch/continuity tip verified before the current work in
+  progress: `bec498463c2f2673fb719c0bdedd3ec9bddfadb8`.
+- Draft portrait PR: [#3677](https://github.com/jonathangana131-lab/Nembra/pull/3677).
 
 This file is the portrait workstream recovery authority. The root
 `DEVELOPMENT_CONTINUITY.md` remains the integration-wide authority.
@@ -67,10 +70,30 @@ pushed and verified on `origin/agent/portrait-home-1-0-polish`:
   selected source, authority, explicit visual gaps, design system, and workstream
   boundaries.
 
-No intentional source, reference, or design-contract change is local-only after
-that implementation commit. This continuity-only update follows it; recover by
-checking out the remote portrait branch, then compare its current HEAD with the
-implementation SHA above.
+## Work in progress after the remote checkpoint
+
+The following intentional Home render-isolation slice is currently uncommitted
+while its checkpoint review completes:
+
+- `NembraApp/Features/Home/HomeView.swift`: replaces inline header/energy
+  implementations with two narrow Observation bridges;
+- `NembraApp/Features/Home/VehicleHeroView.swift`: removes the rejected unused
+  generated/vector scooter implementation and now owns narrow Observation
+  bridges, value-only header/energy snapshots, and Equatable render leaves;
+- `NembraAppTests/NembraAppTests.swift`: adds tests asserting that
+  speed/power/odometer/timestamp changes do not change the energy snapshot,
+  while battery/readout mode and connection truth do;
+- `Packages/NembraCore/Tests/NembraCoreTests/HomeAccessibilityMetricLayoutSourceTests.swift`:
+  routes existing source contracts to their exact files and forbids stores,
+  `@State`, or a perpetual timeline in the expensive renderer;
+- this file, `docs/PRODUCTION_VISUAL_ASSET_PROVENANCE.md`, and
+  `docs/coordination/UI_CONTRACTS.md`: recovery/provenance/coordination updates.
+
+Recovery if interrupted before commit: checkout remote
+`agent/portrait-home-1-0-polish` at `bec498463…`, reapply only the seven paths
+above, run the commands under Exact next executable action, then commit only if
+all source and strict-concurrency checks pass. Do not restore the removed legacy
+vector scooter code; it was rejected, unused, and is not evidence of an ES80.
 
 ## Tests and CI
 
@@ -85,20 +108,31 @@ Latest completed baseline run:
   owns all except the canonical Vehicle Controls semantics; exact-current-head
   evidence is still required.
 
-Current proportional local evidence: all three touched Swift files parse;
-`git diff --check` passes; focused Home source tests pass 5/5; inherited Ride
-Window source test passes 1/1; the reference hash is exact; the secret/private
-path scan is clean; and a diagnostic generic-Simulator strict-concurrency
-`build-for-testing` completed with exit 0 after the final large-text reflow.
-Local Xcode 26 is never release authority.
+Current render-isolation evidence: all four touched Swift files parse;
+`git diff --check` passes; focused Home source tests pass 5/5; the
+secret/private-path scan is clean; and a fresh diagnostic generic-Simulator
+strict-concurrency `build-for-testing` completed with exit 0 for the app, unit,
+and UI-test targets. The two new snapshot XCTest methods were compiled but were
+not executed locally; exact-head hosted Xcode 27 must execute them. Local Xcode
+26 is never release authority.
 
-No exact-head hosted Xcode 27 evidence exists for `1149ea9b…` yet. The cf817
-artifact below remains baseline/root-cause evidence only.
+Exact-head hosted Xcode 27 workflow run
+[`32318006928`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32318006928)
+is terminal **failure** at remote tip `bec498463…`. It genuinely ran on Xcode
+27.0 / iOS 27.0 / iPhone 12: Core passed 1,355/1,355; app unit passed 76/76;
+UI passed 17/22. Portrait failures were Vehicle Controls contrast, low-battery
+separator contrast, retained `%` contrast, and Ride timestamp Dynamic Type; the
+fifth failure is cockpit-owned animation quiescence. Artifact
+`nembra-xcode27-simulator-1365-1` is ID `9389149291`, digest
+`aef19246aa9d9d782a343c138ab77c1a03a7a8560f282c707b4d3f5782063ff8`.
+The run validates the first checkpoint only, not this uncommitted isolation
+slice, and it is not portrait acceptance.
 
 ## Blockers
 
-- **Code/CI:** exact-head Xcode 27 must prove contrast, XXXL reflow, first-fold
-  geometry, retained truth, Ride accessibility, and screenshots.
+- **Code/CI:** the four portrait-owned failures from run `32318006928` require
+  code fixes and an exact-head rerun. Xcode 27 must also prove XXXL reflow,
+  first-fold geometry, retained truth, snapshots, and render-island behavior.
 - **User/asset rights:** final Home needs a user-owned/commissioned high-resolution
   actual ES80 side photo or written AOVOPRO permission with full provenance.
 - **Capture/BLE:** physical fields remain unavailable until the Capture/BLE
@@ -108,29 +142,28 @@ artifact below remains baseline/root-cause evidence only.
 
 ## Exact next executable action
 
-1. Open/update the draft portrait PR targeting
-   `product/capture-1-0-main-20260818` and synchronize its body with this file.
-2. Dispatch the branch-local `xcode27-simulator.yml` workflow at exact
-   `1149ea9b…`; verify the Mac job actually runs rather than accepting a
-   classifier-only green shell.
-3. For local recovery or preflight, run:
+1. Finish the render-isolation checkpoint review on the exact uncommitted paths
+   listed above. For local recovery or preflight, run:
 
    ```sh
-   xcrun swiftc -frontend -parse NembraApp/DesignSystem/NembraVisuals.swift
-   xcrun swiftc -frontend -parse NembraApp/Features/Home/HomeView.swift NembraUITests/NembraUITests.swift
-   swift test --package-path Packages/NembraCore --filter HomeAccessibilityMetricLayoutSourceTests
+   xcrun swiftc -frontend -parse NembraApp/Features/Home/HomeView.swift NembraApp/Features/Home/VehicleHeroView.swift NembraAppTests/NembraAppTests.swift
+   swift test --package-path Packages/NembraCore --filter HomeAccessibility
+   xcodebuild -quiet -project Nembra.xcodeproj -scheme Nembra -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO IPHONEOS_DEPLOYMENT_TARGET=26.0 SWIFT_STRICT_CONCURRENCY=complete build-for-testing
    git diff --check
    ```
 
-4. While hosted evidence runs, extract the Home energy/status leaf views to
-   narrow Observation invalidation without changing truth contracts.
+2. Commit the coherent slice, push it, verify the remote SHA, update both
+   continuity files and PR body, then dispatch a new exact-head Xcode 27 run.
+3. Fix the four portrait failures from ancestor run `32318006928` without
+   weakening its audits. Do not transfer that ancestor result to the new SHA.
 
 ## Rejected approaches
 
 - Do not revive V2/V3/V4 cockpit pixels in portrait; cockpit visuals are a
   separate workstream and V4 is requirements-only.
-- Do not use `VehicleHeroView.swift`'s legacy generated/vector scooter as the
-  selected Home foundation.
+- Do not restore the removed legacy generated/vector scooter implementation;
+  `VehicleHeroView.swift` now contains narrow Observation bridges and
+  value-only Home render leaves, not an alternative hardware asset.
 - Do not recolor or AI-upscale the temporary ES80 raster into invented hardware.
 - Do not use custom blur stacks, glass-coat passive telemetry, or restore the
   doubled top-control ring.
@@ -140,10 +173,14 @@ artifact below remains baseline/root-cause evidence only.
 
 ## Unverified assumptions and evidence required
 
-- The canonical icon-only `Label` is expected to eliminate the SF-symbol-named
-  audit node; only Xcode 27 can confirm it.
-- The opaque instrument token and deeper copy well are expected to preserve
-  contrast on all SOC fills; visual and accessibility evidence is pending.
+- The canonical icon-only `Label` did not eliminate the hosted
+  `slider.horizontal.3` contrast failure; the production control treatment
+  needs a stronger pixel-level correction without hiding the audit node.
+- The opaque instrument token and deeper copy well did not close every hosted
+  state: low battery still fails on a separator and retained battery on `%`.
 - Production adaptive range remains unwired; `Unavailable` is currently correct.
-- The current Home may still invalidate too broadly on live VehicleStore state;
-  a value-input leaf extraction and hosted performance evidence remain pending.
+- The render-isolation slice is intended to keep battery/grounding Canvases
+  unchanged across speed/power-only receipts. Source tests are green and the
+  snapshot unit tests compile, but hosted execution/performance evidence is
+  pending; do not claim whole-screen invalidation is solved because
+  Today/controls/readiness remain broader.

@@ -8,7 +8,6 @@ import UIKit
 /// It never owns a trip counter, promotes cached telemetry to live, or treats a
 /// tapped vehicle command as confirmed state.
 struct HomeView: View {
-    @AppStorage(NembraPreferenceKey.haptics) private var hapticsEnabled = true
     @Environment(VehicleStore.self) private var vehicle
     @Environment(RideApplicationStore.self) private var rides
     @Environment(RideHistoryPresentationStore.self) private var history
@@ -17,8 +16,6 @@ struct HomeView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    @ScaledMetric(relativeTo: .largeTitle) private var batteryNumericFontSize: CGFloat = 62
-    @ScaledMetric(relativeTo: .title2) private var batteryPercentFontSize: CGFloat = 30
 
     @State private var pendingLockConfirmation: Bool?
     @State private var isModeSelectorPresented = false
@@ -31,13 +28,17 @@ struct HomeView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: homeSectionSpacing) {
-                vehicleHeader
+                HomeVehicleHeaderBridge(vehicle: vehicle)
 
                 if vehicle.state.connection != .connected {
                     connectionRecovery
                 }
 
-                energyHero
+                HomeEnergyHeroBridge(
+                    vehicle: vehicle,
+                    cockpit: cockpit,
+                    adaptiveRangeEstimate: adaptiveRangeEstimate
+                )
                 readinessAndToday
                 controlsRail
                 latestRideContinuation
@@ -120,333 +121,6 @@ struct HomeView: View {
 
     private var homeSectionSpacing: CGFloat {
         dynamicTypeSize.isAccessibilitySize ? NembraMetrics.section : 10
-    }
-
-    /// Large non-accessibility categories can outgrow the measured stem
-    /// corridor before `isAccessibilitySize` becomes true. Reflowing early
-    /// keeps the visible copy and the scooter image physically separate.
-    private var usesStackedEnergyHeroLayout: Bool {
-        dynamicTypeSize.isAccessibilitySize || batteryNumericFontSize > 68
-    }
-
-    // MARK: - Vehicle identity
-
-    private var vehicleHeader: some View {
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 12) {
-                    vehicleIdentity
-                    vehicleControlsLink
-                }
-            } else {
-                HStack(alignment: .center, spacing: 12) {
-                    vehicleIdentity
-                    Spacer(minLength: 8)
-                    vehicleControlsLink
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var vehicleIdentity: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(displayVehicleName)
-                .font(
-                    dynamicTypeSize.isAccessibilitySize
-                        ? .title3.weight(.bold)
-                        : .headline.weight(.semibold)
-                )
-                .tracking(0.2)
-                .foregroundStyle(NembraColor.primaryText)
-                .fixedSize(horizontal: false, vertical: true)
-
-            HStack(spacing: 7) {
-                Circle()
-                    .fill(connectionIndicatorColor)
-                    .frame(width: 7, height: 7)
-                    .accessibilityHidden(true)
-
-                Text(vehicleStatusText)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(NembraColor.secondaryText)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if vehicle.profile == .simulatorQA {
-                    Text("SIM · QA")
-                        .font(.caption2.weight(.bold))
-                        .tracking(0.5)
-                        .foregroundStyle(NembraColor.gold)
-                        .padding(.horizontal, 6)
-                        .frame(minHeight: 20)
-                        .background(NembraColor.quietSurface, in: Capsule(style: .continuous))
-                        .overlay {
-                            Capsule(style: .continuous)
-                                .strokeBorder(NembraColor.gold.opacity(0.22))
-                        }
-                }
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Vehicle connection")
-            .accessibilityValue(vehicleStatusAccessibilityValue)
-            .accessibilityIdentifier("home.connection-status")
-        }
-    }
-
-    private var vehicleControlsLink: some View {
-        NavigationLink {
-            VehicleControlsView()
-        } label: {
-            Label("Vehicle controls", systemImage: "slider.horizontal.3")
-                .labelStyle(.iconOnly)
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(NembraColor.primaryText)
-                .frame(
-                    width: dynamicTypeSize.isAccessibilitySize ? 44 : 36,
-                    height: dynamicTypeSize.isAccessibilitySize ? 44 : 36
-                )
-        }
-        .buttonStyle(.glass)
-        .tint(NembraColor.warmGraphite)
-        .frame(minWidth: 44, minHeight: 44)
-        .contentShape(Rectangle())
-        .accessibilityHint("Opens detailed vehicle controls and verified settings.")
-    }
-
-    private var displayVehicleName: String {
-        // Simulator is an evidence source, never the product identity. Simulator
-        // disclosure remains visible beside connection truth, never as identity.
-        vehicle.profile == .simulatorQA
-            ? VehicleProfile.aovoproES80.identity.displayName
-            : vehicle.profile.identity.displayName
-    }
-
-    // MARK: - Energy hero
-
-    private var energyHero: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if batteryIsRetained {
-                Label {
-                    if let observedAt = vehicle.retainedBatteryObservedAt {
-                        HStack(spacing: 3) {
-                            Text("Last confirmed")
-                            Text(observedAt, style: .relative)
-                        }
-                    } else {
-                        Text("Last confirmed · age unavailable")
-                    }
-                } icon: {
-                    Image(systemName: "clock.arrow.circlepath")
-                }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(NembraColor.secondaryText)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Last confirmed battery")
-                .accessibilityValue(retainedBatteryFreshnessAccessibilityValue)
-                .accessibilityHint("This battery value may be stale until the scooter reconnects.")
-                .accessibilityIdentifier("home.battery.retained-freshness")
-            }
-
-            if isBatteryLow {
-                Label("Low battery", systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(NembraColor.warningRed)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Low battery")
-                    .accessibilityIdentifier("home.battery.low-warning")
-            }
-
-            Button {
-                withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
-                    cockpit.toggleBatteryPrimaryReadout()
-                }
-            } label: {
-                Group {
-                    if usesStackedEnergyHeroLayout {
-                        accessibilityEnergyHero
-                    } else {
-                        standardEnergyHero
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .sensoryFeedback(.selection, trigger: batteryReadoutMode) { _, _ in
-                hapticsEnabled
-            }
-            .accessibilityLabel(batteryInstrumentAccessibilityLabel)
-            .accessibilityValue(batteryInstrumentAccessibilityValue)
-            .accessibilityHint(batteryInstrumentAccessibilityHint)
-            .accessibilityIdentifier("home.metric.battery")
-        }
-    }
-
-    private var standardEnergyHero: some View {
-        GeometryReader { proxy in
-            let scooterSize = min(
-                proxy.size.width * HomeHeroLayout.scooterWidthFraction,
-                HomeHeroLayout.scooterMaximumSize
-            )
-
-            ZStack(alignment: .topLeading) {
-                batteryReadout
-                    .padding(.top, 2)
-
-                batteryBody
-                    .frame(height: HomeHeroLayout.batteryHeight)
-                    .offset(y: HomeHeroLayout.batteryTop)
-
-                HomeHeroGroundingScene(layout: .standard)
-                    .equatable()
-                    .frame(width: proxy.size.width, height: HomeHeroLayout.standardHeight)
-
-                Image("ES80Side")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: scooterSize, height: scooterSize)
-                    .shadow(color: .black.opacity(0.75), radius: 22, y: 16)
-                    .shadow(color: NembraColor.gold.opacity(0.13), radius: 20, y: 18)
-                    .position(
-                        x: proxy.size.width * HomeHeroLayout.scooterCenterXFraction,
-                        y: HomeHeroLayout.scooterCenterY
-                    )
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
-        }
-        .frame(height: HomeHeroLayout.standardHeight)
-        .clipped()
-    }
-
-    private var accessibilityEnergyHero: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            batteryReadout
-            batteryBody
-            ZStack(alignment: .bottom) {
-                HomeHeroGroundingScene(layout: .accessibility)
-                    .equatable()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                Image("ES80Side")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 220)
-                    .shadow(color: .black.opacity(0.75), radius: 20, y: 14)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
-            .frame(height: 230)
-        }
-    }
-
-    private var batteryReadout: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(batteryNumericText)
-                .font(.system(size: batteryNumericFontSize, weight: .light, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(batteryValueColor)
-                .contentTransition(reduceMotion ? .identity : .numericText())
-
-            if batteryPercent != nil {
-                Text("%")
-                    .font(.system(size: batteryPercentFontSize, weight: .light, design: .rounded))
-                    .foregroundStyle(batteryValueColor)
-            }
-        }
-        .frame(
-            maxWidth: usesStackedEnergyHeroLayout
-                ? .infinity
-                : HomeHeroLayout.batteryNumericSafeWidth,
-            alignment: .leading
-        )
-        .lineLimit(1)
-        .minimumScaleFactor(0.82)
-        .accessibilityHidden(true)
-    }
-
-    private var batteryBody: some View {
-        Group {
-            if usesStackedEnergyHeroLayout {
-                VStack(alignment: .leading, spacing: 12) {
-                    batteryMaterial
-                        .frame(height: 94)
-                    accessibilityBatteryRangeCopy
-                }
-            } else {
-                ZStack(alignment: .leading) {
-                    batteryMaterial
-                    batteryRangeCopy(
-                        primaryColor: batteryRangePrimaryColor,
-                        secondaryColor: batteryRangeSecondaryColor
-                    )
-                }
-            }
-        }
-        .accessibilityHidden(true)
-    }
-
-    private var batteryMaterial: some View {
-        HomeBatteryMaterial(
-            fillFraction: CGFloat(batteryFillFraction),
-            isLowBattery: isBatteryLow,
-            reduceTransparency: reduceTransparency
-        )
-        .animation(
-            reduceMotion ? nil : .snappy(duration: 0.28),
-            value: batteryFillFraction
-        )
-    }
-
-    private var accessibilityBatteryRangeCopy: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(adaptiveRangeText)
-                .font(.system(.headline, design: .rounded, weight: batteryRangePrimaryWeight))
-                .tracking(0.15)
-                .monospacedDigit()
-                .foregroundStyle(batteryRangePrimaryColor)
-                .contentTransition(reduceMotion ? .identity : .numericText())
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text(adaptiveRangeQualifier)
-                .font(.caption.weight(.regular))
-                .tracking(0.28)
-                .foregroundStyle(batteryRangeSecondaryColor)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 4)
-    }
-
-    private func batteryRangeCopy(
-        primaryColor: Color,
-        secondaryColor: Color
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(adaptiveRangeText)
-                .font(.system(.headline, design: .rounded, weight: batteryRangePrimaryWeight))
-                .tracking(0.15)
-                .monospacedDigit()
-                .foregroundStyle(primaryColor)
-                .contentTransition(reduceMotion ? .identity : .numericText())
-                .lineLimit(1)
-                .minimumScaleFactor(0.76)
-
-            Text(adaptiveRangeQualifier)
-                .font(.caption.weight(.regular))
-                .tracking(0.28)
-                .foregroundStyle(secondaryColor)
-                .lineLimit(1)
-                .minimumScaleFactor(0.74)
-        }
-        .frame(
-            maxWidth: HomeHeroLayout.batteryCopySafeWidth,
-            alignment: .leading
-        )
-        .padding(.leading, 16)
-        .padding(.trailing, HomeHeroLayout.batteryTerminalWidth + 8)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
     // MARK: - Readiness and durable Today
@@ -1132,182 +806,6 @@ struct HomeView: View {
 
     // MARK: - Truthful presentation values
 
-    private var batteryReadoutMode: NembraCore.BatteryPrimaryReadoutMode {
-        cockpit.batteryPrimaryReadoutState.mode
-    }
-
-    private var adaptiveRangeDecision: NembraCore.AdaptiveRangePrimaryPresentationDecision {
-        NembraCore.AdaptiveBatteryRangePrimaryPresentationPolicy()
-            .resolve(liveEstimate: adaptiveRangeEstimate)
-    }
-
-    private var adaptiveRangeDisplay: NembraCore.BatteryEstimatedRangeDisplay {
-        switch adaptiveRangeDecision {
-        case let .valueMeters(meters): .valueMeters(meters)
-        case .learning: .learning
-        case .unavailable: .unavailable
-        }
-    }
-
-    private var batteryPresentation: NembraCore.BatteryPrimaryReadoutPresentation {
-        cockpit.batteryPrimaryReadoutState.presentation(
-            for: NembraCore.BatteryPrimaryReadoutInputs(
-                displaySOCPercent: vehicle.batteryDisplayPercent,
-                estimatedRange: adaptiveRangeDisplay
-            )
-        )
-    }
-
-    private var batteryPercent: Int? { batteryPresentation.batteryFillPercent }
-
-    private var batteryIsRetained: Bool { vehicle.batteryDataAvailability == .retained }
-
-    private var retainedBatteryFreshnessAccessibilityValue: String {
-        guard let observedAt = vehicle.retainedBatteryObservedAt else {
-            return "Observation time unavailable"
-        }
-        return "Observed \(observedAt.formatted(date: .complete, time: .shortened))"
-    }
-
-    private var batteryNumericText: String {
-        batteryPercent.map(String.init) ?? "—"
-    }
-
-    private var batteryFillFraction: Double {
-        Double(batteryPercent ?? 0) / 100
-    }
-
-    private var batteryAccessibilityValue: String {
-        guard let batteryPercent else { return "Unavailable" }
-        var parts = ["\(batteryPercent) percent"]
-        if isBatteryLow { parts.append("low battery") }
-        if batteryIsRetained {
-            if let observedAt = vehicle.retainedBatteryObservedAt {
-                parts.append(
-                    "last known, observed \(observedAt.formatted(date: .complete, time: .shortened))"
-                )
-            } else {
-                parts.append("last known, observation time unavailable")
-            }
-        }
-        return parts.joined(separator: ", ")
-    }
-
-    private var batteryValueColor: Color {
-        if isBatteryLow {
-            // Keep the semantic warning red bright enough for the thin rolling
-            // numerals in both emphasis modes. Do not compound opacity when the
-            // estimated range is primary: that made `14` fail the runtime audit.
-            return NembraColor.warningRed
-        }
-
-        switch (batteryIsRetained, batteryReadoutMode) {
-        case (false, .percentage):
-            return NembraColor.primaryText
-        case (false, .estimatedRange):
-            return NembraColor.instrumentSecondaryText
-        case (true, .percentage), (true, .estimatedRange):
-            // Retention truth is carried by the explicit freshness and offline
-            // surfaces. Keep the thin percent glyph fully legible instead of
-            // encoding staleness by dimming primary information.
-            return NembraColor.primaryText
-        }
-    }
-
-    private var batteryRangePrimaryWeight: Font.Weight {
-        switch adaptiveRangeDisplay {
-        case .valueMeters:
-            batteryReadoutMode == .estimatedRange ? .semibold : .medium
-        case .learning:
-            .medium
-        case .unavailable:
-            .regular
-        }
-    }
-
-    private var batteryRangePrimaryColor: Color {
-        switch adaptiveRangeDisplay {
-        case .valueMeters:
-            NembraColor.primaryText.opacity(batteryIsRetained ? 0.90 : 0.96)
-        case .learning:
-            NembraColor.primaryText.opacity(batteryIsRetained ? 0.88 : 0.92)
-        case .unavailable:
-            NembraColor.primaryText.opacity(batteryIsRetained ? 0.86 : 0.90)
-        }
-    }
-
-    private var batteryRangeSecondaryColor: Color {
-        // `secondaryText` is already a muted token. Applying another opacity
-        // made the qualifier fail when it crossed the gold or low-battery fill.
-        // This remains a cool secondary hierarchy while holding contrast over
-        // every part of the instrument's graphite copy well.
-        NembraColor.instrumentSecondaryText
-    }
-
-    private var adaptiveRangeText: String {
-        switch adaptiveRangeDisplay {
-        case let .valueMeters(meters):
-            VehicleDisplayFormatting.distance(kilometers: meters / 1_000, decimals: 1)
-        case .learning:
-            "Learning"
-        case .unavailable:
-            "Unavailable"
-        }
-    }
-
-    private var adaptiveRangeQualifier: String {
-        switch adaptiveRangeDecision {
-        case .valueMeters: "learned range"
-        case let .learning(reason), let .unavailable(reason):
-            adaptiveRangeReasonQualifier(reason)
-        }
-    }
-
-    private var adaptiveRangeAccessibilityValue: String {
-        switch adaptiveRangeDecision {
-        case let .valueMeters(meters):
-            let value = VehicleDisplayFormatting.distance(kilometers: meters / 1_000, decimals: 1)
-            return "\(value), learned from accepted evidence for this scooter"
-        case let .learning(reason):
-            return "Learning from accepted ride history, \(adaptiveRangeReasonQualifier(reason))"
-        case let .unavailable(reason):
-            return "Unavailable, \(adaptiveRangeReasonQualifier(reason))"
-        }
-    }
-
-    private func adaptiveRangeReasonQualifier(
-        _ reason: NembraCore.AdaptiveRangePrimaryPresentationReason
-    ) -> String {
-        switch reason {
-        case .provisionalSeed: "rides needed for range"
-        case .learningConfidence: "building range history"
-        case .lowConfidenceRequiresQualifier: "more rides for range"
-        case .noEstimate: "no learned range"
-        case .retainedEstimateRequiresQualifier: "fresh range evidence"
-        }
-    }
-
-    private var batteryInstrumentAccessibilityLabel: String {
-        switch batteryReadoutMode {
-        case .percentage: "Battery and estimated range"
-        case .estimatedRange: "Estimated range and battery"
-        }
-    }
-
-    private var batteryInstrumentAccessibilityValue: String {
-        let emphasis = switch batteryReadoutMode {
-        case .percentage: "Battery percentage emphasized"
-        case .estimatedRange: "Estimated range emphasized"
-        }
-        return [batteryAccessibilityValue, adaptiveRangeAccessibilityValue, emphasis]
-            .joined(separator: ". ")
-    }
-
-    private var batteryInstrumentAccessibilityHint: String {
-        let nextValue = batteryReadoutMode == .percentage ? "estimated range" : "battery percentage"
-        return "Double tap to emphasize \(nextValue). Both values remain visible. The battery fill always represents state of charge."
-    }
-
     private var todayDistanceText: String {
         guard let meters = daily.todayAndCurrent?.today.distanceMeters.value else { return "—" }
         return VehicleDisplayFormatting.distance(kilometers: meters / 1_000)
@@ -1527,53 +1025,8 @@ struct HomeView: View {
         return vehicle.state.isLocked == true
     }
 
-    private var isBatteryLow: Bool {
-        guard let batteryPercent else { return false }
-        return batteryPercent <= 15
-    }
-
     private var vehicleStatusText: String {
-        if let issue = vehicle.state.connectionIssue {
-            switch issue {
-            case .bluetoothPoweredOff: return "Bluetooth Off"
-            case .bluetoothPermissionDenied: return "Permission Needed"
-            case .scooterUnavailable: return "Not Found"
-            case .unsupportedConfiguration: return "Unsupported Configuration"
-            }
-        }
-
-        switch vehicle.state.connection {
-        case .connected:
-            guard vehicle.state.dataAvailability == .live else {
-                return "Connected · waiting for data"
-            }
-            if let speed = vehicle.simulatorQualifiedLiveSpeedKilometersPerHour, speed > 0.5 {
-                return "Riding · \(VehicleDisplayFormatting.speed(kilometersPerHour: speed))"
-            }
-            return "Connected"
-        case .connecting: return "Connecting"
-        case .reconnecting:
-            return vehicle.state.dataAvailability == .retained
-                ? "Reconnecting · last known data"
-                : "Reconnecting"
-        case .disconnected:
-            return vehicle.state.dataAvailability == .retained
-                ? "Offline · last known data"
-                : "Offline"
-        }
-    }
-
-    private var vehicleStatusAccessibilityValue: String {
-        guard vehicle.profile == .simulatorQA else { return vehicleStatusText }
-        return "\(vehicleStatusText). SIM, QA only, synthetic evidence"
-    }
-
-    private var connectionIndicatorColor: Color {
-        switch vehicle.state.connection {
-        case .connected: .green
-        case .connecting, .reconnecting: NembraColor.gold
-        case .disconnected: NembraColor.secondaryText
-        }
+        HomeVehicleStatusPresentation(vehicle: vehicle).text
     }
 
     private var connectionRecoveryColor: Color {
@@ -1588,7 +1041,7 @@ struct HomeView: View {
 /// Standard Home protects a left-side copy zone while the real ES80 silhouette
 /// occupies the right-side stage. These names are intentionally semantic so a
 /// later licensed hero asset can be remeasured without scattering pixel values.
-private enum HomeHeroLayout {
+enum HomeHeroLayout {
     static let standardHeight: CGFloat = 304
     static let batteryHeight: CGFloat = 80
     static let batteryTop: CGFloat = 80
@@ -1604,7 +1057,7 @@ private enum HomeHeroLayout {
 /// A small, input-driven Canvas keeps the passive energy material out of the
 /// native-glass control layer. It owns no animation timeline or display-link
 /// source at idle; hosted profiling remains the authority for actual redraws.
-private struct HomeBatteryMaterial: View, @MainActor Animatable {
+struct HomeBatteryMaterial: View, @MainActor Animatable {
     private static let chargeRibSpacing: CGFloat = 4
 
     var fillFraction: CGFloat
@@ -1910,7 +1363,7 @@ private struct HomeBatteryMaterial: View, @MainActor Animatable {
 /// Static scene lighting gives the supplied cutout physical contact with the
 /// floor without baking presentation pixels into the image asset. Tire, deck,
 /// ambient, and energy-light layers stay passive and accessibility-hidden.
-private struct HomeHeroGroundingScene: View, @MainActor Equatable {
+struct HomeHeroGroundingScene: View, @MainActor Equatable {
     enum Layout: Equatable {
         case standard
         case accessibility
