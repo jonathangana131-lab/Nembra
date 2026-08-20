@@ -154,6 +154,11 @@ class SignFieldAuthorizationFromRendezvousTests(unittest.TestCase):
         raw = "2026-08-20T04:45:00Z"
         self.assertEqual(wrapper.timestamp_unix_milliseconds(raw, "issued-at"), self.ms(raw))
         for invalid in (
+            "2026-8-20T04:45:00Z",
+            "2026-08-2T04:45:00Z",
+            "2026-08-20T4:45:00Z",
+            "2026-08-20T04:5:00Z",
+            "2026-08-20T04:45:0Z",
             "2026-08-20T04:45:00.123Z",
             "2026-08-20T04:45:00",
             "2026-08-20T04:45:00+01:00",
