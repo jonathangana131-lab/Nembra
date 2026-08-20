@@ -510,7 +510,7 @@ private struct DashboardDriveSlowLayer: View, @MainActor Equatable {
                 }
             }
         }
-        .frame(maxWidth: .infinity, minHeight: dynamicTypeSize.isAccessibilitySize ? 58 : 54)
+        .frame(maxWidth: .infinity, minHeight: dynamicTypeSize.isAccessibilitySize ? 86 : 54)
     }
 
     private var rideLedger: some View {
