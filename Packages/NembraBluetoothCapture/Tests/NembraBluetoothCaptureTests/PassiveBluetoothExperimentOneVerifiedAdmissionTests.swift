@@ -109,18 +109,24 @@ struct PassiveBluetoothExperimentOneVerifiedAdmissionTests {
         #expect(!source.contains("ProcessInfo"))
     }
 
-    @Test("authenticated field app cannot consume the retired package admission capability")
+    @Test("authenticated field app uses verifier-owned one-time session instead of retired package admission or self-authority")
     func authenticatedFieldAppUsesCurrentAuthorityInsteadOfLegacyAdmission() throws {
         let source = try repositorySourceFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
         #expect(source.contains("private let buildIdentity = NembraCaptureBuildIdentity.current"))
-        #expect(source.contains("var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }"))
+        #expect(source.contains("var fieldBuildMetadataReady: Bool { buildIdentity.hasCompleteFieldBuildMetadata }"))
+        #expect(source.contains("private let fieldAuthorization = NembraCaptureFieldAuthorizationController()"))
+        #expect(source.contains("var fieldAuthorizationReady: Bool { fieldAuthorization.stage == .armed }"))
+        #expect(source.contains("fieldAuthorization.admitOFF1Start()"))
+        #expect(source.contains("fieldAuthorization.admitOfficialConnectionStart()"))
         #expect(source.contains("@Published private(set) var sdkDeviceMembershipVerified = false"))
         #expect(source.contains("accountIdentityLeaseIsAuthorized"))
         #expect(source.contains("OfficialTuyaFactory.acquirePackageCorrelationLease()"))
         #expect(source.contains("PassiveBluetoothPowerCycleObservationSession(minimumWindowDuration: 10)"))
         #expect(source.contains("OfficialTuyaFactory.make()"))
 
+        #expect(!source.contains("buildIdentity.isAuthoritativeFieldBuild"))
+        #expect(!source.contains("fieldBuildIsAuthoritative"))
         #expect(!source.contains("makeResearchAuthorizedES80ForCurrentApplication()"))
         #expect(!source.contains("PassiveBluetoothExperimentOneCoordinator.makeAuthorizedES80()"))
         #expect(!source.contains("verifiedAdmission:"))
