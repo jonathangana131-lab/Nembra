@@ -23,9 +23,16 @@ struct CaptureSimulatorQAHarnessSourceTests_AuthorizationInboxAppAdapter {
         #expect(controller.contains("session.prepare(installManifestData: manifestData)"))
         #expect(controller.contains("session.acceptEnvelope(envelopeData)"))
 
-        // Both consumed-manifest publication failure and outbound-rendezvous retirement failure
-        // must kill the attempt before any hidden retry/authority path can survive.
-        #expect(controller.components(separatedBy: "session.revoke()").count - 1 >= 2)
+        // Consumed-manifest publication failure, outbound-rendezvous retirement failure, and any
+        // later app lifecycle revocation must kill package authority. Normal revocation also retires
+        // the non-authorizing rendezvous best-effort so an abandoned attempt cannot block the next
+        // field attempt; cleanup failure remains fail-closed because publish is no-replace.
+        #expect(controller.components(separatedBy: "session.revoke()").count - 1 >= 3)
+        let revokeStart = try #require(controller.range(of: "func revoke() {"))
+        let revokeTail = controller[revokeStart.lowerBound...]
+        #expect(revokeTail.contains("session.revoke()"))
+        #expect(revokeTail.contains("AuthenticatedStationaryCaptureSignerRendezvousOutbox"))
+        #expect(revokeTail.contains(".retirePublishedRendezvous()"))
 
         #expect(!controller.contains("retainedInstallManifestData: Data"))
         #expect(!controller.contains("func authorize(envelopeData: Data)"))
