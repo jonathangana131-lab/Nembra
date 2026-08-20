@@ -23,6 +23,7 @@ on:
       - scripts/ci/tests/test_es80_field_authorization_rendezvous.py
       - scripts/ci/es80_sign_field_authorization_from_rendezvous.py
       - scripts/ci/tests/test_es80_sign_field_authorization_from_rendezvous.py
+      - scripts/ci/tests/test_es80_sign_field_authorization_execution_custody.py
       - scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py
       - NembraApp/App/NembraCaptureEntrypoint.swift
       - NembraApp/App/NembraCaptureFieldAuthorizationController.swift
@@ -86,6 +87,7 @@ jobs:
             scripts/ci/tests/test_es80_field_authorization_rendezvous.py \
             scripts/ci/es80_sign_field_authorization_from_rendezvous.py \
             scripts/ci/tests/test_es80_sign_field_authorization_from_rendezvous.py \
+            scripts/ci/tests/test_es80_sign_field_authorization_execution_custody.py \
             scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py
 
       - name: Run focused preflight, retained-install, app-wiring, and handoff regressions
@@ -98,6 +100,7 @@ jobs:
           python3 scripts/ci/es80_field_authorization_rendezvous.py --self-test
           python3 scripts/ci/tests/test_es80_field_authorization_rendezvous.py -v
           python3 scripts/ci/tests/test_es80_sign_field_authorization_from_rendezvous.py -v
+          python3 scripts/ci/tests/test_es80_sign_field_authorization_execution_custody.py -v
           python3 scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py -v
           python3 scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py -v
           python3 scripts/ci/tests/test_es80_today_field_candidate_preflight.py -v
