@@ -23,7 +23,6 @@ struct CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWirin
     @Test("real SecureLink controller owns one app authorization coordinator")
     func secureLinkOwnsAuthorizationCoordinator() throws {
         let app = try appSource()
-
         #expect(app.contains("NembraCaptureFieldAuthorizationController"))
         #expect(app.contains("fieldAuthorization"))
     }
@@ -36,7 +35,6 @@ struct CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWirin
         )
         let admission = try #require(section.range(of: "admitOFF1Start()"))
         let correlation = try #require(section.range(of: "beginCorrelationSeries()"))
-
         #expect(admission.lowerBound < correlation.lowerBound)
         #expect(hasFailClosedAuthorizationHandling(around: admission.lowerBound, in: section))
     }
@@ -64,7 +62,6 @@ struct CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWirin
         )
         let factory = try #require(connection.range(of: "OfficialTuyaFactory.make()"))
         let connect = try #require(connection.range(of: "newDriver.connect("))
-
         #expect(connectionAdmission.lowerBound < factory.lowerBound)
         #expect(connectionAdmission.lowerBound < connect.lowerBound)
         #expect(hasFailClosedAuthorizationHandling(
@@ -81,7 +78,6 @@ struct CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWirin
         )
         let admission = try #require(section.range(of: "admitObservationStart()"))
         let promotion = try #require(section.range(of: "phase = .observing"))
-
         #expect(admission.lowerBound < promotion.lowerBound)
         #expect(hasFailClosedAuthorizationHandling(around: admission.lowerBound, in: section))
     }
@@ -141,14 +137,12 @@ struct CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWirin
             from: "var failedAttemptCanRestartFromOFF1: Bool",
             through: "var canRestartFromFreshOFF1: Bool"
         )
-
         #expect(retry.contains("fieldAuthorization.stage == .armed"))
     }
 
     @Test("authority admissions cannot be silently skipped by optional chaining")
     func missingAuthorityFailsClosedInsteadOfOptionalSkipping() throws {
         let app = try appSource()
-
         for forbidden in [
             "fieldAuthorization?.admitOFF1Start()",
             "fieldAuthorization?.admitAuthenticationStart()",
@@ -165,13 +159,12 @@ struct CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWirin
         let app = try appSource()
         let foreground = try appSection(
             from: "func appDidLoseForeground()",
-            through: "func prepareForShare()"
+            through: "var privateConfig: Bool"
         )
         let viewExit = try appSection(
             from: "func abandonCorrelationForViewExit()",
             through: "func appDidLoseForeground()"
         )
-
         #expect(app.contains("fieldAuthorization.revoke()"))
         #expect(foreground.contains("fieldAuthorization.revoke()"))
         #expect(viewExit.contains("fieldAuthorization.revoke()"))
