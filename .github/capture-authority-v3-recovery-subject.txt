@@ -1,1 +1,2 @@
 Temporary isolated V3 lifecycle materialization subject. Physical/private Capture remains NO-GO.
+Retriggered after the carrier-owned isolated-child Xcode 27 workflow became available.
