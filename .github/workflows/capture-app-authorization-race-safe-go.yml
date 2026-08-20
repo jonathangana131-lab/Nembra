@@ -1,4 +1,5 @@
 name: Capture app authorization race-safe GO
+# Retriggered after writer convergence at carrier 203d4ffd07849f83c171d7e70b070f189a22548b.
 
 on:
   push:
