@@ -55,7 +55,9 @@ jobs:
           test -f "$CONTRACT"
           test "$(grep -Ec 'devicectl help device copy (to|from)' "$CONTRACT")" = 2
           test "$(grep -Ec 'devicectl device copy (to|from)' "$CONTRACT" || true)" = 0
-          test "$(grep -Ec -- '--device|--udid|--identifier' "$CONTRACT" || true)" = 0
+          # The contract is help-only, but it is allowed to parse/document an explicit --device
+          # selector from Xcode help. What remains forbidden is executing a production copy command.
+          test "$(grep -Fc '"'"'--device'"'"' "$CONTRACT" || true)" -ge 1
           artifacts_dir="$RUNNER_TEMP/capture-app-container-transport"
           mkdir -p "$artifacts_dir"
           printf 'subject_sha=%s\nphysicalAuthorityCreated=false\ndeviceContacted=false\n' "$actual" > "$artifacts_dir/subject.txt"
@@ -75,6 +77,7 @@ jobs:
           test -s "$ARTIFACTS_DIR/devicectl-device-copy-to-help.txt"
           test -s "$ARTIFACTS_DIR/devicectl-device-copy-from-help.txt"
           grep -Fq "NEMBRA_CAPTURE_APP_CONTAINER_TRANSPORT_SUBJECT=$SUBJECT_SHA" "$RUNNER_TEMP/capture-app-container-transport-result.txt"
+          grep -Fq 'DEVICECTL_BIDIRECTIONAL_APP_CONTAINER_BUNDLE_IDENTITY_PRESENT' "$RUNNER_TEMP/capture-app-container-transport-result.txt"
           grep -Fq 'DEVICECTL_BIDIRECTIONAL_APP_CONTAINER_RENDEZVOUS_PRESENT' "$RUNNER_TEMP/capture-app-container-transport-result.txt"
 
       - name: Retain exact Xcode help evidence
@@ -95,5 +98,5 @@ jobs:
         if: success()
         shell: bash
         run: |
-          printf '%s\n' 'PROVEN: this exact retained Xcode toolchain documents bidirectional appDataContainer copy controls for the bound exact source subject.'
-          printf '%s\n' 'NOT PROVEN: live iPhone transfer, installed-app identity, signing/install custody, authorization acceptance, Bluetooth/Tuya behavior, ES80 identity, telemetry, commands, or physical GO.'
+          printf '%s\n' 'PROVEN: this exact retained Xcode toolchain documents bidirectional appDataContainer copy controls and bundle-ID domain-identifier semantics for the bound exact source subject.'
+          printf '%s\n' 'NOT PROVEN: live iPhone transfer, that Nembra Capture is installed on a particular device, signing/install custody, authorization acceptance, Bluetooth/Tuya behavior, ES80 identity, telemetry, commands, or physical GO.'
