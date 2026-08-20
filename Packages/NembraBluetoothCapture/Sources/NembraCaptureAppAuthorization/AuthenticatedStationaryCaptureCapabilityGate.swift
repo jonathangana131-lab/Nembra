@@ -16,8 +16,9 @@ public enum AuthenticatedStationaryCaptureCapabilityGateError: Error, Equatable,
 /// opaque capability private and makes the app prove the accepted one-attempt sequence at every
 /// boundary that can advance toward physical observation.
 ///
-/// A gate is single-use. `revoke()` is terminal, every transition re-checks both wall and monotonic
-/// expiry, and no API returns the underlying capability to a caller.
+/// A gate is single-use. `revoke()` is terminal for an unfinished attempt, every transition
+/// re-checks both wall and monotonic expiry, and no API returns the underlying capability to a
+/// caller. Once sealed, later lifecycle cleanup cannot downgrade the already-terminal sealed state.
 @MainActor
 public final class AuthenticatedStationaryCaptureCapabilityGate {
     public enum Stage: Equatable, Sendable {
@@ -82,9 +83,11 @@ public final class AuthenticatedStationaryCaptureCapabilityGate {
         try advance(from: .observationAdmitted, to: .sealed)
     }
 
-    /// Terminally retires the capability after foreground loss, view exit, account/source loss,
-    /// lifecycle failure, cancellation, or any other abandoned attempt.
+    /// Terminally retires unfinished authority after foreground loss, view exit, account/source
+    /// loss, lifecycle failure, cancellation, or any other abandoned attempt. A successfully sealed
+    /// authority remains sealed so later cleanup cannot repaint completed evidence as abandoned.
     public func revoke() {
+        guard stage != .sealed else { return }
         stage = .revoked
     }
 
