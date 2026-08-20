@@ -191,8 +191,7 @@ public enum AuthenticatedStationaryCaptureInstallManifestVerifier {
         guard wire.buildIdentifier == expectedBuildIdentifier else {
             throw AuthenticatedStationaryCaptureInstallManifestError.invalidBuildIdentifier
         }
-        guard PassiveBluetoothCaptureRuntimeBuildIdentityReader
-            .normalizedBuildInstanceID(wire.buildInstanceID) == wire.buildInstanceID else {
+        guard isCanonicalUUIDv4(wire.buildInstanceID) else {
             throw AuthenticatedStationaryCaptureInstallManifestError.invalidBuildInstanceID
         }
 
@@ -228,6 +227,16 @@ public enum AuthenticatedStationaryCaptureInstallManifestVerifier {
             authorizationEnvelopeSHA256: wire.authorizationEnvelopeSHA256,
             canonicalManifestSHA256: sha256Hex(data)
         )
+    }
+
+    private static func isCanonicalUUIDv4(_ value: String) -> Bool {
+        guard PassiveBluetoothCaptureRuntimeBuildIdentityReader
+            .normalizedBuildInstanceID(value) == value else {
+            return false
+        }
+        let bytes = Array(value.utf8)
+        guard bytes.count == 36, bytes[14] == 0x34 else { return false }
+        return bytes[19] == 0x38 || bytes[19] == 0x39 || bytes[19] == 0x61 || bytes[19] == 0x62
     }
 
     private static func isCanonicalNonzeroSHA256(_ value: String) -> Bool {
