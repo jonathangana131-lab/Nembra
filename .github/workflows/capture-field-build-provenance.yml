@@ -67,7 +67,11 @@ jobs:
             test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
           fi
           procedure='ES80-AUTHENTICATED-STATIONARY-v1'
-          grep -Fq "PROCEDURE_ID=\"$procedure\"" scripts/field/install_one_time_capture.command
+          grep -Fq 'RETAINED_INSTALL_CONTRACT_STATUS="stable-subjects-validated-await-app-attempt-authority"' scripts/field/install_one_time_capture.command
+          if grep -Fq 'PROCEDURE_ID=' scripts/field/install_one_time_capture.command; then
+            printf '%s\n' 'ERROR: pre-install retained-subject validation must not claim current process-local procedure authority.' >&2
+            exit 1
+          fi
           grep -Fq "requiredFieldProcedureIdentifier = \"$procedure\"" NembraApp/App/NembraCaptureBuildIdentity.swift
 
           private_review_authority="$(tr -d '\r\n' < CAPTURE_TUYA_PRIVATE_INPUT_REVIEW_COMMITMENT.txt)"
