@@ -52,7 +52,7 @@ struct AuthenticatedStationaryCaptureAuthorizationInboxTests {
             )
             try FileManager.default.linkItem(at: target, to: handoff)
 
-            #expect(throws: AuthenticatedStationaryCaptureAuthorizationInboxError.nonRegularFile(
+            #expect(throws: AuthenticatedStationaryCaptureAuthorizationInboxError.multipleLinksRejected(
                 AuthenticatedStationaryCaptureAuthorizationInbox.installManifestFilename
             )) {
                 _ = try inbox.takeInstallManifest()
@@ -80,7 +80,7 @@ struct AuthenticatedStationaryCaptureAuthorizationInboxTests {
         }
     }
 
-    @Test("source reads authority bytes through one no-follow descriptor")
+    @Test("source reads and retires authority bytes through one no-follow descriptor")
     func sourceContract() throws {
         let sourceURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -93,10 +93,12 @@ struct AuthenticatedStationaryCaptureAuthorizationInboxTests {
 
         #expect(source.contains("O_RDONLY | O_NOFOLLOW | O_CLOEXEC"))
         #expect(source.contains("Darwin.fstat(descriptor, &before)"))
-        #expect(source.contains("Darwin.fstat(descriptor, &after)"))
+        #expect(source.contains("Darwin.fstat(descriptor, &afterRead)"))
         #expect(source.contains("before.st_nlink == 1"))
-        #expect(source.contains("sameIdentity(before, after)"))
-        #expect(source.contains("pathState.st_ino == before.st_ino"))
+        #expect(source.contains("sameSnapshot(before, afterRead)"))
+        #expect(source.contains("Darwin.unlinkat(directoryFD, filename, 0)"))
+        #expect(source.contains("afterUnlink.st_nlink == 0"))
+        #expect(source.contains("sameSnapshotExceptLinkCount(before, afterUnlink)"))
         #expect(!source.contains("Data(contentsOf: fileURL"))
         #expect(!source.contains("resourceValues(forKeys:"))
     }
