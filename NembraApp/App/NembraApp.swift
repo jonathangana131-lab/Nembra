@@ -17,7 +17,23 @@ struct NembraApp: App {
                     .task { await runtime.start() }
             }
             .environment(runtime.vehicleStore)
+            .preferredColorScheme(simulatorQAPreferredColorScheme)
         }
+    }
+
+    private var simulatorQAPreferredColorScheme: ColorScheme? {
+#if DEBUG && targetEnvironment(simulator)
+        switch ProcessInfo.processInfo.environment["NEMBRA_SIMULATION_APPEARANCE"]?.lowercased() {
+        case "light":
+            return .light
+        case "dark":
+            return .dark
+        default:
+            return nil
+        }
+#else
+        return nil
+#endif
     }
 }
 
