@@ -25,7 +25,6 @@ public final class AuthenticatedStationaryCaptureAppSession {
 
     public struct SignerRendezvous: Equatable, Sendable {
         public let challengeSHA256: String
-        public let retainedInstallManifestSHA256: String
         public let startedAtWallClockUnixMilliseconds: Int64
         public let startedAtUptimeNanoseconds: UInt64
         public let procedureID: String
@@ -52,15 +51,12 @@ public final class AuthenticatedStationaryCaptureAppSession {
         guard stage == .idle else {
             throw AuthenticatedStationaryCaptureAppSessionError.invalidTransition
         }
-        let manifest = try AuthenticatedStationaryCaptureInstallManifestVerifier
-            .decodeCanonical(installManifestData)
         let attempt = try authorizer.beginAttempt(installManifestData: installManifestData)
         preparedAttempt = attempt
         retainedInstallManifestData = Data(installManifestData)
         stage = .awaitingEnvelope
         return SignerRendezvous(
             challengeSHA256: attempt.challengeSHA256,
-            retainedInstallManifestSHA256: manifest.canonicalManifestSHA256,
             startedAtWallClockUnixMilliseconds: attempt.startedAtWallClockUnixMilliseconds,
             startedAtUptimeNanoseconds: attempt.startedAtUptimeNanoseconds,
             procedureID: attempt.procedureID
