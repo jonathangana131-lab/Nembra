@@ -67,7 +67,7 @@ struct NembraGlassButtonStyle: ViewModifier {
             if reduceTransparency {
                 content
                     .background(
-                        NembraColor.warmGraphite,
+                        Color(uiColor: .secondarySystemBackground),
                         in: RoundedRectangle(
                             cornerRadius: NembraMetrics.controlRadius,
                             style: .continuous
@@ -103,7 +103,7 @@ struct NembraGlassButtonStyle: ViewModifier {
                 style: .continuous
             )
             .strokeBorder(
-                NembraColor.primaryText.opacity(boundaryOpacity),
+                Color.primary.opacity(boundaryOpacity),
                 lineWidth: boundaryLineWidth
             )
             .allowsHitTesting(false)
@@ -114,10 +114,4 @@ struct NembraGlassButtonStyle: ViewModifier {
 
 extension View {
     func nembraGlassControl() -> some View { modifier(NembraGlassButtonStyle()) }
-
-    /// Stable product background shared by portrait content and the Horizon
-    /// cockpit. This is intentionally opaque and cheap to composite.
-    func nembraProductBackground() -> some View {
-        background(NembraColor.baseBlack.ignoresSafeArea())
-    }
 }
