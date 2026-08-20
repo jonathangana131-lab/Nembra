@@ -146,11 +146,14 @@ struct PassiveBluetoothExperimentOneAppAuthorityWiringTests {
     func buildIdentityUsesStampedExactSourceAndProcedure() throws {
         let identity = try Self.repositoryFile("NembraApp/App/NembraCaptureBuildIdentity.swift")
 
+        #expect(identity.contains("buildInstanceIDInfoKey = \"NembraCaptureBuildInstanceID\""))
+        #expect(identity.contains("sourceCommitSHAInfoKey = \"NembraCaptureBuildCommitSHA\""))
         #expect(identity.contains("requiredFieldProcedureIdentifier = \"ES80-AUTHENTICATED-STATIONARY-v1\""))
         #expect(identity.contains("sourceCommitSHA.count == 40"))
+        #expect(identity.contains("Self.isCanonicalBuildInstanceID(buildInstanceID)"))
         #expect(identity.contains("tuyaDependencyLockSHA256.count == 64"))
         #expect(identity.contains("procedureIdentifier == Self.requiredFieldProcedureIdentifier"))
-        #expect(identity.contains("let expectedIdentifier = \"capture-v14-\\(sourceCommitSHA.prefix(12))\""))
+        #expect(identity.contains("let expectedIdentifier = \"Capture Build V14-\\(sourceCommitSHA.prefix(12))\""))
         #expect(identity.contains("return buildIdentifier == expectedIdentifier"))
         #expect(!identity.contains("PassiveBluetoothCaptureRuntimeBuildIdentityReader"))
         #expect(!identity.contains("Task.detached"))
