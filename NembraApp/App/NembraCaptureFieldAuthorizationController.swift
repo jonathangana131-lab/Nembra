@@ -29,9 +29,30 @@ final class NembraCaptureFieldAuthorizationController {
     private func prepareAttemptFromInbox()
         throws -> AuthenticatedStationaryCaptureAppSession.SignerRendezvous
     {
-        let manifestData = try AuthenticatedStationaryCaptureAuthorizationInbox()
-            .takeInstallManifest()
-        return try session.prepare(installManifestData: manifestData)
+        let manifestData: Data
+        do {
+            manifestData = try AuthenticatedStationaryCaptureAuthorizationInbox()
+                .takeInstallManifest()
+        } catch AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(let subject)
+            where subject == AuthenticatedStationaryCaptureAuthorizationInbox.installManifestFilename {
+            throw AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(subject)
+        } catch {
+            // Once a manifest path is present but custody cannot prove exactly one trusted subject,
+            // this controller lifetime is terminal. Do not allow a replacement manifest to turn a
+            // failed physical-field handoff into an invisible retry.
+            session.revoke()
+            throw error
+        }
+
+        do {
+            return try session.prepare(installManifestData: manifestData)
+        } catch {
+            // `takeInstallManifest()` has already retired the descriptor-bound manifest inode. If
+            // canonical/runtime cross-binding rejects those consumed bytes, the attempt must remain
+            // terminal rather than accepting replacement bytes in the same controller lifetime.
+            session.revoke()
+            throw error
+        }
     }
 
     /// Publishes the exact non-authorizing bytes that should be copied FROM the still-running app
