@@ -40,7 +40,8 @@ struct TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests {
                 from: "private func freezeAcceptedArtifactForAuthorizationSeal(",
                 throughAnyOf: [
                     "private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken)",
-                    "private func invalidateSourceAuthority("
+                    "private func invalidateSourceAuthority(",
+                    "func prepareExport()",
                 ]
             )
             #expect(helper.contains("ExactByteArtifactSeal(sealing:"))
@@ -51,6 +52,67 @@ struct TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests {
         #expect(packageSeal.lowerBound < freezeBoundary)
         #expect(freezeBoundary < capabilitySeal.lowerBound)
         #expect(capabilitySeal.lowerBound < acceptedPromotion.lowerBound)
+    }
+
+    @Test("failed authorization seal cannot leave accepted-looking artifact bytes published")
+    func capabilitySealFailureClearsPrepublishedAcceptedArtifact() throws {
+        let app = try appSource()
+        let watchdog = try section(
+            in: app,
+            from: "private func startWatchdog(token: TuyaReadOnlyConnectionToken)",
+            through: "private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken)"
+        )
+        let capabilitySeal = try #require(
+            watchdog.range(of: "sealAfterAcceptedArtifactFreeze()")
+        )
+        let acceptedPromotion = try #require(
+            watchdog.range(of: "self.phase = .accepted", range: capabilitySeal.upperBound..<watchdog.endIndex)
+        )
+
+        let beforeCapabilitySeal = String(watchdog[..<capabilitySeal.lowerBound])
+        var publishesAcceptedStateBeforeSeal = beforeCapabilitySeal.contains("self.sealedAcceptedExport =")
+            || beforeCapabilitySeal.contains("self.sealedAcceptedArtifact =")
+            || beforeCapabilitySeal.contains("self.exportData =")
+            || beforeCapabilitySeal.contains("self.acceptedArtifactSHA256 =")
+            || beforeCapabilitySeal.contains("self.acceptedArtifactByteCount =")
+
+        if let helperStart = app.range(of: "private func freezeAcceptedArtifactForAuthorizationSeal(") {
+            let helperCandidates = [
+                "private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken)",
+                "private func invalidateSourceAuthority(",
+                "func prepareExport()",
+            ].compactMap { app.range(of: $0, range: helperStart.upperBound..<app.endIndex) }
+            if let helperEnd = helperCandidates.min(by: { $0.lowerBound < $1.lowerBound }) {
+                let helper = String(app[helperStart.lowerBound..<helperEnd.lowerBound])
+                publishesAcceptedStateBeforeSeal = publishesAcceptedStateBeforeSeal
+                    || helper.contains("sealedAcceptedArtifact =")
+                    || helper.contains("exportData =")
+                    || helper.contains("acceptedArtifactSHA256 =")
+                    || helper.contains("acceptedArtifactByteCount =")
+            }
+        }
+
+        guard publishesAcceptedStateBeforeSeal else { return }
+
+        let afterSealBeforePromotion = watchdog[
+            capabilitySeal.upperBound..<acceptedPromotion.lowerBound
+        ]
+        let catchRange = try #require(afterSealBeforePromotion.range(of: "catch {"))
+        let returnRange = try #require(
+            afterSealBeforePromotion.range(
+                of: "return",
+                range: catchRange.upperBound..<afterSealBeforePromotion.endIndex
+            )
+        )
+        let failedSeal = String(afterSealBeforePromotion[catchRange.lowerBound..<returnRange.upperBound])
+
+        #expect(failedSeal.contains("fieldAuthorization.revoke()"))
+        #expect(failedSeal.contains("sealedAcceptedExport = nil"))
+        #expect(failedSeal.contains("sealedAcceptedArtifact = nil"))
+        #expect(failedSeal.contains("exportData = nil"))
+        #expect(failedSeal.contains("acceptedArtifactSHA256 = nil"))
+        #expect(failedSeal.contains("acceptedArtifactByteCount = nil"))
+        #expect(failedSeal.contains("phase = .failed"))
     }
 
     @Test("a consumed one-OFF1 authorization cannot silently power an in-process retry")
