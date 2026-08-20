@@ -19,14 +19,14 @@ This repository document is the recovery authority. Chat summaries are supplemen
 - Repository: `jonathangana131-lab/Nembra`
 - Unified release branch: `release/nembra-1-0-unified`
 - Unified isolated worktree: local directory `Nembra-unified-1-0`
-- Latest remotely verified unified branch checkpoint before this continuity update: `cb00ee46a0fe3ecc53b7143fb61939615102919b`
+- Latest remotely verified unified implementation checkpoint before this continuity update: `d4d8f6c882dac1c2eda634bbdff9121c218fefbb`
 - Source integration branch: `product/capture-1-0-main-20260818`
 - Source integration PR: [#3675](https://github.com/jonathangana131-lab/Nembra/pull/3675), draft, base `main`
 - Portrait predecessor PR: [#3677](https://github.com/jonathangana131-lab/Nembra/pull/3677), branch `agent/portrait-home-1-0-polish`, remote tip `0a418aef716fb9053cc9d67064fd56bd87f27677`
 - Cockpit predecessor PR: [#3676](https://github.com/jonathangana131-lab/Nembra/pull/3676), branch `agent/cockpit-1-0-redesign`, remote tip `75edf0fcb231e28b3d9fbd7b7acc7592bdac1a48`
 - Physical Capture status: **NO-GO**. Public CI, Simulator, source tests, signed-build tooling, and historical artifacts do not authorize a scooter session.
 
-A commit cannot embed its own resulting SHA. The SHA above names the last remotely verified predecessor/base checkpoint audited by this file; `git ls-remote origin refs/heads/release/nembra-1-0-unified` is authoritative for any later continuity-only commit.
+A commit cannot embed its own resulting SHA. The SHA above names the last remotely verified implementation checkpoint audited by this file; `git ls-remote origin refs/heads/release/nembra-1-0-unified` is authoritative for this continuity-only commit and any later checkpoint.
 
 ## Integrated provenance at the unified base
 
@@ -38,6 +38,8 @@ The unified branch begins at Capture continuity checkpoint `cb00ee46a…`, which
 - the truth, persistence, orientation, simulation, and UI foundation inherited from PR #3675.
 
 The two predecessor UI branches were created before `5c32d29d…`. Their branch snapshots appear to delete the newer Capture files. Integrate their owned commits onto the unified branch; never merge or replace the unified tree with either older snapshot.
+
+Portrait predecessor tip `0a418aef716fb9053cc9d67064fd56bd87f27677` is now integrated by merge checkpoint `d4d8f6c882dac1c2eda634bbdff9121c218fefbb`. The merge preserved the newer Capture tree and this canonical root ledger. Cockpit remains pending.
 
 ## Workstream ownership matrix
 
@@ -62,7 +64,7 @@ Current gate: close the independently signed, short-lived, single-use `ES80-AUTH
 
 Finish Home before widening. Preserve truthful battery/range, durable Today, confirmed controls, automatic-recording readiness, recovery states, and narrow render invalidation. The visual authority is the selected portrait source plus gold handoff; the temporary 500×500 grey/red ES80 raster is not production-cleared.
 
-Current gate: integrate predecessor checkpoint `0a418aef…`, run exact-head Xcode 27/iPhone 12 audits and screenshots for connected, retained, low, error, ride, and Accessibility XXXL states, then perform a same-state side-by-side design QA loop. No Home visual acceptance exists until the battery, typography, approved scooter asset, zero copy occlusion, grounding/light, native glass, accessibility, first-fold/tab clearance, and runtime performance all pass.
+Current gate: close the three remaining exact-tip Home contrast findings from run `32322459434`, run the combined unified exact head on Xcode 27/iPhone 12, then perform a same-state side-by-side design QA loop. No Home visual acceptance exists until the battery, typography, approved scooter asset, zero copy occlusion, grounding/light, native glass, accessibility, first-fold/tab clearance, and runtime performance all pass.
 
 ### C. Landscape Cockpit / Drive / Navigation / Explore
 
@@ -83,28 +85,37 @@ Current gate: integrate predecessor checkpoint `75edf0fc…`, run exact-head Xco
 
 Checkpoint `5c32d29d…` passed 33/33 focused Swift tests across the typed-event and guided-plan suites, parser/diff/secret checks, and a final adversarial review. These are software contracts only; every production ES80 semantic remains unknown.
 
-### Predecessor checkpoints awaiting deliberate integration
+### Integrated Portrait checkpoint
 
-- Portrait implementation: `72ba15f1844ef489fca64cecf5f9b207a2bef533`; continuity tip `0a418aef…`. Owned paths include `HomeView.swift`, `VehicleHeroView.swift`, narrow `NembraVisuals.swift`/`AppRootView.swift` changes, focused app/UI/source tests, and portrait authority/continuity docs.
+- Portrait implementation `72ba15f1844ef489fca64cecf5f9b207a2bef533` and continuity tip `0a418aef716fb9053cc9d67064fd56bd87f27677` are integrated at unified merge `d4d8f6c882dac1c2eda634bbdff9121c218fefbb`.
+- Exact integrated paths include `NembraApp/Features/Home/HomeView.swift`, `NembraApp/Features/Home/VehicleHeroView.swift`, narrow `NembraApp/DesignSystem/NembraVisuals.swift` and `NembraApp/App/AppRootView.swift` changes, focused app/UI/source tests, `docs/continuity/PORTRAIT_EXPERIENCE.md`, `docs/design/PORTRAIT_DESIGN_SYSTEM.md`, and the non-runtime reference/provenance record under `docs/design/references/portrait-home/`.
+- The merge was parser-clean for every changed Swift file, passed `git diff --cached --check`, and passed a staged secret/private-path scan. The two focused local SwiftPM source suites were still compiling under known local Xcode 26/resource contention at commit time; they are not claimed as results here.
+
+### Predecessor checkpoint awaiting deliberate integration
+
 - Cockpit implementation: `85dc4b70b7981502bd909dd6d7c628f7e8e4c700`; continuity tip `75edf0fc…`. Owned paths include `DashboardView.swift`, `RollingSpeedValueView.swift`, `SpeedInstrumentModel.swift`, narrow `AppBootstrap.swift`, focused app/UI tests, and cockpit authority/capability/continuity docs.
 
-Neither predecessor checkpoint is integrated into the unified branch yet. Their local/remote refs are clean and equal at the SHAs above.
+The Cockpit local/remote refs are clean and equal at the SHA above. Integrate commits `8671b285…`, `71fe1c4c…`, `85dc4b70…`, and `75edf0fc…` in that order; preserve canonical study assets and semantically union shared tests/contracts.
 
 ## Work in progress and recovery
 
-- Unified worktree: clean at `cb00ee46…` before this documentation checkpoint; no unified implementation is local-only.
+- Unified worktree: clean and remotely recoverable at Portrait merge `d4d8f6c882dac1c2eda634bbdff9121c218fefbb` before this documentation checkpoint; no integrated Portrait implementation is local-only.
 - Original Capture worktree: one bounded installer/evidence slice is local-only while being finalized on `product/capture-1-0-main-20260818`:
   - `scripts/field/install_one_time_capture.command`
+  - `Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/AuthenticatedStationaryCaptureFieldAuthorization.swift`
+  - `Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/AuthenticatedStationaryCaptureFieldAuthorizationTests.swift`
   - `Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaFieldInstallerRetainedIPAAdmissionSourceTests.swift`
+  - `scripts/ci/es80_field_authorization_envelope.py`
   - `scripts/ci/es80_signed_field_artifact_evidence.py`
-  The Capture owner must run focused checks, update both continuity ledgers, commit explicit paths, push, and return a remote SHA before unified integration. Do not delete or overwrite this worktree.
+  - `scripts/ci/tests/test_es80_authenticated_stationary_offline_authorization.py`
+  The Capture owner found an incompatible Python-signer/Swift-verifier envelope schema and is reconciling that exact atomic unit with cross-contract coverage before any commit. Production trust remains nil and physical authority remains NO-GO. Do not delete or overwrite this worktree.
 - Portrait and Cockpit predecessor worktrees are clean and remote-recoverable. Their review agents are read-only.
 
 ## Exact CI and evidence snapshot
 
 - Capture `5c32d29d…`: TODAY Final GO `32321764453` green; TODAY Field Candidate Preflight `32321764641` green; Field Handoff Provenance `32321764666` green. V16 `32321764574`, visual `32321764568`, and product Xcode `32321764484` were cancelled by later branch movement after substantive early steps; they are not failures and not acceptance.
 - Latest fully completed Capture baseline `3f0814ac…`: V16 `32315926223` green with artifact `9388386960`; visual `32315926201` green with artifact `9388184207`; field/TODAY lanes green. This remains software/Simulator evidence only.
-- Portrait exact-head acceptance is pending. Run `32318006928` validated ancestor `bec498463…` and failed four portrait accessibility issues plus one cockpit issue; later `72ba15f18…` claims narrow fixes but has no authoritative terminal exact-tip run yet.
+- Portrait predecessor exact-tip Xcode 27 run [`32322459434`](https://github.com/jonathangana131-lab/Nembra/actions/runs/32322459434) at `0a418aef…` is terminal red with artifact `nembra-xcode27-simulator-1369-1` (ID `9390586092`, SHA-256 `f0bcf0a3b498ab34b7401e9befb23aece14106efeb502aea18655e69a0d85a31`). Build/Core validation passed; app tests passed 78/78; Accessibility XXXL Home passed; Ride UI passed 5/5. Remaining Portrait failures are connected Home contrast on `slider.horizontal.3`, low-battery contrast on decorative `·`, and retained contrast on `Unavailable`. A separate Cockpit animation-idle timeout is not Portrait closure.
 - Cockpit exact-head acceptance is pending. `85dc4b70…` has parse, 49/49 focused package tests, strict local compile/build-for-testing, and scope/secret checks only. It has no exact-tip Xcode 27 screenshot/accessibility/Release hitch evidence.
 
 ## Known blockers
@@ -132,12 +143,12 @@ Neither predecessor checkpoint is integrated into the unified branch yet. Their 
 
 ## Exact next executable action
 
-1. Commit and push this unified coordination checkpoint on `release/nembra-1-0-unified`; verify the remote ref.
-2. Review the returned Portrait and Cockpit audit reports, then cherry-pick their owned commits in chronological order while keeping this canonical continuity file and the newer Capture files. Resolve shared `NembraAppTests.swift`, `NembraUITests.swift`, `AppRootView.swift`, `NembraVisuals.swift`, and UI-contract docs semantically.
-3. When the Capture owner returns a pushed SHA, inspect and cherry-pick that atomic installer/evidence checkpoint.
-4. Run Swift parsers on every changed Swift file, focused Capture/Core suites, `git diff --check`, secret/private-artifact scan, and diagnostic strict build-for-testing where practical. Commit and push the coherent unified baseline.
-5. Trigger the exact unified-head Xcode 27 workflow. Inspect the actual xcresults, screenshots, accessibility issues, and Release metrics; record run IDs/artifacts and update this file before the next code batch.
-6. Reassign three non-overlapping implementation milestones from that evidence: Capture authorization/journal, Home exact visual/accessibility closure, and Drive exact visual/performance closure. Navigation, Explore, and additional portrait tabs widen only after their vertical-slice gates pass.
+1. Commit and push this continuity update, verifying the remote unified ref contains both Portrait merge `d4d8f6c8…` and this ledger.
+2. Integrate Cockpit commits `8671b285…`, `71fe1c4c…`, `85dc4b70…`, and `75edf0fc…` in order. Preserve this root ledger; union `NembraAppTests.swift`, `NembraUITests.swift`, and `docs/coordination/UI_CONTRACTS.md`; omit duplicate study rasters already canonical under `docs/design-reference/horizon-post-v4-studies/`.
+3. Gate Cockpit's simulation-only app tests on `targetEnvironment(simulator)`, then run parsers, focused Core suites, `git diff --check`, secret/private-artifact scan, and diagnostic strict build-for-testing where practical. Push a coherent Cockpit integration checkpoint.
+4. When the Capture owner returns a pushed SHA, inspect its signer/verifier cross-contract evidence and cherry-pick that atomic authorization/installer checkpoint.
+5. Create or synchronize the unified draft PR and trigger the exact unified-head Xcode 27 workflow that runs functional UI, deterministic screenshots, accessibility, and separate Release performance validation. Inspect actual xcresults/artifacts and update this file.
+6. Reassign three non-overlapping milestones from that evidence: Capture authorization/journal, Home exact visual/accessibility closure, and Drive exact visual/performance closure. Navigation, Explore, and additional portrait tabs widen only after their vertical-slice gates pass.
 
 ## Rejected designs and approaches
 
