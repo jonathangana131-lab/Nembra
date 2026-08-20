@@ -4,6 +4,7 @@ import NembraBluetoothCapture
 public enum AuthenticatedStationaryCaptureSignerRendezvousDocumentError: Error, Equatable, Sendable {
     case invalidChallenge
     case invalidAttemptClock
+    case invalidProcedure
     case deadlineOverflow
     case encodingFailed
 }
@@ -41,6 +42,10 @@ public enum AuthenticatedStationaryCaptureSignerRendezvousDocument {
         }
         guard rendezvous.startedAtWallClockUnixMilliseconds > 0 else {
             throw AuthenticatedStationaryCaptureSignerRendezvousDocumentError.invalidAttemptClock
+        }
+        guard rendezvous.procedureID
+                == AuthenticatedStationaryCaptureFieldAuthorizationVerifier.procedureID else {
+            throw AuthenticatedStationaryCaptureSignerRendezvousDocumentError.invalidProcedure
         }
         let lifetime = AuthenticatedStationaryCaptureFieldAuthorizationVerifier
             .maximumAuthorizationLifetimeMilliseconds

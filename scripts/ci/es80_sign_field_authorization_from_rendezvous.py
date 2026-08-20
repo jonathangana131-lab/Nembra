@@ -31,6 +31,7 @@ GIT = Path("/usr/bin/git")
 PYTHON = Path("/usr/bin/python3")
 MAX_SOURCE_BYTES = 1_048_576
 SHA40 = re.compile(r"^[0-9a-f]{40}$")
+RFC3339_SECONDS = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 EXECUTION_SOURCES = (
     "scripts/ci/es80_sign_field_authorization_from_rendezvous.py",
@@ -192,9 +193,11 @@ def _load_rendezvous_helper(path: Path):
 
 def timestamp_unix_milliseconds(raw: str, label: str) -> int:
     """Parse exactly the canonical UTC-seconds syntax accepted by the existing signer."""
+    if not isinstance(raw, str) or RFC3339_SECONDS.fullmatch(raw) is None:
+        raise ValueError(f"{label} is not canonical UTC seconds")
     try:
         value = datetime.strptime(raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-    except (TypeError, ValueError) as error:
+    except ValueError as error:
         raise ValueError(f"{label} is not canonical UTC seconds") from error
     milliseconds = int(value.timestamp()) * 1_000
     if milliseconds <= 0:

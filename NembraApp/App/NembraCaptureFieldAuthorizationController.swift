@@ -9,6 +9,15 @@ import NembraCaptureAppAuthorization
 /// envelope bytes enter only through the descriptor-bound one-shot app-container inbox.
 @MainActor
 final class NembraCaptureFieldAuthorizationController {
+    enum HandoffProgress: Equatable {
+        case waitingForManifest
+        case waitingForEnvelope
+        case armed
+        case lifecycleInProgress
+        case sealed
+        case revoked
+    }
+
     private let session: AuthenticatedStationaryCaptureAppSession
 
     init(session: AuthenticatedStationaryCaptureAppSession = .init()) {
@@ -20,9 +29,30 @@ final class NembraCaptureFieldAuthorizationController {
     private func prepareAttemptFromInbox()
         throws -> AuthenticatedStationaryCaptureAppSession.SignerRendezvous
     {
-        let manifestData = try AuthenticatedStationaryCaptureAuthorizationInbox()
-            .takeInstallManifest()
-        return try session.prepare(installManifestData: manifestData)
+        let manifestData: Data
+        do {
+            manifestData = try AuthenticatedStationaryCaptureAuthorizationInbox()
+                .takeInstallManifest()
+        } catch AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(let subject)
+            where subject == AuthenticatedStationaryCaptureAuthorizationInbox.installManifestFilename {
+            throw AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(subject)
+        } catch {
+            // Once a manifest path is present but custody cannot prove exactly one trusted subject,
+            // this controller lifetime is terminal. Do not allow a replacement manifest to turn a
+            // failed physical-field handoff into an invisible retry.
+            session.revoke()
+            throw error
+        }
+
+        do {
+            return try session.prepare(installManifestData: manifestData)
+        } catch {
+            // `takeInstallManifest()` has already retired the descriptor-bound manifest inode. If
+            // canonical/runtime cross-binding rejects those consumed bytes, the attempt must remain
+            // terminal rather than accepting replacement bytes in the same controller lifetime.
+            session.revoke()
+            throw error
+        }
     }
 
     /// Publishes the exact non-authorizing bytes that should be copied FROM the still-running app
@@ -43,19 +73,66 @@ final class NembraCaptureFieldAuthorizationController {
     }
 
     /// Takes the returned signed envelope, retires the exact outbound rendezvous inode, then asks
-    /// the package session to verify/consume the envelope. If rendezvous retirement fails, the
-    /// attempt is revoked before the envelope can become authority.
+    /// the package session to verify/consume the envelope. Exact absence remains retryable because
+    /// no signed subject has arrived. Any other handoff/custody/retirement/verification failure is
+    /// terminal so replacement bytes cannot inherit the same process-local challenge.
     func authorizeFromInbox() throws {
-        let outbox = try AuthenticatedStationaryCaptureSignerRendezvousOutbox()
-        let envelopeData = try AuthenticatedStationaryCaptureAuthorizationInbox()
-            .takeAuthorizationEnvelope()
         do {
+            let outbox = try AuthenticatedStationaryCaptureSignerRendezvousOutbox()
+            let envelopeData = try AuthenticatedStationaryCaptureAuthorizationInbox()
+                .takeAuthorizationEnvelope()
             try outbox.retirePublishedRendezvous()
+            try session.acceptEnvelope(envelopeData)
+        } catch AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(let subject)
+            where subject == AuthenticatedStationaryCaptureAuthorizationInbox.authorizationEnvelopeFilename {
+            throw AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(subject)
         } catch {
             session.revoke()
             throw error
         }
-        try session.acceptEnvelope(envelopeData)
+    }
+
+    /// Advances only the non-authorizing app-container handoff that is valid for the current
+    /// single-use session stage. A legitimately absent next file is a wait state, not a failure and
+    /// not authority. Any present-but-invalid/custody-violating manifest or envelope is propagated
+    /// to the caller; verification code remains responsible for terminal revocation where required.
+    ///
+    /// This seam is intentionally idempotent while waiting: the manifest is consumed exactly once,
+    /// then only an envelope can advance the session. It never retries a rejected envelope against
+    /// the same challenge and never resets a revoked session.
+    @discardableResult
+    func advanceInboxHandoffIfAvailable() throws -> HandoffProgress {
+        switch session.stage {
+        case .idle:
+            do {
+                _ = try prepareSignerRendezvousDocumentFromInbox()
+                return .waitingForEnvelope
+            } catch AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(let subject)
+                where subject == AuthenticatedStationaryCaptureAuthorizationInbox.installManifestFilename {
+                return .waitingForManifest
+            }
+
+        case .awaitingEnvelope:
+            do {
+                try authorizeFromInbox()
+                return .armed
+            } catch AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(let subject)
+                where subject == AuthenticatedStationaryCaptureAuthorizationInbox.authorizationEnvelopeFilename {
+                return .waitingForEnvelope
+            }
+
+        case .armed:
+            return .armed
+
+        case .off1Started, .authenticationAdmitted, .officialConnectionAdmitted, .observationAdmitted:
+            return .lifecycleInProgress
+
+        case .sealed:
+            return .sealed
+
+        case .revoked:
+            return .revoked
+        }
     }
 
     func admitOFF1Start() throws {
