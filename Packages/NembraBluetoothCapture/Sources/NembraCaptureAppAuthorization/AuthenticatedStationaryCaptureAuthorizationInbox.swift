@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import NembraBluetoothCapture
 
@@ -64,54 +65,58 @@ public struct AuthenticatedStationaryCaptureAuthorizationInbox: Sendable {
 
     private func take(filename: String, maximumByteCount: Int) throws -> Data {
         let fileURL = directoryURL.appendingPathComponent(filename, isDirectory: false)
-        let keys: Set<URLResourceKey> = [
-            .isSymbolicLinkKey,
-            .isRegularFileKey,
-            .fileSizeKey,
-            .contentModificationDateKey,
-            .fileResourceIdentifierKey,
-        ]
+        let descriptor = try openNoFollow(fileURL: fileURL, filename: filename)
+        defer { Darwin.close(descriptor) }
 
-        let before: URLResourceValues
-        do {
-            before = try fileURL.resourceValues(forKeys: keys)
-        } catch {
-            throw AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(filename)
+        var before = stat()
+        guard Darwin.fstat(descriptor, &before) == 0 else {
+            throw AuthenticatedStationaryCaptureAuthorizationInboxError.readFailed(filename)
         }
-        guard before.isSymbolicLink != true else {
-            throw AuthenticatedStationaryCaptureAuthorizationInboxError.symbolicLinkRejected(filename)
-        }
-        guard before.isRegularFile == true else {
+        guard (before.st_mode & S_IFMT) == S_IFREG, before.st_nlink == 1 else {
             throw AuthenticatedStationaryCaptureAuthorizationInboxError.nonRegularFile(filename)
         }
-        guard let expectedSize = before.fileSize,
-              expectedSize > 0,
-              expectedSize <= maximumByteCount else {
+        guard before.st_size > 0, before.st_size <= maximumByteCount else {
             throw AuthenticatedStationaryCaptureAuthorizationInboxError.byteLimitExceeded(filename)
         }
 
-        let data: Data
-        do {
-            data = try Data(contentsOf: fileURL, options: [.uncached])
-        } catch {
-            throw AuthenticatedStationaryCaptureAuthorizationInboxError.readFailed(filename)
+        var data = Data()
+        data.reserveCapacity(Int(before.st_size))
+        var buffer = [UInt8](repeating: 0, count: min(64 * 1024, maximumByteCount))
+        while true {
+            let count: Int = buffer.withUnsafeMutableBytes { rawBuffer in
+                Darwin.read(descriptor, rawBuffer.baseAddress, rawBuffer.count)
+            }
+            if count == 0 { break }
+            if count < 0 {
+                if errno == EINTR { continue }
+                throw AuthenticatedStationaryCaptureAuthorizationInboxError.readFailed(filename)
+            }
+            guard data.count <= maximumByteCount - count else {
+                throw AuthenticatedStationaryCaptureAuthorizationInboxError.byteLimitExceeded(filename)
+            }
+            data.append(contentsOf: buffer.prefix(count))
         }
-        guard data.count == expectedSize, data.count <= maximumByteCount else {
+
+        var after = stat()
+        guard Darwin.fstat(descriptor, &after) == 0,
+              sameIdentity(before, after),
+              data.count == Int(before.st_size) else {
             throw AuthenticatedStationaryCaptureAuthorizationInboxError.subjectChangedDuringRead(filename)
         }
 
-        let after: URLResourceValues
-        do {
-            after = try fileURL.resourceValues(forKeys: keys)
-        } catch {
-            throw AuthenticatedStationaryCaptureAuthorizationInboxError.subjectChangedDuringRead(filename)
+        // Verify that the expected pathname still resolves to the exact descriptor-bound inode
+        // before retiring the handoff. Even if a final same-UID swap happens after this comparison,
+        // the bytes already returned above remain bound to the no-follow descriptor, so pathname
+        // mutation cannot substitute authority input.
+        var pathState = stat()
+        let lstatResult = fileURL.withUnsafeFileSystemRepresentation { path in
+            guard let path else { return -1 }
+            return Darwin.lstat(path, &pathState)
         }
-        guard after.isSymbolicLink != true,
-              after.isRegularFile == true,
-              after.fileSize == before.fileSize,
-              after.contentModificationDate == before.contentModificationDate,
-              String(describing: after.fileResourceIdentifier)
-                == String(describing: before.fileResourceIdentifier) else {
+        guard lstatResult == 0,
+              (pathState.st_mode & S_IFMT) == S_IFREG,
+              pathState.st_dev == before.st_dev,
+              pathState.st_ino == before.st_ino else {
             throw AuthenticatedStationaryCaptureAuthorizationInboxError.subjectChangedDuringRead(filename)
         }
 
@@ -124,5 +129,36 @@ public struct AuthenticatedStationaryCaptureAuthorizationInbox: Sendable {
             throw AuthenticatedStationaryCaptureAuthorizationInboxError.readFailed(filename)
         }
         return data
+    }
+
+    private func openNoFollow(fileURL: URL, filename: String) throws -> Int32 {
+        let descriptor = fileURL.withUnsafeFileSystemRepresentation { path -> Int32 in
+            guard let path else { return -1 }
+            return Darwin.open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+        }
+        guard descriptor >= 0 else {
+            switch errno {
+            case ELOOP:
+                throw AuthenticatedStationaryCaptureAuthorizationInboxError
+                    .symbolicLinkRejected(filename)
+            case ENOENT, ENOTDIR:
+                throw AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(filename)
+            default:
+                throw AuthenticatedStationaryCaptureAuthorizationInboxError.readFailed(filename)
+            }
+        }
+        return descriptor
+    }
+
+    private func sameIdentity(_ lhs: stat, _ rhs: stat) -> Bool {
+        lhs.st_dev == rhs.st_dev
+            && lhs.st_ino == rhs.st_ino
+            && lhs.st_mode == rhs.st_mode
+            && lhs.st_nlink == rhs.st_nlink
+            && lhs.st_size == rhs.st_size
+            && lhs.st_mtimespec.tv_sec == rhs.st_mtimespec.tv_sec
+            && lhs.st_mtimespec.tv_nsec == rhs.st_mtimespec.tv_nsec
+            && lhs.st_ctimespec.tv_sec == rhs.st_ctimespec.tv_sec
+            && lhs.st_ctimespec.tv_nsec == rhs.st_ctimespec.tv_nsec
     }
 }
