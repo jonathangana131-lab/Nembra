@@ -6,17 +6,21 @@ on:
     branches:
       - main
       - product/capture-1-0-main-20260818
+      - capture/app-container-directory-bootstrap-recovery-gpt56sol
     paths:
       - 'NembraApp/App/NembraCaptureEntrypoint.swift'
       - 'NembraApp/App/NembraCaptureFieldAuthorizationController.swift'
       - 'Packages/NembraBluetoothCapture/Sources/NembraCaptureAppAuthorization/**'
       - 'Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/AuthenticatedStationaryCaptureFieldAuthorization.swift'
       - 'Packages/NembraBluetoothCapture/Tests/NembraCaptureAppAuthorizationTests/**'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/CaptureAuthorizationTransferBootstrapSourceTests.swift'
       - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedFieldCapability*'
       - 'scripts/ci/es80_*field_authorization*'
       - 'scripts/ci/tests/test_es80_*field_authorization*'
       - 'scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py'
       - 'scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py'
+      - '.github/workflows/capture-app-authorization-close-one-shot.yml'
+      - '.github/workflows/capture-app-authorization-race-safe-go.yml'
       - '.github/workflows/capture-field-authorization-exact-head.yml'
   workflow_dispatch:
 
@@ -32,6 +36,10 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: xcode-27
     timeout-minutes: 30
+    env:
+      APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
+      SOURCE_WORKFLOW: .github/workflows/capture-app-authorization-close-one-shot.yml
+      MATERIALIZER_WORKFLOW: .github/workflows/capture-app-authorization-race-safe-go.yml
     steps:
       - name: Checkout immutable PR head
         if: github.event_name == 'pull_request'
@@ -56,7 +64,61 @@ jobs:
           if [[ "${{ github.event_name }}" == 'pull_request' ]]; then
             test "$actual" = "${{ github.event.pull_request.head.sha }}"
           fi
+          test -f "$APP_SOURCE"
+          test -f "$SOURCE_WORKFLOW"
+          test -f "$MATERIALIZER_WORKFLOW"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
           printf 'NEMBRA_CAPTURE_FIELD_AUTHORIZATION_SUBJECT=%s physicalAuthorityCreated=false\n' "$actual"
+
+      - name: Materialize canonical lifecycle transform in exact-head workspace
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path(os.environ["MATERIALIZER_WORKFLOW"]).read_text(encoding="utf-8")
+          marker = "      - name: Materialize canonical lifecycle transform\n"
+          section = workflow.index(marker)
+          run_marker = "        run: |\n"
+          start = workflow.index(run_marker, section) + len(run_marker)
+          end = workflow.index("\n      - name:", start)
+          program = textwrap.dedent(workflow[start:end])
+          required = [
+              "SOURCE_WORKFLOW",
+              "admitOFF1Start",
+              "admitAuthenticationStart",
+              "admitOfficialConnectionStart",
+              "admitObservationStart",
+              "freezeAcceptedArtifactForAuthorizationSeal",
+              "sealAfterAcceptedArtifactFreeze",
+              "app.write_text(source, encoding=\"utf-8\")",
+          ]
+          for token in required:
+              if token not in program:
+                  raise SystemExit(f"race-safe materializer missing required token: {token}")
+          namespace = {
+              "__name__": "__main__",
+              "__file__": "<capture-field-authorization-exact-head-materializer>",
+          }
+          exec(compile(program, namespace["__file__"], "exec", dont_inherit=True), namespace)
+
+      - name: Enforce transformed exact-head authority shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test "$(git status --porcelain=v1 | awk '{print $2}' | sort | tr '\n' ' ' | sed 's/ $//')" = "$APP_SOURCE"
+          grep -Fq 'import NembraCaptureAppAuthorization' "$APP_SOURCE"
+          grep -Fq 'fieldAuthorization.stage == .armed' "$APP_SOURCE"
+          grep -Fq 'fieldAuthorization.stage != .armed' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitOFF1Start()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitAuthenticationStart()' "$APP_SOURCE"
+          grep -Fq 'try fieldAuthorization.admitOfficialConnectionStart()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitObservationStart()' "$APP_SOURCE"
+          grep -Fq 'try self.freezeAcceptedArtifactForAuthorizationSeal()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()' "$APP_SOURCE"
+          test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE")" = 0
 
       - name: Run real-entrypoint lifecycle source contract
         shell: bash
@@ -77,6 +139,7 @@ jobs:
           swift test --filter AuthenticatedStationaryCaptureSignerRendezvousOutboxTests
           swift test --filter AuthenticatedStationaryCaptureAuthoritySurfaceSourceTests
           swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
+          swift test --filter CaptureAuthorizationTransferBootstrapSourceTests
           swift test --filter TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
 
       - name: Run frozen signer custody contracts
@@ -93,7 +156,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(grep -Fc 'isAuthoritativeFieldBuild = true' NembraApp/App/NembraCaptureEntrypoint.swift)" = 0
+          test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE")" = 0
           xcodebuild -version
           xcodebuild \
             -project NembraCapture.xcodeproj \
