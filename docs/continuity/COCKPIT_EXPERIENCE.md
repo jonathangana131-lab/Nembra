@@ -26,11 +26,9 @@ meaningful pushed checkpoint and before pausing or handing off.
 - Branch base at worktree creation: `cf817a8b1c1f74640055af317671497a202e4f74`
 - Latest pushed cockpit design/continuity checkpoint recorded here:
   `71fe1c4cb2bf0c8ed3a1476eab75970ee7ab49b6`
-- Latest pushed cockpit implementation checkpoint recorded here: pending the
-  coherent Drive-source commit described under Work in progress. The current
-  compile-clean six-file source/test candidate diff is
-  `c291e740a274b2deb5ab4c97fe719fbe961cb3ef4e2c36110543fb9b25e63458`;
-  a diff hash is diagnostic only and is not a recoverable Git checkpoint.
+- Latest pushed cockpit implementation checkpoint recorded here:
+  `85dc4b70b7981502bd909dd6d7c628f7e8e4c700`. Local and remote branch refs
+  were verified equal after push.
 - Cockpit PR: [#3676](https://github.com/jonathangana131-lab/Nembra/pull/3676)
 
 A Git commit cannot embed its own SHA without changing that SHA. This file
@@ -161,8 +159,9 @@ meets this gate.
 
 ## Work in progress
 
-The Drive implementation above is currently uncommitted and unpushed in exactly
-these six source/test files plus the two recovery authorities:
+The Drive implementation above is committed and remote-recoverable at
+`85dc4b70b7981502bd909dd6d7c628f7e8e4c700` in exactly these six source/test
+files plus the two recovery authorities:
 
 - `NembraApp/App/AppBootstrap.swift`
 - `NembraApp/Features/Dashboard/DashboardView.swift`
@@ -175,8 +174,8 @@ these six source/test files plus the two recovery authorities:
 
 No portrait implementation file, Navigation view, Explore view, Capture source,
 raw BLE decoder, package protocol mapping, or production telemetry authority has
-been changed. This work is not continuity-secured until the source commit and the
-follow-up exact-SHA continuity commit are both pushed and remote-verified.
+been changed. The implementation is continuity-secured; only this exact-SHA
+follow-up record remains to be committed, pushed, and remote-verified.
 
 ## Validation and CI truth
 
@@ -242,11 +241,8 @@ It is baseline evidence only and does not validate this branch. Artifact:
 
 ## Exact next executable action
 
-1. Run the final scope/secret scan over the quiescent candidate, then commit the
-   six source/test files plus both truthful recovery records and push branch
-   `agent/cockpit-1-0-redesign`, and verify the exact remote ref. Then update this
-   file and `DEVELOPMENT_CONTINUITY.md` with that implementation SHA in a separate
-   continuity commit and remote-verify it.
+1. Commit this exact-SHA continuity update, push
+   `agent/cockpit-1-0-redesign`, and verify the remote ref.
 2. Fetch and merge the latest `origin/product/capture-1-0-main-20260818` without
    force-pushing. Resolve shared `NembraUITests.swift` and continuity/design-doc
    overlap by preserving both portrait fixes and the post-V4 Drive assertions;
