@@ -22,8 +22,16 @@ struct TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests {
             watchdog.range(of: "self.phase = .accepted")
         )
 
+        // Only an artifact-freeze boundary that occurs before the authorization seal
+        // can satisfy this ordering contract. A later helper implementation detail must
+        // never be used to construct a reversed String range (or masquerade as the
+        // operational freeze that authorizes acceptance).
+        let preCapabilitySeal = watchdog.startIndex..<capabilitySeal.lowerBound
         let freezeBoundary: String.Index
-        if let inlineFreeze = watchdog.range(of: "ExactByteArtifactSeal(sealing:") {
+        if let inlineFreeze = watchdog.range(
+            of: "ExactByteArtifactSeal(sealing:",
+            range: preCapabilitySeal
+        ) {
             freezeBoundary = inlineFreeze.lowerBound
             let betweenFreezeAndCapability = watchdog[
                 inlineFreeze.lowerBound..<capabilitySeal.lowerBound
@@ -31,7 +39,10 @@ struct TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests {
             #expect(betweenFreezeAndCapability.contains(".verifies("))
         } else {
             let freezeCall = try #require(
-                watchdog.range(of: "freezeAcceptedArtifactForAuthorizationSeal(")
+                watchdog.range(
+                    of: "freezeAcceptedArtifactForAuthorizationSeal(",
+                    range: preCapabilitySeal
+                )
             )
             freezeBoundary = freezeCall.lowerBound
 
