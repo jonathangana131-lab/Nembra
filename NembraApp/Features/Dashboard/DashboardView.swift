@@ -121,7 +121,7 @@ struct DashboardView: View {
             statusRail
                 .frame(width: 156)
 
-            DashboardSpeedInstrumentView(modePersonality: personality)
+            DashboardSpeedInstrumentView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .layoutPriority(2)
 
@@ -140,7 +140,7 @@ struct DashboardView: View {
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
 
-            DashboardSpeedInstrumentView(modePersonality: personality)
+            DashboardSpeedInstrumentView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .layoutPriority(3)
 
