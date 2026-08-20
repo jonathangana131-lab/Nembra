@@ -17,12 +17,14 @@ import argparse
 from datetime import datetime, timezone
 import importlib.util
 from pathlib import Path
+import re
 import subprocess
 import sys
 
 HERE = Path(__file__).resolve().parent
 RENDEZVOUS_HELPER = HERE / "es80_field_authorization_rendezvous.py"
 SIGNER = HERE / "es80_field_authorization_envelope.py"
+RFC3339_SECONDS = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 
 def _load_rendezvous_helper():
@@ -38,9 +40,11 @@ def _load_rendezvous_helper():
 
 def timestamp_unix_milliseconds(raw: str, label: str) -> int:
     """Parse exactly the canonical UTC-seconds syntax accepted by the existing signer."""
+    if not isinstance(raw, str) or RFC3339_SECONDS.fullmatch(raw) is None:
+        raise ValueError(f"{label} is not canonical UTC seconds")
     try:
         value = datetime.strptime(raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-    except (TypeError, ValueError) as error:
+    except ValueError as error:
         raise ValueError(f"{label} is not canonical UTC seconds") from error
     milliseconds = int(value.timestamp()) * 1_000
     if milliseconds <= 0:
