@@ -126,21 +126,55 @@ jobs:
           set -euo pipefail
           /usr/bin/python3 -I scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
 
-      - name: Run package authorization and exact-freeze contracts
+      - name: Run and retain package authorization and exact-freeze contracts
         working-directory: Packages/NembraBluetoothCapture
+        shell: bash
+        run: |
+          set -uo pipefail
+          diagnostics="${RUNNER_TEMP}/capture-field-authorization-contracts"
+          rm -rf "$diagnostics"
+          mkdir -p "$diagnostics"
+          failures=0
+          filters=(
+            AuthenticatedStationaryCaptureCapabilityGateTests
+            AuthenticatedStationaryCaptureAppAuthorizerTests
+            AuthenticatedStationaryCaptureAppAuthorizerPreSigningTests
+            AuthenticatedStationaryCaptureAppSessionTests
+            AuthenticatedStationaryCaptureAuthorizationInboxTests
+            AuthenticatedStationaryCaptureSignerRendezvousDocumentTests
+            AuthenticatedStationaryCaptureSignerRendezvousOutboxTests
+            AuthenticatedStationaryCaptureAuthoritySurfaceSourceTests
+            CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
+            CaptureAuthorizationTransferBootstrapSourceTests
+            TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
+          )
+          for filter in "${filters[@]}"; do
+            printf '\n===== %s =====\n' "$filter"
+            if swift test --filter "$filter" 2>&1 | tee "$diagnostics/${filter}.log"; then
+              printf 'PASS %s\n' "$filter" | tee -a "$diagnostics/summary.txt"
+            else
+              status=${PIPESTATUS[0]}
+              printf 'FAIL %s exit=%s\n' "$filter" "$status" | tee -a "$diagnostics/summary.txt"
+              failures=1
+            fi
+          done
+          printf '%s\n' "$failures" > "$diagnostics/failures"
+
+      - name: Upload package authorization diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capture-field-authorization-contracts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/capture-field-authorization-contracts
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Enforce package authorization contract verdict
+        shell: bash
         run: |
           set -euo pipefail
-          swift test --filter AuthenticatedStationaryCaptureCapabilityGateTests
-          swift test --filter AuthenticatedStationaryCaptureAppAuthorizerTests
-          swift test --filter AuthenticatedStationaryCaptureAppAuthorizerPreSigningTests
-          swift test --filter AuthenticatedStationaryCaptureAppSessionTests
-          swift test --filter AuthenticatedStationaryCaptureAuthorizationInboxTests
-          swift test --filter AuthenticatedStationaryCaptureSignerRendezvousDocumentTests
-          swift test --filter AuthenticatedStationaryCaptureSignerRendezvousOutboxTests
-          swift test --filter AuthenticatedStationaryCaptureAuthoritySurfaceSourceTests
-          swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
-          swift test --filter CaptureAuthorizationTransferBootstrapSourceTests
-          swift test --filter TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
+          test -f "${RUNNER_TEMP}/capture-field-authorization-contracts/failures"
+          test "$(cat "${RUNNER_TEMP}/capture-field-authorization-contracts/failures")" = 0
 
       - name: Run frozen signer custody contracts
         shell: bash
