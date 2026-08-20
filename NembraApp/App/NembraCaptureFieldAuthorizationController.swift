@@ -21,15 +21,24 @@ final class NembraCaptureFieldAuthorizationController {
     private let session: AuthenticatedStationaryCaptureAppSession
     private let transferDirectoryPreparationError: (any Error)?
 
+    /// Root-safe bootstrap for the external app-container transport destination.
+    ///
+    /// This seam deliberately exists independently of field-build authority so the installed app
+    /// can prepare the empty owner-controlled destination before the retained manifest is copied in.
+    /// It cannot read a manifest, publish a challenge, accept an envelope, mint/expose a capability,
+    /// arm a session, admit OFF1, or touch Bluetooth/Tuya.
+    static func prepareAuthorizationTransferDirectoryForFieldTransport() throws {
+        try AuthenticatedStationaryCaptureSignerRendezvousOutbox()
+            .prepareAuthorizationTransferDirectory()
+    }
+
     init() {
         self.session = AuthenticatedStationaryCaptureAppSession()
         do {
-            // The retained manifest arrives through external appDataContainer transport before a
-            // candidate is allowed to claim field-build authority. Prepare only the protected empty
-            // destination here so transport can be proved without circularly granting authority.
-            // This creates no manifest, challenge, envelope, capability, BLE session, or admission.
-            try AuthenticatedStationaryCaptureSignerRendezvousOutbox()
-                .prepareAuthorizationTransferDirectory()
+            // Keep the controller-side check as an idempotent custody assertion for the eventual
+            // authorized SecureLink flow. CaptureP0Root may call the static bootstrap earlier so
+            // first-install transport does not depend on reaching this authority-gated controller.
+            try Self.prepareAuthorizationTransferDirectoryForFieldTransport()
             self.transferDirectoryPreparationError = nil
         } catch {
             // Keep bootstrap failure non-authorizing, but remember it so any later authorized
@@ -113,7 +122,7 @@ final class NembraCaptureFieldAuthorizationController {
 
     /// Advances only the app-container handoff that is valid for the current single-use session
     /// stage. Production callers keep this seam behind accepted field-build authority. The earlier
-    /// constructor bootstrap is deliberately narrower: it can create only the empty protected
+    /// root/controller bootstrap is deliberately narrower: it can create only the empty protected
     /// destination and cannot read a manifest, publish a challenge, arm the session, or admit OFF1.
     ///
     /// A legitimately absent next file is a wait state, not a failure and not authority. Any
