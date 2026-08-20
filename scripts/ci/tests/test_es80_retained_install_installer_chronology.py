@@ -58,12 +58,37 @@ class RetainedInstallInstallerChronologyTests(unittest.TestCase):
             "xcrun",
             "DEVICE_UDID",
             "install app",
-            "bootstrap_capture_tuya_sdk",
-            "capture_accepted_git_source_base64",
             "EXPECTED_SOURCE_SHA=",
         ):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, self.source)
+
+        # The pre-install checkpoint may freeze future nested field-tool bytes from the independently
+        # accepted Git commit, but it must not execute any side-effecting adapter. Keep these helpers
+        # declaration-only until a separately accepted field rung deliberately invokes them.
+        self.assertEqual(self.source.count("capture_accepted_git_source_base64"), 4)
+        self.assertIn("capture_accepted_git_source_base64() {", self.source)
+        self.assertIn(
+            'CAPTURE_BOOTSTRAP_SOURCE_B64="$(capture_accepted_git_source_base64 "$CAPTURE_BOOTSTRAP_PATH")"',
+            self.source,
+        )
+        self.assertIn(
+            'TUYA_PROVENANCE_SOURCE_B64="$(capture_accepted_git_source_base64 "$TUYA_PROVENANCE_PATH")"',
+            self.source,
+        )
+        self.assertIn(
+            'PRIVATE_DEVICE_RUNNER="$(capture_accepted_git_source_base64 "$PRIVATE_DEVICE_RUNNER_PATH")"',
+            self.source,
+        )
+        for declaration_only in (
+            "run_accepted_capture_bootstrap",
+            "run_accepted_tuya_provenance",
+            "run_accepted_private_device_reader",
+        ):
+            with self.subTest(declaration_only=declaration_only):
+                self.assertEqual(self.source.count(declaration_only), 1)
+                self.assertIn(f"{declaration_only}() {{", self.source)
+        self.assertNotIn('"$ROOT/Scripts/bootstrap_capture_tuya_sdk.sh"', self.source)
         self.assertIn("No device was contacted and no app was installed", self.source)
 
     def test_legacy_unreachable_installer_tail_is_deleted(self) -> None:
@@ -87,6 +112,8 @@ class RetainedInstallInstallerChronologyTests(unittest.TestCase):
 
     def test_verifier_modules_execute_from_independently_accepted_git_commit(self) -> None:
         self.assertIn('"GIT_NO_REPLACE_OBJECTS": "1"', self.source)
+        self.assertIn('"GIT_CONFIG_NOSYSTEM": "1"', self.source)
+        self.assertIn('"GIT_CONFIG_GLOBAL": "/dev/null"', self.source)
         self.assertIn(
             'git("rev-parse", "--verify", f"{accepted_source_sha}^{{commit}}")',
             self.source,
