@@ -14,7 +14,7 @@ import es80_field_authorization_envelope as signer
 class OfflineFieldAuthorizationPrivateKeyPathCustodyTests(unittest.TestCase):
     KEY_BYTES = b"nembra-private-key-path-custody-regression\n"
 
-    def _temporary_directory(self, prefix: str) -> tempfile.TemporaryDirectory[str]:
+    def _temporary_directory(self, prefix: str):
         return tempfile.TemporaryDirectory(prefix=prefix, dir=Path.home())
 
     def _write_key(self, path: Path) -> None:
