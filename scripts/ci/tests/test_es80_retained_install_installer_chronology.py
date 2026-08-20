@@ -96,6 +96,7 @@ class RetainedInstallInstallerChronologyTests(unittest.TestCase):
         self.assertIn("immutable_git_source(manifest_source_path)", self.source)
         self.assertIn("immutable_git_source(helper_source_path)", self.source)
         self.assertIn('exec(compile(text, module.__file__, "exec"), module.__dict__)', self.source)
+        self.assertIn("accepted_source_commit_sha=accepted_source", self.source)
         self.assertNotIn('git("rev-parse", f"{head}:{path}")', self.source)
         self.assertNotIn("spec_from_file_location", self.source)
         self.assertNotIn("helper_path = root /", self.source)
