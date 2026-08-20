@@ -26,8 +26,7 @@ class RetainedInstallManifestTests(unittest.TestCase):
             "sourceCommitSHA": self.source_sha,
             "bundleIdentifier": manifest.BUNDLE_IDENTIFIER,
             "buildIdentifier": f"Capture Build V14-{self.source_sha[:12]}",
-            # Runtime build identity treats this as an opaque UUID-shaped rendezvous value.
-            "buildInstanceID": "12345678-90ab-cdef-1234-567890abcdef",
+            "buildInstanceID": "12345678-90ab-4def-9234-567890abcdef",
             "retainedIPASHA256": "2" * 64,
             "executableSHA256": "3" * 64,
             "infoPlistSHA256": "4" * 64,
@@ -65,8 +64,9 @@ class RetainedInstallManifestTests(unittest.TestCase):
         self.assertIn('("retainedIPASHA256", wire.retainedIPASHA256)', source)
         self.assertIn('wire.sourceCommitSHA != String(repeating: "0", count: 40)', source)
         self.assertIn('value != String(repeating: "0", count: 64)', source)
-        self.assertIn("normalizedBuildInstanceID(wire.buildInstanceID) == wire.buildInstanceID", source)
-        self.assertNotIn("bytes[14] == 0x34", source)
+        self.assertIn("isCanonicalUUIDv4(wire.buildInstanceID)", source)
+        self.assertIn("bytes[14] == 0x34", source)
+        self.assertIn("[0x38, 0x39, 0x61, 0x62].contains(bytes[19])", source)
         self.assertNotIn('"signedInstallableSHA256"', source)
         self.assertNotIn("authorizationEnvelopeSHA256", source)
 
@@ -90,7 +90,7 @@ class RetainedInstallManifestTests(unittest.TestCase):
             elif key == "buildIdentifier":
                 changed[key] = "Capture Build V14-deadbeefdead"
             elif key == "buildInstanceID":
-                changed[key] = "87654321-4321-abcd-8def-123456789abc"
+                changed[key] = "87654321-4321-4bcd-8def-123456789abc"
             else:
                 changed[key] = "b" * 64
             with self.subTest(key=key):
@@ -122,7 +122,8 @@ class RetainedInstallManifestTests(unittest.TestCase):
             ("bundleIdentifier", "com.example.wrong"),
             ("buildIdentifier", "Capture Build test"),
             ("buildInstanceID", "12345678-1234-zzzz-8def-123456789abc"),
-            ("buildInstanceID", "12345678-1234-abcd-8def-123456789ab"),
+            ("buildInstanceID", "12345678-1234-1bcd-8def-123456789abc"),
+            ("buildInstanceID", "12345678-1234-4bcd-1def-123456789abc"),
             ("retainedIPASHA256", "0" * 64),
             ("retainedIPASHA256", "A" * 64),
         )
@@ -133,11 +134,16 @@ class RetainedInstallManifestTests(unittest.TestCase):
                 with self.assertRaises(manifest.RetainedInstallManifestError):
                     manifest.build_manifest(changed)
 
-    def test_build_instance_is_opaque_uuid_shaped_not_uuid_version_authority(self) -> None:
-        generic = dict(self.bindings)
-        generic["buildInstanceID"] = "12345678-1234-abcd-1def-123456789abc"
-        value = manifest.verify_manifest_bytes(manifest.build_manifest(generic))
-        self.assertEqual(value["buildInstanceID"], generic["buildInstanceID"])
+    def test_build_instance_requires_canonical_uuidv4_version_and_variant(self) -> None:
+        for value in (
+            "12345678-1234-1bcd-8def-123456789abc",
+            "12345678-1234-4bcd-1def-123456789abc",
+        ):
+            changed = dict(self.bindings)
+            changed["buildInstanceID"] = value
+            with self.subTest(value=value):
+                with self.assertRaises(manifest.RetainedInstallManifestError):
+                    manifest.build_manifest(changed)
 
     def test_cli_validation_never_reports_install_or_physical_authority(self) -> None:
         with tempfile.TemporaryDirectory() as name:
