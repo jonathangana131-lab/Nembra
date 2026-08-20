@@ -45,19 +45,22 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
         #expect(seal.contains("self.sealedAcceptedArtifact = nil"))
         #expect(seal.contains("phase: .accepted"))
         #expect(seal.contains("self.exportData = nil"))
+        #expect(seal.contains("freezeAcceptedArtifactForAuthorizationSeal()"))
+        #expect(seal.contains("sealAfterAcceptedArtifactFreeze()"))
         #expect(seal.contains("self.phase = .accepted"))
-        #expect(seal.contains("self.prepareExport()"))
         #expect(body.contains("Button(showEngineeringDetails ? \"Hide details\" : \"View details\")"))
         #expect(body.contains("exact accepted JSON bytes are sealed and verified"))
     }
 
-    @Test("truth gates remain visible in the guided product surface")
+    @Test("truth gates keep build metadata and independent one-time authority separately visible")
     func truthGatesRemainProductVisible() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let surface = try section(in: app, from: "private struct SecureLinkView: View", to: "private struct SecureTransfer: Transferable")
         let body = String(surface)
 
-        #expect(body.contains("test.fieldBuildIsAuthoritative"))
+        #expect(body.contains("test.fieldBuildMetadataReady"))
+        #expect(body.contains("test.fieldAuthorizationReady"))
+        #expect(body.contains("One-time field authorization"))
         #expect(body.contains("test.accountIdentityLeaseIsAuthorized"))
         #expect(body.contains("test.correlationWindowIsScanning"))
         #expect(body.contains("test.confirmCorrelatedTarget()"))
@@ -68,6 +71,7 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
         #expect(app.contains("Correlation is current-session evidence, not permanent scooter identity."))
         #expect(app.contains("Do not guess from name, RSSI, FD50, or Tuya hints; restart from OFF1 after reducing nearby-device ambiguity."))
         #expect(body.contains("No DP query or scooter command is authorized by this surface."))
+        #expect(!body.contains("test.fieldBuildIsAuthoritative"))
     }
 
     @Test("large Dynamic Type receives a recomposed stage indicator")
