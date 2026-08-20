@@ -1,107 +1,100 @@
+import NembraCore
 import SwiftUI
 
-/// Presentation-only rolling speed digits. The value passed here may be a
-/// render interpolation frame; it is never written back into vehicle state.
+/// Presentation-only fixed-slot speed number. Integer and tenths use different
+/// visual hierarchy while sharing one package-owned quantization snapshot.
+/// Render values never flow back into telemetry or ride evidence.
 struct RollingSpeedValueView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let value: Double?
+    let integerPointSize: CGFloat
+    let fractionPointSize: CGFloat
 
-    private static let numberModel: RollingNumberModel? = {
-        guard let layout = try? RollingNumberLayout(integerDigits: 2) else { return nil }
+    private static let twoDigitNumberModel: RollingNumberModel? = {
+        guard let layout = try? RollingNumberLayout(integerDigits: 2, fractionDigits: 1) else {
+            return nil
+        }
         return try? RollingNumberModel(layout: layout)
     }()
 
-    /// The compact non-rolling fallback can faithfully lay out three integer
-    /// digits. This is a presentation capacity, not a physical scooter-speed
-    /// limit; values requiring more space fail closed rather than being clamped.
-    private static let maximumFallbackDisplayInteger = 999.0
+    private static let threeDigitNumberModel: RollingNumberModel? = {
+        guard let layout = try? RollingNumberLayout(integerDigits: 3, fractionDigits: 1) else {
+            return nil
+        }
+        return try? RollingNumberModel(layout: layout)
+    }()
 
-    /// Rendering must not turn malformed speed evidence into a believable
-    /// stopped state. Negative and non-finite values remain unavailable, while
-    /// signed zero is normalized only for stable presentation.
+    static func supports(_ value: Double?) -> Bool {
+        guard let value, value.isFinite, value >= 0, value < 999.95 else { return false }
+        return true
+    }
+
     private var validatedRenderValue: Double? {
-        guard let value, value.isFinite, value >= 0 else { return nil }
+        guard Self.supports(value), let value else { return nil }
         return value == 0 ? 0 : value
     }
 
-    /// Keep fallback rounding identical to `RollingNumberModel` so the handoff
-    /// at the two-digit rolling capacity is deterministic. Conversion happens
-    /// only after the rounded value is proven representable, so extreme finite
-    /// `Double` values can never expand into unbounded cockpit text.
-    private var boundedFallbackText: String? {
-        guard let value = validatedRenderValue else { return nil }
-        let roundedValue = value.rounded(.toNearestOrAwayFromZero)
-        guard roundedValue <= Self.maximumFallbackDisplayInteger else { return nil }
-        return String(Int(roundedValue))
-    }
-
     var body: some View {
-        if let value = validatedRenderValue {
-            if let numberModel = Self.numberModel,
-               let snapshot = try? numberModel.snapshot(for: value) {
-                HStack(spacing: -5) {
-                    ForEach(snapshot.digits.indices, id: \.self) { index in
+        if let value = validatedRenderValue,
+           let numberModel = value < 99.95
+                ? Self.twoDigitNumberModel
+                : Self.threeDigitNumberModel,
+           let snapshot = try? numberModel.snapshot(for: value) {
+            let resolvedIntegerPointSize = snapshot.layout.integerDigits == 3
+                ? integerPointSize * 0.80
+                : integerPointSize
+            let visibleDigitKey = snapshot.digits.map(\.digit)
+            HStack(alignment: .lastTextBaseline, spacing: 1) {
+                HStack(spacing: -7) {
+                    ForEach(0..<snapshot.layout.integerDigits, id: \.self) { index in
                         rollingDigit(
                             snapshot.digits[index],
-                            transitionValue: value
+                            transitionValue: value,
+                            pointSize: resolvedIntegerPointSize,
+                            weight: .ultraLight
                         )
                     }
                 }
-            } else if let fallbackText = boundedFallbackText {
-                Text(fallbackText)
-                    .contentTransition(
-                        reduceMotion ? .identity : .numericText(value: value)
-                    )
-                    .animation(
-                        reduceMotion ? nil : .snappy(duration: 0.10),
-                        value: fallbackText
-                    )
-            } else {
-                unavailableMark
+
+                Text(".")
+                    .font(.system(size: fractionPointSize, weight: .light, design: .default))
+                    .fontWidth(.expanded)
+                    .padding(.horizontal, -2)
+
+                rollingDigit(
+                    snapshot.digits[snapshot.layout.integerDigits],
+                    transitionValue: value,
+                    pointSize: fractionPointSize,
+                    weight: .light
+                )
             }
+            .monospacedDigit()
+            .animation(
+                reduceMotion ? nil : .smooth(duration: 0.16),
+                value: visibleDigitKey
+            )
         } else {
-            unavailableMark
+            Text("—")
+                .font(.system(size: integerPointSize * 0.70, weight: .ultraLight, design: .default))
+                .fontWidth(.expanded)
+                .foregroundStyle(NembraColor.primaryText.opacity(0.60))
+                .frame(minWidth: integerPointSize * 0.92, alignment: .center)
         }
     }
 
-    /// Unavailable speed is a designed machine state, not an enormous number-shaped
-    /// placeholder. Keep the mark optically subordinate to the explicit
-    /// `NO LIVE SPEED` authority while preserving a stable text baseline beside the
-    /// configured unit. The mark is presentation only; VoiceOver consumes the
-    /// parent instrument's semantic `Unavailable` value instead.
-    private var unavailableMark: some View {
-        Text("–")
-            .font(.system(size: 82, weight: .light, design: .rounded))
-            .foregroundStyle(Color.white.opacity(0.62))
-    }
-
-    /// Each fixed digit slot owns its own brief roll so an unchanged column does
-    /// not inherit animation work just because another digit changed. The whole
-    /// render value remains the numeric-transition direction signal: on an
-    /// increasing boundary such as 19 -> 20, the ones column must roll forward
-    /// through 9 -> 0 rather than visually count down merely because its local
-    /// glyph value decreased.
-    ///
-    /// The clip keeps native numeric-transition travel inside the digit's stable
-    /// glyph bounds. These frames are display-only and never feed vehicle truth.
-    @ViewBuilder
     private func rollingDigit(
         _ digit: RollingDigitSnapshot,
-        transitionValue: Double
+        transitionValue: Double,
+        pointSize: CGFloat,
+        weight: Font.Weight
     ) -> some View {
         Text(String(digit.digit))
+            .font(.system(size: pointSize, weight: weight, design: .default))
+            .fontWidth(.expanded)
             .opacity(digit.isVisible ? 1 : 0)
             .contentTransition(
                 reduceMotion ? .identity : .numericText(value: transitionValue)
-            )
-            .animation(
-                reduceMotion ? nil : .snappy(duration: 0.10),
-                value: digit.digit
-            )
-            .animation(
-                reduceMotion ? nil : .easeOut(duration: 0.08),
-                value: digit.isVisible
             )
             .clipped()
     }
