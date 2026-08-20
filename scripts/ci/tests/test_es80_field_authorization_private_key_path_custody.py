@@ -14,19 +14,22 @@ import es80_field_authorization_envelope as signer
 class OfflineFieldAuthorizationPrivateKeyPathCustodyTests(unittest.TestCase):
     KEY_BYTES = b"nembra-private-key-path-custody-regression\n"
 
+    def _temporary_directory(self, prefix: str) -> tempfile.TemporaryDirectory[str]:
+        return tempfile.TemporaryDirectory(prefix=prefix, dir=Path.home())
+
     def _write_key(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(self.KEY_BYTES)
         os.chmod(path, 0o600)
 
     def test_direct_owner_only_private_key_is_read(self):
-        with tempfile.TemporaryDirectory(prefix="nembra-private-key-direct-") as name:
+        with self._temporary_directory("nembra-private-key-direct-") as name:
             key = Path(name) / "authority.pem"
             self._write_key(key)
             self.assertEqual(signer._read_private_key(key), self.KEY_BYTES)
 
     def test_final_private_key_symlink_is_rejected(self):
-        with tempfile.TemporaryDirectory(prefix="nembra-private-key-final-link-") as name:
+        with self._temporary_directory("nembra-private-key-final-link-") as name:
             root = Path(name)
             key = root / "real" / "authority.pem"
             self._write_key(key)
@@ -36,7 +39,7 @@ class OfflineFieldAuthorizationPrivateKeyPathCustodyTests(unittest.TestCase):
                 signer._read_private_key(linked)
 
     def test_private_key_symlinked_ancestor_is_rejected(self):
-        with tempfile.TemporaryDirectory(prefix="nembra-private-key-ancestor-link-") as name:
+        with self._temporary_directory("nembra-private-key-ancestor-link-") as name:
             root = Path(name)
             real_directory = root / "real"
             key = real_directory / "authority.pem"
@@ -47,7 +50,7 @@ class OfflineFieldAuthorizationPrivateKeyPathCustodyTests(unittest.TestCase):
                 signer._read_private_key(linked_directory / "authority.pem")
 
     def test_parent_traversal_component_is_rejected(self):
-        with tempfile.TemporaryDirectory(prefix="nembra-private-key-dotdot-") as name:
+        with self._temporary_directory("nembra-private-key-dotdot-") as name:
             root = Path(name)
             key = root / "safe" / "authority.pem"
             self._write_key(key)
