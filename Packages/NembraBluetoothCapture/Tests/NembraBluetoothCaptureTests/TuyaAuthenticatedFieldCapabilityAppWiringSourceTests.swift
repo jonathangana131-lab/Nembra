@@ -190,6 +190,7 @@ struct CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWirin
             && context.contains("catch")
             && (context.contains("failLocally(")
                 || context.contains("failAndRetireSession(")
+                || context.contains("invalidateInternalLifecycle(")
                 || context.contains("retireSession"))
     }
 
