@@ -8,14 +8,19 @@ struct TuyaFieldGoPrerequisiteSourceTests {
     func buildProvenanceIsProductAuthority() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let project = try readRepositoryFile("NembraCapture.xcodeproj/project.pbxproj")
+        let plist = try readRepositoryFile("NembraCapture-Info.plist")
 
         #expect(app.contains("NembraCaptureBuildIdentity.current"))
         #expect(app.contains("isAuthoritativeFieldBuild"))
         #expect(app.contains("buildIdentifier"))
         #expect(app.contains("sourceCommitSHA"))
         #expect(project.contains("NembraCaptureBuildIdentity.swift in Sources"))
-        #expect(project.contains("INFOPLIST_KEY_NembraCaptureBuildIdentifier"))
-        #expect(project.contains("INFOPLIST_KEY_NembraCaptureSourceCommitSHA"))
+        #expect(plist.contains("<key>NembraCaptureBuildIdentifier</key>"))
+        #expect(plist.contains("<key>NembraCaptureBuildInstanceID</key>"))
+        #expect(plist.contains("<string>$(NEMBRA_CAPTURE_BUILD_INSTANCE_ID)</string>"))
+        #expect(plist.contains("<key>NembraCaptureBuildCommitSHA</key>"))
+        #expect(plist.contains("<string>$(NEMBRA_CAPTURE_BUILD_COMMIT_SHA)</string>"))
+        #expect(!plist.contains("<key>NembraCaptureSourceCommitSHA</key>"))
     }
 
     @Test("membership proof is leased to the same current Tuya account UID")
