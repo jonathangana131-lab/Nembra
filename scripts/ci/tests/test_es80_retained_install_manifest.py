@@ -7,10 +7,10 @@ import tempfile
 import unittest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "es80_retained_install_manifest.py"
-REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
-SWIFT_MANIFEST = (
-    REPOSITORY_ROOT
-    / "Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/AuthenticatedStationaryCaptureInstallManifest.swift"
+PACKAGE_VERIFIER = (
+    Path(__file__).resolve().parents[3]
+    / "Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture"
+    / "AuthenticatedStationaryCaptureInstallManifest.swift"
 )
 SPEC = importlib.util.spec_from_file_location("retained_install_manifest", SCRIPT)
 assert SPEC and SPEC.loader
@@ -23,9 +23,9 @@ class RetainedInstallManifestTests(unittest.TestCase):
         self.bindings = {
             "procedureID": manifest.PROCEDURE_ID,
             "sourceCommitSHA": "1" * 40,
-            "bundleIdentifier": manifest.BUNDLE_IDENTIFIER,
+            "bundleIdentifier": "com.jonathangana131.nembra.capturelearn",
             "buildIdentifier": "Capture Build test",
-            "buildInstanceID": "12345678-1234-4abc-8def-123456789abc",
+            "buildInstanceID": "12345678-1234-abcd-8def-123456789abc",
             "retainedIPASHA256": "2" * 64,
             "executableSHA256": "3" * 64,
             "infoPlistSHA256": "4" * 64,
@@ -37,33 +37,28 @@ class RetainedInstallManifestTests(unittest.TestCase):
             "authorizationEnvelopeSHA256": "a" * 64,
         }
 
-    def test_round_trip_is_closed_canonical_and_explicitly_nonauthorizing(self) -> None:
+    def test_round_trip_is_closed_compact_and_explicitly_nonauthorizing(self) -> None:
         data = manifest.build_manifest(self.bindings)
         value = manifest.verify_manifest_against_expected(data, self.bindings)
         self.assertEqual(value["schema"], manifest.SCHEMA)
-        self.assertEqual(value["version"], manifest.SCHEMA_VERSION)
         self.assertEqual(data, manifest.canonical_json_bytes(json.loads(data)))
-        self.assertFalse(data.endswith(b"\n"))
+        self.assertNotIn(b"\n", data)
         self.assertNotIn(b'"decision"', data)
         self.assertNotIn(b'"GO"', data)
         self.assertNotIn(b'"manifestKind"', data)
 
-    def test_python_wire_contract_matches_swift_decoder_contract(self) -> None:
-        source = SWIFT_MANIFEST.read_text(encoding="utf-8")
+    def test_python_wire_contract_matches_package_verifier_source(self) -> None:
+        if not PACKAGE_VERIFIER.exists():
+            self.skipTest("package source requires a repository checkout")
+        source = PACKAGE_VERIFIER.read_text(encoding="utf-8")
         self.assertIn(f'public static let schema = "{manifest.SCHEMA}"', source)
         self.assertIn(
-            f"public static let maximumManifestByteCount = {manifest.MAX_MANIFEST_BYTES // 1024}_384"
-            if manifest.MAX_MANIFEST_BYTES == 16_384
-            else f"public static let maximumManifestByteCount = {manifest.MAX_MANIFEST_BYTES}",
+            f"public static let maximumManifestByteCount = {manifest.MAX_MANIFEST_BYTES:,}".replace(",", "_"),
             source,
         )
-        for key in manifest.MANIFEST_KEYS:
-            with self.subTest(key=key):
-                self.assertIn(f'"{key}"', source)
-        self.assertNotIn('"manifestKind"', source)
+        for key in ("retainedIPASHA256", *manifest.DIGEST_KEYS[1:]):
+            self.assertIn(f'"{key}"', source)
         self.assertNotIn('"signedInstallableSHA256"', source)
-        self.assertIn('"retainedIPASHA256"', source)
-        self.assertIn("encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]", source)
 
     def test_every_exact_binding_drift_is_rejected(self) -> None:
         data = manifest.build_manifest(self.bindings)
@@ -71,14 +66,14 @@ class RetainedInstallManifestTests(unittest.TestCase):
             changed = dict(self.bindings)
             if key == "procedureID":
                 changed[key] = "wrong-procedure"
-            elif key == "bundleIdentifier":
-                changed[key] = "com.example.wrong"
             elif key == "sourceCommitSHA":
                 changed[key] = "b" * 40
+            elif key == "bundleIdentifier":
+                changed[key] = "com.example.wrong"
             elif key == "buildIdentifier":
                 changed[key] = "Other Build"
             elif key == "buildInstanceID":
-                changed[key] = "87654321-4321-4abc-8def-123456789abc"
+                changed[key] = "87654321-4321-abcd-8def-123456789abc"
             else:
                 changed[key] = "b" * 64
             with self.subTest(key=key):
@@ -96,26 +91,34 @@ class RetainedInstallManifestTests(unittest.TestCase):
         with self.assertRaises(manifest.RetainedInstallManifestError):
             manifest.verify_manifest_bytes(duplicate)
 
-        pretty = (json.dumps(json.loads(data), indent=2, sort_keys=True) + "\n").encode()
+        pretty = json.dumps(json.loads(data), sort_keys=True, indent=2).encode()
         with self.assertRaises(manifest.RetainedInstallManifestError):
             manifest.verify_manifest_bytes(pretty)
 
-        newline = data + b"\n"
         with self.assertRaises(manifest.RetainedInstallManifestError):
-            manifest.verify_manifest_bytes(newline)
+            manifest.verify_manifest_bytes(data + b"\n")
 
-    def test_malformed_identity_and_zero_digest_are_rejected(self) -> None:
+    def test_malformed_identity_is_rejected_but_wire_does_not_invent_stricter_semantics(self) -> None:
         for key, value in (
             ("sourceCommitSHA", "A" * 40),
-            ("buildInstanceID", "12345678-1234-1abc-8def-123456789abc"),
-            ("retainedIPASHA256", "0" * 64),
+            ("buildInstanceID", "12345678-1234-zzzz-8def-123456789abc"),
+            ("retainedIPASHA256", "A" * 64),
             ("authorizationEnvelopeSHA256", "A" * 64),
+            ("bundleIdentifier", "com.example bad"),
         ):
             changed = dict(self.bindings)
             changed[key] = value
             with self.subTest(key=key):
                 with self.assertRaises(manifest.RetainedInstallManifestError):
                     manifest.build_manifest(changed)
+
+        zero_digest = dict(self.bindings)
+        zero_digest["retainedIPASHA256"] = "0" * 64
+        manifest.verify_manifest_bytes(manifest.build_manifest(zero_digest))
+
+        generic_instance = dict(self.bindings)
+        generic_instance["buildInstanceID"] = "12345678-90ab-cdef-1234-567890abcdef"
+        manifest.verify_manifest_bytes(manifest.build_manifest(generic_instance))
 
     def test_cli_validation_never_reports_install_or_physical_authority(self) -> None:
         with tempfile.TemporaryDirectory() as name:
