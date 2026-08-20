@@ -18,6 +18,9 @@ on:
       - scripts/ci/es80_retained_install_cross_binding.py
       - scripts/ci/tests/test_es80_retained_install_cross_binding.py
       - scripts/ci/tests/test_es80_retained_install_installer_chronology.py
+      - scripts/ci/es80_field_authorization_rendezvous.py
+      - scripts/ci/tests/test_es80_field_authorization_rendezvous.py
+      - Packages/NembraBluetoothCapture/Sources/NembraCaptureAppAuthorization/AuthenticatedStationaryCaptureSignerRendezvousDocument.swift
       - scripts/field/install_one_time_capture.command
       - docs/ES80_AUTHENTICATED_STATIONARY_RETAINED_INSTALL_MANIFEST.md
       - docs/ES80_TODAY_SIGNED_FIELD_CANDIDATE_PRODUCTION.md
@@ -66,7 +69,9 @@ jobs:
             scripts/ci/tests/test_es80_retained_install_manifest.py \
             scripts/ci/es80_retained_install_cross_binding.py \
             scripts/ci/tests/test_es80_retained_install_cross_binding.py \
-            scripts/ci/tests/test_es80_retained_install_installer_chronology.py
+            scripts/ci/tests/test_es80_retained_install_installer_chronology.py \
+            scripts/ci/es80_field_authorization_rendezvous.py \
+            scripts/ci/tests/test_es80_field_authorization_rendezvous.py
 
       - name: Run focused preflight, retained-install, and handoff regressions
         run: |
@@ -75,6 +80,8 @@ jobs:
           python3 scripts/ci/tests/test_es80_retained_install_manifest.py -v
           python3 scripts/ci/tests/test_es80_retained_install_cross_binding.py -v
           python3 scripts/ci/tests/test_es80_retained_install_installer_chronology.py -v
+          python3 scripts/ci/es80_field_authorization_rendezvous.py --self-test
+          python3 scripts/ci/tests/test_es80_field_authorization_rendezvous.py -v
           python3 scripts/ci/tests/test_es80_today_field_candidate_preflight.py -v
           python3 scripts/ci/tests/test_es80_today_field_candidate_developer_dir_handoff.py -v
           python3 scripts/ci/tests/test_es80_today_field_source_scope.py -v
