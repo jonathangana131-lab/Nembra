@@ -6,6 +6,10 @@ rendezvous exported by the still-running Capture app, enforces the attempt-relat
 and then invokes `es80_field_authorization_envelope.py` with the extracted challenge.
 Cryptographic payload construction, signed-evidence parsing, signing, self-verification, and
 no-replace publication remain owned by the existing signer.
+
+This wrapper is CI/research orchestration only until its own source/dependency execution is captured
+behind the independently accepted private-runner custody boundary. Functional correctness here must
+not be confused with production private-key acceptance.
 """
 from __future__ import annotations
 
@@ -33,16 +37,12 @@ def _load_rendezvous_helper():
 
 
 def timestamp_unix_milliseconds(raw: str, label: str) -> int:
-    """Parse the same UTC RFC3339-style timestamps accepted by the existing signer."""
-    if not raw or not raw.endswith("Z"):
-        raise ValueError(f"{label} must be an explicit UTC timestamp ending in Z")
+    """Parse exactly the canonical UTC-seconds syntax accepted by the existing signer."""
     try:
-        value = datetime.fromisoformat(raw[:-1] + "+00:00")
-    except ValueError as error:
-        raise ValueError(f"{label} is not a valid UTC timestamp") from error
-    if value.tzinfo is None or value.utcoffset() != timezone.utc.utcoffset(value):
-        raise ValueError(f"{label} must resolve to UTC")
-    milliseconds = int(value.timestamp() * 1_000)
+        value = datetime.strptime(raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{label} is not canonical UTC seconds") from error
+    milliseconds = int(value.timestamp()) * 1_000
     if milliseconds <= 0:
         raise ValueError(f"{label} must be after the Unix epoch")
     return milliseconds
@@ -60,10 +60,10 @@ def validate_signing_chronology(
         raise ValueError("issued-at precedes the running app attempt")
     if not_before < attempt_started_at:
         raise ValueError("not-before precedes the running app attempt")
-    if not_before > issued_at:
-        raise ValueError("not-before is later than issued-at")
-    if expires_at <= issued_at:
-        raise ValueError("expires-at must be later than issued-at")
+    if not_before < issued_at:
+        raise ValueError("not-before precedes issued-at")
+    if expires_at <= not_before:
+        raise ValueError("expires-at must be later than not-before")
     if expires_at > must_expire_by:
         raise ValueError("expires-at exceeds the running app attempt deadline")
 
