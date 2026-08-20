@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Remove the legacy hard-false build-authority cycle after app-session materialization.
+"""Make the verified one-time app session the field authority after lifecycle materialization.
 
-This runs only after the canonical SecureLink field-authorization materializer has inserted the
-package-owned one-time authorization session. Build metadata remains a required exact-runtime
-prerequisite, but it is not authority. The verified package session is the independent authority
-that admits OFF1/authentication/official connection/observation.
+Self-described build metadata remains a mandatory exact-runtime prerequisite. It is deliberately not
+physical authority. The package verifier-owned session must be armed before OFF1, remains live through
+observation, and seals only after exact accepted artifact bytes are frozen.
 """
 
 from pathlib import Path
@@ -29,14 +28,13 @@ def main() -> None:
         "admitAuthenticationStart()",
         "admitOfficialConnectionStart()",
         "admitObservationStart()",
+        "freezeAcceptedArtifactForAuthorizationSeal()",
         "sealAfterAcceptedArtifactFreeze()",
     )
     for token in required:
         if token not in source:
             raise SystemExit(f"authorization lifecycle must be materialized first: missing {token}")
 
-    # The old name described a Boolean that is intentionally hard false. Once the independently
-    # verified one-time app session exists, self-described build metadata is only a prerequisite.
     legacy_name_count = source.count("fieldBuildIsAuthoritative")
     if legacy_name_count < 8:
         raise SystemExit(
@@ -44,45 +42,32 @@ def main() -> None:
         )
     source = source.replace("fieldBuildIsAuthoritative", "fieldBuildMetadataReady")
 
-    source = replace_exact(
-        source,
-        "private var fieldBuildMetadataReady: Bool { buildIdentity.isAuthoritativeFieldBuild }",
-        "private var fieldBuildMetadataReady: Bool { buildIdentity.hasCompleteFieldBuildMetadata }",
-        "root metadata readiness",
-    )
-    source = replace_exact(
-        source,
-        "var fieldBuildMetadataReady: Bool { buildIdentity.isAuthoritativeFieldBuild }",
-        "var fieldBuildMetadataReady: Bool { buildIdentity.hasCompleteFieldBuildMetadata }",
-        "SecureLink metadata readiness",
+    legacy_predicate_count = source.count("buildIdentity.isAuthoritativeFieldBuild")
+    if legacy_predicate_count < 5:
+        raise SystemExit(
+            f"legacy hard-false runtime predicate unexpectedly sparse: {legacy_predicate_count}"
+        )
+    source = source.replace(
+        "buildIdentity.isAuthoritativeFieldBuild",
+        "buildIdentity.hasCompleteFieldBuildMetadata",
     )
 
-    # Handoff is non-authorizing: it may prepare/read retained subjects once exact runtime metadata
-    # is complete. The package verifier still mints no authority until the signed envelope verifies.
+    # At the two canonical acceptance re-checks, metadata is necessary but the live independent
+    # session must also still own observation authority. A stale/revoked session cannot ride on a
+    # valid plist tuple into an accepted artifact.
     source = replace_exact(
         source,
-        "guard phase == .idle, buildIdentity.isAuthoritativeFieldBuild else { return }",
-        "guard phase == .idle, buildIdentity.hasCompleteFieldBuildMetadata else { return }",
-        "non-authorizing handoff reachability",
+        "guard self.buildIdentity.hasCompleteFieldBuildMetadata else {\n                        await self.invalidateSourceAuthority(",
+        "guard self.buildIdentity.hasCompleteFieldBuildMetadata,\n                          self.fieldAuthorization.stage == .observationAdmitted else {\n                        await self.invalidateSourceAuthority(",
+        "pre-seal live session authority",
+    )
+    source = replace_exact(
+        source,
+        "guard self.buildIdentity.hasCompleteFieldBuildMetadata,\n                              self.accountIdentityLeaseIsAuthorized else {",
+        "guard self.buildIdentity.hasCompleteFieldBuildMetadata,\n                              self.fieldAuthorization.stage == .observationAdmitted,\n                              self.accountIdentityLeaseIsAuthorized else {",
+        "final acceptance live session authority",
     )
 
-    # The runtime build guards remain defense-in-depth metadata checks. Physical transition authority
-    # is immediately downstream in the package-owned fieldAuthorization admission methods.
-    source = replace_exact(
-        source,
-        "guard buildIdentity.isAuthoritativeFieldBuild else {",
-        "guard buildIdentity.hasCompleteFieldBuildMetadata else {",
-        "OFF1 metadata guard",
-    )
-    source = replace_exact(
-        source,
-        "              buildIdentity.isAuthoritativeFieldBuild,",
-        "              buildIdentity.hasCompleteFieldBuildMetadata,",
-        "official connection metadata guard",
-    )
-
-    # Product language must not promote metadata into authority. The separate one-time authorization
-    # row/status is the visible independent authority and remains required by authorityReady.
     copy_replacements = (
         (
             'Text(fieldBuildMetadataReady ? "Field build ready" : "Capture locked")',
@@ -128,8 +113,6 @@ def main() -> None:
     if "buildIdentity.isAuthoritativeFieldBuild" in source:
         raise SystemExit("legacy hard-false build authority still participates in app runtime")
 
-    # Fail closed on the actual independent authority: metadata alone may unlock account selection and
-    # handoff preparation, but authorityReady must still require the armed verifier-owned session.
     authority_start = source.index("private var authorityReady: Bool")
     authority_end = source.index("private var currentStageIndex: Int", authority_start)
     authority = source[authority_start:authority_end]
@@ -143,6 +126,12 @@ def main() -> None:
     ):
         if token not in authority:
             raise SystemExit(f"authorityReady lost required gate: {token}")
+
+    handoff_start = source.index("func advanceFieldAuthorizationHandoffIfAvailable()")
+    handoff_end = source.index("func activateMembershipRequestsForView()", handoff_start)
+    handoff = source[handoff_start:handoff_end]
+    if "guard phase == .idle, buildIdentity.hasCompleteFieldBuildMetadata else { return }" not in handoff:
+        raise SystemExit("non-authorizing handoff is not reachable from complete runtime metadata")
 
     baseline_start = source.index("private func beginBaselineAfterCurrentOperatorAttestation()")
     baseline_end = source.index("private func beginCorrelationSeries()", baseline_start)
@@ -159,6 +148,14 @@ def main() -> None:
         raise SystemExit("official connection must validate metadata before session admission")
     if connection.index("admitOfficialConnectionStart()") > connection.index("OfficialTuyaFactory.make()"):
         raise SystemExit("independent authorization must precede official Tuya driver creation")
+
+    ready_start = source.index("case .readyForStationaryMapping:")
+    accepted_start = source.index("self.phase = .accepted", ready_start)
+    acceptance = source[ready_start:accepted_start]
+    if acceptance.count("fieldAuthorization.stage == .observationAdmitted") < 2:
+        raise SystemExit("canonical acceptance must re-check live observation authority at both seal boundaries")
+    if acceptance.index("fieldAuthorization.stage == .observationAdmitted") > acceptance.index("sealAfterAcceptedArtifactFreeze()"):
+        raise SystemExit("live observation authority must be checked before capability seal")
 
     APP.write_text(source, encoding="utf-8")
 
