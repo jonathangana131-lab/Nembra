@@ -1,5 +1,6 @@
 name: Capture retire duplicate app timeout v2
 
+# Re-arm after exact branch audit confirmed the duplicate app-owned timeout is still live.
 on:
   push:
     branches: [capture/one-time-ble-dump-gpt56]
@@ -101,7 +102,7 @@ struct TuyaApplicationTimeoutPresentationRaceSourceTests {
     private func section(in source: String, from start: String, to end: String) throws -> Substring {
         guard let a = source.range(of: start),
               let b = source.range(of: end, range: a.upperBound..<source.endIndex) else {
-            Issue.record("Expected source section missing: \\(start) ... \\(end)")
+            Issue.record("Expected source section missing: \(start) ... \(end)")
             throw SourceContractError.sectionMissing
         }
         return source[a.lowerBound..<b.lowerBound]
