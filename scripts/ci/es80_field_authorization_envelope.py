@@ -249,13 +249,31 @@ def _run_openssl(openssl: str, args: list[str], *, stdout: bool = False) -> byte
 
 def _read_private_key(path: Path) -> bytes:
     requested = path.expanduser().absolute()
-    if path_is_within(requested, REPOSITORY_ROOT) or requested.is_symlink() or not hasattr(os, "O_NOFOLLOW"):
+    if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
+        raise AuthorizationEnvelopeError("P-256 private key custody is unavailable")
+    components = requested.parts
+    if len(components) < 2 or any(component in ("", ".", "..") for component in components[1:]):
         raise AuthorizationEnvelopeError("P-256 private key custody is invalid")
     try:
-        descriptor = os.open(requested, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0))
-    except OSError as error:
-        raise AuthorizationEnvelopeError("cannot open P-256 private key") from error
+        requested.relative_to(REPOSITORY_ROOT)
+    except ValueError:
+        pass
+    else:
+        raise AuthorizationEnvelopeError("P-256 private key custody is invalid")
+
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+    file_flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+    descriptors: list[int] = []
     try:
+        current = os.open("/", directory_flags)
+        descriptors.append(current)
+        for component in components[1:-1]:
+            current = os.open(component, directory_flags, dir_fd=current)
+            descriptors.append(current)
+            if not stat.S_ISDIR(os.fstat(current).st_mode):
+                raise AuthorizationEnvelopeError("P-256 private key ancestor custody is invalid")
+        descriptor = os.open(components[-1], file_flags, dir_fd=current)
+        descriptors.append(descriptor)
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
             raise AuthorizationEnvelopeError("P-256 private key must be one regular file")
@@ -266,9 +284,18 @@ def _read_private_key(path: Path) -> bytes:
             raise AuthorizationEnvelopeError("P-256 private key size is invalid")
         data = os.read(descriptor, MAX_PRIVATE_KEY_BYTES + 1)
         after = os.fstat(descriptor)
+    except OSError as error:
+        raise AuthorizationEnvelopeError("cannot open P-256 private key") from error
     finally:
-        os.close(descriptor)
-    identity = lambda item: (item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns, item.st_ctime_ns)
+        for descriptor in reversed(descriptors):
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+    identity = lambda item: (
+        item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns, item.st_ctime_ns,
+        item.st_mode, item.st_uid, item.st_gid, item.st_nlink,
+    )
     if identity(before) != identity(after) or len(data) != before.st_size:
         raise AuthorizationEnvelopeError("P-256 private key changed while reading")
     return data
