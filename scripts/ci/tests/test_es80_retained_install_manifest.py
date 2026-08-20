@@ -26,8 +26,7 @@ class RetainedInstallManifestTests(unittest.TestCase):
             "sourceCommitSHA": self.source_sha,
             "bundleIdentifier": manifest.BUNDLE_IDENTIFIER,
             "buildIdentifier": f"Capture Build V14-{self.source_sha[:12]}",
-            # Deliberately non-v4: runtime build identity treats this as an opaque UUID-shaped
-            # rendezvous value, so the manifest must not invent UUID version semantics.
+            # Runtime build identity treats this as an opaque UUID-shaped rendezvous value.
             "buildInstanceID": "12345678-90ab-cdef-1234-567890abcdef",
             "retainedIPASHA256": "2" * 64,
             "executableSHA256": "3" * 64,
@@ -37,7 +36,6 @@ class RetainedInstallManifestTests(unittest.TestCase):
             "signedBuildEvidenceSHA256": "7" * 64,
             "finalGORecordSHA256": "8" * 64,
             "intendedDevicePseudonymSHA256": "9" * 64,
-            "authorizationEnvelopeSHA256": "a" * 64,
         }
 
     def test_round_trip_is_closed_compact_and_explicitly_nonauthorizing(self) -> None:
@@ -49,6 +47,7 @@ class RetainedInstallManifestTests(unittest.TestCase):
         self.assertNotIn(b'"decision"', data)
         self.assertNotIn(b'"GO"', data)
         self.assertNotIn(b'"manifestKind"', data)
+        self.assertNotIn(b'"authorizationEnvelopeSHA256"', data)
 
     def test_python_contract_pins_package_owned_semantics(self) -> None:
         if not PACKAGE_VERIFIER.exists():
@@ -69,6 +68,14 @@ class RetainedInstallManifestTests(unittest.TestCase):
         self.assertIn("normalizedBuildInstanceID(wire.buildInstanceID) == wire.buildInstanceID", source)
         self.assertNotIn("bytes[14] == 0x34", source)
         self.assertNotIn('"signedInstallableSHA256"', source)
+        self.assertNotIn("authorizationEnvelopeSHA256", source)
+
+    def test_future_attempt_envelope_is_not_a_preinstall_binding(self) -> None:
+        self.assertNotIn("authorizationEnvelopeSHA256", manifest.BINDING_KEYS)
+        self.assertNotIn("authorizationEnvelopeSHA256", manifest.DIGEST_KEYS)
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("fresh process-local challenge", source)
+        self.assertNotIn('"authorizationEnvelopeSHA256",', source)
 
     def test_every_exact_binding_drift_is_rejected(self) -> None:
         data = manifest.build_manifest(self.bindings)
@@ -118,7 +125,6 @@ class RetainedInstallManifestTests(unittest.TestCase):
             ("buildInstanceID", "12345678-1234-abcd-8def-123456789ab"),
             ("retainedIPASHA256", "0" * 64),
             ("retainedIPASHA256", "A" * 64),
-            ("authorizationEnvelopeSHA256", "0" * 64),
         )
         for key, value in cases:
             changed = dict(self.bindings)
