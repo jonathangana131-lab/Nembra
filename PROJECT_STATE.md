@@ -13,20 +13,34 @@ This file is a mutable snapshot. Root `AGENTS.md`, current `main`, live PRs/revi
 - MAXSHOT V1S Pro remains deferred/unverified for physical validation unless newer explicit product authority changes that.
 - Baseline device/runtime where applicable: **iPhone 12 / iOS 27**.
 - Root `AGENTS.md` is execution authority.
-- `docs/AUTONOMY_STATUS.md` contains machine-readable release/Capture user-input milestone flags.
+- `docs/AUTONOMY_STATUS.md` contains machine-readable release/Capture user-input milestone flags and the current trunk-health mode.
 
 ## Current live checkpoint
 
 At this refresh:
 
-- development `main`: `0bc188e41c10e4deb7e8c2d214e216f6ea5b24e6`, the merged autonomous-development cutover (#3665);
-- draft PR #3678: **Nembra 1.0 unified release integration**, base `main`, mergeable, current inspected head `eecadc8ea23e2156dea8f9f5bced822477da7a01`, 77 commits / 215 changed files at inspection;
-- draft PR #3675: **Capture/Bluetooth checkpoint**, base `main`, mergeable, current inspected head `fb1cdc4ae82d1bcf6539790b62bb708b6984fcac`, physical/private Capture explicitly **NO-GO**;
-- PR #3677: portrait Home 1.0 workstream;
-- PR #3676: landscape Drive/cockpit 1.0 workstream;
-- older overlapping Capture/Dashboard recovery PRs such as #3658/#3666/#3662 are candidates/history to converge, not ownership authority.
+- development `main`: `24f5a5b310e782b65bf032de5be844542d8975d3`, with the trunk-health convergence policy merged in #3715;
+- open PR count at the health snapshot: 9;
+- draft PR #3675: **Capture: integrate latest fail-closed checkpoint into release candidate**, active carrier head `7a7e9461a363be91a1dfe45c98ae888eadedfeef`, 213 commits / 243 changed files at inspection, physical/private Capture explicitly **NO-GO**;
+- draft PR #3678: **Nembra 1.0 unified release integration**, active head `f952ac4fe551b912fb8f121003a62b782c89db53`, 86 commits / 220 changed files at inspection, not release acceptance;
+- the current root convergence policy has also been synchronized into the Capture carrier (#3716) and unified release branch (#3717), so agents operating from those branches see the same trunk-health authority as `main`.
 
 Live GitHub must be refreshed before acting because these heads can move after this snapshot.
+
+## Trunk health: CONVERGENCE MODE
+
+Nembra is currently above the integration-pressure thresholds in root `AGENTS.md`. Broad `Go` work should therefore converge before spawning ordinary new work.
+
+Current priorities while convergence mode is active:
+
+1. shrink the open PR set by integrating, rebasing/transplanting, or closing existing work;
+2. close superseded/absorbed Capture child PRs instead of preserving recovery ladders;
+3. identify coherent source-complete ordinary slices on #3675/#3678 that can land safely on development `main` without widening physical authority;
+4. keep only the tightly coupled trust/signing/physical-authorization chain isolated when partial integration would misrepresent authority;
+5. do not create a new branch simply because a carrier moved, CI queued, or another chat ended;
+6. once the queue/divergence is healthy again, update `TRUNK_HEALTH_MODE` to `normal`.
+
+A healthy target is fewer than 5 open PRs, no unnecessary long-lived integration branch carrying ordinary finished work far ahead of `main`, and no duplicate implementation tree for the same subsystem.
 
 ## Development flow after Codex/swarm cutover
 
@@ -46,30 +60,29 @@ Hosted Xcode 27 remains useful evidence when available, but it is not privileged
 
 ## Current Nembra 1.0 integration truth
 
-PR #3678 is the strongest current unified integration candidate. It already brings together substantial Capture foundations, portrait Home/Rides work, and the post-V4 Drive/cockpit foundation. It is **not** Nembra 1.0 acceptance merely because the branch exists.
+PR #3678 remains the strongest unified integration candidate. It brings together substantial Capture foundations, portrait Home/Rides work, and the post-V4 Drive/cockpit foundation. It is **not** Nembra 1.0 acceptance merely because the branch exists.
 
-The old pattern of allowing most real product development to live only on a huge release branch is not the desired steady state. Future broad `Go` work should:
-
-1. refresh #3678/#3675/#3676/#3677 and current `main`;
-2. identify coherent source-complete slices that can safely converge onto development `main` without widening unverified physical authority;
-3. review/integrate those slices rather than creating more recovery ladders;
-4. fix `main` forward when later execution exposes a regression;
-5. keep release acceptance separate until the exact final candidate satisfies the full applicable gates.
+The old pattern of allowing most real product development to live only on a huge release branch is not the desired steady state. During convergence, broad `Go` work should split/transplant coherent safe development slices toward `main`, while keeping final release acceptance separate until the exact candidate satisfies the full applicable gates.
 
 ## Capture / ES80 Bluetooth truth
 
 Nembra Capture is the highest-value physical integration path, but it is an evidence utility, not a second flagship product.
 
-Current Capture work contains substantial software-side foundations around typed/guided evidence, stationary authorization, provenance/custody, retained-artifact admission, and offline analysis. However current live PR descriptions still state:
+The current Capture carrier has materially advanced software-side prerequisites, including:
 
-- production trust/capability wiring is incomplete;
-- the accepted install/app consumption path is incomplete;
-- a real fresh private physical session has not been accepted;
-- physical/private Capture is **NO-GO**.
+- a canonical app-owned authorization session/lifecycle;
+- ThisDeviceOnly replay-consumption storage;
+- retained-install manifest and cross-binding contracts;
+- a thin app authorization controller;
+- app-container inbox/rendezvous foundations;
+- signer-rendezvous contracts;
+- tightened exact-head integration tests and installer chronology checks.
+
+However current live truth still reports physical/private Capture **NO-GO**. Important remaining blockers include the independently reviewed production trust root/private-key custody, final real app lifecycle wiring, exact accepted install/container transport, exact composed execution evidence, and the later fresh physical iPhone/ES80 session.
 
 Therefore `CAPTURE_USER_INPUT_READY` remains **false**.
 
-Agents must continue software work until the exact read-only stationary carrier/procedure is genuinely ready. Only then should the status flag become true and the user be asked for the fresh iPhone/scooter/account Bluetooth evidence.
+Agents must continue software work until the exact read-only stationary carrier/procedure is genuinely ready. Only then should the status flag become true and the user be asked for fresh iPhone/scooter/account Bluetooth evidence.
 
 No characteristic/DP becomes Battery, Voltage, Current, Power, Speed, Throttle, Regen, ODO, Mode, Light, Brake, Range, or command semantics until repeatable physical evidence verifies source, identity, units, scale, signedness, cadence, continuity, and provenance.
 
@@ -79,7 +92,7 @@ Unknown BLE/Tuya writes, DP queries, unbind/reset, firmware/OTA, or guessed scoo
 
 Portrait Home is moving toward production 1.0 quality with truthful battery/range states, durable Today/ride information, narrow render invalidation, Dynamic Type/accessibility work, and selected visual direction.
 
-Remaining acceptance is not merely source correctness. It includes exact-app runtime behavior, same-state visual critique, accessibility, performance, and a truthful production-cleared ES80 visual asset where required. Do not fabricate or AI-invent hardware details to close that gap.
+The latest unified branch includes an exact-head accessibility repair for cockpit/Home release-gate defects, but production acceptance still includes exact-app runtime behavior, same-state visual critique, accessibility, performance, and a truthful production-cleared ES80 visual asset where required. Do not fabricate or AI-invent hardware details to close that gap.
 
 ## Landscape Drive / cockpit
 
@@ -110,6 +123,7 @@ At this snapshot:
 ```text
 NEMBRA_1_0_RELEASED: false
 CAPTURE_USER_INPUT_READY: false
+TRUNK_HEALTH_MODE: convergence
 ```
 
 `NEMBRA_1_0_RELEASED` becomes true only after exact release acceptance plus the intended 1.0 release/tag/publication. A draft PR or development-main merge is not enough.
@@ -120,9 +134,9 @@ CAPTURE_USER_INPUT_READY: false
 
 Recompute from live GitHub every run, but current gravity is:
 
-1. converge the strongest source-complete parts of #3678 and its predecessor workstreams onto development `main` without carrying stale recovery topology;
+1. **converge first**: shrink the open PR set and move safe coherent source-complete slices from #3675/#3678 toward `main`;
 2. finish the remaining software/security/install/app-consumption prerequisites for Capture while preserving physical NO-GO until they are real;
-3. continue Home/Drive product closure and integrate safe coherent slices rather than parking everything behind hosted Xcode;
+3. continue Home/Drive product closure without turning the unified release branch into a permanent second trunk;
 4. when Capture software truly reaches the user-input boundary, set `CAPTURE_USER_INPUT_READY: true`, document the exact safe procedure, and request the user's fresh physical evidence;
 5. use verified physical evidence to promote only supported read-only telemetry contracts upward into the production app;
 6. finish the remaining Nembra 1.0 product, persistence, navigation, accessibility, performance, visual, and release acceptance surfaces;
@@ -132,4 +146,4 @@ Recompute from live GitHub every run, but current gravity is:
 
 A fresh chat should not trust historical Swarm Foundry rules, old worker claims, old recovery branches, old GitHub-hosted-only gate language, or this file's SHAs without refreshing GitHub.
 
-The first meaningful action on `Go` is live repository inspection followed by real work. Keep moving while useful safe work remains in the current turn.
+The first meaningful action on `Go` is live repository inspection followed by real work. If convergence mode is active, converge first. Keep moving while useful safe work remains in the current turn.
