@@ -20,7 +20,11 @@ final class NembraCaptureFieldAuthorizationController {
 
     private let session: AuthenticatedStationaryCaptureAppSession
 
-    init(session: AuthenticatedStationaryCaptureAppSession = .init()) {
+    init() {
+        self.session = AuthenticatedStationaryCaptureAppSession()
+    }
+
+    init(session: AuthenticatedStationaryCaptureAppSession) {
         self.session = session
     }
 
