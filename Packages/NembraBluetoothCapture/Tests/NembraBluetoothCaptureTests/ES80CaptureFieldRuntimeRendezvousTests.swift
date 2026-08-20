@@ -99,13 +99,17 @@ struct ES80CaptureFieldRuntimeRendezvousTests {
         #expect(ready.contains("test.sdkDeviceMembershipVerified"))
         #expect(ready.contains("test.accountIdentityLeaseIsAuthorized"))
 
-        // The tuple is still validated and retained as useful provenance.
+        // The tuple is still validated and retained as useful provenance, and its runtime-facing
+        // keys/label exactly match the package verifier and external build-record contract.
         #expect(identity.contains("var hasCompleteFieldBuildMetadata: Bool"))
+        #expect(identity.contains("static let buildInstanceIDInfoKey = \"NembraCaptureBuildInstanceID\""))
+        #expect(identity.contains("static let sourceCommitSHAInfoKey = \"NembraCaptureBuildCommitSHA\""))
         #expect(identity.contains("static let requiredFieldProcedureIdentifier = \"ES80-AUTHENTICATED-STATIONARY-v1\""))
         #expect(identity.contains("guard sourceCommitSHA.count == 40"))
+        #expect(identity.contains("Self.isCanonicalBuildInstanceID(buildInstanceID)"))
         #expect(identity.contains("tuyaDependencyLockSHA256.count == 64"))
         #expect(identity.contains("procedureIdentifier == Self.requiredFieldProcedureIdentifier"))
-        #expect(identity.contains("let expectedIdentifier = \"capture-v14-\\(sourceCommitSHA.prefix(12))\""))
+        #expect(identity.contains("let expectedIdentifier = \"Capture Build V14-\\(sourceCommitSHA.prefix(12))\""))
         #expect(identity.contains("return buildIdentifier == expectedIdentifier"))
 
         // But self-described plist/build-setting metadata is not an independent trust anchor.
