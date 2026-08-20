@@ -328,6 +328,7 @@ helper.verify_cross_binding(
     external_build_record_data=read_exact(build_path, build_sha, 1_048_576, "public"),
     signed_build_evidence_data=read_exact(evidence_path, evidence_sha, 1_048_576, "public"),
     final_go_record_data=read_exact(final_go_path, final_go_sha, 1_048_576, "private"),
+    accepted_source_commit_sha=accepted_source,
     accepted_install_manifest_sha256=manifest_sha.lower(),
     accepted_retained_ipa_sha256=retained_ipa_sha.lower(),
     accepted_external_build_record_sha256=build_sha.lower(),
