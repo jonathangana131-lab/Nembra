@@ -203,7 +203,7 @@ public enum AuthenticatedStationaryCaptureFieldAuthorizationVerifier {
     }
 
     /// Begins a process-local attempt using the running app identity and a random 256-bit challenge.
-    public static func makeCurrentApplicationAttempt(
+    package static func makeCurrentApplicationAttempt(
         externalBindings: AuthenticatedStationaryCaptureExternalBindings
     ) throws -> AuthenticatedStationaryCaptureAttempt {
         guard let bundleIdentifier = Bundle.main.bundleIdentifier,
@@ -227,7 +227,7 @@ public enum AuthenticatedStationaryCaptureFieldAuthorizationVerifier {
     }
 
     /// Verifies against only the package-pinned production key and current clocks/runtime.
-    public static func verifyForCurrentApplication(
+    package static func verifyForCurrentApplication(
         _ envelopeData: Data,
         attempt: AuthenticatedStationaryCaptureAttempt,
         consumptionStore: any AuthenticatedStationaryCaptureAuthorizationConsumptionStore
