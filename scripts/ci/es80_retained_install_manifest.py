@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import re
+import stat
 import sys
 from typing import Any
 
@@ -189,15 +191,72 @@ def verify_manifest_against_expected(
 
 
 def _read_manifest(path: Path) -> bytes:
+    """Read one exact manifest through no-follow descriptors, never a reopened pathname."""
     candidate = path.expanduser()
-    if not candidate.is_file() or candidate.is_symlink():
-        raise RetainedInstallManifestError(
-            "manifest path must be one regular non-symlink file"
+    raw_path = os.fspath(candidate)
+    if not os.path.isabs(raw_path) or "\x00" in raw_path:
+        raise RetainedInstallManifestError("manifest path must be absolute and NUL-free")
+
+    parts = Path(raw_path).parts
+    if len(parts) < 2 or parts[0] != "/" or any(part in {"", ".", ".."} for part in parts[1:]):
+        raise RetainedInstallManifestError("manifest path is not canonical")
+
+    no_follow = getattr(os, "O_NOFOLLOW", None)
+    directory_only = getattr(os, "O_DIRECTORY", None)
+    if no_follow is None or directory_only is None:
+        raise RetainedInstallManifestError("platform cannot guarantee no-follow manifest custody")
+
+    directory_fd = os.open("/", os.O_RDONLY | directory_only)
+    descriptor: int | None = None
+    try:
+        for component in parts[1:-1]:
+            next_fd = os.open(
+                component,
+                os.O_RDONLY | directory_only | no_follow,
+                dir_fd=directory_fd,
+            )
+            os.close(directory_fd)
+            directory_fd = next_fd
+        descriptor = os.open(parts[-1], os.O_RDONLY | no_follow, dir_fd=directory_fd)
+    except OSError as error:
+        raise RetainedInstallManifestError("manifest path failed no-follow admission") from error
+    finally:
+        os.close(directory_fd)
+
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+            raise RetainedInstallManifestError("manifest must be one regular single-link file")
+        if before.st_size <= 0 or before.st_size > MAX_MANIFEST_BYTES:
+            raise RetainedInstallManifestError("manifest file size is invalid")
+
+        blocks: list[bytes] = []
+        byte_count = 0
+        while True:
+            block = os.read(descriptor, min(4096, MAX_MANIFEST_BYTES + 1 - byte_count))
+            if not block:
+                break
+            blocks.append(block)
+            byte_count += len(block)
+            if byte_count > MAX_MANIFEST_BYTES:
+                raise RetainedInstallManifestError("manifest exceeds the byte limit")
+
+        after = os.fstat(descriptor)
+        identity = lambda value: (
+            value.st_dev,
+            value.st_ino,
+            value.st_mode,
+            value.st_uid,
+            value.st_nlink,
+            value.st_size,
+            value.st_mtime_ns,
+            value.st_ctime_ns,
         )
-    data = candidate.read_bytes()
-    if len(data) > MAX_MANIFEST_BYTES:
-        raise RetainedInstallManifestError("manifest exceeds the byte limit")
-    return data
+        if identity(after) != identity(before) or byte_count != before.st_size:
+            raise RetainedInstallManifestError("manifest changed during descriptor read")
+        return b"".join(blocks)
+    finally:
+        os.close(descriptor)
 
 
 def _self_test() -> None:
