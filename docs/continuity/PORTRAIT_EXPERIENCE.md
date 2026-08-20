@@ -12,7 +12,8 @@ Updated: 2026-08-19
 - Rebased integration head:
   `3f0814ac70211f68b7af1a6913c78c91a810f663` (contains implementation
   checkpoint `0b7e3b27de5e9b547911558ae8ed4cb852becb59`).
-- Latest pushed portrait checkpoint: **not yet pushed; see Work in progress**.
+- Latest pushed portrait implementation checkpoint:
+  `1149ea9babb7a49fd52cb927826b4a0a59c12820` (remote-verified).
 
 This file is the portrait workstream recovery authority. The root
 `DEVELOPMENT_CONTINUITY.md` remains the integration-wide authority.
@@ -47,9 +48,10 @@ Current gate:
 - Exact cf817 failure/evidence details are retained in
   `docs/design/audits/HOME_VISUAL_GAP_AUDIT_2026-08-19.md`.
 
-## Work in progress
+## Completed and pushed in the first portrait checkpoint
 
-Uncommitted on `agent/portrait-home-1-0-polish`:
+Implementation commit `1149ea9babb7a49fd52cb927826b4a0a59c12820` is
+pushed and verified on `origin/agent/portrait-home-1-0-polish`:
 
 - `NembraApp/DesignSystem/NembraVisuals.swift`: opaque portrait instrument copy
   and warning tokens;
@@ -65,8 +67,10 @@ Uncommitted on `agent/portrait-home-1-0-polish`:
   selected source, authority, explicit visual gaps, design system, and workstream
   boundaries.
 
-These changes are not yet continuity-secured until committed, pushed, and
-remote-verified.
+No intentional source, reference, or design-contract change is local-only after
+that implementation commit. This continuity-only update follows it; recover by
+checking out the remote portrait branch, then compare its current HEAD with the
+implementation SHA above.
 
 ## Tests and CI
 
@@ -88,6 +92,9 @@ path scan is clean; and a diagnostic generic-Simulator strict-concurrency
 `build-for-testing` completed with exit 0 after the final large-text reflow.
 Local Xcode 26 is never release authority.
 
+No exact-head hosted Xcode 27 evidence exists for `1149ea9b…` yet. The cf817
+artifact below remains baseline/root-cause evidence only.
+
 ## Blockers
 
 - **Code/CI:** exact-head Xcode 27 must prove contrast, XXXL reflow, first-fold
@@ -101,9 +108,12 @@ Local Xcode 26 is never release authority.
 
 ## Exact next executable action
 
-1. Finish the first Home contrast/authority checkpoint in the paths listed under
-   Work in progress.
-2. Run:
+1. Open/update the draft portrait PR targeting
+   `product/capture-1-0-main-20260818` and synchronize its body with this file.
+2. Dispatch the branch-local `xcode27-simulator.yml` workflow at exact
+   `1149ea9b…`; verify the Mac job actually runs rather than accepting a
+   classifier-only green shell.
+3. For local recovery or preflight, run:
 
    ```sh
    xcrun swiftc -frontend -parse NembraApp/DesignSystem/NembraVisuals.swift
@@ -112,12 +122,7 @@ Local Xcode 26 is never release authority.
    git diff --check
    ```
 
-3. Commit only intentional portrait paths, push
-   `agent/portrait-home-1-0-polish`, verify `git ls-remote`, and replace the
-   unpushed section above with exact SHAs/results.
-4. Open a draft PR targeting `product/capture-1-0-main-20260818`, synchronize its
-   checklist with this file, and trigger the authoritative Xcode 27 workflow.
-5. While hosted evidence runs, extract the Home energy/status leaf views to
+4. While hosted evidence runs, extract the Home energy/status leaf views to
    narrow Observation invalidation without changing truth contracts.
 
 ## Rejected approaches

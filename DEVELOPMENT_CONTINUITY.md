@@ -37,6 +37,37 @@ The integration branch still carries the complete Nembra 1.0 objective, but impl
 
 The root task is now the dedicated **Capture + Bluetooth truth** workstream and integration owner. It must finish the smallest reliable one-time companion capture, preserve raw evidence without guessing, produce a versioned machine-readable export plus human summary/protocol map, integrate only high-confidence mappings into production decoding, and notify both sibling branches through repository docs/PR notes when stable contracts or fixtures are available.
 
+### Parallel portrait recovery record
+
+- Branch: `agent/portrait-home-1-0-polish`
+- Latest pushed implementation checkpoint:
+  `1149ea9babb7a49fd52cb927826b4a0a59c12820`
+- Scope recovery authority: `docs/continuity/PORTRAIT_EXPERIENCE.md`
+- Current focus: finish Home connected/disconnected/loading/error/retained/low
+  states and selected composition before widening into Rides, Vehicle, Settings,
+  profile, or secondary sheets.
+- First checkpoint paths: `NembraApp/Features/Home/HomeView.swift`,
+  `NembraApp/DesignSystem/NembraVisuals.swift`, `NembraUITests/NembraUITests.swift`,
+  focused Home source tests, `docs/design/`, `docs/coordination/UI_CONTRACTS.md`,
+  and portrait continuity/provenance records.
+- Local evidence: Swift parse passes; focused Home source tests pass 5/5;
+  inherited Ride source test passes 1/1; strict-concurrency generic Simulator
+  build-for-testing exits 0 under diagnostic local Xcode 26; secret/path and
+  diff checks pass.
+- Hosted acceptance: not yet run for `1149ea9b…`. Exact Xcode 27 / iPhone 12 /
+  iOS 27 accessibility, screenshot, and performance evidence remains required.
+- External blocker: final Home artwork still requires a high-resolution,
+  production-cleared truthful ES80 source. The 500×500 temporary raster cannot
+  close visual acceptance.
+- Next executable action: open the portrait draft PR against the integration
+  branch, manually dispatch branch-local `xcode27-simulator.yml`, inspect the
+  exact-head Mac job/artifacts, then continue the value-input Home leaf
+  extraction while hosted evidence runs.
+
+This parallel record does not authorize the root task to edit portrait files.
+Capture/BLE publishes only stable typed contracts/fixtures for the portrait
+branch to consume; unknown or stale values remain unavailable/retained in UI.
+
 The current Home screenshot is a functional checkpoint only and is explicitly **not visually accepted**. Home visual acceptance additionally requires one fresh exact-head Xcode 27 iPhone 12 screenshot placed side-by-side with `docs/design-reference/nembra-1.0-gold-glass/selected-home-gold-glass.png` and proving all of the following together:
 
 - a dimensional battery instrument with fine SOC-clipped ribs/micro-lines, gold gradient/highlight, deep graphite empty region, metallic rim/inner depth, and terminal detail;
