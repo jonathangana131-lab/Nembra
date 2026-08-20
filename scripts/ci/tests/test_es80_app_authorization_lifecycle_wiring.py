@@ -46,9 +46,6 @@ class AppAuthorizationLifecycleWiringTests(unittest.TestCase):
         self.assertIn("fieldAuthorization", self.app)
 
     def test_real_entrypoint_drives_handoff_to_armed_before_off1(self) -> None:
-        # Lifecycle admissions are useless if the installed app never advances the retained manifest
-        # and signed envelope through the package-owned one-shot session. Presence is never authority;
-        # the entrypoint must consume the controller's verified handoff seam and gate OFF1 on `.armed`.
         self.assertIn("advanceInboxHandoffIfAvailable()", self.app)
         self.assertIn("fieldAuthorization.stage == .armed", self.app)
         handoff = self.app.index("advanceInboxHandoffIfAvailable()")
@@ -56,11 +53,6 @@ class AppAuthorizationLifecycleWiringTests(unittest.TestCase):
         self.assertLess(handoff, off1)
 
     def test_non_authorizing_handoff_bootstrap_does_not_require_legacy_field_authority(self) -> None:
-        # `isAuthoritativeFieldBuild` is intentionally hard false until the independently signed
-        # package session becomes the trust root. Requiring that legacy Boolean before reading the
-        # retained manifest/challenge handoff makes the external authorization impossible to obtain.
-        # Complete self-described build metadata may gate this *non-authorizing* bootstrap only;
-        # `AuthenticatedStationaryCaptureAppSession.acceptEnvelope` still owns actual authority.
         handoff = self.section(
             "func advanceFieldAuthorizationHandoffIfAvailable()",
             "func activateMembershipRequestsForView()",
@@ -69,10 +61,15 @@ class AppAuthorizationLifecycleWiringTests(unittest.TestCase):
         self.assertIn("buildIdentity.hasCompleteFieldBuildMetadata", handoff)
         self.assertIn("advanceInboxHandoffIfAvailable()", handoff)
 
+    def test_preflight_readiness_uses_signed_armed_session_not_legacy_build_boolean(self) -> None:
+        readiness = self.section(
+            "private var authorityReady: Bool",
+            "private var currentStageIndex: Int",
+        )
+        self.assertIn("test.fieldAuthorizationReady", readiness)
+        self.assertNotIn("test.fieldBuildIsAuthoritative", readiness)
+
     def test_off1_composition_does_not_recheck_permanently_false_legacy_build_authority(self) -> None:
-        # A verified `.armed` package session is the external attempt authority. The OFF1 admission
-        # itself is still mandatory and fail-closed; a second hard-false bundle Boolean must not
-        # make an independently signed, runtime-cross-bound session unreachable.
         section = self.section(
             "private func beginBaselineAfterCurrentOperatorAttestation()",
             "private func beginCorrelationSeries()",
@@ -81,9 +78,6 @@ class AppAuthorizationLifecycleWiringTests(unittest.TestCase):
         self.assertIn("admitOFF1Start()", section)
 
     def test_selected_authentication_action_is_not_gated_by_pre_off1_armed_readiness(self) -> None:
-        # OFF1 legitimately advances the package stage `.armed -> .off1Started`. The selected-state
-        # button must therefore not reuse the pre-OFF1 readiness Boolean that is true only at
-        # `.armed`, otherwise `authenticate()` can never advance to `.authenticationAdmitted`.
         panel = self.section(
             "private var secureObservationPanel: some View",
             "private var failureRecoveryContextPanel: some View",
@@ -92,6 +86,22 @@ class AppAuthorizationLifecycleWiringTests(unittest.TestCase):
         selected = panel[:selected_end]
         self.assertIn("test.authenticate()", selected)
         self.assertNotIn(".disabled(!authorityReady", selected)
+
+    def test_authentication_composition_does_not_recheck_permanently_false_legacy_build_authority(self) -> None:
+        section = self.section(
+            "func authenticate()",
+            "private func beginOfficialConnection(candidate: Candidate)",
+        )
+        self.assertNotIn("buildIdentity.isAuthoritativeFieldBuild", section)
+        self.assertIn("admitAuthenticationStart()", section)
+
+    def test_official_connection_composition_does_not_recheck_permanently_false_legacy_build_authority(self) -> None:
+        section = self.section(
+            "private func beginOfficialConnection(candidate: Candidate)",
+            "private func authenticated(token: TuyaReadOnlyConnectionToken)",
+        )
+        self.assertNotIn("buildIdentity.isAuthoritativeFieldBuild", section)
+        self.assertIn("admitOfficialConnectionStart()", section)
 
     def test_off1_requires_authorization_before_correlation(self) -> None:
         section = self.section(
