@@ -23,7 +23,6 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
         let signedBuildEvidenceSHA256: String
         let finalGORecordSHA256: String
         let intendedDevicePseudonymSHA256: String
-        let authorizationEnvelopeSHA256: String
     }
 
     private let sourceCommitSHA = "0123456789abcdef0123456789abcdef01234567"
@@ -58,8 +57,7 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
             externalBuildRecordSHA256: String(repeating: "3", count: 64),
             signedBuildEvidenceSHA256: String(repeating: "4", count: 64),
             finalGORecordSHA256: String(repeating: "5", count: 64),
-            intendedDevicePseudonymSHA256: String(repeating: "6", count: 64),
-            authorizationEnvelopeSHA256: String(repeating: "7", count: 64)
+            intendedDevicePseudonymSHA256: String(repeating: "6", count: 64)
         )
     }
 
@@ -69,7 +67,7 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
         return try encoder.encode(wire)
     }
 
-    @Test("canonical manifest binds the retained install candidate and authorization inputs")
+    @Test("canonical manifest binds only stable retained-install inputs")
     func canonicalManifestBindsExactInputs() throws {
         let data = try canonicalData(wire())
         let manifest = try Verifier.decodeCanonical(data)
@@ -80,7 +78,6 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
         #expect(manifest.buildIdentifier == "Capture Build V14-0123456789ab")
         #expect(manifest.buildInstanceID == buildInstanceID)
         #expect(manifest.retainedIPASHA256 == String(repeating: "1", count: 64))
-        #expect(manifest.authorizationEnvelopeSHA256 == String(repeating: "7", count: 64))
         #expect(manifest.canonicalManifestSHA256.utf8.count == 64)
 
         let bindings = try manifest.externalBindings()
@@ -106,6 +103,19 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
         #expect(!python.contains("-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-"))
         #expect(!python.contains("manifestKind"))
         #expect(!python.contains("signedInstallableSHA256"))
+        #expect(!python.contains("\"authorizationEnvelopeSHA256\","))
+    }
+
+    @Test("future attempt envelope cannot be smuggled into the pre-install manifest")
+    func rejectsFutureAttemptEnvelopeField() throws {
+        let data = try canonicalData(wire())
+        let canonical = try #require(String(data: data, encoding: .utf8))
+        let injected = String(canonical.dropLast())
+            + ",\"authorizationEnvelopeSHA256\":\"\(String(repeating: "7", count: 64))\"}"
+
+        #expect(throws: ManifestError.unexpectedManifestField("authorizationEnvelopeSHA256")) {
+            try Verifier.decodeCanonical(Data(injected.utf8))
+        }
     }
 
     @Test("manifest can be checked against the build identity measured from the running app")
