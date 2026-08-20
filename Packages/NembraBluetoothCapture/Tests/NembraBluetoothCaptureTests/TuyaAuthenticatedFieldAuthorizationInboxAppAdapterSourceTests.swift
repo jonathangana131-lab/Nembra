@@ -133,7 +133,23 @@ struct CaptureSimulatorQAHarnessSourceTests_AuthorizationInboxAppAdapter {
         // catch-all that would convert malformed/custody/signature failures into a harmless wait.
         #expect(!section.contains("catch {"))
         #expect(!section.contains("try?"))
-        #expect(!section.contains("return .armed\n            } catch"))
+
+        // Prove the successful envelope path returns `.armed` before the only typed catch that can
+        // turn an absent envelope into a wait state. This is structural rather than indentation-
+        // sensitive, so formatting changes cannot accidentally create or erase authority semantics.
+        let authorizeCall = try #require(section.range(of: "try authorizeFromInbox()"))
+        let armedReturn = try #require(section.range(
+            of: "return .armed",
+            range: authorizeCall.upperBound..<section.endIndex
+        ))
+        let envelopeMissingCatch = try #require(section.range(
+            of: "catch AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject",
+            range: armedReturn.upperBound..<section.endIndex
+        ))
+        #expect(armedReturn.lowerBound < envelopeMissingCatch.lowerBound)
+        let envelopeCatchTail = section[envelopeMissingCatch.lowerBound...]
+        #expect(envelopeCatchTail.contains("AuthenticatedStationaryCaptureAuthorizationInbox.authorizationEnvelopeFilename"))
+        #expect(envelopeCatchTail.contains("return .waitingForEnvelope"))
     }
 
     @Test("standalone target actually compiles the inbox-bound adapter")
