@@ -120,83 +120,215 @@ private struct RideStatusStrip: View {
 private struct RideHistoryView: View {
     @Environment(RideHistoryPresentationStore.self) private var history
     @Environment(RideApplicationStore.self) private var rides
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
-        Group {
-            if history.records.isEmpty {
-                emptyOrLoadingState
-            } else {
-                historyList
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: NembraMetrics.section) {
+                journalHeader
+
+                if history.status == .failed || history.status == .unavailable {
+                    journalStateSurface(
+                        title: "Ride history unavailable",
+                        systemImage: "exclamationmark.triangle",
+                        message: history.lastErrorMessage ?? "Local ride history could not be opened safely.",
+                        identifier: "rides.error"
+                    )
+                }
+
+                if history.records.isEmpty {
+                    emptyOrLoadingState
+                } else {
+                    savedRideJournal
+                }
             }
+            .padding(.horizontal, 20)
+            .padding(.top, 10)
+            .padding(.bottom, 30)
         }
+        .background(Color(uiColor: .systemBackground))
         .navigationTitle("Rides")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .task(id: rides.lastCompletedSessionID) {
             await history.refresh()
         }
         .refreshable {
             await history.refresh()
         }
+        .accessibilityIdentifier("rides.history")
+    }
+
+    private var journalHeader: some View {
+        VStack(alignment: .leading, spacing: dynamicTypeSize.isAccessibilitySize ? 12 : 8) {
+            Text("RIDE JOURNAL")
+                .font(.caption2.weight(.bold))
+                .tracking(1.5)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+
+            Text("Every ride, kept with its evidence.")
+                .font(dynamicTypeSize.isAccessibilitySize ? .title2.weight(.bold) : .title.weight(.bold))
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(savedRidesAccessibilityLabel)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+
+                if let mostRecentRideDate {
+                    Text("Latest \(mostRecentRideDate.formatted(date: .abbreviated, time: .omitted))")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+
+            Text("Scooter odometer and GPS distance stay separate so the journal never turns one source into another.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 8)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Ride journal")
+        .accessibilityValue(savedRidesAccessibilityLabel)
+        .accessibilityIdentifier("rides.journal-header")
     }
 
     @ViewBuilder
     private var emptyOrLoadingState: some View {
         switch history.status {
         case .idle, .loading:
-            ProgressView("Loading rides…")
-                .accessibilityIdentifier("rides.loading")
+            HStack(spacing: 14) {
+                ProgressView()
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Loading your journal")
+                        .font(.headline)
+                    Text("Checking saved ride evidence on this iPhone.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(22)
+            .frame(maxWidth: .infinity, minHeight: 120, alignment: .leading)
+            .background(journalSurface, in: RoundedRectangle(cornerRadius: NembraMetrics.heroRadius, style: .continuous))
+            .overlay {
+                journalBorder(cornerRadius: NembraMetrics.heroRadius)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("rides.loading")
         case .ready:
-            ContentUnavailableView(
-                "No completed rides",
-                systemImage: "clock.arrow.circlepath",
-                description: Text("Completed rides appear here automatically after Nembra safely saves them.")
+            journalStateSurface(
+                title: "Your first ride belongs here",
+                systemImage: "point.bottomleft.forward.to.point.topright.scurvepath",
+                message: "Completed rides appear automatically after Nembra safely saves their accepted recording evidence.",
+                identifier: "rides.empty"
             )
-            .accessibilityIdentifier("rides.empty")
         case .unavailable, .failed:
-            ContentUnavailableView(
-                "Ride history unavailable",
-                systemImage: "exclamationmark.triangle",
-                description: Text(history.lastErrorMessage ?? "Local ride history could not be opened safely.")
-            )
-            .accessibilityIdentifier("rides.error")
+            EmptyView()
         }
     }
 
-    private var historyList: some View {
-        List {
-            if history.status == .failed || history.status == .unavailable {
-                Section {
-                    Label(
-                        history.lastErrorMessage ?? "Ride history could not be refreshed safely.",
-                        systemImage: "exclamationmark.triangle"
-                    )
-                    .font(.subheadline)
+    private var savedRideJournal: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("SAVED RIDES")
+                    .font(.caption2.weight(.bold))
+                    .tracking(1.2)
                     .foregroundStyle(.secondary)
-                }
-            }
+                    .accessibilityAddTraits(.isHeader)
 
-            Section {
+                Spacer(minLength: 12)
+
+                Text("\(history.records.count)")
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, 2)
+
+            LazyVStack(spacing: 12) {
                 ForEach(history.records, id: \.sessionID) { record in
                     NavigationLink {
                         RideHistoryDetailView(record: record)
                     } label: {
-                        RideHistoryRowView(record: record)
+                        HStack(spacing: 14) {
+                            RideHistoryRowView(record: record)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.tertiary)
+                                .accessibilityHidden(true)
+                        }
+                        .padding(dynamicTypeSize.isAccessibilitySize ? 18 : 20)
+                        .background(journalSurface, in: RoundedRectangle(cornerRadius: NembraMetrics.controlRadius, style: .continuous))
+                        .overlay {
+                            journalBorder(cornerRadius: NembraMetrics.controlRadius)
+                        }
+                        .contentShape(RoundedRectangle(cornerRadius: NembraMetrics.controlRadius, style: .continuous))
                     }
+                    .buttonStyle(.plain)
                     .accessibilityIdentifier("rides.completed-row")
                 }
-            } header: {
-                HStack {
-                    Text("Saved rides")
-                    Spacer()
-                    Text("\(history.records.count)")
-                        .monospacedDigit()
-                }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(savedRidesAccessibilityLabel)
             }
         }
-        .listStyle(.plain)
-        .accessibilityIdentifier("rides.history")
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(savedRidesAccessibilityLabel)
+    }
+
+    private func journalStateSurface(
+        title: String,
+        systemImage: String,
+        message: String,
+        identifier: String
+    ) -> some View {
+        HStack(alignment: .top, spacing: 16) {
+            Image(systemName: systemImage)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 30, height: 30)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(22)
+        .frame(maxWidth: .infinity, minHeight: 132, alignment: .leading)
+        .background(journalSurface, in: RoundedRectangle(cornerRadius: NembraMetrics.heroRadius, style: .continuous))
+        .overlay {
+            journalBorder(cornerRadius: NembraMetrics.heroRadius)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(identifier)
+    }
+
+    private var journalSurface: Color {
+        reduceTransparency
+            ? Color(uiColor: .secondarySystemBackground)
+            : Color.primary.opacity(0.045)
+    }
+
+    private func journalBorder(cornerRadius: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .strokeBorder(Color.primary.opacity(reduceTransparency ? 0.12 : 0.07))
+    }
+
+    private var mostRecentRideDate: Date? {
+        history.records.first?.evidence.endedAtDate
     }
 
     private var savedRidesAccessibilityLabel: String {
@@ -213,50 +345,62 @@ private struct RideHistoryRowView: View {
     var body: some View {
         Group {
             if dynamicTypeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 16) {
                     identityBlock
+                    evidenceDivider
                     distanceBlock(alignment: .leading)
                 }
             } else {
-                HStack(alignment: .center, spacing: 16) {
+                HStack(alignment: .center, spacing: 18) {
                     identityBlock
-                    Spacer(minLength: 16)
+                        .layoutPriority(1)
+                    Spacer(minLength: 4)
                     distanceBlock(alignment: .trailing)
                 }
             }
         }
-        .padding(.vertical, 8)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(rowAccessibilityLabel)
         .accessibilityValue(rowAccessibilityValue)
     }
 
     private var identityBlock: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 7) {
             Text(record.evidence.endedAtDate.formatted(date: .abbreviated, time: .omitted))
-                .font(.headline)
+                .font(.headline.weight(.semibold))
                 .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 8) {
                 Text(record.evidence.endedAtDate.formatted(date: .omitted, time: .shortened))
-                    .font(.subheadline.monospacedDigit())
+                    .font(.subheadline.weight(.medium).monospacedDigit())
                     .foregroundStyle(.secondary)
 
                 if isRecovered {
                     Label("Recovered", systemImage: "arrow.triangle.2.circlepath")
-                        .font(.caption.weight(.semibold))
+                        .font(.caption2.weight(.bold))
                         .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.primary.opacity(0.055), in: Capsule())
                 }
             }
         }
     }
 
+    private var evidenceDivider: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.08))
+            .frame(height: 1)
+            .accessibilityHidden(true)
+    }
+
     @ViewBuilder
     private func distanceBlock(alignment: HorizontalAlignment) -> some View {
-        VStack(alignment: alignment, spacing: 4) {
+        VStack(alignment: alignment, spacing: 7) {
             if let odometerDeltaKilometers {
                 distanceLine(
-                    label: "Scooter",
+                    label: "SCOOTER",
                     value: VehicleDisplayFormatting.distance(kilometers: odometerDeltaKilometers)
                 )
             }
@@ -271,21 +415,29 @@ private struct RideHistoryRowView: View {
             }
 
             if !hasDistanceEvidence {
-                Text("Distance unavailable")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
+                VStack(alignment: alignment, spacing: 2) {
+                    Text("DISTANCE")
+                        .font(.caption2.weight(.bold))
+                        .tracking(0.7)
+                        .foregroundStyle(.tertiary)
+                    Text("Unavailable")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
 
     private func distanceLine(label: String, value: String) -> some View {
-        HStack(spacing: 8) {
+        VStack(alignment: label == "SCOOTER" ? .trailing : .trailing, spacing: 2) {
             Text(label)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .font(.caption2.weight(.bold))
+                .tracking(0.7)
+                .foregroundStyle(.tertiary)
             Text(value)
                 .font(.subheadline.weight(.semibold).monospacedDigit())
                 .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
