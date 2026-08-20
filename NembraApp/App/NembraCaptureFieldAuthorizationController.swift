@@ -19,13 +19,28 @@ final class NembraCaptureFieldAuthorizationController {
     }
 
     private let session: AuthenticatedStationaryCaptureAppSession
+    private let transferDirectoryPreparationError: (any Error)?
 
     init() {
         self.session = AuthenticatedStationaryCaptureAppSession()
+        do {
+            // The retained manifest arrives through external appDataContainer transport before a
+            // candidate is allowed to claim field-build authority. Prepare only the protected empty
+            // destination here so transport can be proved without circularly granting authority.
+            // This creates no manifest, challenge, envelope, capability, BLE session, or admission.
+            try AuthenticatedStationaryCaptureSignerRendezvousOutbox()
+                .prepareAuthorizationTransferDirectory()
+            self.transferDirectoryPreparationError = nil
+        } catch {
+            // Keep bootstrap failure non-authorizing, but remember it so any later authorized
+            // handoff fails closed instead of silently consuming subjects through another path.
+            self.transferDirectoryPreparationError = error
+        }
     }
 
     init(session: AuthenticatedStationaryCaptureAppSession) {
         self.session = session
+        self.transferDirectoryPreparationError = nil
     }
 
     var stage: AuthenticatedStationaryCaptureAppSession.Stage { session.stage }
@@ -96,28 +111,23 @@ final class NembraCaptureFieldAuthorizationController {
         }
     }
 
-    /// Advances only the non-authorizing app-container handoff that is valid for the current
-    /// single-use session stage. A legitimately absent next file is a wait state, not a failure and
-    /// not authority. Any present-but-invalid/custody-violating manifest or envelope is propagated
-    /// to the caller; verification code remains responsible for terminal revocation where required.
+    /// Advances only the app-container handoff that is valid for the current single-use session
+    /// stage. Production callers keep this seam behind accepted field-build authority. The earlier
+    /// constructor bootstrap is deliberately narrower: it can create only the empty protected
+    /// destination and cannot read a manifest, publish a challenge, arm the session, or admit OFF1.
     ///
-    /// This seam is intentionally idempotent while waiting: an idle authoritative handoff first
-    /// provisions the exact owner-controlled directory external `appDataContainer` transport may
-    /// target, the manifest is consumed exactly once, then only an envelope can advance the session.
-    /// It never retries a rejected envelope against the same challenge and never resets a revoked
-    /// session. Directory preparation failure is terminal for this controller lifetime.
+    /// A legitimately absent next file is a wait state, not a failure and not authority. Any
+    /// present-but-invalid/custody-violating manifest or envelope is propagated to the caller;
+    /// verification code remains responsible for terminal revocation where required.
     @discardableResult
     func advanceInboxHandoffIfAvailable() throws -> HandoffProgress {
+        if let transferDirectoryPreparationError {
+            session.revoke()
+            throw transferDirectoryPreparationError
+        }
+
         switch session.stage {
         case .idle:
-            do {
-                try AuthenticatedStationaryCaptureSignerRendezvousOutbox()
-                    .prepareAuthorizationTransferDirectory()
-            } catch {
-                session.revoke()
-                throw error
-            }
-
             do {
                 _ = try prepareSignerRendezvousDocumentFromInbox()
                 return .waitingForEnvelope
