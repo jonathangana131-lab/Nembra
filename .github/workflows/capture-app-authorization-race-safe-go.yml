@@ -1,0 +1,147 @@
+name: Capture app authorization race-safe GO
+
+on:
+  push:
+    branches:
+      - product/capture-1-0-main-20260818
+    paths:
+      - .github/workflows/capture-app-authorization-race-safe-go.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize-test-publish:
+    runs-on: xcode-27
+    timeout-minutes: 45
+    env:
+      TARGET_BRANCH: product/capture-1-0-main-20260818
+      APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
+      SOURCE_WORKFLOW: .github/workflows/capture-app-authorization-close-one-shot.yml
+      SELF_WORKFLOW: .github/workflows/capture-app-authorization-race-safe-go.yml
+      STALE_RETRIGGER: .github/workflows/capture-app-authorization-retrigger-go.yml
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact authoring subjects
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -f "$APP_SOURCE"
+          test -f "$SOURCE_WORKFLOW"
+          test -f "$SELF_WORKFLOW"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf '%s\n' "$(git rev-parse HEAD:"$APP_SOURCE")" > "$RUNNER_TEMP/trigger-app-blob"
+          printf '%s\n' "$(git rev-parse HEAD:"$SOURCE_WORKFLOW")" > "$RUNNER_TEMP/trigger-workflow-blob"
+
+      - name: Materialize canonical lifecycle transform
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path(os.environ["SOURCE_WORKFLOW"]).read_text(encoding="utf-8")
+          marker = "      - name: Materialize field authorization into real SecureLink lifecycle\n"
+          section = workflow.index(marker)
+          run_marker = "        run: |\n"
+          start = workflow.index(run_marker, section) + len(run_marker)
+          end = workflow.index("\n      - name:", start)
+          program = textwrap.dedent(workflow[start:end])
+          required = [
+              "admitOFF1Start",
+              "admitAuthenticationStart",
+              "admitOfficialConnectionStart",
+              "admitObservationStart",
+              "freezeAcceptedArtifactForAuthorizationSeal",
+              "sealAfterAcceptedArtifactFreeze",
+              "path.write_text(source, encoding=\"utf-8\")",
+          ]
+          for token in required:
+              if token not in program:
+                  raise SystemExit(f"canonical materializer missing required token: {token}")
+          namespace = {"__name__": "__main__", "__file__": "<canonical-capture-app-authorization-materializer>"}
+          exec(compile(program, namespace["__file__"], "exec", dont_inherit=True), namespace)
+
+      - name: Enforce transformed authority shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test "$(git status --porcelain=v1 | awk '{print $2}' | sort | tr '\n' ' ' | sed 's/ $//')" = "$APP_SOURCE"
+          grep -Fq 'import NembraCaptureAppAuthorization' "$APP_SOURCE"
+          grep -Fq 'fieldAuthorization.stage == .armed' "$APP_SOURCE"
+          grep -Fq 'fieldAuthorization.stage != .armed' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitOFF1Start()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitAuthenticationStart()' "$APP_SOURCE"
+          grep -Fq 'try fieldAuthorization.admitOfficialConnectionStart()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitObservationStart()' "$APP_SOURCE"
+          grep -Fq 'try self.freezeAcceptedArtifactForAuthorizationSeal()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()' "$APP_SOURCE"
+          test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE")" = 0
+          cp "$APP_SOURCE" "$RUNNER_TEMP/tested-NembraCaptureEntrypoint.swift"
+
+      - name: Run focused adversarial authorization contracts
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          swift test --filter AuthenticatedStationaryCaptureAppSessionTests
+          swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthorizationInboxAppAdapter
+          swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
+          swift test --filter TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
+
+      - name: Build standalone Capture on Xcode 27
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/NembraCaptureAppAuthorizationRaceSafe" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Publish only across proven non-overlapping carrier movement
+        shell: bash
+        run: |
+          set -euo pipefail
+          trigger_app_blob="$(cat "$RUNNER_TEMP/trigger-app-blob")"
+          trigger_workflow_blob="$(cat "$RUNNER_TEMP/trigger-workflow-blob")"
+
+          git fetch origin "$TARGET_BRANCH"
+          remote_head="$(git rev-parse FETCH_HEAD)"
+          test "$(git rev-parse FETCH_HEAD:"$APP_SOURCE")" = "$trigger_app_blob"
+          test "$(git rev-parse FETCH_HEAD:"$SOURCE_WORKFLOW")" = "$trigger_workflow_blob"
+
+          while IFS= read -r changed; do
+            case "$changed" in
+              "$APP_SOURCE"|NembraApp/*|NembraCapture.xcodeproj/*|Packages/*|Package.swift|Package.resolved|project.yml|TuyaCapturePrivateConfig/*)
+                printf 'Overlapping build/authority path moved while Xcode evidence ran: %s\n' "$changed" >&2
+                exit 1
+                ;;
+            esac
+          done < <(git diff --name-only "$GITHUB_SHA" "$remote_head")
+
+          git reset --hard "$remote_head"
+          cp "$RUNNER_TEMP/tested-NembraCaptureEntrypoint.swift" "$APP_SOURCE"
+          rm "$SOURCE_WORKFLOW"
+          rm "$SELF_WORKFLOW"
+          if test -f "$STALE_RETRIGGER"; then rm "$STALE_RETRIGGER"; fi
+
+          git add -- "$APP_SOURCE" "$SOURCE_WORKFLOW" "$SELF_WORKFLOW"
+          if git ls-files --error-unmatch "$STALE_RETRIGGER" >/dev/null 2>&1; then git add -- "$STALE_RETRIGGER"; fi
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat(capture): wire one-time field authorization into SecureLink'
+          materialized="$(git rev-parse HEAD)"
+          git push --force-with-lease="refs/heads/$TARGET_BRANCH:$remote_head" origin HEAD:"$TARGET_BRANCH"
+          printf 'NEMBRA_CAPTURE_APP_AUTHORIZATION_RACE_SAFE materialized=%s absorbed=%s trigger=%s physicalAuthorityCreated=false\n' "$materialized" "$remote_head" "$GITHUB_SHA"
