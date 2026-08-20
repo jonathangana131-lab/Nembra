@@ -1,10 +1,10 @@
 # Nembra autonomous development contract
 
-This file is the execution authority for Codex and other coding agents working in this repository. It replaces the old swarm scheduler/claim/lease/mission-graph workflow as an operating model. Older `SWARM_*`, `.swarm/`, large-swarm, continuation, worker-ID, claim, lease, fencing, admission, merge-train, and capacity-mining documents are historical/reference material unless this file explicitly points to them for product or safety facts.
+This file is the execution authority for Codex, ChatGPT, and other coding agents working in this repository. It replaces the old swarm scheduler/claim/lease/mission-graph workflow as an operating model. Older `SWARM_*`, `.swarm/`, large-swarm, continuation, worker-ID, claim, lease, fencing, admission, merge-train, and capacity-mining documents are historical/reference material unless this file explicitly points to them for product or safety facts.
 
 ## Goal
 
-Continuously move Nembra toward a finished, shippable **Nembra 1.0** with real code landing on `main`. Optimize for working product, correctness, usability, physical-truth safety, and release quality — not worker count, PR count, issue count, or coordination ceremony.
+Continuously move Nembra toward a finished, shippable **Nembra 1.0** with real product code landing on `main`. Optimize for working product, correctness, usability, physical-truth safety, release quality, and healthy integration — not worker count, branch count, PR count, issue count, or coordination ceremony.
 
 When the user says `Go`, `continue`, `keep going`, `work on Nembra`, `finish Nembra`, `finish Nembra 1.0`, or gives similarly broad authorization, begin real repository work immediately and keep working for the whole available chat turn while useful work remains. Do not answer with only a plan, status report, task list, or question about what to work on when GitHub can determine the next useful action.
 
@@ -17,7 +17,7 @@ A commit, PR, review, test result, merge, or one finished subsystem is a checkpo
 Use, in this order:
 
 1. current `main` code and tests;
-2. current open PRs, reviews, recent commits, and exact-source evidence;
+2. current open PRs, reviews, recent commits, branch divergence, and exact-source evidence;
 3. current product/safety/release docs;
 4. issues that still reproduce on current code.
 
@@ -62,17 +62,56 @@ The fast path does **not** authorize skipping required proof for:
 
 Those remain strict until the exact applicable evidence exists.
 
+## Trunk health and convergence mode
+
+Nembra must behave like a healthy trunk-first repository, not a branch farm. A long-lived Capture carrier or release candidate is a temporary integration tool, never a second permanent `main`.
+
+At the start of every broad `Go` run, inspect at minimum:
+
+- current `main` SHA and recent integration activity;
+- total open PR count;
+- PRs targeting non-`main` branches;
+- how far the active Capture/release/integration branches are ahead of `main`;
+- duplicate/superseded/conflicting PRs;
+- whether finished ordinary slices exist off-trunk that can safely land on `main`.
+
+Enter **CONVERGENCE MODE** when any strong integration-pressure signal exists, including:
+
+- 8 or more open PRs;
+- an active carrier/release/integration branch more than 20 commits ahead of `main`;
+- 3 or more open PRs targeting the same non-`main` integration branch;
+- `main` has not received a meaningful product/source integration while several source-complete slices have landed elsewhere;
+- duplicate/recovery/successor PRs are accumulating around the same root cause.
+
+These thresholds are health signals, not release gates. Use judgment when Git history contains mechanical merge commits, but do not ignore obvious branch accumulation.
+
+While in CONVERGENCE MODE:
+
+1. **Stop spawning ordinary new feature/recovery branches.** New work is allowed only for a genuinely independent urgent defect, a P0 safety/security regression, or a small unblocker that cannot sensibly be folded into an existing candidate.
+2. Spend the turn shrinking integration pressure: review, fix, rebase/transplant, merge, or close existing candidates.
+3. Prefer coherent source-complete slices directly onto current `main` instead of adding another layer to a carrier.
+4. Close superseded/absorbed attempts immediately once current GitHub proves their useful delta exists elsewhere.
+5. Do not keep a PR open merely as historical evidence; preserve the useful facts in comments/docs and close it.
+6. If a large carrier contains both ordinary product code and strict physical-authority code, split or transplant the ordinary safe slices to `main` rather than making all product progress wait behind the strict chain.
+7. A fail-closed, unreachable, or explicitly disabled security foundation may land on development `main` when it cannot grant real authority and the ordinary-development conditions are satisfied. Code that changes live trust roots, signing authority, physical authorization, or real scooter behavior remains strict.
+8. Keep the final release candidate small and increasingly boring. Do not use it as the default place for day-to-day feature accumulation.
+
+Exit CONVERGENCE MODE once the open queue and branch divergence are again small enough that new independent work can integrate cleanly. A practical healthy target is fewer than 5 open PRs, no unnecessary long-lived integration branch carrying ordinary finished work far ahead of `main`, and no duplicate implementation tree for the same subsystem.
+
+If `docs/AUTONOMY_STATUS.md` contains a trunk-health note, refresh it when entering or leaving convergence mode, but live GitHub always outranks a stale status line.
+
 ## Startup loop
 
 At the start of a broad autonomous run:
 
-1. Refresh `main`, open PRs, recent merges, current reviews/check results, and release-critical issues.
+1. Refresh `main`, open PRs, recent merges, current reviews/check results, branch divergence, and release-critical issues.
 2. Read current `PROJECT_STATE.md` and `docs/AUTONOMY_STATUS.md` if present, but let live GitHub outrank stale prose.
-3. Prefer finishing/converging a strong existing PR over creating a competing implementation.
-4. If no near-merge work should be finished first, choose the highest-value current blocker to a coherent Nembra 1.0 outcome.
-5. Read the affected code before changing it.
-6. Implement, self-check proportionately when execution exists, review the exact diff, and integrate when current policy permits.
-7. Verify/fix `main`, refresh GitHub, and continue to the next useful outcome.
+3. Evaluate trunk health before selecting implementation work. If convergence mode is active, converge first.
+4. Prefer finishing/converging a strong existing PR over creating a competing implementation.
+5. If no near-merge work should be finished first, choose the highest-value current blocker to a coherent Nembra 1.0 outcome.
+6. Read the affected code before changing it.
+7. Implement, self-check proportionately when execution exists, review the exact diff, and integrate when current policy permits.
+8. Verify/fix `main`, refresh GitHub, and continue to the next useful outcome.
 
 Do not ask the user to choose work when this loop can decide safely.
 
@@ -83,7 +122,7 @@ There is **no fixed agent count** and no requirement to fill capacity. Concurren
 - default to one active implementation for an overlapping subsystem/root cause;
 - add another writer only when the next outcome is genuinely independent in files, runtime authority, and integration path;
 - reviewers/testers may work against a live candidate without spawning a competing implementation;
-- when review, conflicts, execution backlog, or integration pressure grows, reduce new writing and converge existing candidates first;
+- when review, conflicts, execution backlog, branch drift, or integration pressure grows, reduce new writing and converge existing candidates first;
 - if independent work is plentiful and current candidates integrate cleanly, additional agents may work in parallel;
 - optimize for merged product outcomes per unit of coordination cost, not maximum simultaneous activity.
 
@@ -111,11 +150,13 @@ When legacy or overlapping PRs exist:
 - Keep branches short-lived and outcome-focused.
 - Do not open empty or placeholder PRs.
 - Prefer a PR directly against `main` unless there is a concrete integration reason not to.
+- A carrier/release branch is not a valid default base simply because related work already exists there.
 - Rebase/update/transplant stale work instead of stacking recovery PRs on recovery PRs.
 - Fix review findings on the existing branch when possible.
 - Close superseded/duplicate PRs rather than preserving a PR tree as process history.
 - Merge source-complete ordinary development under the development-main fast path when appropriate; do not park it solely because one chat lacks Xcode or hosted execution.
 - If a PR is genuinely unsafe/incomplete, record the exact blocker and move to independent work rather than weakening the gate.
+- After every few off-trunk merges, explicitly ask whether their useful source should now be integrated or transplanted to `main`; do not let successful child merges silently grow a second trunk.
 
 ## Quality gates by risk
 
@@ -131,7 +172,7 @@ Never weaken tests just to make a branch green.
 
 ## Nembra physical-truth boundary
 
-Removing swarm bureaucracy or hosted-runner dependency does **not** weaken the scooter/physical safety boundary.
+Removing swarm bureaucracy, hosted-runner dependency, or branch ceremony does **not** weaken the scooter/physical safety boundary.
 
 - Simulator values are not physical scooter truth.
 - Do not invent BLE/Tuya protocol semantics, telemetry mappings, battery/speed/power/current/mode meanings, or command behavior.
@@ -173,7 +214,7 @@ For a broad prompt such as `work on Nembra until you cannot make more useful pro
 
 ## Ordinary ChatGPT / GitHub-connector behavior
 
-A ChatGPT coding session should follow the same loop with the connected GitHub repository. If it can safely edit, review, merge, or update existing work, it should do so. If its tooling cannot perform a required local/Xcode action, it must not globally stall: use GitHub-visible evidence, apply the development-main fast path where allowed, and make another useful non-conflicting contribution.
+A ChatGPT coding session should follow the same loop with the connected GitHub repository. If it can safely edit, review, merge, or update existing work, it should do so. If its tooling cannot perform a required local/Xcode action, it must not globally stall: use GitHub-visible evidence, apply the development-main fast path where allowed, enter convergence mode when branch pressure is high, and make another useful non-conflicting contribution.
 
 ## Release behavior
 
@@ -181,4 +222,4 @@ The target is a coherent Nembra 1.0 release, not endless `main` churn. As releas
 
 The operating principle is simple:
 
-**inspect live truth -> finish the highest-value real outcome -> verify/review -> integrate -> verify/fix main -> refresh -> continue until the bounded 1.0 release is truly complete**
+**inspect live truth -> converge if unhealthy -> finish the highest-value real outcome -> verify/review -> integrate -> verify/fix main -> refresh -> continue until the bounded 1.0 release is truly complete**
