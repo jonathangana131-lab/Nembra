@@ -99,8 +99,15 @@ struct CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWirin
         )
         let acceptedPromotion = try #require(section.range(of: "self.phase = .accepted"))
 
+        // A helper implementation can appear later in this same textual section. It is an inline
+        // freeze only when the seal construction itself occurs before the capability seal call.
+        let inlineFreeze = section.range(of: "ExactByteArtifactSeal(sealing:")
+        let inlineFreezeBeforeCapabilitySeal = inlineFreeze.map {
+            $0.lowerBound < capabilitySeal.lowerBound
+        } ?? false
+
         let freezeBoundary: String.Index
-        if let inlineFreeze = section.range(of: "ExactByteArtifactSeal(sealing:") {
+        if let inlineFreeze, inlineFreezeBeforeCapabilitySeal {
             freezeBoundary = inlineFreeze.lowerBound
             let verifiedRegion = section[inlineFreeze.lowerBound..<capabilitySeal.lowerBound]
             #expect(verifiedRegion.contains(".verifies("))
