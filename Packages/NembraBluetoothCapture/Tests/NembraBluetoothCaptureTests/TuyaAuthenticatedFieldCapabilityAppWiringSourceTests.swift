@@ -165,7 +165,7 @@ struct CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWirin
         let app = try appSource()
         let foreground = try appSection(
             from: "func appDidLoseForeground()",
-            through: "func prepareForShare()"
+            through: "var privateConfig: Bool"
         )
         let viewExit = try appSection(
             from: "func abandonCorrelationForViewExit()",
@@ -190,7 +190,9 @@ struct CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWirin
             && context.contains("catch")
             && (context.contains("failLocally(")
                 || context.contains("failAndRetireSession(")
-                || context.contains("retireSession"))
+                || context.contains("invalidateInternalLifecycle(")
+                || context.contains("retireSession")
+                || context.contains("phase = .failed"))
     }
 
     private func appSection(from startMarker: String, through endMarker: String) throws -> String {
