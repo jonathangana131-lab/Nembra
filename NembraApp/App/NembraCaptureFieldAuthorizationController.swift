@@ -73,19 +73,23 @@ final class NembraCaptureFieldAuthorizationController {
     }
 
     /// Takes the returned signed envelope, retires the exact outbound rendezvous inode, then asks
-    /// the package session to verify/consume the envelope. If rendezvous retirement fails, the
-    /// attempt is revoked before the envelope can become authority.
+    /// the package session to verify/consume the envelope. Exact absence remains retryable because
+    /// no signed subject has arrived. Any other handoff/custody/retirement/verification failure is
+    /// terminal so replacement bytes cannot inherit the same process-local challenge.
     func authorizeFromInbox() throws {
-        let outbox = try AuthenticatedStationaryCaptureSignerRendezvousOutbox()
-        let envelopeData = try AuthenticatedStationaryCaptureAuthorizationInbox()
-            .takeAuthorizationEnvelope()
         do {
+            let outbox = try AuthenticatedStationaryCaptureSignerRendezvousOutbox()
+            let envelopeData = try AuthenticatedStationaryCaptureAuthorizationInbox()
+                .takeAuthorizationEnvelope()
             try outbox.retirePublishedRendezvous()
+            try session.acceptEnvelope(envelopeData)
+        } catch AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(let subject)
+            where subject == AuthenticatedStationaryCaptureAuthorizationInbox.authorizationEnvelopeFilename {
+            throw AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(subject)
         } catch {
             session.revoke()
             throw error
         }
-        try session.acceptEnvelope(envelopeData)
     }
 
     /// Advances only the non-authorizing app-container handoff that is valid for the current
