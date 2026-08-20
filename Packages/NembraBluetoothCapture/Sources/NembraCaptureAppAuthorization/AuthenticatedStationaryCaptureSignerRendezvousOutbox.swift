@@ -37,6 +37,15 @@ public struct AuthenticatedStationaryCaptureSignerRendezvousOutbox: Sendable {
         self.applicationSupportURL = applicationSupportURL
     }
 
+    /// Creates and verifies only the owner-controlled app-container directory needed by the
+    /// external exact-file transport for the first retained manifest. This publishes no bytes,
+    /// creates no challenge, consumes no manifest, mints no capability, and grants no Bluetooth
+    /// authority. It is safe to call repeatedly before the independent signer handoff begins.
+    public func prepareAuthorizationTransferDirectory() throws {
+        let directoryFD = try openFieldAuthorizationDirectory(createIfMissing: true)
+        Darwin.close(directoryFD)
+    }
+
     /// Publishes exactly one canonical document without replacing any earlier attempt's rendezvous.
     /// Returns the same bytes written to disk for diagnostics/tests; the bytes are non-authorizing.
     @discardableResult
