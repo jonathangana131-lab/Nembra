@@ -35,15 +35,17 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
 
     private func wire(
         sourceCommitSHA: String? = nil,
+        buildIdentifier: String? = nil,
         retainedIPASHA256: String? = nil
     ) -> TestWire {
-        TestWire(
+        let sourceCommitSHA = sourceCommitSHA ?? self.sourceCommitSHA
+        return TestWire(
             schema: Verifier.schema,
             version: Verifier.schemaVersion,
             procedureID: AuthenticatedStationaryCaptureFieldAuthorizationVerifier.procedureID,
-            sourceCommitSHA: sourceCommitSHA ?? self.sourceCommitSHA,
+            sourceCommitSHA: sourceCommitSHA,
             bundleIdentifier: "com.nembra.capture",
-            buildIdentifier: "capture-v14-0123456789ab",
+            buildIdentifier: buildIdentifier ?? "Capture Build V14-\(sourceCommitSHA.prefix(12))",
             buildInstanceID: buildInstanceID,
             retainedIPASHA256: retainedIPASHA256 ?? String(repeating: "1", count: 64),
             executableSHA256: executableSHA256,
@@ -71,7 +73,7 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
         #expect(manifest.procedureID == AuthenticatedStationaryCaptureFieldAuthorizationVerifier.procedureID)
         #expect(manifest.sourceCommitSHA == sourceCommitSHA)
         #expect(manifest.bundleIdentifier == "com.nembra.capture")
-        #expect(manifest.buildIdentifier == "capture-v14-0123456789ab")
+        #expect(manifest.buildIdentifier == "Capture Build V14-0123456789ab")
         #expect(manifest.buildInstanceID == buildInstanceID)
         #expect(manifest.retainedIPASHA256 == String(repeating: "1", count: 64))
         #expect(manifest.authorizationEnvelopeSHA256 == String(repeating: "7", count: 64))
@@ -85,13 +87,27 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
         #expect(bindings.intendedDevicePseudonymSHA256 == String(repeating: "6", count: 64))
     }
 
+    @Test("manifest build identifier is derived from the exact source commit")
+    func buildIdentifierCannotDriftFromSource() throws {
+        #expect(throws: ManifestError.invalidBuildIdentifier) {
+            try Verifier.decodeCanonical(canonicalData(
+                wire(buildIdentifier: "Capture Build V14-fedcba987654")
+            ))
+        }
+        #expect(throws: ManifestError.invalidBuildIdentifier) {
+            try Verifier.decodeCanonical(canonicalData(
+                wire(buildIdentifier: "capture-v14-0123456789ab")
+            ))
+        }
+    }
+
     @Test("manifest can be checked against the build identity measured from the running app")
     func manifestMatchesMeasuredRuntimeBuildIdentity() throws {
         let manifest = try Verifier.decodeCanonical(canonicalData(wire()))
         let identity = try PassiveBluetoothCaptureRuntimeBuildIdentityReader.resolveEmbeddedMetadata(
             infoDictionary: [
                 PassiveBluetoothCaptureRuntimeBuildIdentityReader.buildIdentifierInfoDictionaryKey:
-                    "capture-v14-0123456789ab",
+                    "Capture Build V14-0123456789ab",
                 PassiveBluetoothCaptureRuntimeBuildIdentityReader.buildInstanceIDInfoDictionaryKey:
                     buildInstanceID,
                 PassiveBluetoothCaptureRuntimeBuildIdentityReader.sourceCommitSHAInfoDictionaryKey:
