@@ -30,7 +30,9 @@ class SignFieldAuthorizationFromRendezvousTests(unittest.TestCase):
         }
 
     def ms(self, raw: str) -> int:
-        return int(datetime.fromisoformat(raw[:-1] + "+00:00").timestamp() * 1_000)
+        return int(datetime.strptime(raw, "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc
+        ).timestamp()) * 1_000
 
     def test_delegate_command_uses_only_existing_signer_creation_surface(self) -> None:
         command = wrapper.build_signer_command(self.args, self.rendezvous)
@@ -79,7 +81,7 @@ class SignFieldAuthorizationFromRendezvousTests(unittest.TestCase):
         started = self.rendezvous["attemptStartedAtUnixMilliseconds"]
         deadline = self.rendezvous["authorizationMustExpireByUnixMilliseconds"]
         issued = self.ms("2026-08-20T04:45:00Z")
-        not_before = issued
+        not_before = self.ms("2026-08-20T04:46:00Z")
 
         wrapper.validate_signing_chronology(
             attempt_started_at=started,
@@ -108,7 +110,7 @@ class SignFieldAuthorizationFromRendezvousTests(unittest.TestCase):
                 not_before=started,
                 expires_at=deadline,
             )
-        with self.assertRaisesRegex(ValueError, "not-before precedes"):
+        with self.assertRaisesRegex(ValueError, "not-before precedes the running app attempt"):
             wrapper.validate_signing_chronology(
                 attempt_started_at=started,
                 must_expire_by=deadline,
@@ -117,31 +119,42 @@ class SignFieldAuthorizationFromRendezvousTests(unittest.TestCase):
                 expires_at=deadline,
             )
 
-    def test_not_before_and_expiry_order_fail_closed(self) -> None:
+    def test_signer_order_allows_future_not_before_but_not_past_not_before(self) -> None:
         started = self.rendezvous["attemptStartedAtUnixMilliseconds"]
         deadline = self.rendezvous["authorizationMustExpireByUnixMilliseconds"]
-        with self.assertRaisesRegex(ValueError, "not-before is later"):
+        issued = started + 1_000
+        not_before = issued + 1_000
+        expires = not_before + 1_000
+
+        wrapper.validate_signing_chronology(
+            attempt_started_at=started,
+            must_expire_by=deadline,
+            issued_at=issued,
+            not_before=not_before,
+            expires_at=expires,
+        )
+        with self.assertRaisesRegex(ValueError, "not-before precedes issued-at"):
             wrapper.validate_signing_chronology(
                 attempt_started_at=started,
                 must_expire_by=deadline,
-                issued_at=started + 1,
-                not_before=started + 2,
-                expires_at=deadline,
+                issued_at=issued,
+                not_before=issued - 1,
+                expires_at=expires,
             )
-        with self.assertRaisesRegex(ValueError, "expires-at must be later"):
+        with self.assertRaisesRegex(ValueError, "later than not-before"):
             wrapper.validate_signing_chronology(
                 attempt_started_at=started,
                 must_expire_by=deadline,
-                issued_at=started + 1,
-                not_before=started,
-                expires_at=started + 1,
+                issued_at=issued,
+                not_before=not_before,
+                expires_at=not_before,
             )
 
-    def test_timestamp_parser_requires_explicit_utc_and_preserves_milliseconds(self) -> None:
-        raw = "2026-08-20T04:45:00.123Z"
-        expected = self.ms(raw)
-        self.assertEqual(wrapper.timestamp_unix_milliseconds(raw, "issued-at"), expected)
+    def test_timestamp_parser_matches_signer_canonical_utc_seconds(self) -> None:
+        raw = "2026-08-20T04:45:00Z"
+        self.assertEqual(wrapper.timestamp_unix_milliseconds(raw, "issued-at"), self.ms(raw))
         for invalid in (
+            "2026-08-20T04:45:00.123Z",
             "2026-08-20T04:45:00",
             "2026-08-20T04:45:00+01:00",
             "not-a-time",
@@ -155,6 +168,7 @@ class SignFieldAuthorizationFromRendezvousTests(unittest.TestCase):
         source = SCRIPT.read_text(encoding="utf-8")
         self.assertIn("subprocess.run(build_signer_command", source)
         self.assertIn("es80_field_authorization_envelope.py", source)
+        self.assertIn("CI/research orchestration only", source)
         self.assertNotIn("ec.ECDSA", source)
         self.assertNotIn("P256", source)
         self.assertNotIn("payloadBase64", source)
