@@ -1,0 +1,138 @@
+name: Capture carrier authority v3 GO trigger
+
+on:
+  push:
+    branches:
+      - product/capture-1-0-main-20260818
+    paths:
+      - .github/workflows/capture-carrier-authority-v3-go-trigger.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-carrier-authority-v3-materializer
+  cancel-in-progress: true
+
+jobs:
+  materialize:
+    runs-on: xcode-27
+    timeout-minutes: 35
+    env:
+      TARGET_BRANCH: product/capture-1-0-main-20260818
+      SELF: .github/workflows/capture-carrier-authority-v3-go-trigger.yml
+      AUTHORING_WORKFLOW: .github/workflows/capture-carrier-authority-v2-materialize-once.yml
+      APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
+      EXPECTED_AUTHORING_BLOB: 59d38ec605728302604ed2b3321b6bd4558dbdda
+      EXPECTED_SOURCE_BLOB: 627c17949d15aaf26ca28c12abb9bb684ab0e731
+    steps:
+      - name: Checkout exact trigger head
+        uses: actions/checkout@v6
+        with:
+          ref: product/capture-1-0-main-20260818
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind reviewed transform and source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git branch --show-current)" = "$TARGET_BRANCH"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD:"$AUTHORING_WORKFLOW")" = "$EXPECTED_AUTHORING_BLOB"
+          test "$(git rev-parse HEAD:"$APP_SOURCE")" = "$EXPECTED_SOURCE_BLOB"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Apply reviewed V2 transform plus armed-preservation correction
+        shell: python
+        run: |
+          from pathlib import Path
+
+          authoring = Path(".github/workflows/capture-carrier-authority-v2-materialize-once.yml").read_text(encoding="utf-8")
+          start = '          cat > "${RUNNER_TEMP}/materialize_capture_authority_v2.py" <<\'PY\'\n'
+          end = '          PY\n\n      - name: Materialize against latest reviewed carrier source\n'
+          if authoring.count(start) != 1 or authoring.count(end) != 1:
+              raise SystemExit("reviewed V2 transform markers changed; refusing")
+          body = authoring.split(start, 1)[1].split(end, 1)[0]
+          lines = body.splitlines()
+          if any(line and not line.startswith("          ") for line in lines):
+              raise SystemExit("unexpected V2 transform indentation; refusing")
+          script = "\n".join(line[10:] if line else "" for line in lines) + "\n"
+          transform = Path("/tmp/materialize_capture_authority_v2.py")
+          transform.write_text(script, encoding="utf-8")
+          exec(compile(script, str(transform), "exec"), {"__name__": "__main__"})
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text(encoding="utf-8")
+          old = '''            if phase == .failed {\n                fieldAuthorization.revoke()\n                operatorSafetyAttemptID = nil\n'''
+          new = '''            if phase == .failed {\n                if fieldAuthorization.stage != .armed {\n                    fieldAuthorization.revoke()\n                }\n                operatorSafetyAttemptID = nil\n'''
+          if source.count(old) != 1:
+              raise SystemExit(f"armed-preservation anchor count was {source.count(old)}; refusing")
+          source = source.replace(old, new, 1)
+          path.write_text(source, encoding="utf-8")
+
+      - name: Verify exact fail-closed lifecycle contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git status --porcelain=v1 | awk '{print $2}' | sort)"
+          test "$changed" = "$APP_SOURCE"
+          git diff --check
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
+          (
+            cd Packages/NembraBluetoothCapture
+            swift test --filter AuthenticatedStationaryCaptureAppSessionTests
+            swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
+            swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthorizationInboxAppAdapter
+            swift test --filter TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
+          )
+          grep -Fq 'advanceInboxHandoffIfAvailable()' "$APP_SOURCE"
+          grep -Fq 'fieldAuthorization.stage == .armed' "$APP_SOURCE"
+          grep -Fq 'fieldAuthorization.stage != .armed' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()' "$APP_SOURCE"
+          test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE")" = 0
+          test "$(grep -Fc 'AuthenticatedStationaryCaptureAttemptCapability' "$APP_SOURCE")" = 0
+          test "$(grep -Fc 'AuthenticatedStationaryCaptureCapabilityGate' "$APP_SOURCE")" = 0
+
+      - name: Build standalone Capture on Xcode 27
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "${RUNNER_TEMP}/NembraCaptureCarrierAuthorityV3" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Publish tested source and retire temporary materializers
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin "$TARGET_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          rm -f \
+            .github/workflows/capture-app-authorization-close-one-shot.yml \
+            .github/workflows/capture-carrier-authority-v2-materialize-once.yml \
+            .github/workflows/capture-carrier-authority-v2-go-trigger.yml \
+            "$SELF"
+          git add -A -- \
+            "$APP_SOURCE" \
+            .github/workflows/capture-app-authorization-close-one-shot.yml \
+            .github/workflows/capture-carrier-authority-v2-materialize-once.yml \
+            .github/workflows/capture-carrier-authority-v2-go-trigger.yml \
+            "$SELF"
+          git diff --cached --check
+          git diff --cached --name-only | grep -Fxq "$APP_SOURCE"
+          git diff --cached --name-only | grep -Fxq "$SELF"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat(capture): wire authorized SecureLink lifecycle v3'
+          materialized="$(git rev-parse HEAD)"
+          git fetch origin "$TARGET_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          git push origin HEAD:"$TARGET_BRANCH"
+          printf 'CAPTURE_CARRIER_AUTHORITY_V3_MATERIALIZED=%s trigger=%s physicalAuthorityCreated=false\n' "$materialized" "$GITHUB_SHA"
