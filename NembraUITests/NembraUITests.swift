@@ -152,7 +152,7 @@ final class NembraUITests: XCTestCase {
     }
 
     @MainActor
-    func testConnectedHomeAtAccessibilityXXXLKeepsTruthAndControlsReachable() {
+    func testConnectedHomeAtAccessibilityXXXLKeepsTruthAndControlsReachable() throws {
         defer {
             if XCUIDevice.shared.orientation != .portrait {
                 XCUIDevice.shared.orientation = .portrait
@@ -198,6 +198,7 @@ final class NembraUITests: XCTestCase {
         XCTAssertTrue(batterySemantics.localizedCaseInsensitiveContains("no learned range"))
         assertMinimumTouchTarget(battery, named: "Accessibility XXXL battery and range")
         XCTAssertTrue(battery.isHittable)
+        try app.performAccessibilityAudit(for: [.contrast, .textClipped])
 
         let latest = app.descendants(matching: .any)["home.latest-ride.empty"]
         XCTAssertTrue(

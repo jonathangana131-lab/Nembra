@@ -39,3 +39,24 @@ the Home 1.0 visual-acceptance gate.
 This is a presentation asset, not hardware identity or protocol evidence. It may
 be shown only for an explicitly selected ES80 vehicle profile; it must not be
 used to classify an unknown connected accessory as an ES80.
+
+## Selected portrait Home composition reference
+
+- Repository reference:
+  `docs/design/references/portrait-home/selected-home-composition-source.png`
+- Original task-local source basename:
+  `exec-7f59e7c2-7f38-4038-9ec2-a4bfdd52cfdc.png` (outside the repository).
+- SHA-256:
+  `0aed27109df8a3bae9755262026193e7dd8998dc2b52989c4d8b11af55fedf8a`
+- Raster: 853 × 1844 pixels.
+- Preserved byte-for-byte on 2026-08-19 as design evidence only.
+
+The image governs portrait Home composition and material ambition. Its blue
+accent is superseded by the selected Nembra warm-gold color contract. Its
+scooter pixels, telemetry numbers, and route thumbnail are illustrative and do
+not grant hardware identity, protocol, or redistribution authority. It must not
+be copied into an asset catalog or shipped in the app.
+
+`NembraApp/Features/Home/VehicleHeroView.swift` contains an older generated/
+vector scooter treatment but is not selected or referenced by current Home.
+Do not resurrect it as a production asset.

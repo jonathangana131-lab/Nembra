@@ -198,7 +198,8 @@ struct HomeView: View {
         NavigationLink {
             VehicleControlsView()
         } label: {
-            Image(systemName: "slider.horizontal.3")
+            Label("Vehicle controls", systemImage: "slider.horizontal.3")
+                .labelStyle(.iconOnly)
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(NembraColor.primaryText)
                 .frame(
@@ -209,17 +210,7 @@ struct HomeView: View {
         .buttonStyle(.glass)
         .tint(NembraColor.warmGraphite)
         .frame(minWidth: 44, minHeight: 44)
-        .overlay {
-            // Native glass needs a stable, high-contrast control boundary over
-            // Home's near-black scene. A single cool specular rim preserves the
-            // selected material character without replacing native glass.
-            Circle()
-                .strokeBorder(NembraColor.primaryText.opacity(0.44), lineWidth: 1)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-        }
         .contentShape(Rectangle())
-        .accessibilityLabel("Vehicle controls")
         .accessibilityHint("Opens detailed vehicle controls and verified settings.")
     }
 
@@ -260,7 +251,7 @@ struct HomeView: View {
             if isBatteryLow {
                 Label("Low battery", systemImage: "exclamationmark.triangle.fill")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.red)
+                    .foregroundStyle(NembraColor.warningRed)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("Low battery")
                     .accessibilityIdentifier("home.battery.low-warning")
@@ -333,7 +324,6 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 18) {
             batteryReadout
             batteryBody
-                .frame(height: 94)
             ZStack(alignment: .bottom) {
                 HomeHeroGroundingScene(layout: .accessibility)
                     .equatable()
@@ -377,23 +367,56 @@ struct HomeView: View {
     }
 
     private var batteryBody: some View {
-        ZStack(alignment: .leading) {
-            HomeBatteryMaterial(
-                fillFraction: CGFloat(batteryFillFraction),
-                isLowBattery: isBatteryLow,
-                reduceTransparency: reduceTransparency
-            )
-            .animation(
-                reduceMotion ? nil : .snappy(duration: 0.28),
-                value: batteryFillFraction
-            )
-
-            batteryRangeCopy(
-                primaryColor: batteryRangePrimaryColor,
-                secondaryColor: batteryRangeSecondaryColor
-            )
-            .accessibilityHidden(true)
+        Group {
+            if usesStackedEnergyHeroLayout {
+                VStack(alignment: .leading, spacing: 12) {
+                    batteryMaterial
+                        .frame(height: 94)
+                    accessibilityBatteryRangeCopy
+                }
+            } else {
+                ZStack(alignment: .leading) {
+                    batteryMaterial
+                    batteryRangeCopy(
+                        primaryColor: batteryRangePrimaryColor,
+                        secondaryColor: batteryRangeSecondaryColor
+                    )
+                }
+            }
         }
+        .accessibilityHidden(true)
+    }
+
+    private var batteryMaterial: some View {
+        HomeBatteryMaterial(
+            fillFraction: CGFloat(batteryFillFraction),
+            isLowBattery: isBatteryLow,
+            reduceTransparency: reduceTransparency
+        )
+        .animation(
+            reduceMotion ? nil : .snappy(duration: 0.28),
+            value: batteryFillFraction
+        )
+    }
+
+    private var accessibilityBatteryRangeCopy: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(adaptiveRangeText)
+                .font(.system(.headline, design: .rounded, weight: batteryRangePrimaryWeight))
+                .tracking(0.15)
+                .monospacedDigit()
+                .foregroundStyle(batteryRangePrimaryColor)
+                .contentTransition(reduceMotion ? .identity : .numericText())
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(adaptiveRangeQualifier)
+                .font(.caption.weight(.regular))
+                .tracking(0.28)
+                .foregroundStyle(batteryRangeSecondaryColor)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 4)
     }
 
     private func batteryRangeCopy(
@@ -418,9 +441,7 @@ struct HomeView: View {
                 .minimumScaleFactor(0.74)
         }
         .frame(
-            maxWidth: usesStackedEnergyHeroLayout
-                ? .infinity
-                : HomeHeroLayout.batteryCopySafeWidth,
+            maxWidth: HomeHeroLayout.batteryCopySafeWidth,
             alignment: .leading
         )
         .padding(.leading, 16)
@@ -1177,14 +1198,14 @@ struct HomeView: View {
             // Keep the semantic warning red bright enough for the thin rolling
             // numerals in both emphasis modes. Do not compound opacity when the
             // estimated range is primary: that made `14` fail the runtime audit.
-            return Color(red: 1.00, green: 0.36, blue: 0.32)
+            return NembraColor.warningRed
         }
 
         switch (batteryIsRetained, batteryReadoutMode) {
         case (false, .percentage):
             return NembraColor.primaryText
         case (false, .estimatedRange):
-            return NembraColor.primaryText.opacity(0.82)
+            return NembraColor.instrumentSecondaryText
         case (true, .percentage), (true, .estimatedRange):
             // Retention truth is carried by the explicit freshness and offline
             // surfaces. Keep the thin percent glyph fully legible instead of
@@ -1220,7 +1241,7 @@ struct HomeView: View {
         // made the qualifier fail when it crossed the gold or low-battery fill.
         // This remains a cool secondary hierarchy while holding contrast over
         // every part of the instrument's graphite copy well.
-        NembraColor.primaryText.opacity(0.82)
+        NembraColor.instrumentSecondaryText
     }
 
     private var adaptiveRangeText: String {
@@ -1611,7 +1632,7 @@ private struct HomeBatteryMaterial: View, @MainActor Animatable {
     }
 
     private var energyColor: Color {
-        isLowBattery ? .red : NembraColor.gold
+        isLowBattery ? NembraColor.warningRed : NembraColor.gold
     }
 
     private var energyGlowOpacity: Double {
@@ -1848,8 +1869,8 @@ private struct HomeBatteryMaterial: View, @MainActor Animatable {
                 copyWellPath,
                 with: .linearGradient(
                     Gradient(stops: [
-                        .init(color: Color.black.opacity(0.76), location: 0),
-                        .init(color: Color.black.opacity(0.68), location: 0.84),
+                        .init(color: Color.black.opacity(0.88), location: 0),
+                        .init(color: Color.black.opacity(0.80), location: 0.90),
                         .init(color: Color.black.opacity(0.08), location: 1)
                     ]),
                     startPoint: CGPoint(x: copyWellRect.minX, y: copyWellRect.midY),

@@ -160,8 +160,9 @@ func homeStatusAndRecoveryReflowAtAccessibilityDynamicType() throws {
     let header = String(source[headerStart.lowerBound..<panelStart.lowerBound])
     #expect(header.contains("if dynamicTypeSize.isAccessibilitySize"))
     #expect(header.contains("VStack(alignment: .leading, spacing: 12)"))
-    #expect(header.contains("NembraColor.primaryText.opacity(0.44)"))
-    #expect(header.contains(".accessibilityHidden(true)"))
+    #expect(header.contains("Label(\"Vehicle controls\", systemImage: \"slider.horizontal.3\")"))
+    #expect(header.contains(".labelStyle(.iconOnly)"))
+    #expect(header.contains(".buttonStyle(.glass)"))
 
     let batteryReadoutEnd = try #require(
         source.range(
@@ -176,9 +177,9 @@ func homeStatusAndRecoveryReflowAtAccessibilityDynamicType() throws {
         batteryReadout.components(separatedBy: ".foregroundStyle(batteryValueColor)").count == 3
     )
     #expect(!batteryReadout.contains("batteryValueColor.opacity"))
-    #expect(source.contains("Color(red: 1.00, green: 0.36, blue: 0.32)"))
+    #expect(source.contains("return NembraColor.warningRed"))
     #expect(source.contains("case (true, .percentage), (true, .estimatedRange):"))
-    #expect(source.contains("NembraColor.primaryText.opacity(0.82)"))
+    #expect(source.contains("NembraColor.instrumentSecondaryText"))
     #expect(!source.contains("NembraColor.secondaryText.opacity(batteryIsRetained"))
 
     let recoveryStart = try #require(source.range(of: "private var connectionRecovery: some View"))
@@ -221,6 +222,9 @@ func homeEnergyMaterialRetainsSemanticAndScheduleBoundaries() throws {
     #expect(batteryBody.contains("HomeBatteryMaterial("))
     #expect(batteryBody.contains("fillFraction: CGFloat(batteryFillFraction)"))
     #expect(batteryBody.contains("isLowBattery: isBatteryLow"))
+    #expect(batteryBody.contains("if usesStackedEnergyHeroLayout"))
+    #expect(batteryBody.contains("accessibilityBatteryRangeCopy"))
+    #expect(batteryBody.contains("batteryMaterial"))
     #expect(batteryBody.contains("batteryRangePrimaryColor"))
     #expect(batteryBody.contains("batteryRangeSecondaryColor"))
     #expect(!batteryBody.contains(".mask"))
@@ -259,12 +263,12 @@ func homeEnergyMaterialRetainsSemanticAndScheduleBoundaries() throws {
     #expect(material.contains("chargeContext.clip(to: fillPath)"))
     #expect(material.contains("HomeHeroLayout.batteryCopySafeWidth + 34"))
     #expect(material.contains("copyWellRect.minX + fullCopyWellWidth"))
-    #expect(material.contains("location: 0.84"))
+    #expect(material.contains("location: 0.90"))
     #expect(material.contains("copyWellPath"))
     #expect(material.contains("reservoirPath"))
     #expect(material.contains("terminalPath"))
     #expect(material.contains("shoulderPath"))
-    #expect(material.contains("isLowBattery ? .red : NembraColor.gold"))
+    #expect(material.contains("isLowBattery ? NembraColor.warningRed : NembraColor.gold"))
     #expect(material.contains("guard fillFraction > 0 else { return 0 }"))
     #expect(!material.contains("TimelineView"))
     #expect(!material.contains("glassEffect"))
@@ -375,6 +379,7 @@ func homeRuntimeAccessibilityCoverageRemainsProductionStrength() throws {
         #expect(accessibilityXXXL.contains(requiredSemantic))
     }
     #expect(accessibilityXXXL.contains("assertMinimumTouchTarget"))
+    #expect(accessibilityXXXL.contains("performAccessibilityAudit(for: [.contrast, .textClipped])"))
     #expect(accessibilityXXXL.contains("scrollFullyInsideWindowAndAboveTabBar"))
     #expect(
         accessibilityXXXL.contains(
