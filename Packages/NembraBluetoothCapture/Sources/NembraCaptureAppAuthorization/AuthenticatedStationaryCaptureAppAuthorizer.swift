@@ -76,11 +76,10 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
         return try beginAttempt(externalBindings: manifest.externalBindings())
     }
 
-    /// Lower-level composition seam retained for callers that have already established the exact
-    /// stable external bindings through a separately accepted path. Normal app flow should prefer
-    /// `beginAttempt(installManifestData:)` so stale/caller-substituted retained subjects cannot even
-    /// obtain a signer challenge.
-    public func beginAttempt(
+    /// Internal composition step after the production manifest gate. Keeping this private prevents
+    /// app callers from creating signer rendezvous attempts from arbitrary digest tuples that never
+    /// passed the retained-install/runtime cross-binding boundary.
+    private func beginAttempt(
         externalBindings: AuthenticatedStationaryCaptureExternalBindings
     ) throws -> AuthenticatedStationaryCapturePreparedAttempt {
         let attempt = try AuthenticatedStationaryCaptureFieldAuthorizationVerifier
@@ -91,11 +90,15 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
     /// Verifies the retained install manifest against the running app and the exact prepared
     /// attempt's stable evidence bindings before the package-pinned signature verifier evaluates
     /// the post-install envelope and may consume replay state or mint the opaque capability.
+    ///
+    /// Production callers receive only the lifecycle gate. The verifier-minted capability never
+    /// escapes this app-owned adapter, so OFF1/authentication/connection/observation/seal ordering
+    /// cannot be bypassed by retaining the raw authority object outside the gate.
     public func authorize(
         envelopeData: Data,
         installManifestData: Data,
         preparedAttempt: AuthenticatedStationaryCapturePreparedAttempt
-    ) throws -> AuthenticatedStationaryCaptureAttemptCapability {
+    ) throws -> AuthenticatedStationaryCaptureCapabilityGate {
         let runtimeBuildIdentity = try PassiveBluetoothCaptureRuntimeBuildIdentityReader
             .currentApplication()
         try validateInstallManifest(
@@ -105,11 +108,13 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
             runtimeBuildIdentity: runtimeBuildIdentity
         )
 
-        return try AuthenticatedStationaryCaptureFieldAuthorizationVerifier.verifyForCurrentApplication(
-            envelopeData,
-            attempt: preparedAttempt.packageAttempt,
-            consumptionStore: consumptionStore
-        )
+        let capability = try AuthenticatedStationaryCaptureFieldAuthorizationVerifier
+            .verifyForCurrentApplication(
+                envelopeData,
+                attempt: preparedAttempt.packageAttempt,
+                consumptionStore: consumptionStore
+            )
+        return AuthenticatedStationaryCaptureCapabilityGate(capability: capability)
     }
 
     private func validateInstallManifestForRunningApplication(
