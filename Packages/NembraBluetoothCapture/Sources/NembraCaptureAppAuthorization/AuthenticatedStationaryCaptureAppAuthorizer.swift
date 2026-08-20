@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import NembraBluetoothCapture
 
@@ -22,13 +23,20 @@ public struct AuthenticatedStationaryCapturePreparedAttempt: Sendable {
     }
 }
 
+public enum AuthenticatedStationaryCaptureAppAuthorizerError: Error, Equatable, Sendable {
+    case manifestBundleMismatch
+    case manifestRuntimeMismatch
+    case manifestAttemptBindingsMismatch
+    case manifestAuthorizationEnvelopeMismatch
+}
+
 /// App-owned composition seam for authenticated stationary Capture authorization.
 ///
 /// This adapter deliberately owns no Boolean field-authority switch. It can only:
 /// 1. ask `NembraBluetoothCapture` to create a live, runtime-bound attempt;
 /// 2. expose that attempt's random challenge to the independent signing workflow; and
-/// 3. present the returned signed envelope back to the package verifier using the durable
-///    ThisDeviceOnly Keychain replay-consumption store.
+/// 3. require the final canonical retained-install manifest to cross-bind the running build,
+///    attempt bindings, and exact returned envelope before presenting it to the package verifier.
 ///
 /// With the package production trust root still unset, `authorize` remains mechanically NO-GO.
 /// Pinning that root later is a separate independently reviewed change; this type must not grow a
@@ -47,8 +55,10 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
         self.consumptionStore = consumptionStore
     }
 
-    /// Starts one live authorization attempt from already-validated external install/evidence
-    /// bindings. This does not start OFF1, scan Bluetooth, authenticate Tuya, or grant physical GO.
+    /// Starts one live authorization attempt from the separately accepted external install/evidence
+    /// bindings. The app-generated challenge is needed before the signer can create the envelope,
+    /// so the final manifest cannot exist yet at this step. This does not start OFF1, scan Bluetooth,
+    /// authenticate Tuya, or grant physical GO.
     public func beginAttempt(
         externalBindings: AuthenticatedStationaryCaptureExternalBindings
     ) throws -> AuthenticatedStationaryCapturePreparedAttempt {
@@ -57,16 +67,71 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
         return AuthenticatedStationaryCapturePreparedAttempt(packageAttempt: attempt)
     }
 
-    /// Verifies the independent signed response for exactly the prepared live attempt.
-    /// Successful replay consumption and capability construction remain package-owned.
+    /// Verifies the final retained-install manifest against the running app, the exact prepared
+    /// attempt, and the exact signed envelope bytes before the package-pinned signature verifier can
+    /// consume replay state or mint the opaque one-attempt capability.
     public func authorize(
         envelopeData: Data,
+        installManifestData: Data,
         preparedAttempt: AuthenticatedStationaryCapturePreparedAttempt
     ) throws -> AuthenticatedStationaryCaptureAttemptCapability {
-        try AuthenticatedStationaryCaptureFieldAuthorizationVerifier.verifyForCurrentApplication(
+        let runtimeBuildIdentity = try PassiveBluetoothCaptureRuntimeBuildIdentityReader
+            .currentApplication()
+        try validateFinalManifest(
+            installManifestData,
+            envelopeData: envelopeData,
+            preparedAttempt: preparedAttempt,
+            currentBundleIdentifier: Bundle.main.bundleIdentifier,
+            runtimeBuildIdentity: runtimeBuildIdentity
+        )
+
+        return try AuthenticatedStationaryCaptureFieldAuthorizationVerifier.verifyForCurrentApplication(
             envelopeData,
             attempt: preparedAttempt.packageAttempt,
             consumptionStore: consumptionStore
+        )
+    }
+
+    private func validateFinalManifest(
+        _ installManifestData: Data,
+        envelopeData: Data,
+        preparedAttempt: AuthenticatedStationaryCapturePreparedAttempt,
+        currentBundleIdentifier: String?,
+        runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity
+    ) throws {
+        let manifest = try AuthenticatedStationaryCaptureInstallManifestVerifier
+            .decodeCanonical(installManifestData)
+
+        guard currentBundleIdentifier == manifest.bundleIdentifier else {
+            throw AuthenticatedStationaryCaptureAppAuthorizerError.manifestBundleMismatch
+        }
+        guard manifest.matches(runtimeBuildIdentity: runtimeBuildIdentity) else {
+            throw AuthenticatedStationaryCaptureAppAuthorizerError.manifestRuntimeMismatch
+        }
+        guard try manifest.externalBindings() == preparedAttempt.packageAttempt.externalBindings else {
+            throw AuthenticatedStationaryCaptureAppAuthorizerError.manifestAttemptBindingsMismatch
+        }
+        guard manifest.authorizationEnvelopeSHA256 == Self.sha256Hex(envelopeData) else {
+            throw AuthenticatedStationaryCaptureAppAuthorizerError
+                .manifestAuthorizationEnvelopeMismatch
+        }
+    }
+
+    /// Deterministic manifest-cross-binding seam used only by tests in this Swift package. It does
+    /// not invoke the production trust root, consume replay state, or mint a capability.
+    package func validateFinalManifestForTesting(
+        _ installManifestData: Data,
+        envelopeData: Data,
+        preparedAttempt: AuthenticatedStationaryCapturePreparedAttempt,
+        currentBundleIdentifier: String?,
+        runtimeBuildIdentity: PassiveBluetoothCaptureRuntimeBuildIdentity
+    ) throws {
+        try validateFinalManifest(
+            installManifestData,
+            envelopeData: envelopeData,
+            preparedAttempt: preparedAttempt,
+            currentBundleIdentifier: currentBundleIdentifier,
+            runtimeBuildIdentity: runtimeBuildIdentity
         )
     }
 
@@ -89,5 +154,11 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
             uptimeNanoseconds: uptimeNanoseconds
         )
         return AuthenticatedStationaryCapturePreparedAttempt(packageAttempt: attempt)
+    }
+
+    private static func sha256Hex(_ data: Data) -> String {
+        SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 }
