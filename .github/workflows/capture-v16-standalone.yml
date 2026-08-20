@@ -104,6 +104,9 @@ jobs:
           swift test --filter AuthenticatedStationaryCaptureAppAuthorizerTests
           swift test --filter AuthenticatedStationaryCaptureAppAuthorizerPreSigningTests
           swift test --filter AuthenticatedStationaryCaptureAppSessionTests
+          swift test --filter AuthenticatedStationaryCaptureAuthorizationInboxTests
+          swift test --filter AuthenticatedStationaryCaptureSignerRendezvousDocumentTests
+          swift test --filter AuthenticatedStationaryCaptureSignerRendezvousOutboxTests
           swift test --filter AuthenticatedStationaryCaptureAuthoritySurfaceSourceTests
           swift test --filter TuyaAuthenticatedFieldCapabilityAppWiringSourceTests
           swift test --filter TuyaFieldInstallerRetainedIPAAdmissionSourceTests
