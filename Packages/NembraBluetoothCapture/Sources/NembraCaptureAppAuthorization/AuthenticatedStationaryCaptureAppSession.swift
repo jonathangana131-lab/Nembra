@@ -90,32 +90,52 @@ public final class AuthenticatedStationaryCaptureAppSession {
         guard stage == .armed, let capabilityGate else {
             throw AuthenticatedStationaryCaptureAppSessionError.invalidTransition
         }
-        try capabilityGate.admitOFF1Start()
-        stage = .off1Started
+        do {
+            try capabilityGate.admitOFF1Start()
+            stage = .off1Started
+        } catch {
+            revoke()
+            throw error
+        }
     }
 
     public func admitAuthenticationStart() throws {
         guard stage == .off1Started, let capabilityGate else {
             throw AuthenticatedStationaryCaptureAppSessionError.invalidTransition
         }
-        try capabilityGate.admitAuthenticationStart()
-        stage = .authenticationAdmitted
+        do {
+            try capabilityGate.admitAuthenticationStart()
+            stage = .authenticationAdmitted
+        } catch {
+            revoke()
+            throw error
+        }
     }
 
     public func admitOfficialConnectionStart() throws {
         guard stage == .authenticationAdmitted, let capabilityGate else {
             throw AuthenticatedStationaryCaptureAppSessionError.invalidTransition
         }
-        try capabilityGate.admitOfficialConnectionStart()
-        stage = .officialConnectionAdmitted
+        do {
+            try capabilityGate.admitOfficialConnectionStart()
+            stage = .officialConnectionAdmitted
+        } catch {
+            revoke()
+            throw error
+        }
     }
 
     public func admitObservationStart() throws {
         guard stage == .officialConnectionAdmitted, let capabilityGate else {
             throw AuthenticatedStationaryCaptureAppSessionError.invalidTransition
         }
-        try capabilityGate.admitObservationStart()
-        stage = .observationAdmitted
+        do {
+            try capabilityGate.admitObservationStart()
+            stage = .observationAdmitted
+        } catch {
+            revoke()
+            throw error
+        }
     }
 
     /// Seals authority only after the accepted artifact has already been frozen by the Capture
@@ -124,8 +144,13 @@ public final class AuthenticatedStationaryCaptureAppSession {
         guard stage == .observationAdmitted, let capabilityGate else {
             throw AuthenticatedStationaryCaptureAppSessionError.invalidTransition
         }
-        try capabilityGate.seal()
-        stage = .sealed
+        do {
+            try capabilityGate.seal()
+            stage = .sealed
+        } catch {
+            revoke()
+            throw error
+        }
     }
 
     /// Terminally retires any unfinished authority after foreground/view/account/source loss,
