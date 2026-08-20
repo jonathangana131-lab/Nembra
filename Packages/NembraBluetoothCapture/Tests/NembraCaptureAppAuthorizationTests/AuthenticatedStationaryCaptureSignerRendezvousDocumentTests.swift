@@ -30,9 +30,13 @@ struct AuthenticatedStationaryCaptureSignerRendezvousDocumentTests {
         )
         #expect(object["procedureID"] as? String == rendezvous.procedureID)
         #expect(object["attemptChallengeSHA256"] as? String == rendezvous.challengeSHA256)
-        #expect(object["attemptStartedAtUnixMilliseconds"] as? Int == start)
+        let encodedStart = try #require(object["attemptStartedAtUnixMilliseconds"] as? NSNumber)
+        let encodedDeadline = try #require(
+            object["authorizationMustExpireByUnixMilliseconds"] as? NSNumber
+        )
+        #expect(encodedStart.int64Value == start)
         #expect(
-            object["authorizationMustExpireByUnixMilliseconds"] as? Int
+            encodedDeadline.int64Value
                 == start
                     + AuthenticatedStationaryCaptureFieldAuthorizationVerifier
                         .maximumAuthorizationLifetimeMilliseconds
@@ -60,11 +64,11 @@ struct AuthenticatedStationaryCaptureSignerRendezvousDocumentTests {
         )
         let data = try AuthenticatedStationaryCaptureSignerRendezvousDocument.encode(rendezvous)
         let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
-
-        #expect(
-            object["authorizationMustExpireByUnixMilliseconds"] as? Int
-                == start + 15 * 60 * 1_000
+        let encodedDeadline = try #require(
+            object["authorizationMustExpireByUnixMilliseconds"] as? NSNumber
         )
+
+        #expect(encodedDeadline.int64Value == start + 15 * 60 * 1_000)
     }
 
     @Test("malformed challenge, procedure, and impossible clocks fail before export")
