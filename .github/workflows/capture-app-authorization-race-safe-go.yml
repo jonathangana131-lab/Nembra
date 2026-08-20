@@ -4,7 +4,7 @@ name: Capture app authorization race-safe GO
 # and fail-closed across overlapping product/authority movement. Re-run when the
 # canonical transform/controller/acceptance inputs move so tested app wiring cannot
 # remain stranded behind a stale one-file trigger.
-# GO retrigger after parse-safe materializer repair; no authority change.
+# GO retrigger after current source-contract reconciliation; no authority change.
 
 on:
   workflow_dispatch:
@@ -111,6 +111,53 @@ jobs:
 
           app = Path(os.environ["APP_SOURCE"])
           source = app.read_text(encoding="utf-8")
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one anchor, found {count}")
+              source = source.replace(old, new, 1)
+
+          def replace_once_in_section(start_marker: str, end_marker: str, old: str, new: str, label: str) -> None:
+              global source
+              start_index = source.index(start_marker)
+              end_index = source.index(end_marker, start_index + len(start_marker))
+              section_text = source[start_index:end_index]
+              count = section_text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one section anchor, found {count}")
+              section_text = section_text.replace(old, new, 1)
+              source = source[:start_index] + section_text + source[end_index:]
+
+          # Handoff is non-authorizing. Requiring the intentionally hard-false legacy field Boolean
+          # here creates a circular proof dependency before the independently signed session can arm.
+          replace_once(
+              "        guard phase == .idle, buildIdentity.isAuthoritativeFieldBuild else { return }\n",
+              "        guard phase == .idle, buildIdentity.hasCompleteFieldBuildMetadata else { return }\n",
+              "non-authorizing handoff metadata gate",
+          )
+
+          # The package-owned armed session is the OFF1 authority. Do not recheck the permanently
+          # false legacy bundle Boolean after the operator attestation but before consuming OFF1.
+          replace_once_in_section(
+              "    private func beginBaselineAfterCurrentOperatorAttestation() {\n",
+              "    private func beginCorrelationSeries() {\n",
+              '''        guard buildIdentity.isAuthoritativeFieldBuild else {\n            failLocally(buildIdentity.blocker ?? "Exact field-build provenance is unavailable.", "field_build_identity_unavailable")\n            return\n        }\n''',
+              "",
+              "OFF1 legacy field-authority gate",
+          )
+
+          # OFF1 legitimately advances `.armed -> .off1Started`. The selected-state authentication
+          # action must not reuse the pre-OFF1 `.armed` readiness Boolean.
+          replace_once_in_section(
+              "                if test.phase == .selected {\n",
+              "                } else if test.phase == .authenticating {\n",
+              "                    .disabled(!authorityReady || test.membershipBusy)\n",
+              "                    .disabled(test.membershipBusy)\n",
+              "selected authentication readiness",
+          )
+
           old = '''                            self.phase = .failed\n                            self.message = "The accepted evidence could not complete immutable artifact authorization sealing: \\(error.localizedDescription). Relaunch Capture before another attempt."\n                            self.log("field_authorization_or_artifact_freeze_rejected", [\n                                "generation": String(token.diagnosticGeneration),\n                                "error": error.localizedDescription\n                            ])\n                            return\n'''
           new = '''                            self.failLocally(\n                                "The accepted evidence could not complete immutable artifact authorization sealing: \\(error.localizedDescription). Relaunch Capture before another attempt.",\n                                "field_authorization_or_artifact_freeze_rejected"\n                            )\n                            return\n'''
           if source.count(old) != 1:
@@ -127,6 +174,7 @@ jobs:
           git diff --check
           test "$(git status --porcelain=v1 | awk '{print $2}' | sort | tr '\n' ' ' | sed 's/ $//')" = "$APP_SOURCE"
           grep -Fq 'import NembraCaptureAppAuthorization' "$APP_SOURCE"
+          grep -Fq 'buildIdentity.hasCompleteFieldBuildMetadata' "$APP_SOURCE"
           grep -Fq 'fieldAuthorization.stage == .armed' "$APP_SOURCE"
           grep -Fq 'fieldAuthorization.stage != .armed' "$APP_SOURCE"
           grep -Fq 'try self.fieldAuthorization.admitOFF1Start()' "$APP_SOURCE"
