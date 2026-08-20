@@ -21,6 +21,7 @@ die() { builtin printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 [[ "$(/usr/bin/uname -s)" == "Darwin" ]] || die "Run this on the intended field Mac."
 [[ -x /usr/bin/python3 ]] || die "System Python 3 is required."
 [[ -x /usr/bin/shasum ]] || die "System shasum is required."
+[[ -x /usr/bin/git ]] || die "System Git is required for immutable verifier-source capture."
 
 # PRE-INSTALL ONLY.
 #
@@ -176,7 +177,8 @@ validate_retained_input "intended-device pseudonymous binding" "$NEMBRA_INTENDED
 
 # Re-read only the small JSON subjects through no-follow descriptors and prove they all name one
 # identical retained install. The independently accepted IPA/Tuya/device digests are inputs; the IPA
-# itself is never loaded into this Python process.
+# itself is never loaded into this Python process. The two Python verifier modules are captured from
+# immutable Git object bytes and executed in memory; a mutable checkout pathname is never imported.
 /usr/bin/env -i \
   PATH=/usr/bin:/bin \
   LC_ALL=C \
@@ -190,11 +192,13 @@ validate_retained_input "intended-device pseudonymous binding" "$NEMBRA_INTENDED
     "$NEMBRA_INTENDED_DEVICE_PSEUDONYMOUS_BINDING_SHA256" <<'PY'
 import hashlib
 import hmac
-import importlib.util
 import os
+import re
 import stat
+import subprocess
 import sys
-from pathlib import Path, PurePath
+import types
+from pathlib import PurePath
 
 (
     root_raw,
@@ -206,7 +210,7 @@ from pathlib import Path, PurePath
 ) = sys.argv[1:]
 
 
-def read_exact(path_raw: str, expected: str, maximum: int) -> bytes:
+def read_exact(path_raw: str, expected: str, maximum: int, access_policy: str) -> bytes:
     path = PurePath(path_raw)
     no_follow = getattr(os, "O_NOFOLLOW", None)
     if no_follow is None or not path_raw.startswith("/"):
@@ -224,6 +228,11 @@ def read_exact(path_raw: str, expected: str, maximum: int) -> bytes:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size <= 0 or before.st_size > maximum:
             raise RuntimeError("retained subject identity changed")
+        if hasattr(os, "geteuid") and before.st_uid != os.geteuid():
+            raise RuntimeError("retained subject owner changed")
+        forbidden_mode = 0o077 if access_policy == "private" else 0o022
+        if stat.S_IMODE(before.st_mode) & forbidden_mode:
+            raise RuntimeError("retained subject mode changed")
         data = bytearray()
         while len(data) <= maximum:
             block = os.read(descriptor, min(65536, maximum + 1 - len(data)))
@@ -244,18 +253,69 @@ def read_exact(path_raw: str, expected: str, maximum: int) -> bytes:
     finally:
         os.close(descriptor)
 
-root = Path(root_raw)
-helper_path = root / "scripts/ci/es80_retained_install_cross_binding.py"
-spec = importlib.util.spec_from_file_location("nembra_retained_install_cross_binding", helper_path)
-if spec is None or spec.loader is None:
-    raise RuntimeError("retained-install cross-binding helper is unavailable")
-helper = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(helper)
+
+def git(*arguments: str, input_data: bytes | None = None) -> bytes:
+    environment = {
+        "PATH": "/usr/bin:/bin",
+        "LC_ALL": "C",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+    }
+    completed = subprocess.run(
+        ["/usr/bin/git", "-C", root_raw, *arguments],
+        input=input_data,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+        env=environment,
+    )
+    return completed.stdout
+
+
+head = git("rev-parse", "HEAD").decode("ascii").strip().lower()
+if re.fullmatch(r"[0-9a-f]{40}", head) is None:
+    raise RuntimeError("field checkout HEAD is not one canonical Git commit")
+
+
+def immutable_git_source(path: str) -> bytes:
+    blob = git("rev-parse", f"{head}:{path}").decode("ascii").strip().lower()
+    if re.fullmatch(r"[0-9a-f]{40}", blob) is None:
+        raise RuntimeError(f"verifier source is not a canonical Git blob: {path}")
+    source = git("cat-file", "blob", blob)
+    measured = git("hash-object", "--stdin", input_data=source).decode("ascii").strip().lower()
+    if not hmac.compare_digest(measured, blob):
+        raise RuntimeError(f"verifier source failed Git-object authentication: {path}")
+    return source
+
+
+def execute_module(name: str, path: str, source: bytes) -> types.ModuleType:
+    try:
+        text = source.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise RuntimeError(f"verifier source is not UTF-8: {path}") from error
+    module = types.ModuleType(name)
+    module.__file__ = f"<git:{head}:{path}>"
+    sys.modules[name] = module
+    exec(compile(text, module.__file__, "exec"), module.__dict__)
+    return module
+
+
+manifest_source_path = "scripts/ci/es80_retained_install_manifest.py"
+helper_source_path = "scripts/ci/es80_retained_install_cross_binding.py"
+execute_module(
+    "nembra_retained_install_manifest",
+    manifest_source_path,
+    immutable_git_source(manifest_source_path),
+)
+helper = execute_module(
+    "nembra_retained_install_cross_binding",
+    helper_source_path,
+    immutable_git_source(helper_source_path),
+)
 helper.verify_cross_binding(
-    install_manifest_data=read_exact(manifest_path, manifest_sha, 16_384),
-    external_build_record_data=read_exact(build_path, build_sha, 1_048_576),
-    signed_build_evidence_data=read_exact(evidence_path, evidence_sha, 1_048_576),
-    final_go_record_data=read_exact(final_go_path, final_go_sha, 1_048_576),
+    install_manifest_data=read_exact(manifest_path, manifest_sha, 16_384, "public"),
+    external_build_record_data=read_exact(build_path, build_sha, 1_048_576, "public"),
+    signed_build_evidence_data=read_exact(evidence_path, evidence_sha, 1_048_576, "public"),
+    final_go_record_data=read_exact(final_go_path, final_go_sha, 1_048_576, "private"),
     accepted_install_manifest_sha256=manifest_sha.lower(),
     accepted_retained_ipa_sha256=retained_ipa_sha.lower(),
     accepted_external_build_record_sha256=build_sha.lower(),
