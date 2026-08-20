@@ -43,8 +43,8 @@ def require_contract(text: str, direction: str) -> None:
     missing = [token for token in required if token not in text]
     if missing:
         raise SystemExit(
-            f"ERROR: devicectl copy-{direction} help is missing required app-container "
-            "transfer controls: " + ", ".join(missing)
+            f"ERROR: devicectl copy-{direction} help is missing required transfer controls: "
+            + ", ".join(missing)
         )
 
 
@@ -54,17 +54,24 @@ require_contract(copy_from, "from")
 # The accepted field design needs a bounded file rendezvous with one installed app's data container:
 # stable retained-manifest bytes and the post-signing envelope travel TO the app, while the fresh
 # process-local challenge rendezvous travels FROM the still-running app. This probe executes help
-# only; it does not contact a device or transfer any file. Require the CoreDevice domain vocabulary
-# when this Xcode build emits it, otherwise preserve both raw help artifacts for exact-head review
-# instead of inventing an unsupported enum value.
+# only; it does not contact a device or transfer any file. Generic copy support is insufficient:
+# exact-head evidence must name the appDataContainer domain in both directions before the repository
+# may call this transport proven.
+missing_domain_evidence = []
 for direction, text in (("TO", copy_to), ("FROM", copy_from)):
     if "appDataContainer" not in text:
         print(f"DEVICECTL_APP_DATA_DOMAIN_NOT_ENUMERATED_IN_COPY_{direction}_HELP")
+        missing_domain_evidence.append(direction.lower())
     else:
         print(f"DEVICECTL_APP_DATA_DOMAIN_ENUMERATED_IN_COPY_{direction}_HELP")
 
 print("DEVICECTL_COPY_TO_CONTRACT_PRESENT")
 print("DEVICECTL_COPY_FROM_CONTRACT_PRESENT")
+if missing_domain_evidence:
+    raise SystemExit(
+        "ERROR: appDataContainer transport is not proven by exact Xcode help in direction(s): "
+        + ", ".join(missing_domain_evidence)
+    )
 print("DEVICECTL_BIDIRECTIONAL_APP_CONTAINER_RENDEZVOUS_PRESENT")
 PY
 
