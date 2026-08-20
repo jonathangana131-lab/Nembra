@@ -25,7 +25,9 @@ MAX_SUBJECT_BYTES = 512 * 1024 * 1024
 MAX_JSON_BYTES = 1024 * 1024
 SHA40 = re.compile(r"^[0-9a-f]{40}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
-UUID4 = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+BUILD_INSTANCE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
 
 EXTERNAL_KEYS = {
     "schemaVersion", "procedureID", "bundleIdentifier", "sourceCommitSHA",
@@ -131,8 +133,8 @@ def _validate_common(value: dict[str, Any]) -> None:
     instance = value.get("buildInstanceID")
     if not isinstance(source, str) or not SHA40.fullmatch(source):
         raise EvidenceError("source commit is not canonical")
-    if not isinstance(instance, str) or not UUID4.fullmatch(instance):
-        raise EvidenceError("build instance is not a canonical UUIDv4")
+    if not isinstance(instance, str) or not BUILD_INSTANCE.fullmatch(instance):
+        raise EvidenceError("build instance is not the canonical lowercase build-instance identity")
     _text(value.get("buildIdentifier"), "build identifier")
     _sha(value.get("executableSHA256"), "executable digest")
     _sha(value.get("infoPlistSHA256"), "Info.plist digest")
@@ -279,7 +281,9 @@ def main(argv: list[str]) -> int:
 
 def self_test() -> None:
     source = "1" * 40
-    instance = "12345678-1234-4234-9234-123456789abc"
+    # Build-instance identity is UUID-shaped but intentionally opaque; this fixture is non-v4 so
+    # the self-test rejects accidental reintroduction of UUID-version semantics.
+    instance = "12345678-1234-abcd-8def-123456789abc"
     executable = "2" * 64
     plist = "3" * 64
     tuya = b"synthetic Tuya dependency lock\n"
