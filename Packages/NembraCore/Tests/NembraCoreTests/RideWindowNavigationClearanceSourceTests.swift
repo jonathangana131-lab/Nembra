@@ -23,12 +23,16 @@ struct RideWindowNavigationClearanceSourceTests {
         #expect(
             timelineSource.contains("Text(title)")
                 && timelineSource.contains("Text(timestamp(date))")
+                && timelineSource.components(separatedBy: "Text(title)").count == 2
+                && timelineSource.components(separatedBy: "Text(timestamp(date))").count == 2
                 && timelineSource.contains(".font(.subheadline.weight(.medium))")
                 && timelineSource.contains(".font(.subheadline.monospacedDigit())")
+                && timelineSource.contains("VStack(alignment: .leading, spacing: 4)")
+                && !timelineSource.contains("ViewThatFits(")
                 && !timelineSource.contains(".accessibilityLabeledPair(")
                 && !timelineSource.contains(".accessibilityElement(children: .ignore)")
                 && !timelineSource.contains(".accessibilityElement(children: .combine)"),
-            "Ride Window rows must keep their native, semantic-font Text elements in title-then-timestamp source order. Synthetic combined, ignored, or labeled-pair elements caused alternating Xcode 27 Dynamic Type and hit-region audit failures."
+            "Ride Window rows must expose one native semantic-font Text pair in title-then-timestamp order. Duplicate ViewThatFits candidates and synthetic combined, ignored, or labeled-pair nodes caused alternating Xcode 27 Dynamic Type and hit-region audit failures."
         )
     }
 

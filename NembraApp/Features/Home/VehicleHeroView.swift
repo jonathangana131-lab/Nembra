@@ -179,14 +179,15 @@ private struct HomeVehicleHeaderContent: View, @MainActor Equatable {
             Label("Vehicle controls", systemImage: "slider.horizontal.3")
                 .labelStyle(.iconOnly)
                 .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(NembraColor.primaryText)
+                .foregroundStyle(NembraColor.baseBlack)
                 .frame(
                     width: usesAccessibilityLayout ? 44 : 36,
                     height: usesAccessibilityLayout ? 44 : 36
                 )
         }
-        .buttonStyle(.glass)
-        .tint(NembraColor.warmGraphite)
+        .buttonStyle(.glassProminent)
+        .buttonBorderShape(.circle)
+        .tint(NembraColor.instrumentSecondaryText)
         .frame(minWidth: 44, minHeight: 44)
         .contentShape(Rectangle())
         .accessibilityHint("Opens detailed vehicle controls and verified settings.")
@@ -563,7 +564,7 @@ private struct HomeEnergyHeroScene: View, @MainActor Equatable {
 
             if snapshot.batteryPercent != nil {
                 Text("%")
-                    .font(.system(size: batteryPercentFontSize, weight: .light, design: .rounded))
+                    .font(.system(size: batteryPercentFontSize, weight: .regular, design: .rounded))
                     .foregroundStyle(batteryValueColor)
             }
         }

@@ -13,6 +13,13 @@ Portrait does not edit `NembraApp/Features/Dashboard/` or
 `DashboardSessionStore.swift`. Capture/BLE does not drive presentation with
 unverified values. Shared files require a note here or in the PR before edits.
 
+`NembraApp/App/AppRootView.swift` is shared by target membership, but
+`RideHistoryDetailView.timelineRow` is portrait-owned. It deliberately exposes
+one stacked pair of native semantic-font `Text` nodes and retains 72 points for
+the Navigation launcher. Do not reintroduce duplicate `ViewThatFits` candidates,
+combined nodes, or labeled-pair identities: exact Xcode 27 audited inactive
+candidates and alternated Dynamic Type/hit-region failures.
+
 ## Shared visual semantics
 
 - Common palette: deep black, graphite, warm white, cool secondary neutrals,

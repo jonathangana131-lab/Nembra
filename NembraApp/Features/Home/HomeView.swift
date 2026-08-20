@@ -212,7 +212,7 @@ struct HomeView: View {
 
                     Text("·")
                         .font(.headline.weight(.bold))
-                        .foregroundStyle(NembraColor.secondaryText)
+                        .foregroundStyle(NembraColor.instrumentSecondaryText)
                         .accessibilityHidden(true)
 
                     Text(modeReadoutText)

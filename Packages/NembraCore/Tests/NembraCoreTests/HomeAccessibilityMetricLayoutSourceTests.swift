@@ -177,7 +177,26 @@ func homeStatusAndRecoveryReflowAtAccessibilityDynamicType() throws {
     #expect(header.contains("VStack(alignment: .leading, spacing: 12)"))
     #expect(header.contains("Label(\"Vehicle controls\", systemImage: \"slider.horizontal.3\")"))
     #expect(header.contains(".labelStyle(.iconOnly)"))
-    #expect(header.contains(".buttonStyle(.glass)"))
+    #expect(header.contains(".buttonStyle(.glassProminent)"))
+    #expect(header.contains(".buttonBorderShape(.circle)"))
+    #expect(header.contains(".foregroundStyle(NembraColor.baseBlack)"))
+    #expect(header.contains(".tint(NembraColor.instrumentSecondaryText)"))
+    #expect(!header.contains(".buttonStyle(.glass)"))
+    #expect(!header.contains(".tint(NembraColor.warmGraphite)"))
+    let vehicleControlsStart = try #require(
+        header.range(of: "private var vehicleControlsLink: some View")
+    )
+    let indicatorStart = try #require(
+        header.range(
+            of: "private var indicatorColor: Color",
+            range: vehicleControlsStart.upperBound..<header.endIndex
+        )
+    )
+    let vehicleControls = String(
+        header[vehicleControlsStart.lowerBound..<indicatorStart.lowerBound]
+    )
+    #expect(!vehicleControls.contains(".overlay"))
+    #expect(!vehicleControls.contains("strokeBorder"))
 
     let batteryReadoutEnd = try #require(
         heroSource.range(
@@ -195,7 +214,27 @@ func homeStatusAndRecoveryReflowAtAccessibilityDynamicType() throws {
     #expect(heroSource.contains("return NembraColor.warningRed"))
     #expect(heroSource.contains("case (true, .percentage), (true, .estimatedRange):"))
     #expect(heroSource.contains("NembraColor.instrumentSecondaryText"))
+    #expect(
+        heroSource.contains(
+            "Text(\"%\")\n                    .font(.system(size: batteryPercentFontSize, weight: .regular, design: .rounded))"
+        )
+    )
     #expect(!heroSource.contains("NembraColor.secondaryText.opacity(snapshot.isRetained"))
+
+    let readinessSeparatorStart = try #require(
+        statusPanel.range(of: "Text(\"·\")")
+    )
+    let modeReadoutStart = try #require(
+        statusPanel.range(
+            of: "Text(modeReadoutText)",
+            range: readinessSeparatorStart.upperBound..<statusPanel.endIndex
+        )
+    )
+    let readinessSeparator = String(
+        statusPanel[readinessSeparatorStart.lowerBound..<modeReadoutStart.lowerBound]
+    )
+    #expect(readinessSeparator.contains(".foregroundStyle(NembraColor.instrumentSecondaryText)"))
+    #expect(!readinessSeparator.contains(".foregroundStyle(NembraColor.secondaryText)"))
 
     let recoveryStart = try #require(homeSource.range(of: "private var connectionRecovery: some View"))
     let recoveryEnd = try #require(homeSource.range(of: "private enum ConnectionRecoveryAction", range: recoveryStart.upperBound..<homeSource.endIndex))
