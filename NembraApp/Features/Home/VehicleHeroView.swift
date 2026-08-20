@@ -178,12 +178,14 @@ private struct HomeVehicleHeaderContent: View, @MainActor Equatable {
         } label: {
             Label("Vehicle controls", systemImage: "slider.horizontal.3")
                 .labelStyle(.iconOnly)
-                .font(.system(size: 18, weight: .semibold))
+                .font(.system(size: 19, weight: .bold))
+                .symbolRenderingMode(.monochrome)
                 .foregroundStyle(NembraColor.baseBlack)
                 .frame(
                     width: usesAccessibilityLayout ? 44 : 36,
                     height: usesAccessibilityLayout ? 44 : 36
                 )
+                .background(NembraColor.instrumentSecondaryText, in: Circle())
         }
         .buttonStyle(.glassProminent)
         .buttonBorderShape(.circle)
@@ -689,13 +691,9 @@ private struct HomeEnergyHeroScene: View, @MainActor Equatable {
     }
 
     private var batteryRangePrimaryColor: Color {
-        switch snapshot.adaptiveRangeDisplay {
-        case .valueMeters:
-            NembraColor.primaryText.opacity(snapshot.isRetained ? 0.90 : 0.96)
-        case .learning:
-            NembraColor.primaryText.opacity(snapshot.isRetained ? 0.88 : 0.92)
-        case .unavailable:
-            NembraColor.primaryText.opacity(snapshot.isRetained ? 0.86 : 0.90)
-        }
+        // Weight and the secondary qualifier carry hierarchy. Primary range
+        // truth stays opaque over the instrument's variable energy material;
+        // alpha-dimming made retained “Unavailable” fail the hosted audit.
+        NembraColor.primaryText
     }
 }

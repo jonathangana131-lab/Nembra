@@ -210,9 +210,9 @@ struct HomeView: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.78)
 
-                    Text("·")
-                        .font(.headline.weight(.bold))
-                        .foregroundStyle(NembraColor.instrumentSecondaryText)
+                    Circle()
+                        .fill(NembraColor.instrumentSecondaryText)
+                        .frame(width: 4, height: 4)
                         .accessibilityHidden(true)
 
                     Text(modeReadoutText)
@@ -1303,10 +1303,33 @@ struct HomeBatteryMaterial: View, @MainActor Animatable {
             )
         )
 
+        var ribs = Path()
+        for x in stride(
+            from: fillRect.minX + 2,
+            through: fillRect.maxX - 1,
+            by: Self.chargeRibSpacing
+        ) {
+            ribs.move(to: CGPoint(x: x, y: fillRect.minY + 2.5))
+            ribs.addLine(to: CGPoint(x: x, y: fillRect.maxY - 2.5))
+        }
+        chargeContext.stroke(
+            ribs,
+            with: .linearGradient(
+                Gradient(stops: [
+                    .init(color: Color.white.opacity(0.22), location: 0),
+                    .init(color: Color.white.opacity(0.085), location: 0.46),
+                    .init(color: Color.black.opacity(0.17), location: 1)
+                ]),
+                startPoint: CGPoint(x: fillRect.midX, y: fillRect.minY),
+                endPoint: CGPoint(x: fillRect.midX, y: fillRect.maxY)
+            ),
+            style: StrokeStyle(lineWidth: 0.55)
+        )
+
         // The selected instrument keeps its copy in a graphite energy well.
         // Clip the well to accepted SOC so the charge shape remains truthful,
-        // while warm-white copy stays legible across both charged and empty
-        // regions without changing color mid-animation.
+        // then finish it after the ribs so fine energy texture cannot cut
+        // through the warm-white range copy.
         let fullCopyWellWidth = HomeHeroLayout.batteryCopySafeWidth + 34
         let copyWellWidth = min(fillRect.width, fullCopyWellWidth)
         if copyWellWidth > 0.5 {
@@ -1334,29 +1357,6 @@ struct HomeBatteryMaterial: View, @MainActor Animatable {
                 )
             )
         }
-
-        var ribs = Path()
-        for x in stride(
-            from: fillRect.minX + 2,
-            through: fillRect.maxX - 1,
-            by: Self.chargeRibSpacing
-        ) {
-            ribs.move(to: CGPoint(x: x, y: fillRect.minY + 2.5))
-            ribs.addLine(to: CGPoint(x: x, y: fillRect.maxY - 2.5))
-        }
-        chargeContext.stroke(
-            ribs,
-            with: .linearGradient(
-                Gradient(stops: [
-                    .init(color: Color.white.opacity(0.22), location: 0),
-                    .init(color: Color.white.opacity(0.085), location: 0.46),
-                    .init(color: Color.black.opacity(0.17), location: 1)
-                ]),
-                startPoint: CGPoint(x: fillRect.midX, y: fillRect.minY),
-                endPoint: CGPoint(x: fillRect.midX, y: fillRect.maxY)
-            ),
-            style: StrokeStyle(lineWidth: 0.55)
-        )
     }
 }
 

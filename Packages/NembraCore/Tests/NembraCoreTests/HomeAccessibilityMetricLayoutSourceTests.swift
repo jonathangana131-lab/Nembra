@@ -179,7 +179,10 @@ func homeStatusAndRecoveryReflowAtAccessibilityDynamicType() throws {
     #expect(header.contains(".labelStyle(.iconOnly)"))
     #expect(header.contains(".buttonStyle(.glassProminent)"))
     #expect(header.contains(".buttonBorderShape(.circle)"))
+    #expect(header.contains(".font(.system(size: 19, weight: .bold))"))
+    #expect(header.contains(".symbolRenderingMode(.monochrome)"))
     #expect(header.contains(".foregroundStyle(NembraColor.baseBlack)"))
+    #expect(header.contains(".background(NembraColor.instrumentSecondaryText, in: Circle())"))
     #expect(header.contains(".tint(NembraColor.instrumentSecondaryText)"))
     #expect(!header.contains(".buttonStyle(.glass)"))
     #expect(!header.contains(".tint(NembraColor.warmGraphite)"))
@@ -221,20 +224,21 @@ func homeStatusAndRecoveryReflowAtAccessibilityDynamicType() throws {
     )
     #expect(!heroSource.contains("NembraColor.secondaryText.opacity(snapshot.isRetained"))
 
-    let readinessSeparatorStart = try #require(
-        statusPanel.range(of: "Text(\"·\")")
-    )
-    let modeReadoutStart = try #require(
-        statusPanel.range(
-            of: "Text(modeReadoutText)",
-            range: readinessSeparatorStart.upperBound..<statusPanel.endIndex
+    #expect(
+        readiness.contains(
+            "Circle()\n                        .fill(NembraColor.instrumentSecondaryText)\n                        .frame(width: 4, height: 4)"
         )
     )
-    let readinessSeparator = String(
-        statusPanel[readinessSeparatorStart.lowerBound..<modeReadoutStart.lowerBound]
+    #expect(!readiness.contains("Text(\"·\")"))
+
+    let rangePrimaryColorStart = try #require(
+        heroSource.range(of: "private var batteryRangePrimaryColor: Color")
     )
-    #expect(readinessSeparator.contains(".foregroundStyle(NembraColor.instrumentSecondaryText)"))
-    #expect(!readinessSeparator.contains(".foregroundStyle(NembraColor.secondaryText)"))
+    let rangePrimaryColor = String(
+        heroSource[rangePrimaryColorStart.lowerBound...]
+    )
+    #expect(rangePrimaryColor.contains("NembraColor.primaryText"))
+    #expect(!rangePrimaryColor.contains(".opacity"))
 
     let recoveryStart = try #require(homeSource.range(of: "private var connectionRecovery: some View"))
     let recoveryEnd = try #require(homeSource.range(of: "private enum ConnectionRecoveryAction", range: recoveryStart.upperBound..<homeSource.endIndex))
@@ -330,6 +334,13 @@ func homeEnergyMaterialRetainsSemanticAndScheduleBoundaries() throws {
     #expect(material.contains("guard fillFraction > 0 else { return 0 }"))
     #expect(!material.contains("TimelineView"))
     #expect(!material.contains("glassEffect"))
+    let ribsStart = try #require(material.range(of: "var ribs = Path()"))
+    #expect(
+        material.range(
+            of: "let fullCopyWellWidth = HomeHeroLayout.batteryCopySafeWidth + 34",
+            range: ribsStart.upperBound..<material.endIndex
+        ) != nil
+    )
 
     // Grounding is likewise one static Canvas, with separate semantic layers
     // for physical contact instead of one pasted-on oval.
