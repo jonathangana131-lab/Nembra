@@ -24,6 +24,8 @@ public struct AuthenticatedStationaryCapturePreparedAttempt: Sendable {
 }
 
 public enum AuthenticatedStationaryCaptureAppAuthorizerError: Error, Equatable, Sendable {
+    case runtimeBundleIdentifierUnavailable
+    case signedBuildEvidenceDoesNotMatchRunningApplication
     case manifestBundleMismatch
     case manifestRuntimeMismatch
     case manifestAttemptBindingsMismatch
@@ -32,15 +34,16 @@ public enum AuthenticatedStationaryCaptureAppAuthorizerError: Error, Equatable, 
 
 /// App-owned composition seam for authenticated stationary Capture authorization.
 ///
-/// This adapter deliberately owns no Boolean field-authority switch. It can only:
-/// 1. ask `NembraBluetoothCapture` to create a live, runtime-bound attempt;
-/// 2. expose that attempt's random challenge to the independent signing workflow; and
-/// 3. require the final canonical retained-install manifest to cross-bind the running build,
-///    attempt bindings, and exact returned envelope before presenting it to the package verifier.
+/// Production attempt creation starts from the exact signed-build evidence bytes retained by the
+/// independently accepted build pipeline. The adapter verifies those bytes against the running
+/// executable/Info.plist tuple, derives the exact external bindings, then asks
+/// `NembraBluetoothCapture` for the process-local signer challenge. After the signer returns an
+/// envelope, the final retained-install manifest must cross-bind that exact envelope, running build,
+/// and prepared attempt before the package-pinned signature verifier can consume replay state or mint
+/// the opaque one-attempt capability.
 ///
-/// With the package production trust root still unset, `authorize` remains mechanically NO-GO.
-/// Pinning that root later is a separate independently reviewed change; this type must not grow a
-/// caller-supplied trust-key escape hatch.
+/// This adapter owns no Boolean field-authority switch and no caller-selectable trust key. With the
+/// package production trust root still unset, `authorize` remains mechanically NO-GO.
 @MainActor
 public final class AuthenticatedStationaryCaptureAppAuthorizer {
     private let consumptionStore: any AuthenticatedStationaryCaptureAuthorizationConsumptionStore
@@ -55,11 +58,32 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
         self.consumptionStore = consumptionStore
     }
 
-    /// Starts one live authorization attempt from the separately accepted external install/evidence
-    /// bindings. The app-generated challenge is needed before the signer can create the envelope,
-    /// so the final manifest cannot exist yet at this step. This does not start OFF1, scan Bluetooth,
-    /// authenticate Tuya, or grant physical GO.
+    /// Begins one live signer-rendezvous attempt from exact non-authorizing signed-build evidence.
+    /// This step validates evidence bytes and runtime/build identity only. It does not start OFF1,
+    /// scan Bluetooth, authenticate Tuya, or grant physical GO.
     public func beginAttempt(
+        signedBuildEvidenceData: Data
+    ) throws -> AuthenticatedStationaryCapturePreparedAttempt {
+        let evidence = try AuthenticatedStationaryCaptureSignedBuildEvidenceVerifier
+            .decodeCanonical(signedBuildEvidenceData)
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
+            throw AuthenticatedStationaryCaptureAppAuthorizerError
+                .runtimeBundleIdentifierUnavailable
+        }
+        let runtime = try PassiveBluetoothCaptureRuntimeBuildIdentityReader.currentApplication()
+        guard evidence.matches(
+            runtimeBuildIdentity: runtime,
+            bundleIdentifier: bundleIdentifier
+        ) else {
+            throw AuthenticatedStationaryCaptureAppAuthorizerError
+                .signedBuildEvidenceDoesNotMatchRunningApplication
+        }
+        return try beginAttempt(externalBindings: evidence.externalBindings())
+    }
+
+    /// Package-only seam for already-validated bindings. Keeping this non-public prevents the app
+    /// product from accidentally creating signer challenges from arbitrary caller-authored digests.
+    package func beginAttempt(
         externalBindings: AuthenticatedStationaryCaptureExternalBindings
     ) throws -> AuthenticatedStationaryCapturePreparedAttempt {
         let attempt = try AuthenticatedStationaryCaptureFieldAuthorizationVerifier
@@ -67,9 +91,9 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
         return AuthenticatedStationaryCapturePreparedAttempt(packageAttempt: attempt)
     }
 
-    /// Verifies the final retained-install manifest against the running app, the exact prepared
-    /// attempt, and the exact signed envelope bytes before the package-pinned signature verifier can
-    /// consume replay state or mint the opaque one-attempt capability.
+    /// Verifies the final retained-install manifest against the running app, exact prepared attempt,
+    /// and exact signed envelope bytes before the package-pinned signature verifier can consume
+    /// replay state or mint the opaque one-attempt capability.
     public func authorize(
         envelopeData: Data,
         installManifestData: Data,
@@ -117,8 +141,8 @@ public final class AuthenticatedStationaryCaptureAppAuthorizer {
         }
     }
 
-    /// Deterministic manifest-cross-binding seam used only by tests in this Swift package. It does
-    /// not invoke the production trust root, consume replay state, or mint a capability.
+    /// Deterministic final-manifest cross-binding seam used only by tests in this Swift package. It
+    /// does not invoke the production trust root, consume replay state, or mint a capability.
     package func validateFinalManifestForTesting(
         _ installManifestData: Data,
         envelopeData: Data,
