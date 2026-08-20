@@ -77,13 +77,11 @@ jobs:
         run: |
           set -euo pipefail
           git diff --check
-          mapfile -t changed < <(git status --porcelain=v1 | awk '{print $2}' | sort)
-          expected=(
-            NembraApp/App/NembraCaptureEntrypoint.swift
-            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationTimeoutPresentationRaceSourceTests.swift
-          )
-          test "${#changed[@]}" -eq "${#expected[@]}"
-          for i in "${!expected[@]}"; do test "${changed[$i]}" = "${expected[$i]}"; done
+          changed="$(git status --porcelain=v1 | awk '{print $2}' | sort)"
+          expected="$(printf '%s\n' \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaApplicationTimeoutPresentationRaceSourceTests.swift)"
+          test "$changed" = "$expected"
           ! grep -Fq 'publishDps(' NembraApp/App/NembraCaptureEntrypoint.swift
           ! grep -Fq 'writeValue(' NembraApp/App/NembraCaptureEntrypoint.swift
           grep -Fq 'try await self.sessionLedger.observeCurrentConnection(for: token)' NembraApp/App/NembraCaptureEntrypoint.swift
