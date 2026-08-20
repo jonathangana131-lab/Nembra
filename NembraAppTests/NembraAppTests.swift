@@ -75,7 +75,11 @@ final class NembraAppTests: XCTestCase {
             arguments: ["Nembra", "--nembra-simulation=cold-disconnected"],
             environment: [:]
         )
+#if os(iOS) && !targetEnvironment(simulator)
+        XCTAssertNil(scenario)
+#else
         XCTAssertEqual(scenario, .coldDisconnected)
+#endif
     }
 
     func testSimulationScenarioEnvironmentTakesPrecedence() {
@@ -83,7 +87,11 @@ final class NembraAppTests: XCTestCase {
             arguments: ["Nembra", "--nembra-simulation=riding"],
             environment: ["NEMBRA_SIMULATION_SCENARIO": "low-battery"]
         )
+#if os(iOS) && !targetEnvironment(simulator)
+        XCTAssertNil(scenario)
+#else
         XCTAssertEqual(scenario, .lowBattery)
+#endif
     }
 
     func testBluetoothOffSimulationLaunchArgumentParsing() {
@@ -91,7 +99,11 @@ final class NembraAppTests: XCTestCase {
             arguments: ["Nembra", "--nembra-simulation=bluetooth-off"],
             environment: [:]
         )
+#if os(iOS) && !targetEnvironment(simulator)
+        XCTAssertNil(scenario)
+#else
         XCTAssertEqual(scenario, .bluetoothOff)
+#endif
     }
 
     @MainActor
@@ -130,7 +142,12 @@ final class NembraAppTests: XCTestCase {
             arguments: ["Nembra"],
             environment: ["NEMBRA_SIMULATION_SCENARIO": "riding"]
         )
+#if os(iOS) && !targetEnvironment(simulator)
+        XCTAssertEqual(store.speedInstrumentInterpolationPolicy, .disabled)
+        XCTAssertNotEqual(store.profile, .simulatorQA)
+#else
         XCTAssertEqual(store.speedInstrumentInterpolationPolicy, .simulatorQA)
+#endif
     }
 
     @MainActor
