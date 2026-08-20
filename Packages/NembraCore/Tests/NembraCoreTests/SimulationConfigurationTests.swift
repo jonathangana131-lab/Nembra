@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import NembraCore
 
@@ -60,4 +61,32 @@ struct SimulationConfigurationTests {
         )
         #expect(result == .invalid(source: .launchArgument, rawValue: raw))
     }
+
+    @Test("physical iOS simulation authority remains compile-time fenced")
+    func physicalIOSAuthorityFenceSourceContract() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = repositoryRoot
+            .appendingPathComponent("Packages/NembraCore/Sources/NembraCore/SimulationConfiguration.swift")
+        let source = String(decoding: try Data(contentsOf: sourceURL), as: UTF8.self)
+
+        #expect(source.contains("#if os(iOS) && !targetEnvironment(simulator)"))
+        #expect(source.contains("return .disabled\n#endif"))
+        #expect(source.contains("Synthetic vehicle authority is a Simulator/host-test facility only."))
+    }
+
+#if os(iOS) && !targetEnvironment(simulator)
+    @Test("physical iOS rejects explicit synthetic scenarios")
+    func physicalIOSRejectsSyntheticScenario() {
+        let result = ScooterSimulationConfiguration.resolve(
+            arguments: ["Nembra", "--nembra-simulation=riding"],
+            environment: [ScooterSimulationConfiguration.environmentKey: "low-battery"]
+        )
+        #expect(result == .disabled)
+    }
+#endif
 }
