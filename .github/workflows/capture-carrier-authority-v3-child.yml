@@ -78,21 +78,46 @@ jobs:
           source = source.replace(old_seal_failure, new_seal_failure, 1)
           path.write_text(source, encoding="utf-8")
 
-      - name: Verify exact fail-closed lifecycle contracts
+      - name: Verify diagnostic source shape
         shell: bash
         run: |
           set -euo pipefail
           changed="$(git status --porcelain=v1 | awk '{print $2}' | sort)"
           test "$changed" = "$APP_SOURCE"
           git diff --check
+
+      - name: Verify lifecycle Python contract
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
           /usr/bin/python3 -I scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
-          (
-            cd Packages/NembraBluetoothCapture
-            swift test --filter AuthenticatedStationaryCaptureAppSessionTests
-            swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
-            swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthorizationInboxAppAdapter
-            swift test --filter TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
-          )
+
+      - name: Verify package app-session contract
+        if: always()
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test --filter AuthenticatedStationaryCaptureAppSessionTests
+
+      - name: Verify app-wiring source contract
+        if: always()
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
+
+      - name: Verify inbox-adapter source contract
+        if: always()
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthorizationInboxAppAdapter
+
+      - name: Verify exact artifact-freeze source contract
+        if: always()
+        working-directory: Packages/NembraBluetoothCapture
+        run: swift test --filter TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
+
+      - name: Verify no authority bypasses
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
           grep -Fq 'advanceInboxHandoffIfAvailable()' "$APP_SOURCE"
           grep -Fq 'fieldAuthorization.stage == .armed' "$APP_SOURCE"
           grep -Fq 'fieldAuthorization.stage != .armed' "$APP_SOURCE"
