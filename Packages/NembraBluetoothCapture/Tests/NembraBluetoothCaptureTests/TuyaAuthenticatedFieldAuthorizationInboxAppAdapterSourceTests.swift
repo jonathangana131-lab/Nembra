@@ -5,8 +5,8 @@ import Testing
 /// Keep the one-shot app-container custody boundary on the V16 exact-head source-test surface.
 @Suite("Capture authorization inbox app adapter")
 struct CaptureSimulatorQAHarnessSourceTests_AuthorizationInboxAppAdapter {
-    @Test("standalone adapter only prepares and authorizes from the package inbox")
-    func adapterUsesDescriptorBoundInbox() throws {
+    @Test("standalone adapter prepares from inbox and publishes canonical signer rendezvous")
+    func adapterPublishesPreparedRendezvous() throws {
         let controller = try repositoryFile(
             "NembraApp/App/NembraCaptureFieldAuthorizationController.swift"
         )
@@ -14,9 +14,20 @@ struct CaptureSimulatorQAHarnessSourceTests_AuthorizationInboxAppAdapter {
         #expect(controller.contains("AuthenticatedStationaryCaptureAuthorizationInbox"))
         #expect(controller.contains("func prepareAttemptFromInbox()"))
         #expect(controller.contains(".takeInstallManifest()"))
+        #expect(controller.contains("session.prepare(installManifestData: manifestData)"))
+        #expect(controller.contains("AuthenticatedStationaryCaptureSignerRendezvousOutbox"))
+        #expect(controller.contains(".publish(rendezvous)"))
+        #expect(controller.contains("session.revoke()"))
+    }
+
+    @Test("standalone adapter authorizes only from the one-shot envelope inbox")
+    func adapterUsesDescriptorBoundEnvelopeInbox() throws {
+        let controller = try repositoryFile(
+            "NembraApp/App/NembraCaptureFieldAuthorizationController.swift"
+        )
+
         #expect(controller.contains("func authorizeFromInbox() throws"))
         #expect(controller.contains(".takeAuthorizationEnvelope()"))
-        #expect(controller.contains("session.prepare(installManifestData: manifestData)"))
         #expect(controller.contains("session.acceptEnvelope(envelopeData)"))
 
         #expect(!controller.contains("retainedInstallManifestData: Data"))
