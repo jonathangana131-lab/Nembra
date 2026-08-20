@@ -24,7 +24,7 @@ class RetainedInstallManifestTests(unittest.TestCase):
             "procedureID": manifest.PROCEDURE_ID,
             "sourceCommitSHA": "1" * 40,
             "bundleIdentifier": manifest.BUNDLE_IDENTIFIER,
-            "buildIdentifier": "Capture Build test",
+            "buildIdentifier": "Capture Build V14-111111111111",
             "buildInstanceID": "12345678-1234-4abc-8def-123456789abc",
             "retainedIPASHA256": "2" * 64,
             "executableSHA256": "3" * 64,
@@ -52,6 +52,9 @@ class RetainedInstallManifestTests(unittest.TestCase):
         source = SWIFT_MANIFEST.read_text(encoding="utf-8")
         self.assertIn(f'public static let schema = "{manifest.SCHEMA}"', source)
         self.assertIn(
+            f'public static let bundleIdentifier = "{manifest.BUNDLE_IDENTIFIER}"', source
+        )
+        self.assertIn(
             f"public static let maximumManifestByteCount = {manifest.MAX_MANIFEST_BYTES // 1024}_384"
             if manifest.MAX_MANIFEST_BYTES == 16_384
             else f"public static let maximumManifestByteCount = {manifest.MAX_MANIFEST_BYTES}",
@@ -64,6 +67,15 @@ class RetainedInstallManifestTests(unittest.TestCase):
         self.assertNotIn('"signedInstallableSHA256"', source)
         self.assertIn('"retainedIPASHA256"', source)
         self.assertIn("encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]", source)
+        self.assertIn(
+            'wire.sourceCommitSHA != String(repeating: "0", count: 40)', source
+        )
+        self.assertIn(
+            "wire.buildIdentifier == canonicalBuildIdentifier(for: wire.sourceCommitSHA)",
+            source,
+        )
+        self.assertIn("isCanonicalUUIDv4(wire.buildInstanceID)", source)
+        self.assertIn("isCanonicalNonzeroSHA256", source)
 
     def test_every_exact_binding_drift_is_rejected(self) -> None:
         data = manifest.build_manifest(self.bindings)
@@ -75,8 +87,9 @@ class RetainedInstallManifestTests(unittest.TestCase):
                 changed[key] = "com.example.wrong"
             elif key == "sourceCommitSHA":
                 changed[key] = "b" * 40
+                changed["buildIdentifier"] = "Capture Build V14-bbbbbbbbbbbb"
             elif key == "buildIdentifier":
-                changed[key] = "Other Build"
+                changed[key] = "Capture Build V14-222222222222"
             elif key == "buildInstanceID":
                 changed[key] = "87654321-4321-4abc-8def-123456789abc"
             else:
@@ -84,6 +97,15 @@ class RetainedInstallManifestTests(unittest.TestCase):
             with self.subTest(key=key):
                 with self.assertRaises(manifest.RetainedInstallManifestError):
                     manifest.verify_manifest_against_expected(data, changed)
+
+    def test_build_identifier_is_cross_bound_to_exact_source(self) -> None:
+        changed = dict(self.bindings)
+        changed["buildIdentifier"] = "Capture Build V14-222222222222"
+        with self.assertRaisesRegex(
+            manifest.RetainedInstallManifestError,
+            "buildIdentifier does not match exact source commit",
+        ):
+            manifest.build_manifest(changed)
 
     def test_open_duplicate_and_noncanonical_json_are_rejected(self) -> None:
         data = manifest.build_manifest(self.bindings)
@@ -107,13 +129,17 @@ class RetainedInstallManifestTests(unittest.TestCase):
     def test_malformed_identity_and_zero_digest_are_rejected(self) -> None:
         for key, value in (
             ("sourceCommitSHA", "A" * 40),
+            ("sourceCommitSHA", "0" * 40),
             ("buildInstanceID", "12345678-1234-1abc-8def-123456789abc"),
+            ("buildInstanceID", "12345678-1234-4abc-7def-123456789abc"),
             ("retainedIPASHA256", "0" * 64),
             ("authorizationEnvelopeSHA256", "A" * 64),
         ):
             changed = dict(self.bindings)
             changed[key] = value
-            with self.subTest(key=key):
+            if key == "sourceCommitSHA" and value == "0" * 40:
+                changed["buildIdentifier"] = "Capture Build V14-000000000000"
+            with self.subTest(key=key, value=value[:8]):
                 with self.assertRaises(manifest.RetainedInstallManifestError):
                     manifest.build_manifest(changed)
 
