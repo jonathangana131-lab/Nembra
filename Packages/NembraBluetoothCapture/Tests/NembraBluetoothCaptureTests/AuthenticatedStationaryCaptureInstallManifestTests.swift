@@ -35,15 +35,18 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
 
     private func wire(
         sourceCommitSHA: String? = nil,
+        bundleIdentifier: String? = nil,
+        buildIdentifier: String? = nil,
         retainedIPASHA256: String? = nil
     ) -> TestWire {
-        TestWire(
+        let sourceCommitSHA = sourceCommitSHA ?? self.sourceCommitSHA
+        return TestWire(
             schema: Verifier.schema,
             version: Verifier.schemaVersion,
             procedureID: AuthenticatedStationaryCaptureFieldAuthorizationVerifier.procedureID,
-            sourceCommitSHA: sourceCommitSHA ?? self.sourceCommitSHA,
-            bundleIdentifier: "com.nembra.capture",
-            buildIdentifier: "capture-v14-0123456789ab",
+            sourceCommitSHA: sourceCommitSHA,
+            bundleIdentifier: bundleIdentifier ?? Verifier.requiredBundleIdentifier,
+            buildIdentifier: buildIdentifier ?? "Capture Build V14-\(sourceCommitSHA.prefix(12))",
             buildInstanceID: buildInstanceID,
             retainedIPASHA256: retainedIPASHA256 ?? String(repeating: "1", count: 64),
             executableSHA256: executableSHA256,
@@ -63,15 +66,15 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
         return try encoder.encode(wire)
     }
 
-    @Test("canonical manifest binds the retained install candidate and authorization inputs")
+    @Test("canonical manifest binds the retained install candidate and current app identity")
     func canonicalManifestBindsExactInputs() throws {
         let data = try canonicalData(wire())
         let manifest = try Verifier.decodeCanonical(data)
 
         #expect(manifest.procedureID == AuthenticatedStationaryCaptureFieldAuthorizationVerifier.procedureID)
         #expect(manifest.sourceCommitSHA == sourceCommitSHA)
-        #expect(manifest.bundleIdentifier == "com.nembra.capture")
-        #expect(manifest.buildIdentifier == "capture-v14-0123456789ab")
+        #expect(manifest.bundleIdentifier == "com.jonathangana131.nembra.capturelearn")
+        #expect(manifest.buildIdentifier == "Capture Build V14-0123456789ab")
         #expect(manifest.buildInstanceID == buildInstanceID)
         #expect(manifest.retainedIPASHA256 == String(repeating: "1", count: 64))
         #expect(manifest.authorizationEnvelopeSHA256 == String(repeating: "7", count: 64))
@@ -91,7 +94,7 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
         let identity = try PassiveBluetoothCaptureRuntimeBuildIdentityReader.resolveEmbeddedMetadata(
             infoDictionary: [
                 PassiveBluetoothCaptureRuntimeBuildIdentityReader.buildIdentifierInfoDictionaryKey:
-                    "capture-v14-0123456789ab",
+                    "Capture Build V14-0123456789ab",
                 PassiveBluetoothCaptureRuntimeBuildIdentityReader.buildInstanceIDInfoDictionaryKey:
                     buildInstanceID,
                 PassiveBluetoothCaptureRuntimeBuildIdentityReader.sourceCommitSHAInfoDictionaryKey:
@@ -102,6 +105,33 @@ struct AuthenticatedStationaryCaptureInstallManifestTests {
         )
 
         #expect(manifest.matches(runtimeBuildIdentity: identity))
+    }
+
+    @Test("wrong bundle and stale build labels cannot enter the manifest authority graph")
+    func rejectsWrongCurrentAppIdentity() throws {
+        #expect(throws: ManifestError.invalidBundleIdentifier) {
+            try Verifier.decodeCanonical(canonicalData(
+                wire(bundleIdentifier: "com.nembra.capture")
+            ))
+        }
+        #expect(throws: ManifestError.invalidBuildIdentifier) {
+            try Verifier.decodeCanonical(canonicalData(
+                wire(buildIdentifier: "capture-v14-0123456789ab")
+            ))
+        }
+        #expect(throws: ManifestError.invalidBuildIdentifier) {
+            try Verifier.decodeCanonical(canonicalData(
+                wire(buildIdentifier: "Capture Build V14-deadbeefdead")
+            ))
+        }
+    }
+
+    @Test("build label must follow the manifest source commit rather than a caller-selected SHA")
+    func buildIdentifierTracksSourceCommit() throws {
+        let otherSource = "fedcba9876543210fedcba9876543210fedcba98"
+        let manifest = try Verifier.decodeCanonical(canonicalData(wire(sourceCommitSHA: otherSource)))
+        #expect(manifest.sourceCommitSHA == otherSource)
+        #expect(manifest.buildIdentifier == "Capture Build V14-fedcba987654")
     }
 
     @Test("non-canonical bytes cannot acquire a retained manifest identity")
