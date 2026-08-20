@@ -20,12 +20,13 @@ SPEC.loader.exec_module(manifest)
 
 class RetainedInstallManifestTests(unittest.TestCase):
     def setUp(self) -> None:
+        self.source_sha = "1" * 40
         self.bindings = {
             "procedureID": manifest.PROCEDURE_ID,
-            "sourceCommitSHA": "1" * 40,
-            "bundleIdentifier": "com.jonathangana131.nembra.capturelearn",
-            "buildIdentifier": "Capture Build test",
-            "buildInstanceID": "12345678-1234-abcd-8def-123456789abc",
+            "sourceCommitSHA": self.source_sha,
+            "bundleIdentifier": manifest.BUNDLE_IDENTIFIER,
+            "buildIdentifier": f"Capture Build V14-{self.source_sha[:12]}",
+            "buildInstanceID": "12345678-1234-4abc-8def-123456789abc",
             "retainedIPASHA256": "2" * 64,
             "executableSHA256": "3" * 64,
             "infoPlistSHA256": "4" * 64,
@@ -53,9 +54,13 @@ class RetainedInstallManifestTests(unittest.TestCase):
         source = PACKAGE_VERIFIER.read_text(encoding="utf-8")
         self.assertIn(f'public static let schema = "{manifest.SCHEMA}"', source)
         self.assertIn(
+            f'public static let bundleIdentifier = "{manifest.BUNDLE_IDENTIFIER}"', source
+        )
+        self.assertIn(
             f"public static let maximumManifestByteCount = {manifest.MAX_MANIFEST_BYTES:,}".replace(",", "_"),
             source,
         )
+        self.assertIn('"Capture Build V14-\\(wire.sourceCommitSHA.prefix(12))"', source)
         for key in ("retainedIPASHA256", *manifest.DIGEST_KEYS[1:]):
             self.assertIn(f'"{key}"', source)
         self.assertNotIn('"signedInstallableSHA256"', source)
@@ -68,12 +73,13 @@ class RetainedInstallManifestTests(unittest.TestCase):
                 changed[key] = "wrong-procedure"
             elif key == "sourceCommitSHA":
                 changed[key] = "b" * 40
+                changed["buildIdentifier"] = "Capture Build V14-bbbbbbbbbbbb"
             elif key == "bundleIdentifier":
                 changed[key] = "com.example.wrong"
             elif key == "buildIdentifier":
-                changed[key] = "Other Build"
+                changed[key] = "Capture Build V14-deadbeefdead"
             elif key == "buildInstanceID":
-                changed[key] = "87654321-4321-abcd-8def-123456789abc"
+                changed[key] = "87654321-4321-4abc-8def-123456789abc"
             else:
                 changed[key] = "b" * 64
             with self.subTest(key=key):
@@ -98,27 +104,37 @@ class RetainedInstallManifestTests(unittest.TestCase):
         with self.assertRaises(manifest.RetainedInstallManifestError):
             manifest.verify_manifest_bytes(data + b"\n")
 
-    def test_malformed_identity_is_rejected_but_wire_does_not_invent_stricter_semantics(self) -> None:
-        for key, value in (
+    def test_python_rejects_every_identity_the_swift_verifier_rejects(self) -> None:
+        invalid = (
             ("sourceCommitSHA", "A" * 40),
-            ("buildInstanceID", "12345678-1234-zzzz-8def-123456789abc"),
+            ("sourceCommitSHA", "0" * 40),
+            ("bundleIdentifier", "com.example.wrong"),
+            ("buildIdentifier", "Capture Build test"),
+            ("buildIdentifier", "Capture Build V14-deadbeefdead"),
+            ("buildInstanceID", "12345678-1234-abcd-8def-123456789abc"),
+            ("buildInstanceID", "12345678-1234-1abc-8def-123456789abc"),
+            ("buildInstanceID", "12345678-1234-4abc-1def-123456789abc"),
             ("retainedIPASHA256", "A" * 64),
+            ("retainedIPASHA256", "0" * 64),
             ("authorizationEnvelopeSHA256", "A" * 64),
-            ("bundleIdentifier", "com.example bad"),
-        ):
+            ("authorizationEnvelopeSHA256", "0" * 64),
+        )
+        for key, value in invalid:
             changed = dict(self.bindings)
             changed[key] = value
-            with self.subTest(key=key):
+            with self.subTest(key=key, value=value):
                 with self.assertRaises(manifest.RetainedInstallManifestError):
                     manifest.build_manifest(changed)
 
-        zero_digest = dict(self.bindings)
-        zero_digest["retainedIPASHA256"] = "0" * 64
-        manifest.verify_manifest_bytes(manifest.build_manifest(zero_digest))
-
-        generic_instance = dict(self.bindings)
-        generic_instance["buildInstanceID"] = "12345678-90ab-cdef-1234-567890abcdef"
-        manifest.verify_manifest_bytes(manifest.build_manifest(generic_instance))
+    def test_build_identifier_is_derived_from_source_commit(self) -> None:
+        changed = dict(self.bindings)
+        changed["sourceCommitSHA"] = "b" * 40
+        changed["buildIdentifier"] = "Capture Build V14-bbbbbbbbbbbb"
+        data = manifest.build_manifest(changed)
+        self.assertEqual(
+            manifest.verify_manifest_bytes(data)["buildIdentifier"],
+            "Capture Build V14-bbbbbbbbbbbb",
+        )
 
     def test_cli_validation_never_reports_install_or_physical_authority(self) -> None:
         with tempfile.TemporaryDirectory() as name:
