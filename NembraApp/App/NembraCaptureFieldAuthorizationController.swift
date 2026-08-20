@@ -19,27 +19,13 @@ final class NembraCaptureFieldAuthorizationController {
     }
 
     private let session: AuthenticatedStationaryCaptureAppSession
-    private let transferDirectoryPreparationError: (any Error)?
 
     init() {
         self.session = AuthenticatedStationaryCaptureAppSession()
-        do {
-            // The external appDataContainer transport cannot place the first retained manifest into
-            // a directory that does not yet exist. Prepare only that owner-controlled directory at
-            // app-controller construction time; this creates no subject, challenge, or authority.
-            try AuthenticatedStationaryCaptureSignerRendezvousOutbox()
-                .prepareAuthorizationTransferDirectory()
-            self.transferDirectoryPreparationError = nil
-        } catch {
-            // Preserve the exact bootstrap failure for the first handoff advance. Do not silently
-            // fall back to another path or let OFF1 proceed around failed filesystem custody.
-            self.transferDirectoryPreparationError = error
-        }
     }
 
     init(session: AuthenticatedStationaryCaptureAppSession) {
         self.session = session
-        self.transferDirectoryPreparationError = nil
     }
 
     var stage: AuthenticatedStationaryCaptureAppSession.Stage { session.stage }
@@ -115,18 +101,23 @@ final class NembraCaptureFieldAuthorizationController {
     /// not authority. Any present-but-invalid/custody-violating manifest or envelope is propagated
     /// to the caller; verification code remains responsible for terminal revocation where required.
     ///
-    /// This seam is intentionally idempotent while waiting: the manifest is consumed exactly once,
-    /// then only an envelope can advance the session. It never retries a rejected envelope against
-    /// the same challenge and never resets a revoked session.
+    /// This seam is intentionally idempotent while waiting: an idle authoritative handoff first
+    /// provisions the exact owner-controlled directory external `appDataContainer` transport may
+    /// target, the manifest is consumed exactly once, then only an envelope can advance the session.
+    /// It never retries a rejected envelope against the same challenge and never resets a revoked
+    /// session. Directory preparation failure is terminal for this controller lifetime.
     @discardableResult
     func advanceInboxHandoffIfAvailable() throws -> HandoffProgress {
-        if let transferDirectoryPreparationError {
-            session.revoke()
-            throw transferDirectoryPreparationError
-        }
-
         switch session.stage {
         case .idle:
+            do {
+                try AuthenticatedStationaryCaptureSignerRendezvousOutbox()
+                    .prepareAuthorizationTransferDirectory()
+            } catch {
+                session.revoke()
+                throw error
+            }
+
             do {
                 _ = try prepareSignerRendezvousDocumentFromInbox()
                 return .waitingForEnvelope
