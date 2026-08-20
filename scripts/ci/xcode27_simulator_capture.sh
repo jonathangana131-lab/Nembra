@@ -186,10 +186,10 @@ if cmp -s "$LIGHT_SCREENSHOT" "$DARK_SCREENSHOT"; then
   echo "Dark-mode evidence is invalid: connected-stopped light and dark captures are byte-identical." >&2
   exit 9
 fi
-python3 scripts/ci/verify_screenshot_appearance.py \
-  --light "$LIGHT_SCREENSHOT" \
-  --dark "$DARK_SCREENSHOT" \
-  --log "$ARTIFACTS_DIR/logs/rendered-appearance.txt"
+swift scripts/ci/verify_screenshot_appearance.swift \
+  "$LIGHT_SCREENSHOT" \
+  "$DARK_SCREENSHOT" \
+  | tee "$ARTIFACTS_DIR/logs/rendered-appearance.txt"
 
 printf '%s\n' "Captured screenshots:" > "$ARTIFACTS_DIR/screenshots.txt"
 find "$ARTIFACTS_DIR/screenshots" -type f -name '*.png' -print | sort >> "$ARTIFACTS_DIR/screenshots.txt"
