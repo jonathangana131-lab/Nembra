@@ -1,0 +1,222 @@
+CAPTURE_AUTHORITY_V4_DIAGNOSTIC
+seed=1d92a402e9284d7e78e8ca680c001fa49178ab8a
+physicalAuthorityCreated=false
+lifecycle=1 session=0 app_wiring=1 inbox=1 artifact_freeze=0
+
+===== lifecycle =====
+..F.........
+======================================================================
+FAIL: test_capability_seals_only_after_exact_accepted_bytes_are_frozen_and_verified (__main__.AppAuthorizationLifecycleWiringTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/runner/work/Nembra/Nembra/scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py", line 157, in test_capability_seals_only_after_exact_accepted_bytes_are_frozen_and_verified
+    self.assert_fail_closed_near(section, "sealAfterAcceptedArtifactFreeze()")
+  File "/Users/runner/work/Nembra/Nembra/scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py", line 27, in assert_fail_closed_near
+    self.assertTrue(
+AssertionError: False is not true : sealAfterAcceptedArtifactFreeze() is not surrounded by fail-closed lifecycle handling
+
+----------------------------------------------------------------------
+Ran 12 tests in 0.002s
+
+FAILED (failures=1)
+
+===== session =====
+Building for debugging...
+[Constructing description]
+[Planning deferred tasks]
+[32 / 106] NembraCaptureAppAuthorization
+[50 / 106]
+[51 / 107] NembraCore
+[58 / 146]
+[61 / 146]
+[63 / 146]
+[68 / 146]
+[70 / 146]
+[74 / 146]
+[76 / 146]
+[79 / 146]
+[82 / 146]
+[84 / 146]
+[85 / 146]
+[89 / 146] NembraCore
+[97 / 147]
+[100 / 185]
+[104 / 185]
+[108 / 185]
+[111 / 185]
+[113 / 185]
+[117 / 185]
+[120 / 185]
+[122 / 185]
+[124 / 185]
+[125 / 185]
+[128 / 185]
+[130 / 185]
+[134 / 185] NembraBluetoothCapture
+[135 / 185] NembraCore
+[138 / 185] NembraCore
+[139 / 185] NembraBluetoothCapture
+[146 / 186] NembraCore
+[147 / 190] NembraCore-product
+[149 / 190] NembraCaptureAppAuthorization
+[156 / 190] NembraCaptureAppAuthorization
+[159 / 190] NembraBluetoothCapture
+[161 / 190]
+[170 / 192] NembraCaptureAppAuthorizationTests-product
+[171 / 198] NembraBluetoothCaptureTests-product
+[172 / 210]
+[176 / 210] NembraCaptureAppAuthorizationTests-product
+[179 / 210] NembraCaptureAppAuthorizationTests-product
+[183 / 210] NembraCaptureAppAuthorizationTests-product
+[185 / 210] NembraCaptureAppAuthorizationTests-product
+[188 / 210] NembraBluetoothCaptureTests-product
+[193 / 210] NembraBluetoothCaptureTests-product
+[195 / 210] NembraBluetoothCaptureTests-product
+[197 / 210] NembraBluetoothCaptureTests-product
+[198 / 210] NembraBluetoothCaptureTests-product
+[199 / 210] NembraBluetoothCaptureTests-product
+[200 / 210] NembraBluetoothCaptureTests-product
+[200 / 210] AllIncludingTests
+[201 / 210] AllIncludingTests
+[204 / 210] NembraBluetoothCaptureTests-product
+[206 / 210] NembraBluetoothCaptureTests-product
+[208 / 210] NembraBluetoothCaptureTests-product
+Build complete! (69.81 sec)
+◇ Test run started.
+↳ Testing Library Version: 2074
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Authenticated stationary Capture app session" started.
+◇ Test "unfinished session revocation is terminal and idempotent" started.
+◇ Test "session source keeps prepared bytes and opaque capability private" started.
+◇ Test "every post-authorization gate failure synchronizes the outer session to revoked" started.
+◇ Test "signer rendezvous exposes no raw manifest or capability" started.
+◇ Test "ordered authority transitions fail closed before authorization" started.
+✔ Test "unfinished session revocation is terminal and idempotent" passed after 0.004 seconds.
+✔ Test "every post-authorization gate failure synchronizes the outer session to revoked" passed after 0.004 seconds.
+✔ Test "session source keeps prepared bytes and opaque capability private" passed after 0.004 seconds.
+✔ Test "ordered authority transitions fail closed before authorization" passed after 0.004 seconds.
+✔ Test "signer rendezvous exposes no raw manifest or capability" passed after 0.004 seconds.
+✔ Suite "Authenticated stationary Capture app session" passed after 0.004 seconds.
+✔ Test run with 5 tests in 1 suite passed after 0.004 seconds.
+
+===== app-wiring =====
+Building for debugging...
+[Using on-disk description]
+[1 / 4] NembraCore
+Build complete! (0.47 sec)
+◇ Test run started.
+↳ Testing Library Version: 2074
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Capture authenticated field-capability app wiring" started.
+◇ Test "authority admissions cannot be silently skipped by optional chaining" started.
+◇ Test "a consumed one-OFF1 authorization cannot silently power an in-process retry" started.
+◇ Test "unfinished authority is revoked on foreground and view abandonment" started.
+◇ Test "accepted authorization seals only after exact immutable artifact bytes are frozen and verified" started.
+◇ Test "standalone target compiles the app authorization coordinator" started.
+◇ Test "real SecureLink controller owns one app authorization coordinator" started.
+◇ Test "authentication and official SDK connection both consume ordered session admissions" started.
+◇ Test "OFF1 cannot begin until the app authorization session admits its one allowed start" started.
+◇ Test "failed transition preserves only a fresh unspent authorization" started.
+◇ Test "authenticated transport cannot become observation before session admission" started.
+✘ Test "accepted authorization seals only after exact immutable artifact bytes are frozen and verified" recorded an issue at TuyaAuthenticatedFieldCapabilityAppWiringSourceTests.swift:132:9: Expectation failed: hasFailClosedAuthorizationHandling(around: capabilitySeal.lowerBound, in: section)
+↳ hasFailClosedAuthorizationHandling(around: capabilitySeal.lowerBound, in: section) → false
+↳   capabilitySeal.lowerBound → ()
+↳   section → 15279[utf8]
+↳     _rawBits → 1001324807
+✔ Test "a consumed one-OFF1 authorization cannot silently power an in-process retry" passed after 0.012 seconds.
+✔ Test "unfinished authority is revoked on foreground and view abandonment" passed after 0.013 seconds.
+✔ Test "standalone target compiles the app authorization coordinator" passed after 0.012 seconds.
+✔ Test "real SecureLink controller owns one app authorization coordinator" passed after 0.013 seconds.
+✘ Test "accepted authorization seals only after exact immutable artifact bytes are frozen and verified" failed after 0.013 seconds with 1 issue.
+✔ Test "OFF1 cannot begin until the app authorization session admits its one allowed start" passed after 0.013 seconds.
+✔ Test "failed transition preserves only a fresh unspent authorization" passed after 0.013 seconds.
+✔ Test "authentication and official SDK connection both consume ordered session admissions" passed after 0.013 seconds.
+✔ Test "authenticated transport cannot become observation before session admission" passed after 0.015 seconds.
+✔ Test "authority admissions cannot be silently skipped by optional chaining" passed after 0.030 seconds.
+✘ Suite "Capture authenticated field-capability app wiring" failed after 0.030 seconds with 1 issue.
+↳ /// The type name deliberately carries the existing V16 exact-head filter so these app-wiring
+↳ /// requirements cannot remain dormant while the standalone product advances.
+✘ Test run with 10 tests in 1 suite failed after 0.031 seconds with 1 issue.
+Note: Some test targets reported failures:
+  - NembraBluetoothCaptureTests (Swift Testing)
+
+===== inbox =====
+Building for debugging...
+[Using on-disk description]
+Build complete! (0.40 sec)
+◇ Test run started.
+↳ Testing Library Version: 2074
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Capture authorization inbox app adapter" started.
+◇ Test "polling seam waits only for truly absent next files and never treats presence as authority" started.
+◇ Test "rejected authorization envelope is terminal while exact absence remains retryable" started.
+◇ Test "standalone target actually compiles the inbox-bound adapter" started.
+◇ Test "standalone adapter only prepares and authorizes through package custody primitives" started.
+◇ Test "rejected retained manifest is terminal while exact absence remains retryable" started.
+✔ Test "standalone target actually compiles the inbox-bound adapter" passed after 0.001 seconds.
+✔ Test "rejected authorization envelope is terminal while exact absence remains retryable" passed after 0.001 seconds.
+✔ Test "rejected retained manifest is terminal while exact absence remains retryable" passed after 0.001 seconds.
+✘ Test "polling seam waits only for truly absent next files and never treats presence as authority" recorded an issue at TuyaAuthenticatedFieldAuthorizationInboxAppAdapterSourceTests.swift:136:9: Expectation failed: !section.contains("return .armed\n            } catch")
+↳ !section.contains("return .armed\n            } catch") → true
+↳   section.contains("return .armed\n            } catch") → false
+↳     section → "func advanceInboxHandoffIfAvailable() throws -> HandoffProgress {
+              switch session.stage {
+              case .idle:
+                  do {
+                      _ = try prepareSignerRendezvousDocumentFromInbox()
+                      return .waitingForEnvelope
+                  } catch AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(let subject)
+                      where subject == AuthenticatedStationaryCaptureAuthorizationInbox.installManifestFilename {
+                      return .waitingForManifest
+                  }
+      
+              case .awaitingEnvelope:
+                  do {
+                      try authorizeFromInbox()
+                      return .armed
+                  } catch AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(let subject)
+                      where subject == AuthenticatedStationaryCaptureAuthorizationInbox.authorizationEnvelopeFilename {
+                      return .waitingForEnvelope
+                  }
+      
+              case .armed:
+                  return .armed
+      
+              case .off1Started, .authenticationAdmitted, .officialConnectionAdmitted, .observationAdmitted:
+                  return .lifecycleInProgress
+      
+              case .sealed:
+                  return .sealed
+      
+              case .revoked:
+                  return .revoked
+              }
+          }
+      
+          "
+↳     "return .armed\n            } catch" → "return .armed
+                  } catch"
+✘ Test "polling seam waits only for truly absent next files and never treats presence as authority" failed after 0.002 seconds with 1 issue.
+✔ Test "standalone adapter only prepares and authorizes through package custody primitives" passed after 0.002 seconds.
+✘ Suite "Capture authorization inbox app adapter" failed after 0.003 seconds with 1 issue.
+↳ /// Keep the one-shot app-container custody boundary on the V16 exact-head source-test surface.
+✘ Test run with 5 tests in 1 suite failed after 0.003 seconds with 1 issue.
+Note: Some test targets reported failures:
+  - NembraBluetoothCaptureTests (Swift Testing)
+
+===== artifact-freeze =====
+Building for debugging...
+[Computing dependencies]
+Build complete! (0.40 sec)
+◇ Test run started.
+↳ Testing Library Version: 2074
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite "Capture field-capability accepted-artifact freeze ordering" started.
+◇ Test "opaque capability seals only after immutable accepted bytes are frozen and verified" started.
+◇ Test "failed authorization seal cannot leave accepted-looking artifact bytes published" started.
+◇ Test "a consumed one-OFF1 authorization cannot silently power an in-process retry" started.
+✔ Test "a consumed one-OFF1 authorization cannot silently power an in-process retry" passed after 0.003 seconds.
+✔ Test "opaque capability seals only after immutable accepted bytes are frozen and verified" passed after 0.006 seconds.
+✔ Test "failed authorization seal cannot leave accepted-looking artifact bytes published" passed after 0.011 seconds.
+✔ Suite "Capture field-capability accepted-artifact freeze ordering" passed after 0.011 seconds.
+✔ Test run with 3 tests in 1 suite passed after 0.011 seconds.
