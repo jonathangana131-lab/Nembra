@@ -1,0 +1,98 @@
+name: Capture Field Authorization Exact-Head
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - main
+      - product/capture-1-0-main-20260818
+    paths:
+      - 'NembraApp/App/NembraCaptureEntrypoint.swift'
+      - 'NembraApp/App/NembraCaptureFieldAuthorizationController.swift'
+      - 'Packages/NembraBluetoothCapture/Sources/NembraCaptureAppAuthorization/**'
+      - 'Packages/NembraBluetoothCapture/Sources/NembraBluetoothCapture/AuthenticatedStationaryCaptureFieldAuthorization.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraCaptureAppAuthorizationTests/**'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedFieldCapability*'
+      - 'scripts/ci/es80_*field_authorization*'
+      - 'scripts/ci/tests/test_es80_*field_authorization*'
+      - 'scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py'
+      - '.github/workflows/capture-field-authorization-exact-head.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-field-authorization-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exact-head:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - name: Checkout immutable PR head
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Checkout dispatched ref
+        if: github.event_name != 'pull_request'
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          if [[ "${{ github.event_name }}" == 'pull_request' ]]; then
+            test "$actual" = "${{ github.event.pull_request.head.sha }}"
+          fi
+          printf 'NEMBRA_CAPTURE_FIELD_AUTHORIZATION_SUBJECT=%s physicalAuthorityCreated=false\n' "$actual"
+
+      - name: Run package authorization and exact-freeze contracts
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          swift test --filter AuthenticatedStationaryCaptureCapabilityGateTests
+          swift test --filter AuthenticatedStationaryCaptureAppAuthorizerTests
+          swift test --filter AuthenticatedStationaryCaptureAppAuthorizerPreSigningTests
+          swift test --filter AuthenticatedStationaryCaptureAppSessionTests
+          swift test --filter AuthenticatedStationaryCaptureAuthorizationInboxTests
+          swift test --filter AuthenticatedStationaryCaptureSignerRendezvousDocumentTests
+          swift test --filter AuthenticatedStationaryCaptureSignerRendezvousOutboxTests
+          swift test --filter AuthenticatedStationaryCaptureAuthoritySurfaceSourceTests
+          swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
+          swift test --filter TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
+
+      - name: Run frozen signer custody contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_sign_field_authorization_execution_custody.py
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_sign_field_authorization_from_rendezvous.py
+          test ! -e LocalSecrets
+          printf '%s\n' 'Signer custody tests exercised only public fixtures; no private key, signed private IPA, device install, or physical GO was created.'
+
+      - name: Build standalone Capture with field authority still disabled
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(grep -Fc 'isAuthoritativeFieldBuild = true' NembraApp/App/NembraCaptureEntrypoint.swift)" = 0
+          xcodebuild -version
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "${RUNNER_TEMP}/NembraCaptureFieldAuthorizationExactHead" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
