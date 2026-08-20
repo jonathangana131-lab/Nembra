@@ -1,9 +1,10 @@
 name: Cockpit compact Energy Rail legend bounds one-shot
 
 on:
-  push:
+  pull_request:
+    types: [synchronize]
     branches:
-      - product/cockpit-energy-rail-mainline-20260820
+      - main
     paths:
       - .github/workflows/cockpit-legend-bounds-once.yml
 
@@ -12,11 +13,13 @@ permissions:
 
 jobs:
   materialize:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'product/cockpit-energy-rail-mainline-20260820'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       TARGET_BRANCH: product/cockpit-energy-rail-mainline-20260820
-      EXPECTED_PARENT: 6f54cf8f676ee5597d56262847d107c173a5dccf
+      EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
+      EXPECTED_PARENT: a2f5e96cf9b93f377befd7337ecdd9bc72d663ab
       SELF_WORKFLOW: .github/workflows/cockpit-legend-bounds-once.yml
       INSTRUMENT_SOURCE: NembraApp/Features/Dashboard/SpeedInstrumentModel.swift
       APP_TESTS: NembraAppTests/NembraAppTests.swift
@@ -34,7 +37,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git branch --show-current)" = "$TARGET_BRANCH"
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$EVENT_HEAD"
           test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
           test "$(git diff --name-only "$EXPECTED_PARENT"...HEAD)" = "$SELF_WORKFLOW"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
@@ -215,7 +218,7 @@ jobs:
         run: |
           set -euo pipefail
           git fetch origin "$TARGET_BRANCH"
-          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse FETCH_HEAD)" = "$EVENT_HEAD"
           git rm -- "$SELF_WORKFLOW"
           git add -- "$INSTRUMENT_SOURCE" "$APP_TESTS"
           git diff --cached --check
@@ -223,5 +226,5 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'fix(cockpit): bound compact Energy Rail legends'
           git fetch origin "$TARGET_BRANCH"
-          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse FETCH_HEAD)" = "$EVENT_HEAD"
           git push origin HEAD:"$TARGET_BRANCH"
