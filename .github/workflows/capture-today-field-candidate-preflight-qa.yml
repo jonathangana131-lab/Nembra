@@ -13,6 +13,8 @@ on:
       - scripts/ci/tests/test_es80_private_field_runbook_production_entry.py
       - scripts/ci/es80_today_private_device_input.py
       - scripts/ci/tests/test_es80_today_private_device_input.py
+      - scripts/ci/es80_authenticated_stationary_install_manifest.py
+      - scripts/ci/tests/test_es80_authenticated_stationary_install_manifest.py
       - docs/ES80_TODAY_SIGNED_FIELD_CANDIDATE_PRODUCTION.md
       - docs/ES80_TODAY_PRIVATE_DEVICE_INPUT_CUSTODY.md
       - docs/ES80_TODAY_PRIVATE_FIELD_RUNBOOK.md
@@ -42,7 +44,7 @@ jobs:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
 
-      - name: Compile preflight, private-input helper, and focused tests
+      - name: Compile preflight, install-manifest contract, private-input helper, and focused tests
         run: |
           set -euo pipefail
           python3 -m py_compile \
@@ -54,11 +56,15 @@ jobs:
             scripts/ci/tests/test_es80_export_options_coherence.py \
             scripts/ci/tests/test_es80_private_field_runbook_production_entry.py \
             scripts/ci/es80_today_private_device_input.py \
-            scripts/ci/tests/test_es80_today_private_device_input.py
+            scripts/ci/tests/test_es80_today_private_device_input.py \
+            scripts/ci/es80_authenticated_stationary_install_manifest.py \
+            scripts/ci/tests/test_es80_authenticated_stationary_install_manifest.py
 
-      - name: Run focused preflight and handoff regressions
+      - name: Run focused preflight, install-manifest, and handoff regressions
         run: |
           set -euo pipefail
+          python3 scripts/ci/es80_authenticated_stationary_install_manifest.py --self-test
+          python3 scripts/ci/tests/test_es80_authenticated_stationary_install_manifest.py -v
           python3 scripts/ci/tests/test_es80_today_field_candidate_preflight.py -v
           python3 scripts/ci/tests/test_es80_today_field_candidate_developer_dir_handoff.py -v
           python3 scripts/ci/tests/test_es80_today_field_source_scope.py -v
