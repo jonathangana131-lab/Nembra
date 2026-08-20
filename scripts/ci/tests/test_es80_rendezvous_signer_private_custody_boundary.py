@@ -16,41 +16,47 @@ class RendezvousSignerPrivateCustodyBoundaryTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.wrapper = WRAPPER.read_text(encoding="utf-8")
 
-    def test_mutable_wrapper_self_identifies_as_nonproduction(self) -> None:
-        # Until this wrapper is executed from independently accepted immutable helper/signer bytes,
-        # handing a production private-key path to its checkout-selected signer is not accepted.
-        self.assertIn("CI/research orchestration only", self.wrapper)
-        self.assertIn("spec_from_file_location", self.wrapper)
-        self.assertIn('SIGNER = HERE / "es80_field_authorization_envelope.py"', self.wrapper)
-        self.assertIn("subprocess.run(build_signer_command", self.wrapper)
+    def test_wrapper_freezes_all_key_visible_python_sources_from_git_objects(self) -> None:
+        for required in (
+            "accepted_execution_bundle",
+            'GIT = Path("/usr/bin/git")',
+            'PYTHON = Path("/usr/bin/python3")',
+            '"GIT_NO_REPLACE_OBJECTS": "1"',
+            '"GIT_CONFIG_GLOBAL": "/dev/null"',
+            '"cat-file", "blob"',
+            "_git_blob_sha(blob) != blob_id",
+            "worktree != blob",
+            '"PYTHONNOUSERSITE": "1"',
+            '"PYTHONPATH": ""',
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, self.wrapper)
+        for source_name in (
+            "es80_sign_field_authorization_from_rendezvous.py",
+            "es80_field_authorization_rendezvous.py",
+            "es80_field_authorization_envelope.py",
+            "es80_signed_field_artifact_evidence.py",
+        ):
+            with self.subTest(source_name=source_name):
+                self.assertIn(source_name, self.wrapper)
+        self.assertNotIn("sys.executable,", self.wrapper)
+        self.assertNotIn("str(SIGNER)", self.wrapper)
 
-    def test_nonproduction_wrapper_is_not_a_field_or_private_signing_entrypoint(self) -> None:
+    def test_wrapper_is_still_not_promoted_by_unreviewed_production_surfaces(self) -> None:
+        # Exact source custody closes the mutable-code/private-key defect, but field/private runbooks
+        # stay conservative until trust-root review and the full app authority chain are accepted.
         wrapper_name = WRAPPER.name
         for surface in PRODUCTION_SURFACES:
             with self.subTest(surface=str(surface.relative_to(ROOT))):
                 text = surface.read_text(encoding="utf-8")
-                self.assertNotIn(
-                    wrapper_name,
-                    text,
-                    "Mutable rendezvous signing orchestration must not be promoted into a "
-                    "field/private-key entrypoint before independently accepted source custody.",
-                )
+                self.assertNotIn(wrapper_name, text)
 
     def test_wrapper_does_not_duplicate_stable_signing_subjects_from_cli(self) -> None:
-        # Stable source/build/evidence/device facts remain owned by the accepted signed-evidence
-        # subject. The wrapper is allowed to supply only live-attempt chronology + challenge and
-        # explicit custody paths to the existing signer.
         for forbidden in (
-            "--bundle-identifier",
-            "--source-commit-sha",
-            "--build-identifier",
-            "--build-instance-id",
-            "--executable-sha256",
-            "--info-plist-sha256",
-            "--tuya-dependency-lock-sha256",
-            "--external-build-record-sha256",
-            "--signed-build-evidence-sha256",
-            "--final-go-record-sha256",
+            "--bundle-identifier", "--source-commit-sha", "--build-identifier",
+            "--build-instance-id", "--executable-sha256", "--info-plist-sha256",
+            "--tuya-dependency-lock-sha256", "--external-build-record-sha256",
+            "--signed-build-evidence-sha256", "--final-go-record-sha256",
             "--intended-device-pseudonym-sha256",
         ):
             with self.subTest(forbidden=forbidden):
@@ -65,12 +71,7 @@ class RendezvousSignerPrivateCustodyBoundaryTests(unittest.TestCase):
             "AuthenticatedStationaryCaptureSignerRendezvousOutboxTests",
         ):
             with self.subTest(required_filter=required_filter):
-                self.assertIn(
-                    f"swift test --filter {required_filter}",
-                    workflow,
-                    "Exact-head V16 acceptance must visibly exercise the app-container "
-                    "authorization/rendezvous boundary, not rely on incidental test-target compilation.",
-                )
+                self.assertIn(f"swift test --filter {required_filter}", workflow)
 
 
 if __name__ == "__main__":
