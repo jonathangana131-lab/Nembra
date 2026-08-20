@@ -310,7 +310,7 @@ struct RidePeakPowerEvidenceTests {
         #expect(object["vehicleIdentityKey"] != nil)
     }
 
-    @Test("verified durable round trip requires package-sealed restore against trusted scope")
+    @Test("verified durable bytes restore only through package-sealed trusted ride and scope")
     func verifiedCheckpointRoundTrip() throws {
         let ride = try completedRide()
         let scope = try physicalScope(mode: "sport")
@@ -323,29 +323,43 @@ struct RidePeakPowerEvidenceTests {
         let checkpoint = try CompletedRidePeakPowerCheckpoint.verifiedVehicleMeasurements(
             from: original
         )
-        let decoded = try JSONDecoder().decode(
-            CompletedRidePeakPowerCheckpoint.self,
-            from: JSONEncoder().encode(checkpoint)
-        )
-        let restored = try decoded.restoredVerifiedVehicleMeasurement(
+        let persistedData = try JSONEncoder().encode(checkpoint)
+        let restored = try CompletedRidePeakPowerCheckpoint.restoreVerifiedVehicleMeasurement(
+            fromPersistedData: persistedData,
             completedRide: ride,
             expectedScope: scope
         )
         #expect(restored == original)
     }
 
-    @Test("public simulator restore cannot elevate forged verified checkpoint labels")
-    func forgedVerifiedCheckpointCannotUsePublicRestore() throws {
+    @Test("generic public decode cannot mint forged exact-scope verified authority")
+    func forgedVerifiedCheckpointCannotUsePublicDecode() throws {
         var fixture = StoredFixture()
-        fixture.vehicleIdentityKey = "forged-physical-id"
+        fixture.vehicleIdentityKey = "physical-es80-opaque-id"
+        fixture.confirmedModeKey = "sport"
         fixture.identityAuthority = ObservedPowerEnvelopeScopeAuthority.verifiedVehicleIdentity.rawValue
         fixture.evidenceAuthority = ObservedPowerEnvelopeEvidenceAuthority.verifiedVehicleMeasurement.rawValue
-        let checkpoint = try decodedCheckpoint(fixture)
+        fixture.powerWatts = 999
 
-        #expect(throws: CompletedRidePeakPowerEvidenceError.authorityMismatch) {
-            try checkpoint.restoredSimulatorQA(
-                completedRide: completedRide(),
-                expectedScope: simulatorScope()
+        #expect(throws: DecodingError.self) {
+            try decodedCheckpoint(fixture)
+        }
+    }
+
+    @Test("package-sealed verified persisted restore still requires exact trusted scope")
+    func verifiedPersistedRestoreRejectsScopeMismatch() throws {
+        let ride = try completedRide()
+        let scope = try physicalScope(mode: "sport")
+        let checkpoint = try CompletedRidePeakPowerCheckpoint.verifiedVehicleMeasurements(
+            from: completedPeak(ride: ride, scope: scope, watts: 575)
+        )
+        let persistedData = try JSONEncoder().encode(checkpoint)
+
+        #expect(throws: CompletedRidePeakPowerEvidenceError.scopeMismatch) {
+            try CompletedRidePeakPowerCheckpoint.restoreVerifiedVehicleMeasurement(
+                fromPersistedData: persistedData,
+                completedRide: ride,
+                expectedScope: physicalScope(mode: "eco")
             )
         }
     }

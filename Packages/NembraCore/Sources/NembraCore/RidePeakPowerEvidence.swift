@@ -104,10 +104,10 @@ public enum CompletedRidePeakPowerEvidenceError: Error, Equatable, Sendable {
 /// Trusted accepted peak-power evidence bound to one immutable completed ride.
 ///
 /// This value is intentionally **not Decodable**. Arbitrary durable bytes must
-/// first decode into `CompletedRidePeakPowerCheckpoint`, which is only a validated
-/// persisted representation. Converting a checkpoint back into verified-vehicle
-/// evidence requires an exact package-owned verified scope and package-sealed
-/// restore method; ordinary public decoding can never mint physical authority.
+/// first cross a checkpoint authority boundary. Public checkpoint decoding is
+/// deliberately Simulator-QA-only; verified durable bytes can cross back into
+/// physical authority only through package-owned restore code with an independently
+/// trusted exact ride and verified scope.
 ///
 /// Process-local receipt sequence and uptime are deliberately stripped before
 /// persistence. They are ordering evidence inside one acquisition process, and
@@ -298,11 +298,13 @@ public struct CompletedRidePeakPowerEvidence: Equatable, Sendable {
 
 /// Durable serialized representation of completed ride peak-power evidence.
 ///
-/// A decoded checkpoint is **not** trusted vehicle evidence. It may retain raw
-/// authority labels for validation/correlation, but those labels do not acquire
-/// domain authority by surviving Codable. Public clients can restore only
-/// Simulator-QA evidence. Restoring verified-vehicle evidence is package-sealed
-/// and requires an independently trusted exact verified scope.
+/// The public Codable surface is deliberately **Simulator-QA only**. Authority
+/// labels supplied by arbitrary decoded bytes cannot mint a verified checkpoint
+/// object. Verified durable bytes first decode into a private non-authoritative
+/// wire value and cross into trusted evidence only inside the package-owned
+/// restore operation, which also requires the exact trusted completed ride and
+/// verified scope. This is a compile-time/product authority boundary, not a
+/// cryptographic authenticity claim about storage bytes.
 public struct CompletedRidePeakPowerCheckpoint: Codable, Equatable, Sendable {
     public static let currentSchemaVersion = 1
 
@@ -338,6 +340,43 @@ public struct CompletedRidePeakPowerCheckpoint: Codable, Equatable, Sendable {
         case observationContinuity
     }
 
+    /// Non-authoritative persistence DTO. Decoding this value proves only that
+    /// bytes have the expected shape; it does not confer Simulator or physical
+    /// evidence authority by itself.
+    private struct StoredWire: Codable, Equatable, Sendable {
+        let schemaVersion: Int
+        let sessionID: UUID
+        let rideContinuity: RideSessionContinuity
+        let beganAfterKnownObservationGap: Bool
+        let vehicleIdentityKey: String
+        let confirmedModeKey: String?
+        let identityAuthority: String
+        let evidenceAuthority: String
+        let powerWatts: Double
+        let acceptedMeasurementCount: Int
+        let peakCandidateMeasurementCount: Int
+        let qualityRejectedMeasurementCount: Int
+        let knownInterruptionCount: Int
+        let observationContinuity: PeakPowerObservationContinuity
+
+        init(checkpoint: CompletedRidePeakPowerCheckpoint) {
+            schemaVersion = checkpoint.schemaVersion
+            sessionID = checkpoint.sessionID
+            rideContinuity = checkpoint.rideContinuity
+            beganAfterKnownObservationGap = checkpoint.beganAfterKnownObservationGap
+            vehicleIdentityKey = checkpoint.vehicleIdentityKey
+            confirmedModeKey = checkpoint.confirmedModeKey
+            identityAuthority = checkpoint.identityAuthority.rawValue
+            evidenceAuthority = checkpoint.evidenceAuthority.rawValue
+            powerWatts = checkpoint.powerWatts
+            acceptedMeasurementCount = checkpoint.acceptedMeasurementCount
+            peakCandidateMeasurementCount = checkpoint.peakCandidateMeasurementCount
+            qualityRejectedMeasurementCount = checkpoint.qualityRejectedMeasurementCount
+            knownInterruptionCount = checkpoint.knownInterruptionCount
+            observationContinuity = checkpoint.observationContinuity
+        }
+    }
+
     private init(
         evidence: CompletedRidePeakPowerEvidence,
         requiredScopeAuthority: ObservedPowerEnvelopeScopeAuthority,
@@ -364,6 +403,58 @@ public struct CompletedRidePeakPowerCheckpoint: Codable, Equatable, Sendable {
         observationContinuity = evidence.observationContinuity
     }
 
+    private init(
+        storedWire: StoredWire,
+        requiredScopeAuthority: ObservedPowerEnvelopeScopeAuthority,
+        requiredEvidenceAuthority: ObservedPowerEnvelopeEvidenceAuthority
+    ) throws {
+        guard storedWire.schemaVersion == Self.currentSchemaVersion else {
+            throw CompletedRidePeakPowerEvidenceError.unsupportedCheckpointSchema(storedWire.schemaVersion)
+        }
+        guard let identityAuthority = ObservedPowerEnvelopeScopeAuthority(
+            rawValue: storedWire.identityAuthority
+        ),
+        let evidenceAuthority = ObservedPowerEnvelopeEvidenceAuthority(
+            rawValue: storedWire.evidenceAuthority
+        ) else {
+            throw CompletedRidePeakPowerEvidenceError.invalidEvidence
+        }
+        guard identityAuthority == requiredScopeAuthority,
+              evidenceAuthority == requiredEvidenceAuthority else {
+            throw CompletedRidePeakPowerEvidenceError.authorityMismatch
+        }
+
+        try CompletedRidePeakPowerEvidence.validateFields(
+            rideContinuity: storedWire.rideContinuity,
+            beganAfterKnownObservationGap: storedWire.beganAfterKnownObservationGap,
+            vehicleIdentityKey: storedWire.vehicleIdentityKey,
+            confirmedModeKey: storedWire.confirmedModeKey,
+            identityAuthority: identityAuthority,
+            evidenceAuthority: evidenceAuthority,
+            powerWatts: storedWire.powerWatts,
+            acceptedMeasurementCount: storedWire.acceptedMeasurementCount,
+            peakCandidateMeasurementCount: storedWire.peakCandidateMeasurementCount,
+            qualityRejectedMeasurementCount: storedWire.qualityRejectedMeasurementCount,
+            knownInterruptionCount: storedWire.knownInterruptionCount,
+            observationContinuity: storedWire.observationContinuity
+        )
+
+        schemaVersion = storedWire.schemaVersion
+        sessionID = storedWire.sessionID
+        rideContinuity = storedWire.rideContinuity
+        beganAfterKnownObservationGap = storedWire.beganAfterKnownObservationGap
+        vehicleIdentityKey = storedWire.vehicleIdentityKey
+        confirmedModeKey = storedWire.confirmedModeKey
+        self.identityAuthority = identityAuthority
+        self.evidenceAuthority = evidenceAuthority
+        powerWatts = storedWire.powerWatts
+        acceptedMeasurementCount = storedWire.acceptedMeasurementCount
+        peakCandidateMeasurementCount = storedWire.peakCandidateMeasurementCount
+        qualityRejectedMeasurementCount = storedWire.qualityRejectedMeasurementCount
+        knownInterruptionCount = storedWire.knownInterruptionCount
+        observationContinuity = storedWire.observationContinuity
+    }
+
     public static func simulatorQA(
         from evidence: CompletedRidePeakPowerEvidence
     ) throws -> Self {
@@ -384,6 +475,26 @@ public struct CompletedRidePeakPowerCheckpoint: Codable, Equatable, Sendable {
             requiredEvidenceAuthority: .verifiedVehicleMeasurement
         )
     }
+
+    /// Trusted durable verified restore boundary. The input bytes first become a
+    /// non-authoritative wire value; verified authority is conferred only after
+    /// structural validation and exact independently trusted ride/scope checks.
+    package static func restoreVerifiedVehicleMeasurement(
+        fromPersistedData data: Data,
+        completedRide: CompletedRideEvidence,
+        expectedScope: ObservedPowerEnvelopeScope
+    ) throws -> CompletedRidePeakPowerEvidence {
+        let storedWire = try JSONDecoder().decode(StoredWire.self, from: data)
+        let checkpoint = try Self(
+            storedWire: storedWire,
+            requiredScopeAuthority: .verifiedVehicleIdentity,
+            requiredEvidenceAuthority: .verifiedVehicleMeasurement
+        )
+        return try checkpoint.restoredVerifiedVehicleMeasurement(
+            completedRide: completedRide,
+            expectedScope: expectedScope
+        )
+    }
     #else
     fileprivate static func verifiedVehicleMeasurements(
         from evidence: CompletedRidePeakPowerEvidence
@@ -397,100 +508,25 @@ public struct CompletedRidePeakPowerCheckpoint: Codable, Equatable, Sendable {
     #endif
 
     public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-
         do {
-            let schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
-            guard schemaVersion == Self.currentSchemaVersion else {
-                throw CompletedRidePeakPowerEvidenceError.unsupportedCheckpointSchema(schemaVersion)
-            }
-
-            let identityRaw = try container.decode(String.self, forKey: .identityAuthority)
-            let evidenceRaw = try container.decode(String.self, forKey: .evidenceAuthority)
-            guard let identityAuthority = ObservedPowerEnvelopeScopeAuthority(rawValue: identityRaw),
-                  let evidenceAuthority = ObservedPowerEnvelopeEvidenceAuthority(rawValue: evidenceRaw) else {
-                throw CompletedRidePeakPowerEvidenceError.invalidEvidence
-            }
-
-            let sessionID = try container.decode(UUID.self, forKey: .sessionID)
-            let rideContinuity = try container.decode(RideSessionContinuity.self, forKey: .rideContinuity)
-            let beganAfterKnownObservationGap = try container.decode(
-                Bool.self,
-                forKey: .beganAfterKnownObservationGap
+            let storedWire = try StoredWire(from: decoder)
+            try self.init(
+                storedWire: storedWire,
+                requiredScopeAuthority: .simulatorQA,
+                requiredEvidenceAuthority: .simulatorQA
             )
-            let vehicleIdentityKey = try container.decode(String.self, forKey: .vehicleIdentityKey)
-            let confirmedModeKey = try container.decodeIfPresent(String.self, forKey: .confirmedModeKey)
-            let powerWatts = try container.decode(Double.self, forKey: .powerWatts)
-            let acceptedMeasurementCount = try container.decode(Int.self, forKey: .acceptedMeasurementCount)
-            let peakCandidateMeasurementCount = try container.decode(
-                Int.self,
-                forKey: .peakCandidateMeasurementCount
-            )
-            let qualityRejectedMeasurementCount = try container.decode(
-                Int.self,
-                forKey: .qualityRejectedMeasurementCount
-            )
-            let knownInterruptionCount = try container.decode(Int.self, forKey: .knownInterruptionCount)
-            let observationContinuity = try container.decode(
-                PeakPowerObservationContinuity.self,
-                forKey: .observationContinuity
-            )
-
-            try CompletedRidePeakPowerEvidence.validateFields(
-                rideContinuity: rideContinuity,
-                beganAfterKnownObservationGap: beganAfterKnownObservationGap,
-                vehicleIdentityKey: vehicleIdentityKey,
-                confirmedModeKey: confirmedModeKey,
-                identityAuthority: identityAuthority,
-                evidenceAuthority: evidenceAuthority,
-                powerWatts: powerWatts,
-                acceptedMeasurementCount: acceptedMeasurementCount,
-                peakCandidateMeasurementCount: peakCandidateMeasurementCount,
-                qualityRejectedMeasurementCount: qualityRejectedMeasurementCount,
-                knownInterruptionCount: knownInterruptionCount,
-                observationContinuity: observationContinuity
-            )
-
-            self.schemaVersion = schemaVersion
-            self.sessionID = sessionID
-            self.rideContinuity = rideContinuity
-            self.beganAfterKnownObservationGap = beganAfterKnownObservationGap
-            self.vehicleIdentityKey = vehicleIdentityKey
-            self.confirmedModeKey = confirmedModeKey
-            self.identityAuthority = identityAuthority
-            self.evidenceAuthority = evidenceAuthority
-            self.powerWatts = powerWatts
-            self.acceptedMeasurementCount = acceptedMeasurementCount
-            self.peakCandidateMeasurementCount = peakCandidateMeasurementCount
-            self.qualityRejectedMeasurementCount = qualityRejectedMeasurementCount
-            self.knownInterruptionCount = knownInterruptionCount
-            self.observationContinuity = observationContinuity
         } catch let error as CompletedRidePeakPowerEvidenceError {
             throw DecodingError.dataCorrupted(
                 .init(
                     codingPath: decoder.codingPath,
-                    debugDescription: "Completed ride peak-power checkpoint is structurally invalid: \(error)."
+                    debugDescription: "Completed ride peak-power checkpoint is not a valid public Simulator-QA checkpoint: \(error)."
                 )
             )
         }
     }
 
     public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(schemaVersion, forKey: .schemaVersion)
-        try container.encode(sessionID, forKey: .sessionID)
-        try container.encode(rideContinuity, forKey: .rideContinuity)
-        try container.encode(beganAfterKnownObservationGap, forKey: .beganAfterKnownObservationGap)
-        try container.encode(vehicleIdentityKey, forKey: .vehicleIdentityKey)
-        try container.encodeIfPresent(confirmedModeKey, forKey: .confirmedModeKey)
-        try container.encode(identityAuthority.rawValue, forKey: .identityAuthority)
-        try container.encode(evidenceAuthority.rawValue, forKey: .evidenceAuthority)
-        try container.encode(powerWatts, forKey: .powerWatts)
-        try container.encode(acceptedMeasurementCount, forKey: .acceptedMeasurementCount)
-        try container.encode(peakCandidateMeasurementCount, forKey: .peakCandidateMeasurementCount)
-        try container.encode(qualityRejectedMeasurementCount, forKey: .qualityRejectedMeasurementCount)
-        try container.encode(knownInterruptionCount, forKey: .knownInterruptionCount)
-        try container.encode(observationContinuity, forKey: .observationContinuity)
+        try StoredWire(checkpoint: self).encode(to: encoder)
     }
 
     public func restoredSimulatorQA(
