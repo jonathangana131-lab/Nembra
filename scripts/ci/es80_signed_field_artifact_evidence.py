@@ -82,14 +82,58 @@ def parse_closed_json(data: bytes, keys: set[str], label: str) -> dict[str, Any]
     return value
 
 
-def read_exact_file(path: Path, label: str, maximum: int = MAX_SUBJECT_BYTES) -> bytes:
-    candidate = path.expanduser().absolute()
-    if candidate.is_symlink() or not hasattr(os, "O_NOFOLLOW"):
-        raise EvidenceError(f"{label} must be a non-symlink file")
+def _open_no_follow_file(path: Path, label: str) -> int:
+    """Open one exact file while refusing symlinks in every pathname component."""
+    candidate = path.expanduser()
+    if not candidate.is_absolute():
+        candidate = Path.cwd() / candidate
+    raw_path = os.fspath(candidate)
+    if "\x00" in raw_path:
+        raise EvidenceError(f"{label} path contains NUL")
+
+    parts = candidate.parts
+    if len(parts) < 2 or parts[0] != os.sep \
+            or any(part in {"", ".", ".."} for part in parts[1:]):
+        raise EvidenceError(f"{label} path is not canonical")
+
+    no_follow = getattr(os, "O_NOFOLLOW", None)
+    directory_only = getattr(os, "O_DIRECTORY", None)
+    close_on_exec = getattr(os, "O_CLOEXEC", 0)
+    if no_follow is None or directory_only is None or os.open not in os.supports_dir_fd:
+        raise EvidenceError(f"platform cannot guarantee no-follow custody for {label}")
+
     try:
-        descriptor = os.open(candidate, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0))
+        directory_fd = os.open(os.sep, os.O_RDONLY | directory_only | close_on_exec)
     except OSError as error:
-        raise EvidenceError(f"cannot open {label}") from error
+        raise EvidenceError(f"cannot open {label} filesystem root") from error
+
+    try:
+        for component in parts[1:-1]:
+            try:
+                next_fd = os.open(
+                    component,
+                    os.O_RDONLY | directory_only | no_follow | close_on_exec,
+                    dir_fd=directory_fd,
+                )
+            except OSError as error:
+                raise EvidenceError(f"{label} ancestor failed no-follow custody") from error
+            os.close(directory_fd)
+            directory_fd = next_fd
+
+        try:
+            return os.open(
+                parts[-1],
+                os.O_RDONLY | no_follow | close_on_exec,
+                dir_fd=directory_fd,
+            )
+        except OSError as error:
+            raise EvidenceError(f"cannot open {label} through no-follow custody") from error
+    finally:
+        os.close(directory_fd)
+
+
+def read_exact_file(path: Path, label: str, maximum: int = MAX_SUBJECT_BYTES) -> bytes:
+    descriptor = _open_no_follow_file(path, label)
     try:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) or before.st_size <= 0 or before.st_size > maximum:
@@ -105,7 +149,10 @@ def read_exact_file(path: Path, label: str, maximum: int = MAX_SUBJECT_BYTES) ->
         after = os.fstat(descriptor)
     finally:
         os.close(descriptor)
-    identity = lambda item: (item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns, item.st_ctime_ns)
+    identity = lambda item: (
+        item.st_dev, item.st_ino, item.st_mode, item.st_uid, item.st_gid, item.st_nlink,
+        item.st_size, item.st_mtime_ns, item.st_ctime_ns,
+    )
     data = b"".join(chunks)
     if identity(before) != identity(after) or len(data) != before.st_size:
         raise EvidenceError(f"{label} changed while reading")
