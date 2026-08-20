@@ -43,7 +43,7 @@ jobs:
           test "$(git rev-parse HEAD:"$APP_SOURCE")" = "$EXPECTED_SOURCE_BLOB"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Apply reviewed V2 transform plus armed-preservation correction
+      - name: Apply reviewed V2 transform plus v3 fail-closed corrections
         shell: python
         run: |
           from pathlib import Path
@@ -64,11 +64,18 @@ jobs:
 
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           source = path.read_text(encoding="utf-8")
-          old = '''            if phase == .failed {\n                fieldAuthorization.revoke()\n                operatorSafetyAttemptID = nil\n'''
-          new = '''            if phase == .failed {\n                if fieldAuthorization.stage != .armed {\n                    fieldAuthorization.revoke()\n                }\n                operatorSafetyAttemptID = nil\n'''
-          if source.count(old) != 1:
-              raise SystemExit(f"armed-preservation anchor count was {source.count(old)}; refusing")
-          source = source.replace(old, new, 1)
+
+          old_failed = '''            if phase == .failed {\n                fieldAuthorization.revoke()\n                operatorSafetyAttemptID = nil\n'''
+          new_failed = '''            if phase == .failed {\n                if fieldAuthorization.stage != .armed {\n                    fieldAuthorization.revoke()\n                }\n                operatorSafetyAttemptID = nil\n'''
+          if source.count(old_failed) != 1:
+              raise SystemExit(f"armed-preservation anchor count was {source.count(old_failed)}; refusing")
+          source = source.replace(old_failed, new_failed, 1)
+
+          old_seal_failure = '''                            self.currentConnectionToken = nil\n                            self.localBLESettlementToken = nil\n                            self.sdkLocalBLEOnline = false\n                            self.driver = nil\n                            self.fieldAuthorization.revoke()\n                            self.phase = .failed\n                            self.message = "Accepted observation could not freeze and seal one exact authorized artifact: \\(error.localizedDescription). Relaunch Capture before another attempt."\n                            self.log("field_authorization_exact_artifact_seal_failed", [\n                                "generation": String(token.diagnosticGeneration)\n                            ])\n                            return\n'''
+          new_seal_failure = '''                            self.currentConnectionToken = nil\n                            self.localBLESettlementToken = nil\n                            self.sdkLocalBLEOnline = false\n                            self.driver = nil\n                            self.fieldAuthorization.revoke()\n                            self.failLocally(\n                                "Accepted observation could not freeze and seal one exact authorized artifact: \\(error.localizedDescription). Relaunch Capture before another attempt.",\n                                "field_authorization_exact_artifact_seal_failed"\n                            )\n                            return\n'''
+          if source.count(old_seal_failure) != 1:
+              raise SystemExit(f"seal-failure lifecycle anchor count was {source.count(old_seal_failure)}; refusing")
+          source = source.replace(old_seal_failure, new_seal_failure, 1)
           path.write_text(source, encoding="utf-8")
 
       - name: Verify exact fail-closed lifecycle contracts
