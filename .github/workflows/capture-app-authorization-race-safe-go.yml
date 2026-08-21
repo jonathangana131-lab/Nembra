@@ -9,8 +9,10 @@ on:
       - product/capture-1-0-main-20260818
     paths:
       - .github/workflows/capture-app-authorization-race-safe-go.yml
+      - .github/workflows/capture-app-authorization-close-one-shot.yml
       - NembraApp/App/NembraCaptureFieldAuthorizationController.swift
       - Packages/NembraBluetoothCapture/Sources/NembraCaptureAppAuthorization/**
+      - scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
       - NembraCapture.xcodeproj/**
   workflow_dispatch:
 
@@ -92,6 +94,36 @@ jobs:
           }
           exec(compile(program, namespace["__file__"], "exec", dont_inherit=True), namespace)
 
+      - name: Keep exact-freeze helper outside watchdog source-oracle interval
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text(encoding="utf-8")
+          helper_marker = "    private func freezeAcceptedArtifactForAuthorizationSeal() throws {"
+          watchdog_marker = "    private func startWatchdog(token: TuyaReadOnlyConnectionToken) {"
+          record_marker = "    private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken) async {"
+
+          helper_start = source.index(helper_marker)
+          record_start = source.index(record_marker, helper_start)
+          helper_block = source[helper_start:record_start]
+          if helper_block.count(helper_marker) != 1:
+              raise SystemExit("exact-freeze helper boundary was not unique")
+          for required in (
+              "ExactByteArtifactSeal(sealing:",
+              ".verifies(",
+              "verifiedCanonicalValue(",
+              "verifiedBytes()",
+          ):
+              if required not in helper_block:
+                  raise SystemExit(f"exact-freeze helper missing required proof: {required}")
+
+          source = source[:helper_start] + source[record_start:]
+          watchdog_start = source.index(watchdog_marker)
+          source = source[:watchdog_start] + helper_block + source[watchdog_start:]
+          path.write_text(source, encoding="utf-8")
+
       - name: Enforce transformed authority shape
         shell: bash
         run: |
@@ -169,4 +201,4 @@ jobs:
           git push origin HEAD:"$TARGET_BRANCH"
           printf 'NEMBRA_CAPTURE_APP_AUTHORIZATION_PINNED_GO materialized=%s trigger=%s physicalAuthorityCreated=false\n' "$materialized" "$GITHUB_SHA"
 
-# relay-retrigger: 2026-08-21T04:45-07:00 sequence=3
+# relay-retrigger: 2026-08-21T04:45-07:00 sequence=4
