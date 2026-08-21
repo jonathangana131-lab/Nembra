@@ -6,6 +6,12 @@ on:
       - ci/capture-v16-lifecycle-wiring-gpt56sol-20260821
     paths:
       - .github/workflows/capture-v16-lifecycle-wiring-materialize-once.yml
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - product/capture-1-0-main-20260818
+    paths:
+      - .github/workflows/capture-v16-lifecycle-wiring-materialize-once.yml
 
 permissions:
   contents: write
@@ -16,6 +22,7 @@ concurrency:
 
 jobs:
   materialize:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -23,11 +30,12 @@ jobs:
       TARGET_WORKFLOW: .github/workflows/capture-v16-standalone.yml
       SELF_WORKFLOW: .github/workflows/capture-v16-lifecycle-wiring-materialize-once.yml
       LIFECYCLE_ORACLE: scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
+      SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Checkout exact authoring head
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ env.SUBJECT_SHA }}
           fetch-depth: 0
           persist-credentials: true
 
@@ -95,7 +103,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
+          test "$(git rev-parse --verify HEAD^{commit})" = "$SUBJECT_SHA"
           test "$(git diff --name-only)" = "$TARGET_WORKFLOW"
           git diff --check
           grep -Fq -- "- '$LIFECYCLE_ORACLE'" "$TARGET_WORKFLOW"
@@ -108,7 +116,7 @@ jobs:
         run: |
           set -euo pipefail
           remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
-          test "$remote_head" = "$GITHUB_SHA"
+          test "$remote_head" = "$SUBJECT_SHA"
           rm "$SELF_WORKFLOW"
           git add -- "$TARGET_WORKFLOW" "$SELF_WORKFLOW"
           git diff --cached --check
@@ -117,4 +125,4 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'ci(capture): require lifecycle wiring oracle in V16'
           git push origin HEAD:"$TARGET_BRANCH"
-          printf 'NEMBRA_CAPTURE_V16_LIFECYCLE_GATE materialized=%s parent=%s physicalAuthorityCreated=false\n' "$(git rev-parse HEAD)" "$GITHUB_SHA"
+          printf 'NEMBRA_CAPTURE_V16_LIFECYCLE_GATE materialized=%s parent=%s physicalAuthorityCreated=false\n' "$(git rev-parse HEAD)" "$SUBJECT_SHA"
