@@ -55,10 +55,15 @@ class FieldAuthorizationContainerTransportSourceTests(unittest.TestCase):
         self.assertIn("FIELD_AUTHORIZATION_ENVELOPE_STAGED_NOT_AUTHORITY_NOT_PHYSICAL_GO", self.source)
 
     def test_direction_and_subject_order_are_explicit(self) -> None:
-        self.assertIn('copy_to_container "$staged" "$MANIFEST_REMOTE"', self.source)
+        self.assertIn('copy_to_container "$manifest_binding_snapshot" "$MANIFEST_REMOTE"', self.source)
         self.assertIn('copy_from_container "$RENDEZVOUS_REMOTE" "$staged"', self.source)
         self.assertIn('copy_to_container "$staged" "$ENVELOPE_REMOTE"', self.source)
-        self.assertLess(self.source.index('copy_from_container "$RENDEZVOUS_REMOTE" "$staged"'), self.source.index('publish_fresh_local_file "$staged" "$NEMBRA_SIGNER_RENDEZVOUS_OUTPUT"'))
+        self.assertLess(
+            self.source.index('copy_from_container "$RENDEZVOUS_REMOTE" "$staged"'),
+            self.source.index(
+                'publish_fresh_local_file "$staged" "$NEMBRA_SIGNER_RENDEZVOUS_OUTPUT"'
+            ),
+        )
 
     def test_device_and_local_subjects_do_not_travel_on_positional_argv(self) -> None:
         self.assertIn("NEMBRA_FIELD_DEVICE_ID", self.source)
@@ -67,8 +72,36 @@ class FieldAuthorizationContainerTransportSourceTests(unittest.TestCase):
         self.assertIn("NEMBRA_FIELD_AUTHORIZATION_ENVELOPE_PATH", self.source)
         self.assertIn('[[ "$#" == 1 ]]', self.source)
 
+    def test_selected_device_is_cross_bound_to_retained_manifest_before_device_contact(self) -> None:
+        for token in (
+            '[[ "$NEMBRA_FIELD_DEVICE_ID" =~ ^([0-9A-Fa-f]{40}|[0-9A-Fa-f]{8}-[0-9A-Fa-f]{16})$ ]]',
+            'manifest_binding_snapshot="$SCRATCH/retained-install-manifest.binding.json"',
+            'verify_manifest_device_binding "$manifest_binding_snapshot"',
+            "intendedDevicePseudonymSHA256",
+            "hashlib.sha256(device_id.encode('utf-8')).hexdigest()",
+            "hmac.compare_digest(observed, expected)",
+            "object_pairs_hook=reject_duplicates",
+            "json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True)",
+        ):
+            self.assertIn(token, self.source)
+        self.assertLess(
+            self.source.index('verify_manifest_device_binding "$manifest_binding_snapshot"'),
+            self.source.index('case "$ACTION" in', self.source.index('verify_manifest_device_binding()')),
+        )
+        self.assertIn(
+            ': "${NEMBRA_RETAINED_INSTALL_MANIFEST_PATH:?Set NEMBRA_RETAINED_INSTALL_MANIFEST_PATH to the exact retained-install manifest for this attempt.}"',
+            self.source,
+        )
+
     def test_local_custody_is_fail_closed(self) -> None:
-        for token in ("O_NOFOLLOW", "O_EXCL", "st_nlink != 1", "st_uid != os.geteuid()", "0o022", "os.fsync"):
+        for token in (
+            "O_NOFOLLOW",
+            "O_EXCL",
+            "st_nlink != 1",
+            "st_uid != os.geteuid()",
+            "0o022",
+            "os.fsync",
+        ):
             self.assertIn(token, self.source)
         self.assertIn("os.O_DIRECTORY | no_follow", self.source)
 
@@ -86,10 +119,44 @@ class FieldAuthorizationContainerTransportSourceTests(unittest.TestCase):
             'ARTIFACTS_DIR="$SCRATCH/devicectl-help" /bin/bash -p "$CONTRACT_EXEC"',
         ):
             self.assertIn(token, self.source)
-        self.assertIn('[[ "$TRANSPORT_WORKTREE_BLOB" == "$TRANSPORT_TRACKED_BLOB" ]]', self.source)
-        self.assertIn('[[ "$CONTRACT_WORKTREE_BLOB" == "$CONTRACT_TRACKED_BLOB" ]]', self.source)
-        self.assertIn('[[ "$CONTRACT_MATERIALIZED_BLOB" == "$CONTRACT_TRACKED_BLOB" ]]', self.source)
-        self.assertNotIn('/bin/bash -p "$ROOT/scripts/ci/xcode27_devicectl_manifest_transport_contract.sh"', self.source)
+        self.assertIn(
+            '[[ "$TRANSPORT_WORKTREE_BLOB" == "$TRANSPORT_TRACKED_BLOB" ]]',
+            self.source,
+        )
+        self.assertIn(
+            '[[ "$CONTRACT_WORKTREE_BLOB" == "$CONTRACT_TRACKED_BLOB" ]]',
+            self.source,
+        )
+        self.assertIn(
+            '[[ "$CONTRACT_MATERIALIZED_BLOB" == "$CONTRACT_TRACKED_BLOB" ]]',
+            self.source,
+        )
+        self.assertNotIn(
+            '/bin/bash -p "$ROOT/scripts/ci/xcode27_devicectl_manifest_transport_contract.sh"',
+            self.source,
+        )
+
+    def test_git_provenance_rejects_caller_repository_and_config_steering(self) -> None:
+        for token in (
+            "GIT_DIR",
+            "GIT_WORK_TREE",
+            "GIT_COMMON_DIR",
+            "GIT_OBJECT_DIRECTORY",
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+            "GIT_INDEX_FILE",
+            "GIT_REPLACE_REF_BASE",
+            "GIT_CONFIG_COUNT",
+            "GIT_CONFIG_PARAMETERS",
+            "GIT_CONFIG_KEY_*",
+            "GIT_CONFIG_VALUE_*",
+            "GIT_NO_REPLACE_OBJECTS=1",
+            "GIT_CONFIG_NOSYSTEM=1",
+            "GIT_CONFIG_GLOBAL=/dev/null",
+        ):
+            self.assertIn(token, self.source)
+        guard = self.source.index("for inherited_git_name in")
+        first_git_read = self.source.index("rev-parse --verify 'HEAD^{commit}'")
+        self.assertLess(guard, first_git_read)
 
     def test_transport_has_no_install_launch_or_scooter_write_primitive(self) -> None:
         forbidden = (
