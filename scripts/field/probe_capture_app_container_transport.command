@@ -42,7 +42,10 @@ PRIVATE_RUNTIME_DIR="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/nembra-capture-transp
 cleanup_private_runtime() {
   /bin/rm -rf -- "$PRIVATE_RUNTIME_DIR"
 }
-trap cleanup_private_runtime EXIT HUP INT TERM
+trap cleanup_private_runtime EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # First bind this Xcode installation to the already-reviewed copy-to/copy-from appDataContainer help
 # contract. The contract performs help-only inspection and does not contact a device.
@@ -84,7 +87,7 @@ NONCE="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
 REMOTE_SENTINEL="tmp/nembra-capture-transport-probe-$NONCE.bin"
 LOCAL_SENTINEL="$ARTIFACTS_DIR/transport-probe-in.bin"
 ROUNDTRIP_SENTINEL="$ARTIFACTS_DIR/transport-probe-out.bin"
-/usr/bin/dd if=/dev/urandom of="$LOCAL_SENTINEL" bs=64 count=1 2>/dev/null
+/bin/dd if=/dev/urandom of="$LOCAL_SENTINEL" bs=64 count=1 2>/dev/null
 INBOUND_SHA256="$(/usr/bin/shasum -a 256 "$LOCAL_SENTINEL" | /usr/bin/awk '{print $1}')"
 
 /usr/bin/xcrun devicectl device copy to \
