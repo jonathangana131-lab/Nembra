@@ -41,6 +41,13 @@ final class NembraCaptureFieldAuthorizationController {
             // authorized SecureLink flow. CaptureP0Root may call the static bootstrap earlier so
             // first-install transport does not depend on reaching this authority-gated controller.
             try Self.prepareAuthorizationTransferDirectoryForFieldTransport()
+
+            // A receipt is non-authorizing and belongs only to the preceding controller lifetime.
+            // Retire an exact owner-controlled stale receipt before accepting a new manifest. A
+            // custody violation fails this whole handoff closed rather than allowing ambiguous
+            // evidence to coexist with a new process-local challenge.
+            try AuthenticatedStationaryCaptureAuthorizationEnvelopeReceiptOutbox()
+                .retirePublishedReceiptIfPresent()
             self.transferDirectoryPreparationError = nil
         } catch {
             // Keep bootstrap failure non-authorizing, but remember it so any later authorized
@@ -106,13 +113,25 @@ final class NembraCaptureFieldAuthorizationController {
     /// the package session to verify/consume the envelope. Exact absence remains retryable because
     /// no signed subject has arrived. Any other handoff/custody/retirement/verification failure is
     /// terminal so replacement bytes cannot inherit the same process-local challenge.
+    ///
+    /// After verification succeeds, publish a non-authorizing exact-byte digest receipt before
+    /// reporting `.armed`. The inbox deliberately unlinks the envelope while reading it, so this
+    /// receipt is the field Mac's race-free proof that the exact sent bytes were the exact bytes the
+    /// package accepted. Receipt publication failure revokes the newly armed session fail-closed.
     func authorizeFromInbox() throws {
         do {
             let outbox = try AuthenticatedStationaryCaptureSignerRendezvousOutbox()
             let envelopeData = try AuthenticatedStationaryCaptureAuthorizationInbox()
                 .takeAuthorizationEnvelope()
             try outbox.retirePublishedRendezvous()
-            try session.acceptEnvelope(envelopeData)
+            let receipt = try session.acceptEnvelope(envelopeData)
+            do {
+                try AuthenticatedStationaryCaptureAuthorizationEnvelopeReceiptOutbox()
+                    .publish(receipt)
+            } catch {
+                session.revoke()
+                throw error
+            }
         } catch AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(let subject)
             where subject == AuthenticatedStationaryCaptureAuthorizationInbox.authorizationEnvelopeFilename {
             throw AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(subject)
@@ -192,11 +211,14 @@ final class NembraCaptureFieldAuthorizationController {
     }
 
     /// Revocation is authoritative even if non-authorizing transport cleanup fails. Best-effort
-    /// retirement prevents an abandoned rendezvous from blocking the next legitimate field attempt;
-    /// a custody failure leaves the stale file in place and therefore still fails closed on publish.
+    /// retirement prevents an abandoned rendezvous or receipt from blocking the next legitimate
+    /// field attempt; a custody failure leaves the stale file in place and therefore still fails
+    /// closed on the next controller lifetime.
     func revoke() {
         session.revoke()
         try? AuthenticatedStationaryCaptureSignerRendezvousOutbox()
             .retirePublishedRendezvous()
+        try? AuthenticatedStationaryCaptureAuthorizationEnvelopeReceiptOutbox()
+            .retirePublishedReceiptIfPresent()
     }
 }
