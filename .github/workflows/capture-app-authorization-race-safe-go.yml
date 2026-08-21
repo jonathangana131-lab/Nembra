@@ -1,7 +1,7 @@
 name: Capture app authorization race-safe GO
-# External/user-authored retrigger checkpoint: GitHub Actions token pushes do not recursively
-# start a second workflow run, so this retained pinned one-shot must be touched or manually
-# dispatched once after the writer-shrink commit before it can materialize and retire itself.
+# Carrier-native sole writer. Relevant authority/integration changes retrigger this pinned materializer.
+# Exact-head checkout plus a remote-head compare immediately before publication makes concurrent
+# carrier movement fail closed; the later carrier-changing push then queues a fresh exact subject.
 
 on:
   push:
@@ -9,6 +9,9 @@ on:
       - product/capture-1-0-main-20260818
     paths:
       - .github/workflows/capture-app-authorization-race-safe-go.yml
+      - NembraApp/App/NembraCaptureFieldAuthorizationController.swift
+      - Packages/NembraBluetoothCapture/Sources/NembraCaptureAppAuthorization/**
+      - NembraCapture.xcodeproj/**
   workflow_dispatch:
 
 permissions:
