@@ -1,5 +1,7 @@
 name: Capture app authorization carrier recovery one-shot
 
+# Single carrier-native recovery writer. It reuses the already-reviewed full race-safe transform
+# instead of maintaining a second partial copy of authorization semantics.
 on:
   push:
     branches:
@@ -10,19 +12,25 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: capture-app-authorization-carrier-writer
+  cancel-in-progress: false
+
 jobs:
-  materialize:
+  materialize-test-publish:
     runs-on: xcode-27
-    timeout-minutes: 35
-    concurrency:
-      group: capture-app-authorization-carrier-writer
-      cancel-in-progress: false
+    timeout-minutes: 45
     env:
       TARGET_BRANCH: product/capture-1-0-main-20260818
       EXPECTED_SOURCE_BLOB: 627c17949d15aaf26ca28c12abb9bb684ab0e731
       APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
       SOURCE_WORKFLOW: .github/workflows/capture-app-authorization-close-one-shot.yml
+      RACE_SAFE_WORKFLOW: .github/workflows/capture-app-authorization-race-safe-go.yml
       RECOVERY_WRITER: .github/workflows/capture-app-authorization-carrier-recovery-one-shot.yml
+      EXECUTOR_WORKFLOW: .github/workflows/capture-app-auth-child-materializer.yml
+      STALE_RETRIGGER: .github/workflows/capture-app-authorization-retrigger-go.yml
+      STALE_DIRECT: .github/workflows/capture-authority-v3-direct-materialize-once.yml
+      MATERIALIZER_COMMIT: 3cf110f4ddaa3188ac2bcb44dd2393f1c1a69f10
     steps:
       - name: Checkout exact carrier trigger head
         uses: actions/checkout@v6
@@ -38,103 +46,88 @@ jobs:
           test "$GITHUB_REF_NAME" = "$TARGET_BRANCH"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD:"$APP_SOURCE")" = "$EXPECTED_SOURCE_BLOB"
+          git merge-base --is-ancestor "$MATERIALIZER_COMMIT" HEAD
           test -f "$SOURCE_WORKFLOW"
+          test -f "$RACE_SAFE_WORKFLOW"
           test -f "$RECOVERY_WRITER"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Execute reviewed lifecycle materializer and signed-attempt correction
+      - name: Execute full reviewed race-safe transform
         shell: python
         run: |
           from pathlib import Path
           import textwrap
 
-          workflow = Path(".github/workflows/capture-app-authorization-close-one-shot.yml").read_text(encoding="utf-8")
-          section = workflow.index("      - name: Materialize field authorization into real SecureLink lifecycle")
-          run_marker = "        run: |\n"
-          start = workflow.index(run_marker, section) + len(run_marker)
-          end = workflow.index("\n      - name: Enforce truth-preserving source shape", start)
-          script = textwrap.dedent(workflow[start:end])
-          exec(compile(script, "capture-app-authorization-carrier-recovery-materializer", "exec"), {"__name__": "__main__"})
+          workflow = Path(".github/workflows/capture-app-authorization-race-safe-go.yml").read_text(encoding="utf-8")
 
-          # Recover the already-reviewed #3783 correction after materializing the legacy donor.
-          # Complete bundle metadata is provenance/transport eligibility only; the independently
-          # signed live attempt owns OFF1 and the subsequent read-only lifecycle authority.
-          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
-          text = path.read_text(encoding="utf-8")
+          def execute_step(name: str, next_name: str) -> None:
+              start_marker = f"      - name: {name}\n        shell: python\n        run: |\n"
+              end_marker = f"\n      - name: {next_name}"
+              start = workflow.index(start_marker) + len(start_marker)
+              end = workflow.index(end_marker, start)
+              program = textwrap.dedent(workflow[start:end])
+              namespace = {
+                  "__name__": "__main__",
+                  "__file__": f"<capture-auth-recovery:{name}>",
+              }
+              exec(compile(program, namespace["__file__"], "exec", dont_inherit=True), namespace)
 
-          old_property = "    var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }"
-          new_property = "    var fieldBuildMetadataReady: Bool { buildIdentity.hasCompleteFieldBuildMetadata }"
-          assert text.count(old_property) == 1
-          text = text.replace(old_property, new_property)
+          execute_step(
+              "Execute reviewed carrier-native lifecycle materializer",
+              "Keep exact-freeze helper outside watchdog source-oracle interval",
+          )
+          execute_step(
+              "Keep exact-freeze helper outside watchdog source-oracle interval",
+              "Bind selected authentication to exact post-OFF1 authorization stage",
+          )
+          execute_step(
+              "Bind selected authentication to exact post-OFF1 authorization stage",
+              "Enforce transformed authority shape",
+          )
 
-          old_handoff = "        guard phase == .idle, buildIdentity.isAuthoritativeFieldBuild else { return }"
-          new_handoff = "        guard phase == .idle, buildIdentity.hasCompleteFieldBuildMetadata else { return }"
-          assert text.count(old_handoff) == 1
-          text = text.replace(old_handoff, new_handoff)
-
-          legacy_guard = '''        guard buildIdentity.isAuthoritativeFieldBuild else {
-              failLocally(buildIdentity.blocker ?? "Exact field-build provenance is unavailable.", "field_build_identity_unavailable")
-              return
-          }
-'''
-          assert text.count(legacy_guard) == 2
-          text = text.replace(legacy_guard, "")
-
-          legacy_connection_guard = "              buildIdentity.isAuthoritativeFieldBuild,\n"
-          assert text.count(legacy_connection_guard) == 1
-          text = text.replace(legacy_connection_guard, "")
-
-          assert text.count("test.fieldBuildIsAuthoritative") >= 1
-          text = text.replace("test.fieldBuildIsAuthoritative", "test.fieldBuildMetadataReady")
-
-          selected_gate = ".disabled(!authorityReady || test.membershipBusy)"
-          assert text.count(selected_gate) == 1
-          text = text.replace(selected_gate, ".disabled(test.membershipBusy)")
-
-          helper_start_marker = "    private func freezeAcceptedArtifactForAuthorizationSeal() throws {"
-          record_marker = "    private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken) async {"
-          watchdog_marker = "    private func startWatchdog(token: TuyaReadOnlyConnectionToken) {"
-          helper_start = text.index(helper_start_marker)
-          record_start = text.index(record_marker, helper_start)
-          helper_block = text[helper_start:record_start]
-          assert "ExactByteArtifactSeal(sealing:" in helper_block
-          assert "verifiedCanonicalValue(" in helper_block
-          text = text[:helper_start] + text[record_start:]
-          watchdog_start = text.index(watchdog_marker)
-          text = text[:watchdog_start] + helper_block + text[watchdog_start:]
-
-          path.write_text(text, encoding="utf-8")
-
-      - name: Enforce fail-closed lifecycle source shape
+      - name: Enforce transformed authority shape
         shell: bash
         run: |
           set -euo pipefail
           git diff --check
+          test "$(git status --porcelain=v1 | awk '{print $2}' | sort | tr '\n' ' ' | sed 's/ $//')" = "$APP_SOURCE"
           grep -Fq 'import NembraCaptureAppAuthorization' "$APP_SOURCE"
-          grep -Fq 'private let fieldAuthorization = NembraCaptureFieldAuthorizationController()' "$APP_SOURCE"
+          grep -Fq 'fieldBuildCanPrepareAuthorization' "$APP_SOURCE"
+          grep -Fq 'prepareAuthorizationTransferDirectoryForFieldTransport()' "$APP_SOURCE"
           grep -Fq 'buildIdentity.hasCompleteFieldBuildMetadata' "$APP_SOURCE"
-          test "$(grep -Fc 'buildIdentity.isAuthoritativeFieldBuild' "$APP_SOURCE")" = 0
+          grep -Fq 'fieldBuildMetadataComplete' "$APP_SOURCE"
           grep -Fq 'fieldAuthorization.stage == .armed' "$APP_SOURCE"
+          grep -Fq 'fieldAuthorizationObservationAdmitted' "$APP_SOURCE"
+          grep -Fq 'fieldAuthorizationCanAdmitAuthentication' "$APP_SOURCE"
+          grep -Fq 'fieldAuthorization.stage == .off1Started' "$APP_SOURCE"
+          grep -Fq '.disabled(!test.fieldAuthorizationCanAdmitAuthentication || test.membershipBusy)' "$APP_SOURCE"
           grep -Fq 'try self.fieldAuthorization.admitOFF1Start()' "$APP_SOURCE"
           grep -Fq 'try self.fieldAuthorization.admitAuthenticationStart()' "$APP_SOURCE"
           grep -Fq 'try fieldAuthorization.admitOfficialConnectionStart()' "$APP_SOURCE"
           grep -Fq 'try self.fieldAuthorization.admitObservationStart()' "$APP_SOURCE"
           grep -Fq 'try self.freezeAcceptedArtifactForAuthorizationSeal()' "$APP_SOURCE"
           grep -Fq 'try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()' "$APP_SOURCE"
+          grep -Fq 'field_authorization_or_artifact_freeze_rejected' "$APP_SOURCE"
           test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE")" = 0
           test "$(grep -Fc 'publishDps(' "$APP_SOURCE")" = 0
           test "$(grep -Fc 'writeValue(' "$APP_SOURCE")" = 0
           /usr/bin/python3 -I scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py -v
           /usr/bin/python3 -I scripts/ci/tests/test_es80_capture_build_identity.py -v
 
-      - name: Run focused authorization truth contracts
+      - name: Run focused adversarial authorization contracts
+        working-directory: Packages/NembraBluetoothCapture
         shell: bash
         run: |
           set -euo pipefail
-          cd Packages/NembraBluetoothCapture
           swift test --filter AuthenticatedStationaryCaptureAppSessionTests
+          swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthorizationInboxAppAdapter
           swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
           swift test --filter TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
+          swift test --filter TuyaFieldBuildPresentationAuthoritySourceTests
+          swift test --filter TuyaFieldFinalAuthoritySourceTests
+          swift test --filter TuyaFieldGoPrerequisiteSourceTests
+          swift test --filter TuyaCaptureRootProductSurfaceSourceTests
+          swift test --filter CaptureP0RootVisualAcceptanceTests
 
       - name: Build standalone Capture on Xcode 27
         shell: bash
@@ -154,17 +147,30 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm "$SOURCE_WORKFLOW" "$RECOVERY_WRITER"
-          git add -- "$APP_SOURCE" "$SOURCE_WORKFLOW" "$RECOVERY_WRITER"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
+          test "$remote_head" = "$GITHUB_SHA"
+
+          git add -- "$APP_SOURCE"
+          for retired in "$SOURCE_WORKFLOW" "$RACE_SAFE_WORKFLOW" "$RECOVERY_WRITER" "$EXECUTOR_WORKFLOW" "$STALE_RETRIGGER" "$STALE_DIRECT"; do
+            if git ls-files --error-unmatch "$retired" >/dev/null 2>&1; then
+              rm -f "$retired"
+              git add -- "$retired"
+            fi
+          done
           git diff --cached --check
-          actual="$(git diff --cached --name-status | LC_ALL=C sort)"
-          expected="$(printf 'D\t%s\nD\t%s\nM\t%s\n' "$RECOVERY_WRITER" "$SOURCE_WORKFLOW" "$APP_SOURCE" | LC_ALL=C sort)"
-          test "$actual" = "$expected"
+          staged="$(git diff --cached --name-only)"
+          printf '%s\n' "$staged" | grep -Fxq "$APP_SOURCE"
+          while IFS= read -r path; do
+            case "$path" in
+              "$APP_SOURCE"|"$SOURCE_WORKFLOW"|"$RACE_SAFE_WORKFLOW"|"$RECOVERY_WRITER"|"$EXECUTOR_WORKFLOW"|"$STALE_RETRIGGER"|"$STALE_DIRECT") ;;
+              *) printf 'unexpected staged path: %s\n' "$path" >&2; exit 1 ;;
+            esac
+          done <<< "$staged"
+
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'feat(capture): wire signed-attempt field authorization into SecureLink'
-          successor="$(git rev-parse HEAD)"
-          git fetch origin "$TARGET_BRANCH"
-          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
-          git push origin HEAD:"$TARGET_BRANCH"
-          printf 'NEMBRA_CAPTURE_APP_AUTHORIZATION_RECOVERY materialized=%s trigger=%s physicalAuthorityCreated=false\n' "$successor" "$GITHUB_SHA"
+          materialized="$(git rev-parse HEAD)"
+          git push --force-with-lease="refs/heads/$TARGET_BRANCH:$GITHUB_SHA" origin "HEAD:refs/heads/$TARGET_BRANCH"
+          printf 'NEMBRA_CAPTURE_APP_AUTHORIZATION_RECOVERY materialized=%s trigger=%s physicalAuthorityCreated=false\n' "$materialized" "$GITHUB_SHA"
