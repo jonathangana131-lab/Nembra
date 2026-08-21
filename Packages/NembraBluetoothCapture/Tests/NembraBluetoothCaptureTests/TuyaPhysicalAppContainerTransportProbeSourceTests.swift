@@ -31,7 +31,7 @@ struct TuyaPhysicalAppContainerTransportProbeSourceTests {
     func probeRequiresRoundTripAndFailsClosedOnAuthority() throws {
         let probe = try readRepositoryFile(relativePath)
 
-        #expect(probe.contains("/bin/bash \"$CONTRACT\""))
+        #expect(probe.contains("/bin/bash \"$CONTRACT_EXEC\""))
         #expect(probe.contains("devicectl device copy to"))
         #expect(probe.contains("devicectl device copy from"))
         #expect(probe.contains("/bin/dd if=/dev/urandom"))
@@ -94,6 +94,31 @@ struct TuyaPhysicalAppContainerTransportProbeSourceTests {
         #expect(probe.contains("/bin/rm -f -- \"$LOCAL_SENTINEL\" \"$ROUNDTRIP_SENTINEL\""))
         #expect(probe.contains("umask 077"))
         #expect(probe.contains("accidentally promote stale success"))
+    }
+
+    @Test("physical result binds exact repository probe and contract bytes")
+    func probeRecordsExactCheckedInProvenance() throws {
+        let probe = try readRepositoryFile(relativePath)
+
+        #expect(probe.contains("PROBE_RELATIVE_PATH='scripts/field/probe_capture_app_container_transport.command'"))
+        #expect(probe.contains("CONTRACT_RELATIVE_PATH='scripts/ci/xcode27_devicectl_manifest_transport_contract.sh'"))
+        #expect(probe.contains("REPOSITORY_HEAD="))
+        #expect(probe.contains("rev-parse --verify 'HEAD^{commit}'"))
+        #expect(probe.contains("PROBE_TRACKED_BLOB="))
+        #expect(probe.contains("CONTRACT_TRACKED_BLOB="))
+        #expect(probe.contains("PROBE_WORKTREE_BLOB="))
+        #expect(probe.contains("CONTRACT_WORKTREE_BLOB="))
+        #expect(probe.contains("PROBE_WORKTREE_BLOB\" == \"$PROBE_TRACKED_BLOB"))
+        #expect(probe.contains("CONTRACT_WORKTREE_BLOB\" == \"$CONTRACT_TRACKED_BLOB"))
+        #expect(probe.contains("cat-file blob \"$CONTRACT_TRACKED_BLOB\""))
+        #expect(probe.contains("hash-object \"$CONTRACT_EXEC\""))
+        #expect(probe.contains("repository_head=%s"))
+        #expect(probe.contains("probe_git_blob=%s"))
+        #expect(probe.contains("probe_sha256=%s"))
+        #expect(probe.contains("transport_contract_git_blob=%s"))
+        #expect(probe.contains("transport_contract_sha256=%s"))
+        #expect(probe.contains("xcode_identity=%s"))
+        #expect(probe.contains("PROVEN PROVENANCE:"))
     }
 
     private func readRepositoryFile(_ relativePath: String) throws -> String {
