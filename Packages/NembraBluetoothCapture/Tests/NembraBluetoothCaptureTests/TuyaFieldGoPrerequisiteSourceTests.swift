@@ -4,14 +4,17 @@ import Testing
 
 @Suite("Capture field GO prerequisite consumption")
 struct TuyaFieldGoPrerequisiteSourceTests {
-    @Test("field app consumes exact compiled build provenance before physical authority")
-    func buildProvenanceIsProductAuthority() throws {
+    @Test("field app consumes exact compiled metadata while physical authority stays independently signed")
+    func buildProvenanceRemainsNonAuthorizingMetadata() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let identity = try readRepositoryFile("NembraApp/App/NembraCaptureBuildIdentity.swift")
         let project = try readRepositoryFile("NembraCapture.xcodeproj/project.pbxproj")
         let plist = try readRepositoryFile("NembraCapture-Info.plist")
 
         #expect(app.contains("NembraCaptureBuildIdentity.current"))
-        #expect(app.contains("isAuthoritativeFieldBuild"))
+        #expect(app.contains("hasCompleteFieldBuildMetadata"))
+        #expect(identity.contains("var isAuthoritativeFieldBuild: Bool {\n        false\n    }"))
+        #expect(app.contains("fieldAuthorization"))
         #expect(app.contains("buildIdentifier"))
         #expect(app.contains("sourceCommitSHA"))
         #expect(project.contains("NembraCaptureBuildIdentity.swift in Sources"))
@@ -94,18 +97,32 @@ struct TuyaFieldGoPrerequisiteSourceTests {
         #expect(app.contains("TuyaLocalBLEAcquisitionWindow.maximumWaitNanoseconds"))
     }
 
-    @Test("canonical acceptance is impossible when compiled build provenance is not authoritative")
-    func acceptanceChecksBuildIdentityAtTheSealBoundary() throws {
+    @Test("canonical acceptance retains complete metadata plus signed observation authority through sealing")
+    func acceptanceChecksSignedAttemptAtTheSealBoundary() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
-        guard let ready = app.range(of: "case .readyForStationaryMapping:"),
-              let accepted = app.range(of: "phase = .accepted", range: ready.upperBound..<app.endIndex),
-              let buildCheck = app.range(of: "isAuthoritativeFieldBuild", range: ready.upperBound..<accepted.lowerBound) else {
-            Issue.record("The canonical-ready path must re-check exact compiled build provenance before UI acceptance.")
+        guard let watchdogStart = app.range(of: "private func startWatchdog(token: TuyaReadOnlyConnectionToken)"),
+              let watchdogEnd = app.range(of: "private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken)", range: watchdogStart.upperBound..<app.endIndex) else {
+            Issue.record("Could not isolate canonical acceptance watchdog.")
             return
         }
-        #expect(ready.lowerBound < buildCheck.lowerBound)
-        #expect(buildCheck.lowerBound < accepted.lowerBound)
+        let watchdog = String(app[watchdogStart.lowerBound..<watchdogEnd.lowerBound])
+
+        #expect(watchdog.contains("buildIdentity.hasCompleteFieldBuildMetadata"))
+        #expect(watchdog.contains("fieldAuthorizationObservationAdmitted"))
+        #expect(!watchdog.contains("buildIdentity.isAuthoritativeFieldBuild"))
+        #expect(watchdog.contains("freezeAcceptedArtifactForAuthorizationSeal()"))
+        #expect(watchdog.contains("fieldAuthorization.sealAfterAcceptedArtifactFreeze()"))
+
+        let metadataCheck = try #require(watchdog.range(of: "buildIdentity.hasCompleteFieldBuildMetadata"))
+        let observationAuthority = try #require(watchdog.range(of: "fieldAuthorizationObservationAdmitted"))
+        let freeze = try #require(watchdog.range(of: "freezeAcceptedArtifactForAuthorizationSeal()"))
+        let signedSeal = try #require(watchdog.range(of: "fieldAuthorization.sealAfterAcceptedArtifactFreeze()"))
+        let accepted = try #require(watchdog.range(of: "self.phase = .accepted"))
+        #expect(metadataCheck.lowerBound < freeze.lowerBound)
+        #expect(observationAuthority.lowerBound < freeze.lowerBound)
+        #expect(freeze.lowerBound < signedSeal.lowerBound)
+        #expect(signedSeal.lowerBound < accepted.lowerBound)
     }
 
     private func readRepositoryFile(_ relativePath: String) throws -> String {
