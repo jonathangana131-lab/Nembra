@@ -24,7 +24,7 @@ struct PassiveBluetoothExperimentOneAppAuthorityWiringTests {
         #expect(!installer.contains("NEMBRA_ES80_TODAY_RESEARCH"))
     }
 
-    @Test("standalone entrypoint requires exact field provenance and current Tuya authority before correlation")
+    @Test("standalone entrypoint requires signed attempt authority and current Tuya authority before correlation")
     func authenticatedEntrypointFailsClosedBeforeBluetoothCorrelation() throws {
         let source = try Self.repositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let startBaseline = String(try Self.section(
@@ -40,7 +40,10 @@ struct PassiveBluetoothExperimentOneAppAuthorityWiringTests {
 
         #expect(source.contains("@main @MainActor\nstruct NembraCaptureApp: App"))
         #expect(source.contains("private let buildIdentity = NembraCaptureBuildIdentity.current"))
-        #expect(startBaseline.contains("guard buildIdentity.isAuthoritativeFieldBuild else"))
+        #expect(source.contains("var fieldBuildMetadataComplete: Bool { buildIdentity.hasCompleteFieldBuildMetadata }"))
+        #expect(source.contains("var fieldAuthorizationReady: Bool { fieldAuthorization.stage == .armed }"))
+        #expect(!startBaseline.contains("buildIdentity.isAuthoritativeFieldBuild"))
+        #expect(startBaseline.contains("fieldAuthorization.admitOFF1Start()"))
         #expect(startBaseline.contains("guard privateConfig, sdkAccountLoggedIn else"))
         #expect(startBaseline.contains("verifySDKMembership"))
         #expect(startBaseline.contains("TuyaSDKAccountIdentityLeaseGate.verdict"))
@@ -61,7 +64,7 @@ struct PassiveBluetoothExperimentOneAppAuthorityWiringTests {
         #expect(!source.contains("UserDefaults"))
     }
 
-    @Test("root selection is only context; Secure Link freshly verifies exact membership before scan and authentication")
+    @Test("root selection is only context; Secure Link freshly verifies exact membership at signed authority boundaries")
     func secureLinkRechecksMembershipAtBothAuthorityBoundaries() throws {
         let source = try Self.repositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let root = String(try Self.section(
@@ -79,6 +82,11 @@ struct PassiveBluetoothExperimentOneAppAuthorityWiringTests {
             from: "    func authenticate() {",
             to: "    private func beginOfficialConnection(candidate: Candidate) {"
         ))
+        let officialConnection = String(try Self.section(
+            in: source,
+            from: "    private func beginOfficialConnection(candidate: Candidate) {",
+            to: "    private func authenticated(token: TuyaReadOnlyConnectionToken)"
+        ))
         let membership = String(try Self.section(
             in: source,
             from: "    func verifySDKMembership(completion: ((Bool) -> Void)? = nil) {",
@@ -92,12 +100,18 @@ struct PassiveBluetoothExperimentOneAppAuthorityWiringTests {
         #expect(start.contains("TuyaSDKAccountIdentityLeaseGate.verdict"))
         #expect(start.contains("self.beginCorrelationSeries()"))
 
+        #expect(!authenticate.contains("buildIdentity.isAuthoritativeFieldBuild"))
+        #expect(authenticate.contains("fieldAuthorization.admitAuthenticationStart()"))
         #expect(authenticate.contains("// Membership is re-proven immediately before granting Tuya BLE ownership."))
         #expect(authenticate.contains("verifySDKMembership { [weak self] stillAuthorized in"))
         #expect(authenticate.contains("self.phase == .selected"))
         #expect(authenticate.contains("self.targetCorrelationOperatorConfirmed"))
         #expect(authenticate.contains("self.selectedID == candidate.id"))
         #expect(authenticate.contains("self.beginOfficialConnection(candidate: candidate)"))
+
+        #expect(!officialConnection.contains("buildIdentity.isAuthoritativeFieldBuild"))
+        #expect(officialConnection.contains("fieldAuthorization.admitOfficialConnectionStart()"))
+        #expect(officialConnection.contains("OfficialTuyaFactory.make()"))
 
         #expect(membership.contains("let requestID = UUID()"))
         #expect(membership.contains("membershipRequestID = requestID"))
