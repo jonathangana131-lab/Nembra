@@ -40,6 +40,11 @@ jobs:
           test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD_SHA"
           xcodebuild -version
           bash -n "$PROBE"
+          test "$(grep -Fc 'ENV_DEVICE_UDID="${NEMBRA_CAPTURE_DEVICE_UDID:-}"' "$PROBE")" = 1
+          test "$(grep -Fc 'ARG_DEVICE_UDID="${1:-}"' "$PROBE")" = 1
+          test "$(grep -Fc 'environment and positional iPhone selectors disagree' "$PROBE")" = 1
+          test "$(grep -Fc 'DEVICE_UDID="${ENV_DEVICE_UDID:-$ARG_DEVICE_UDID}"' "$PROBE")" = 1
+          test "$(grep -Fc 'DEVICE_UDID="${NEMBRA_CAPTURE_DEVICE_UDID:-${1:-}}"' "$PROBE" || true)" = 0
           test "$(grep -Fc 'devicectl device copy to' "$PROBE")" = 1
           test "$(grep -Fc 'devicectl device copy from' "$PROBE")" = 1
           test "$(grep -Fc -- '--remove-existing-content' "$PROBE" || true)" = 0
@@ -72,5 +77,5 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD_SHA"
-          printf '%s\n' 'PROVEN: the exact PR head parses on the Xcode 27 Mac and passes the focused non-authorizing bundle-level app-container probe source contract, including unique-run/atomic-result stale-evidence rejection and listing-success-only handoff semantics.'
+          printf '%s\n' 'PROVEN: the exact PR head parses on the Xcode 27 Mac and passes the focused non-authorizing bundle-level app-container probe source contract, including unambiguous physical-iPhone selector admission, unique-run/atomic-result stale-evidence rejection, and listing-success-only handoff semantics.'
           printf '%s\n' 'NOT PROVEN: a physical iPhone round-trip, handoff-directory filesystem existence beyond a successful listing operation, exact installed Capture build identity, authorization payload transfer/acceptance, signing/install custody, Bluetooth/Tuya/ES80 behavior, telemetry semantics, commands, or physical Capture GO.'
