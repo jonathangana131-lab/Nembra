@@ -198,6 +198,11 @@ jobs:
           swift test --filter TuyaFieldFinalAuthoritySourceTests
           swift test --filter TuyaFieldGoPrerequisiteSourceTests
           swift test --filter TuyaCaptureRootProductSurfaceSourceTests
+          swift test --filter ES80CaptureFieldRuntimeRendezvousTests
+          swift test --filter PassiveBluetoothExperimentOneAppAuthorityWiringTests
+          swift test --filter TuyaFailedPrerequisiteRecoverySourceTests
+          swift test --filter TuyaAcceptedExportArtifactImmutabilitySourceTests
+          swift test --filter TuyaSecureLinkProductSurfaceSourceTests
           swift test --filter CaptureP0RootVisualAcceptanceTests
 
       - name: Build standalone Capture on Xcode 27
