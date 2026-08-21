@@ -46,6 +46,8 @@ jobs:
           test "$(grep -Ec 'retained-install-manifest[.]json|authorization-envelope[.]json|signer-rendezvous[.]json' "$PROBE" || true)" = 0
           test "$(grep -Fc 'REMOTE_SENTINEL="tmp/nembra-capture-transport-probe-$NONCE.bin"' "$PROBE")" = 1
           test "$(grep -Fc 'raw_device_output_persisted=false' "$PROBE")" = 1
+          test "$(grep -Fc 'installed_build_identity_verified=false' "$PROBE")" = 1
+          test "$(grep -Fc 'installed_build_identity_verified=true' "$PROBE" || true)" = 0
           test "$(grep -Fc 'captureAuthorized=false' "$PROBE")" = 1
           test "$(grep -Fc 'physicalAuthorityCreated=false' "$PROBE")" = 1
           test "$(grep -Fc 'protocolSemanticsCreated=false' "$PROBE")" = 1
@@ -62,5 +64,5 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD_SHA"
-          printf '%s\n' 'PROVEN: the exact PR head parses on the Xcode 27 Mac and passes the focused non-authorizing physical app-container probe source contract.'
-          printf '%s\n' 'NOT PROVEN: a physical iPhone round-trip, installed-app identity on any device, signing/install custody, authorization, Bluetooth/Tuya/ES80 behavior, telemetry semantics, commands, or physical Capture GO.'
+          printf '%s\n' 'PROVEN: the exact PR head parses on the Xcode 27 Mac and passes the focused non-authorizing bundle-level app-container probe source contract.'
+          printf '%s\n' 'NOT PROVEN: a physical iPhone round-trip, exact installed Capture build identity, signing/install custody, authorization, Bluetooth/Tuya/ES80 behavior, telemetry semantics, commands, or physical Capture GO.'
