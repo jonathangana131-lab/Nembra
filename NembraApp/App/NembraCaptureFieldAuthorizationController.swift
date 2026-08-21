@@ -202,4 +202,4 @@ final class NembraCaptureFieldAuthorizationController {
     }
 }
 
-// Exact-head retrigger from carrier 9aeba91c after retiring the non-starting PR writer; authority semantics unchanged.
+// Exact-head retrigger from carrier bd2d6f89 through the corrected race-safe sole writer; authority semantics unchanged.
