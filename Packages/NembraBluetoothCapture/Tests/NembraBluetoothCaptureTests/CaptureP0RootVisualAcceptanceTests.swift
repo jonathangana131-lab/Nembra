@@ -3,7 +3,7 @@ import Testing
 
 @Suite("Capture P0 root visual acceptance")
 struct CaptureP0RootVisualAcceptanceTests {
-    @Test("public root explains its lock and cannot start SDK authorization")
+    @Test("unstamped public root explains its lock and cannot start SDK authorization")
     func publicRootIsExplanatoryAndFailClosed() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let root = String(try section(
@@ -13,18 +13,16 @@ struct CaptureP0RootVisualAcceptanceTests {
         ))
 
         #expect(root.contains("private let buildIdentity = NembraCaptureBuildIdentity.current"))
+        #expect(root.contains("private var fieldBuildCanPrepareAuthorization: Bool { buildIdentity.hasCompleteFieldBuildMetadata }"))
         #expect(root.contains("private var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }"))
-        #expect(root.contains(".onAppear { synchronizeSDKSession() }"))
-        #expect(root.contains("guard fieldBuildIsAuthoritative else { return }\n        sdkAccount.bootstrap()"))
-        #expect(root.contains("if !fieldBuildIsAuthoritative {"))
+        #expect(root.contains("guard fieldBuildCanPrepareAuthorization else { return }\n        sdkAccount.bootstrap()"))
+        #expect(root.contains("if !fieldBuildCanPrepareAuthorization {"))
         #expect(root.contains("Label(\"Review field requirements\", systemImage: \"lock.shield\")"))
         #expect(root.contains("Shows why this public build cannot start account or Bluetooth authorization."))
-        #expect(root.contains("Bluetooth stays locked until the reviewed field build is installed."))
         #expect(root.contains("This public build cannot authorize Bluetooth or collect physical evidence."))
-        #expect(root.contains(".accessibilityLabel(fieldBuildIsAuthoritative ? \"Field build ready\" : \"Physical capture locked\")"))
         #expect(root.contains(".accessibilityIdentifier(\"nembra.capture.root.account-link-action\")"))
 
-        let publicBranch = try #require(root.range(of: "if !fieldBuildIsAuthoritative {"))
+        let publicBranch = try #require(root.range(of: "if !fieldBuildCanPrepareAuthorization {"))
         let loggedInBranch = try #require(root.range(
             of: "} else if sdkAccount.loggedIn {",
             range: publicBranch.upperBound..<root.endIndex
@@ -35,6 +33,43 @@ struct CaptureP0RootVisualAcceptanceTests {
         ))
         #expect(publicBranch.lowerBound < loggedInBranch.lowerBound)
         #expect(loggedInBranch.lowerBound < appleAction.lowerBound)
+    }
+
+    @Test("metadata-complete root prepares only the non-authorizing app-container transport")
+    func metadataCompleteRootPreparesTransportBeforeSDKSetup() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let root = String(try section(
+            in: source,
+            from: "@MainActor\nprivate struct CaptureP0Root: View",
+            to: "@MainActor\nprivate final class SecureLinkController:"
+        ))
+
+        #expect(root.contains("@State private var authorizationTransportBootstrapError: String?"))
+        #expect(root.contains("NembraCaptureFieldAuthorizationController.prepareAuthorizationTransferDirectoryForFieldTransport()"))
+        #expect(root.contains("authorizationTransportBootstrapError = nil"))
+        #expect(root.contains("One-time authorization transfer storage could not be prepared. Bluetooth remains locked."))
+        #expect(root.contains("fieldBuildCanPrepareAuthorization && authorizationTransportBootstrapError == nil && sdkAccount.loggedIn"))
+        #expect(root.contains("SecureLinkView(device: selected, sdkAccount: sdkAccount)"))
+
+        let body = try section(
+            in: root,
+            from: "var body: some View",
+            to: "@ViewBuilder\n    private var rootHero"
+        )
+        let bootstrap = try #require(body.range(of: "prepareAuthorizationTransport()"))
+        let synchronize = try #require(body.range(of: "synchronizeSDKSession()", range: bootstrap.upperBound..<body.endIndex))
+        #expect(bootstrap.lowerBound < synchronize.lowerBound)
+
+        let prepare = try section(
+            in: root,
+            from: "private func prepareAuthorizationTransport()",
+            to: "private func synchronizeSDKSession()"
+        )
+        #expect(prepare.contains("guard fieldBuildCanPrepareAuthorization else { return }"))
+        #expect(prepare.contains("prepareAuthorizationTransferDirectoryForFieldTransport()"))
+        #expect(!prepare.contains("advanceInboxHandoffIfAvailable()"))
+        #expect(!prepare.contains("admitOFF1Start()"))
+        #expect(!prepare.contains("authorizeFromInbox()"))
     }
 
     @Test("field root uses one official SDK Apple action with disclosed email or phone recovery")
