@@ -69,6 +69,7 @@ public final class AuthenticatedStationaryCaptureAppSession {
         guard stage == .awaitingEnvelope,
               let preparedAttempt,
               let retainedInstallManifestData else {
+            revoke()
             throw AuthenticatedStationaryCaptureAppSessionError.invalidTransition
         }
         do {
@@ -88,6 +89,7 @@ public final class AuthenticatedStationaryCaptureAppSession {
 
     public func admitOFF1Start() throws {
         guard stage == .armed, let capabilityGate else {
+            revoke()
             throw AuthenticatedStationaryCaptureAppSessionError.invalidTransition
         }
         do {
@@ -101,6 +103,7 @@ public final class AuthenticatedStationaryCaptureAppSession {
 
     public func admitAuthenticationStart() throws {
         guard stage == .off1Started, let capabilityGate else {
+            revoke()
             throw AuthenticatedStationaryCaptureAppSessionError.invalidTransition
         }
         do {
@@ -114,6 +117,7 @@ public final class AuthenticatedStationaryCaptureAppSession {
 
     public func admitOfficialConnectionStart() throws {
         guard stage == .authenticationAdmitted, let capabilityGate else {
+            revoke()
             throw AuthenticatedStationaryCaptureAppSessionError.invalidTransition
         }
         do {
@@ -127,6 +131,7 @@ public final class AuthenticatedStationaryCaptureAppSession {
 
     public func admitObservationStart() throws {
         guard stage == .officialConnectionAdmitted, let capabilityGate else {
+            revoke()
             throw AuthenticatedStationaryCaptureAppSessionError.invalidTransition
         }
         do {
@@ -142,6 +147,7 @@ public final class AuthenticatedStationaryCaptureAppSession {
     /// lifecycle. A sealed session can never be reset into another OFF1 sequence.
     public func sealAfterAcceptedArtifactFreeze() throws {
         guard stage == .observationAdmitted, let capabilityGate else {
+            revoke()
             throw AuthenticatedStationaryCaptureAppSessionError.invalidTransition
         }
         do {
