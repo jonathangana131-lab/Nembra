@@ -39,8 +39,12 @@ EXECUTION_SOURCES = (
     "scripts/ci/es80_field_authorization_envelope.py",
     "scripts/ci/es80_signed_field_artifact_evidence.py",
 )
-RENDEZVOUS_BASENAME = "es80_field_authorization_rendezvous.py"
-SIGNER_BASENAME = "es80_field_authorization_envelope.py"
+RENDEZVOUS_RELATIVE_PATH = Path("scripts/ci/es80_field_authorization_rendezvous.py")
+SIGNER_RELATIVE_PATH = Path("scripts/ci/es80_field_authorization_envelope.py")
+# Keep the historical basename constants as non-authoritative compatibility aliases. Execution uses
+# the repository-relative paths above so the frozen signer retains the same path semantics as source.
+RENDEZVOUS_BASENAME = RENDEZVOUS_RELATIVE_PATH.name
+SIGNER_BASENAME = SIGNER_RELATIVE_PATH.name
 
 
 class SignerExecutionCustodyError(RuntimeError):
@@ -150,6 +154,25 @@ def _accepted_blob(relative_path: str) -> bytes:
     return blob
 
 
+def _prepare_bundle_parent(root: Path, relative_path: Path) -> Path:
+    """Create the accepted source's repository-relative parent inside the private bundle."""
+    if relative_path.is_absolute() or not relative_path.parts or ".." in relative_path.parts:
+        raise SignerExecutionCustodyError("execution source relative path is invalid")
+    parent = root
+    for component in relative_path.parts[:-1]:
+        parent = parent / component
+        try:
+            os.mkdir(parent, 0o700)
+        except FileExistsError:
+            pass
+        metadata = os.lstat(parent)
+        if not stat.S_ISDIR(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o700:
+            raise SignerExecutionCustodyError("execution source bundle parent custody is invalid")
+        if metadata.st_uid != os.geteuid():
+            raise SignerExecutionCustodyError("execution source bundle parent owner is invalid")
+    return root / relative_path
+
+
 @contextmanager
 def accepted_execution_bundle() -> Iterator[Path]:
     """Freeze all code that can see the private-key path before signing begins."""
@@ -162,7 +185,8 @@ def accepted_execution_bundle() -> Iterator[Path]:
         root = Path(directory)
         os.chmod(root, 0o700)
         for relative, data in blobs.items():
-            destination = root / Path(relative).name
+            relative_path = Path(relative)
+            destination = _prepare_bundle_parent(root, relative_path)
             descriptor = os.open(
                 os.fspath(destination),
                 os.O_WRONLY | os.O_CREAT | os.O_EXCL,
@@ -264,7 +288,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
         with accepted_execution_bundle() as bundle:
-            helper = _load_rendezvous_helper(bundle / RENDEZVOUS_BASENAME)
+            helper = _load_rendezvous_helper(bundle / RENDEZVOUS_RELATIVE_PATH)
             rendezvous = helper.verify_rendezvous_bytes(helper._read_exact(args.rendezvous))
             validate_signing_chronology(
                 attempt_started_at=rendezvous["attemptStartedAtUnixMilliseconds"],
@@ -274,7 +298,7 @@ def main(argv: list[str] | None = None) -> int:
                 expires_at=timestamp_unix_milliseconds(args.expires_at, "expires-at"),
             )
 
-            signer = bundle / SIGNER_BASENAME
+            signer = bundle / SIGNER_RELATIVE_PATH
             environment = {
                 "PATH": "/usr/bin:/bin",
                 "HOME": "/tmp",
