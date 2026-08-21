@@ -1,9 +1,10 @@
 name: Capture V16 lifecycle wiring gate materialize once
 
 on:
-  push:
+  pull_request:
+    types: [synchronize]
     branches:
-      - ci/capture-v16-lifecycle-wiring-gpt56sol-20260821
+      - product/capture-1-0-main-20260818
     paths:
       - .github/workflows/capture-v16-lifecycle-wiring-materialize-once.yml
 
@@ -16,6 +17,7 @@ concurrency:
 
 jobs:
   materialize:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -23,7 +25,7 @@ jobs:
       TARGET_WORKFLOW: .github/workflows/capture-v16-standalone.yml
       SELF_WORKFLOW: .github/workflows/capture-v16-lifecycle-wiring-materialize-once.yml
       LIFECYCLE_ORACLE: scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
-      SUBJECT_SHA: ${{ github.sha }}
+      SUBJECT_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
       - name: Checkout exact authoring head
         uses: actions/checkout@v6
