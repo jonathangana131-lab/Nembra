@@ -19,7 +19,18 @@ PROBE_PATH="$REPOSITORY_ROOT/$PROBE_RELATIVE_PATH"
 CONTRACT="$REPOSITORY_ROOT/$CONTRACT_RELATIVE_PATH"
 BUNDLE_ID='com.jonathangana131.nembra.capturelearn'
 FIELD_AUTHORIZATION_SUBDIRECTORY='Library/Application Support/NembraCapture/FieldAuthorization'
-DEVICE_UDID="${NEMBRA_CAPTURE_DEVICE_UDID:-${1:-}}"
+ENV_DEVICE_UDID="${NEMBRA_CAPTURE_DEVICE_UDID:-}"
+ARG_DEVICE_UDID="${1:-}"
+
+[[ $# -le 1 ]] || {
+  echo 'ERROR: provide at most one positional iPhone UDID.' >&2
+  exit 12
+}
+if [[ -n "$ENV_DEVICE_UDID" && -n "$ARG_DEVICE_UDID" && "$ENV_DEVICE_UDID" != "$ARG_DEVICE_UDID" ]]; then
+  echo 'ERROR: environment and positional iPhone selectors disagree; refusing ambiguous physical target selection.' >&2
+  exit 13
+fi
+DEVICE_UDID="${ENV_DEVICE_UDID:-$ARG_DEVICE_UDID}"
 
 [[ -n "$DEVICE_UDID" ]] || {
   echo 'ERROR: set NEMBRA_CAPTURE_DEVICE_UDID (or pass the intended iPhone UDID as argument 1).' >&2
