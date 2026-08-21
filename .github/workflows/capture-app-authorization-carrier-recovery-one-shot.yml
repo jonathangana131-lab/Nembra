@@ -26,6 +26,7 @@ jobs:
       APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
       SOURCE_WORKFLOW: .github/workflows/capture-app-authorization-close-one-shot.yml
       RACE_SAFE_WORKFLOW: .github/workflows/capture-app-authorization-race-safe-go.yml
+      SELF_WORKFLOW: .github/workflows/capture-app-authorization-race-safe-go.yml
       RECOVERY_WRITER: .github/workflows/capture-app-authorization-carrier-recovery-one-shot.yml
       EXECUTOR_WORKFLOW: .github/workflows/capture-app-auth-child-materializer.yml
       STALE_RETRIGGER: .github/workflows/capture-app-authorization-retrigger-go.yml
