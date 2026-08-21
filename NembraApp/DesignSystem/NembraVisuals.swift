@@ -36,6 +36,13 @@ struct NembraGlassButtonStyle: ViewModifier {
         strongExplicitBoundaryRequested ? 1.5 : 1
     }
 
+    /// Plain-button call sites do not receive the platform's standard disabled
+    /// dimming automatically. Keep unavailable controls readable while making the
+    /// loss of interactivity visible without depending on color alone.
+    private var disabledOpacity: Double {
+        colorSchemeContrast == .increased ? 0.72 : 0.58
+    }
+
     func body(content: Content) -> some View {
         Group {
             if reduceTransparency {
@@ -67,6 +74,7 @@ struct NembraGlassButtonStyle: ViewModifier {
         .overlay {
             controlBoundary
         }
+        .opacity(isEnabled ? 1 : disabledOpacity)
     }
 
     @ViewBuilder
