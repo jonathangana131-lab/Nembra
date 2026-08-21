@@ -239,3 +239,4 @@ jobs:
           printf 'NEMBRA_CAPTURE_APP_AUTHORIZATION_PINNED_GO materialized=%s trigger=%s physicalAuthorityCreated=false\n' "$materialized" "$GITHUB_SHA"
 
 # recovery review: selected authentication requires exact post-OFF1 authorization stage
+# 2026-08-21 GO recovery retrigger: prior PR writer retired; run pinned exact-head carrier materializer.
