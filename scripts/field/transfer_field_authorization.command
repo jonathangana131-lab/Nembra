@@ -188,12 +188,46 @@ PY
 make_commit_record() {
   local source="$1"
   local destination="$2"
-  local digest
-  digest="$(/usr/bin/shasum -a 256 "$source" | /usr/bin/awk '{print $1}')"
-  [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || die "Could not derive canonical SHA-256 completion record."
-  builtin printf '%s\n' "$digest" > "$destination"
-  /bin/chmod 600 "$destination"
-  [[ "$(/usr/bin/stat -f '%z' "$destination")" == "$COMMIT_RECORD_BYTES" ]] || die "Completion record byte count drifted."
+  /usr/bin/python3 -I -B - "$source" "$destination" <<'PY'
+import hashlib, os, stat, sys
+source, destination = sys.argv[1:]
+no_follow = getattr(os, 'O_NOFOLLOW', None)
+if no_follow is None:
+    raise SystemExit('ERROR: publication commit custody unavailable')
+fd = os.open(source, os.O_RDONLY | no_follow)
+try:
+    before = os.fstat(fd)
+    if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_uid != os.geteuid() or before.st_size <= 0:
+        raise SystemExit('ERROR: publication subject identity rejected')
+    digest = hashlib.sha256()
+    total = 0
+    while True:
+        block = os.read(fd, 65536)
+        if not block:
+            break
+        digest.update(block)
+        total += len(block)
+    after = os.fstat(fd)
+    identity = lambda s: (s.st_dev,s.st_ino,s.st_mode,s.st_uid,s.st_nlink,s.st_size,s.st_mtime_ns,s.st_ctime_ns)
+    if identity(before) != identity(after) or total != before.st_size:
+        raise SystemExit('ERROR: publication subject changed during digest')
+finally:
+    os.close(fd)
+record = digest.hexdigest().encode('ascii') + b'\n'
+if len(record) != 65:
+    raise SystemExit('ERROR: publication commit record size drifted')
+out = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL | no_follow, 0o600)
+try:
+    offset = 0
+    while offset < len(record):
+        count = os.write(out, record[offset:])
+        if count <= 0:
+            raise SystemExit('ERROR: publication commit record write failed')
+        offset += count
+    os.fsync(out)
+finally:
+    os.close(out)
+PY
 }
 
 copy_to_container() {
