@@ -72,6 +72,25 @@ class FieldAuthorizationContainerTransportSourceTests(unittest.TestCase):
             self.assertIn(token, self.source)
         self.assertIn("os.O_DIRECTORY | no_follow", self.source)
 
+    def test_transport_and_help_contract_are_bound_to_exact_tracked_bytes(self) -> None:
+        for token in (
+            'TRANSPORT_RELATIVE_PATH="scripts/field/transfer_field_authorization.command"',
+            'CONTRACT_RELATIVE_PATH="scripts/ci/xcode27_devicectl_manifest_transport_contract.sh"',
+            "rev-parse --verify 'HEAD^{commit}'",
+            'TRANSPORT_TRACKED_BLOB=',
+            'CONTRACT_TRACKED_BLOB=',
+            'TRANSPORT_WORKTREE_BLOB=',
+            'CONTRACT_WORKTREE_BLOB=',
+            'CONTRACT_MATERIALIZED_BLOB=',
+            'git -C "$ROOT" show "${REPOSITORY_HEAD}:${CONTRACT_RELATIVE_PATH}"',
+            'ARTIFACTS_DIR="$SCRATCH/devicectl-help" /bin/bash -p "$CONTRACT_EXEC"',
+        ):
+            self.assertIn(token, self.source)
+        self.assertIn('[[ "$TRANSPORT_WORKTREE_BLOB" == "$TRANSPORT_TRACKED_BLOB" ]]', self.source)
+        self.assertIn('[[ "$CONTRACT_WORKTREE_BLOB" == "$CONTRACT_TRACKED_BLOB" ]]', self.source)
+        self.assertIn('[[ "$CONTRACT_MATERIALIZED_BLOB" == "$CONTRACT_TRACKED_BLOB" ]]', self.source)
+        self.assertNotIn('/bin/bash -p "$ROOT/scripts/ci/xcode27_devicectl_manifest_transport_contract.sh"', self.source)
+
     def test_transport_has_no_install_launch_or_scooter_write_primitive(self) -> None:
         forbidden = (
             "devicectl device install",
