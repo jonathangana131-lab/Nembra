@@ -6,6 +6,12 @@ on:
       - ci/capture-v16-lifecycle-oracle-current-gpt56sol-20260821
     paths:
       - .github/workflows/capture-v16-lifecycle-oracle-current-materialize-once.yml
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - product/capture-1-0-main-20260818
+    paths:
+      - .github/workflows/capture-v16-lifecycle-oracle-current-materialize-once.yml
 
 permissions:
   contents: write
@@ -16,6 +22,10 @@ concurrency:
 
 jobs:
   materialize:
+    if: >-
+      github.event_name == 'push' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.head.ref == 'ci/capture-v16-lifecycle-oracle-current-gpt56sol-20260821')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -29,16 +39,17 @@ jobs:
       - name: Checkout exact authoring head
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Bind exact current-carrier parent
+      - name: Bind exact current-carrier ancestry
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse --verify HEAD^{commit})" = "${{ github.sha }}"
-          test "$(git rev-parse --verify HEAD^1)" = "$EXACT_PARENT"
+          expected="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse --verify HEAD^{commit})" = "$expected"
+          git merge-base --is-ancestor "$EXACT_PARENT" HEAD
           test "$(git rev-parse HEAD:"$TARGET_WORKFLOW")" = "$EXPECTED_TARGET_BLOB"
           test -f "$LIFECYCLE_ORACLE"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
@@ -119,14 +130,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          expected="${{ github.event.pull_request.head.sha || github.sha }}"
           remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
-          test "$remote_head" = "${{ github.sha }}"
+          test "$remote_head" = "$expected"
           rm "$SELF_WORKFLOW"
           git add -- "$TARGET_WORKFLOW" "$SELF_WORKFLOW"
           git diff --cached --check
           actual="$(git diff --cached --name-status | LC_ALL=C sort)"
-          expected="$(printf 'D\t%s\nM\t%s\n' "$SELF_WORKFLOW" "$TARGET_WORKFLOW" | LC_ALL=C sort)"
-          test "$actual" = "$expected"
+          expected_paths="$(printf 'D\t%s\nM\t%s\n' "$SELF_WORKFLOW" "$TARGET_WORKFLOW" | LC_ALL=C sort)"
+          test "$actual" = "$expected_paths"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'ci(capture): require lifecycle oracle in V16 current carrier'
