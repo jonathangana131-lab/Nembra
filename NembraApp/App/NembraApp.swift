@@ -1,5 +1,6 @@
 import Foundation
 import MapKit
+import NembraCore
 import SwiftUI
 
 @main
@@ -122,22 +123,9 @@ private struct NembraNavigationHost<Content: View>: View {
     }
 }
 
-private struct NembraRecentDestination: Codable, Identifiable, Equatable {
-    let id: String
-    let name: String
-    let address: String?
-    let latitude: Double
-    let longitude: Double
+private typealias NembraRecentDestination = NavigationRecentDestinationRecord
 
-    init(item: MKMapItem) {
-        let coordinate = item.placemark.coordinate
-        name = item.name?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty ?? "Destination"
-        address = item.placemark.title?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
-        latitude = coordinate.latitude
-        longitude = coordinate.longitude
-        id = "\(latitude.rounded(toPlaces: 5)),\(longitude.rounded(toPlaces: 5))"
-    }
-
+private extension NavigationRecentDestinationRecord {
     var mapItem: MKMapItem {
         let coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
         let placemark = MKPlacemark(coordinate: coordinate)
@@ -150,13 +138,6 @@ private struct NembraRecentDestination: Codable, Identifiable, Equatable {
 private extension String {
     var nonEmpty: String? {
         isEmpty ? nil : self
-    }
-}
-
-private extension Double {
-    func rounded(toPlaces places: Int) -> Double {
-        let divisor = pow(10.0, Double(places))
-        return (self * divisor).rounded() / divisor
     }
 }
 
@@ -176,11 +157,7 @@ private struct NembraNavigationView: View {
     @State private var isClearRecentsConfirmationPresented = false
 
     private var recentDestinations: [NembraRecentDestination] {
-        guard let data = recentDestinationsJSON.data(using: .utf8),
-              let decoded = try? JSONDecoder().decode([NembraRecentDestination].self, from: data) else {
-            return []
-        }
-        return decoded
+        NavigationRecentDestinationsPersistence.load(json: recentDestinationsJSON).destinations
     }
 
     var body: some View {
@@ -205,6 +182,9 @@ private struct NembraNavigationView: View {
             selectedItem = nil
             selectedAddress = nil
             cameraPosition = .automatic
+        }
+        .task {
+            repairRecentDestinationsIfNeeded()
         }
         .task(id: query) {
             await searchDestinations()
@@ -658,14 +638,22 @@ private struct NembraNavigationView: View {
     }
 
     private func remember(_ item: MKMapItem) {
-        promoteRecent(NembraRecentDestination(item: item))
+        let coordinate = item.placemark.coordinate
+        guard let recent = NembraRecentDestination(
+            name: item.name?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty ?? "Destination",
+            address: item.placemark.title,
+            latitude: coordinate.latitude,
+            longitude: coordinate.longitude
+        ) else {
+            return
+        }
+        promoteRecent(recent)
     }
 
     private func promoteRecent(_ recent: NembraRecentDestination) {
-        var updated = recentDestinations.filter { $0.id != recent.id }
-        updated.insert(recent, at: 0)
-        updated = Array(updated.prefix(6))
-        persistRecentDestinations(updated)
+        persistRecentDestinations(
+            NavigationRecentDestinationsPersistence.promoting(recent, in: recentDestinations)
+        )
     }
 
     private func deleteRecentDestinations(at offsets: IndexSet) {
@@ -679,17 +667,13 @@ private struct NembraNavigationView: View {
     }
 
     private func persistRecentDestinations(_ destinations: [NembraRecentDestination]) {
-        guard !destinations.isEmpty else {
-            recentDestinationsJSON = ""
-            return
-        }
+        recentDestinationsJSON = NavigationRecentDestinationsPersistence.encode(destinations)
+    }
 
-        guard let data = try? JSONEncoder().encode(destinations),
-              let encoded = String(data: data, encoding: .utf8) else {
-            return
-        }
-
-        recentDestinationsJSON = encoded
+    private func repairRecentDestinationsIfNeeded() {
+        let load = NavigationRecentDestinationsPersistence.load(json: recentDestinationsJSON)
+        guard load.requiresRewrite else { return }
+        recentDestinationsJSON = load.canonicalJSON
     }
 
     private func openDirections(to item: MKMapItem) {
