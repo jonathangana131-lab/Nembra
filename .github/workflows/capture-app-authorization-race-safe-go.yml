@@ -1,4 +1,7 @@
 name: Capture app authorization race-safe GO
+# External/user-authored retrigger checkpoint: GitHub Actions token pushes do not recursively
+# start a second workflow run, so this retained pinned one-shot must be touched or manually
+# dispatched once after the writer-shrink commit before it can materialize and retire itself.
 
 on:
   push:
