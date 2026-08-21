@@ -43,12 +43,18 @@ struct TuyaPhysicalAppContainerTransportProbeSourceTests {
         #expect(probe.contains("NOT PROVEN: authorization acceptance"))
     }
 
-    @Test("probe does not durably publish the raw physical device identifier")
+    @Test("probe keeps raw physical-device output ephemeral and publishes only a pseudonym")
     func probePseudonymizesDeviceIdentityInResult() throws {
         let probe = try readRepositoryFile(relativePath)
 
+        #expect(probe.contains("PRIVATE_RUNTIME_DIR"))
+        #expect(probe.contains("trap cleanup_private_runtime EXIT HUP INT TERM"))
+        #expect(probe.contains("> \"$PRIVATE_RUNTIME_DIR/field-authorization-directory-listing.txt\" 2>&1"))
+        #expect(probe.contains("> \"$PRIVATE_RUNTIME_DIR/copy-to.txt\" 2>&1"))
+        #expect(probe.contains("> \"$PRIVATE_RUNTIME_DIR/copy-from.txt\" 2>&1"))
         #expect(probe.contains("DEVICE_PSEUDONYM"))
         #expect(probe.contains("device_pseudonym_sha256=%s"))
+        #expect(probe.contains("raw_device_output_persisted=false"))
         #expect(!probe.contains("device_udid=%s"))
         #expect(!probe.contains("udid=%s"))
         #expect(probe.contains("NEMBRA_CAPTURE_DEVICE_UDID"))
