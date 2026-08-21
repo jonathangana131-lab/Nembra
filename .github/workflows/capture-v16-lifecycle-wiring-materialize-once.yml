@@ -98,10 +98,10 @@ jobs:
           test "$(git rev-parse --verify HEAD^{commit})" = "$GITHUB_SHA"
           test "$(git diff --name-only)" = "$TARGET_WORKFLOW"
           git diff --check
-          grep -Fq "- '$LIFECYCLE_ORACLE'" "$TARGET_WORKFLOW"
-          grep -Fq "/usr/bin/python3 -I $LIFECYCLE_ORACLE -v" "$TARGET_WORKFLOW"
+          grep -Fq -- "- '$LIFECYCLE_ORACLE'" "$TARGET_WORKFLOW"
+          grep -Fq -- "/usr/bin/python3 -I $LIFECYCLE_ORACLE -v" "$TARGET_WORKFLOW"
           /usr/bin/python3 -m py_compile "$LIFECYCLE_ORACLE"
-          test "$(grep -Fc "$LIFECYCLE_ORACLE" "$TARGET_WORKFLOW")" = 3
+          test "$(grep -Fc -- "$LIFECYCLE_ORACLE" "$TARGET_WORKFLOW")" = 3
 
       - name: Publish tested gate and retire authoring workflow
         shell: bash
