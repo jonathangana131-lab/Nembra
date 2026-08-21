@@ -202,4 +202,4 @@ final class NembraCaptureFieldAuthorizationController {
     }
 }
 
-// Exact-head retrigger after retiring the superseded helper-boundary workflow.
+// Exact-head retrigger from the current carrier after removing the non-starting PR writer.
