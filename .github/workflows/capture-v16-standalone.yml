@@ -13,6 +13,7 @@ on:
       - 'NembraApp/Resources/Localizable.strings'
       - 'Packages/NembraBluetoothCapture/**'
       - 'Packages/NembraCore/**'
+      - 'scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py'
       - '.github/workflows/capture-v16-standalone.yml'
   workflow_dispatch:
 
@@ -122,12 +123,14 @@ jobs:
             scripts/ci/es80_signed_field_artifact_private_runner.py \
             scripts/ci/es80_retained_install_manifest.py \
             scripts/ci/tests/test_es80_retained_install_manifest.py \
-            scripts/ci/tests/test_es80_retained_install_installer_chronology.py
+            scripts/ci/tests/test_es80_retained_install_installer_chronology.py \
+            scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
           /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
           /usr/bin/python3 -I scripts/ci/es80_retained_install_manifest.py --self-test
           /usr/bin/python3 -I scripts/ci/tests/test_capture_tuya_private_input_provenance.py
           /usr/bin/python3 -I scripts/ci/tests/test_es80_retained_install_manifest.py
           /usr/bin/python3 -I scripts/ci/tests/test_es80_retained_install_installer_chronology.py
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py -v
           test ! -e LocalSecrets
           test ! -e Pods
           test ! -e NembraCapture.xcworkspace
