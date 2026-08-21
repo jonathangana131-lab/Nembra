@@ -1,7 +1,13 @@
-# GO 2026-08-21: retrigger the existing exact-head materializer after the accessibility/evidence anchors were repaired.
+# GO 2026-08-21: exact-head, same-repository PR trigger so the temporary materializer is observable and repairable.
 name: Dashboard battery-range UI evidence once
 
 on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+    paths:
+      - '.github/workflows/dashboard-battery-range-ui-evidence-once.yml'
   push:
     branches:
       - product/dashboard-battery-range-instrument-gpt56sol
@@ -18,6 +24,10 @@ concurrency:
 
 jobs:
   materialize:
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.head.ref == 'product/dashboard-battery-range-instrument-gpt56sol')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -26,13 +36,23 @@ jobs:
       DASHBOARD: NembraApp/Features/Dashboard/DashboardView.swift
       UI_TESTS: NembraUITests/NembraUITests.swift
       CLOSURE: .github/workflows/dashboard-cockpit-product-closure.yml
+      SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Checkout exact authoring subject
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ env.SUBJECT_SHA }}
           fetch-depth: 0
           persist-credentials: true
+
+      - name: Bind exact authoring subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SUBJECT_SHA"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
+          test "$remote_head" = "$SUBJECT_SHA"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
       - name: Keep battery-as-control available at accessibility sizes
         shell: python
@@ -280,7 +300,7 @@ jobs:
         run: |
           set -euo pipefail
           remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
-          test "$remote_head" = "$GITHUB_SHA"
+          test "$remote_head" = "$SUBJECT_SHA"
           rm -f "$SELF"
           git add -- "$DASHBOARD" "$UI_TESTS" "$CLOSURE" "$SELF"
           git diff --cached --check
