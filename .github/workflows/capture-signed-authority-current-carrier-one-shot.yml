@@ -1,0 +1,140 @@
+name: Capture signed authority current-carrier recovery one-shot
+
+on:
+  push:
+    branches:
+      - recovery/capture-signed-authority-current-carrier-gpt56sol-20260820
+    paths:
+      - .github/workflows/capture-signed-authority-current-carrier-one-shot.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: xcode-27
+    timeout-minutes: 45
+    env:
+      TARGET_BRANCH: recovery/capture-signed-authority-current-carrier-gpt56sol-20260820
+      APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
+      WORKFLOW: .github/workflows/capture-signed-authority-current-carrier-one-shot.yml
+      CARRIER_HEAD: 3cf110f4ddaa3188ac2bcb44dd2393f1c1a69f10
+      CARRIER_SOURCE_BLOB: 627c17949d15aaf26ca28c12abb9bb684ab0e731
+      BASE_MATERIALIZER: .github/workflows/capture-app-authorization-close-one-shot.yml
+      BASE_MATERIALIZER_BLOB: 497efb5bf0bfe1eb811eaac68efc56897f1b987b
+      REVIEWED_INTERMEDIATE_BLOB: 9107ea5ef2bc023cd3b8c2e15a46297e733ba838
+      CORRECTIVE_BRANCH: recovery/capture-entrypoint-auth-after-bootstrap-gpt56sol-20260820
+      CORRECTIVE_HEAD: 3df06693ec526c00096a69a898fa46cd27742fc7
+      CORRECTIVE_WORKFLOW: .github/workflows/capture-entrypoint-signed-authority-close-one-shot.yml
+      CORRECTIVE_WORKFLOW_BLOB: e5cbda84d2951552aa33ec1b9025564689781f23
+    steps:
+      - name: Checkout exact recovery trigger
+        uses: actions/checkout@v6
+        with:
+          ref: recovery/capture-signed-authority-current-carrier-gpt56sol-20260820
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind current carrier and reviewed materializers
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git branch --show-current)" = "$TARGET_BRANCH"
+          test "$(git rev-parse HEAD^)" = "$CARRIER_HEAD"
+          test "$(git rev-parse HEAD:"$APP_SOURCE")" = "$CARRIER_SOURCE_BLOB"
+          test "$(git rev-parse HEAD:"$BASE_MATERIALIZER")" = "$BASE_MATERIALIZER_BLOB"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+          git fetch --no-tags origin "$CORRECTIVE_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$CORRECTIVE_HEAD"
+          test "$(git rev-parse "$CORRECTIVE_HEAD":"$CORRECTIVE_WORKFLOW")" = "$CORRECTIVE_WORKFLOW_BLOB"
+          git show "$CORRECTIVE_HEAD":"$CORRECTIVE_WORKFLOW" > "$RUNNER_TEMP/capture-corrective-materializer.yml"
+          test "$(git hash-object "$RUNNER_TEMP/capture-corrective-materializer.yml")" = "$CORRECTIVE_WORKFLOW_BLOB"
+
+      - name: Reproduce reviewed authorization lifecycle source
+        shell: python
+        run: |
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path(".github/workflows/capture-app-authorization-close-one-shot.yml").read_text(encoding="utf-8")
+          section = workflow.index("      - name: Materialize field authorization into real SecureLink lifecycle")
+          run_marker = "        run: |\n"
+          start = workflow.index(run_marker, section) + len(run_marker)
+          end = workflow.index("\n      - name: Enforce truth-preserving source shape", start)
+          script = textwrap.dedent(workflow[start:end])
+          exec(compile(script, "capture-reviewed-app-authorization-materializer", "exec"), {"__name__": "__main__"})
+
+      - name: Bind reviewed intermediate source blob
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object "$APP_SOURCE")" = "$REVIEWED_INTERMEDIATE_BLOB"
+          git diff --check
+
+      - name: Compose signed-attempt authority corrections
+        shell: python
+        run: |
+          from pathlib import Path
+          import os
+          import textwrap
+
+          workflow = Path(os.environ["RUNNER_TEMP"]) / "capture-corrective-materializer.yml"
+          text = workflow.read_text(encoding="utf-8")
+          section = text.index("      - name: Materialize signed-attempt authority composition")
+          run_marker = "        run: |\n"
+          start = text.index(run_marker, section) + len(run_marker)
+          end = text.index("\n      - name: Run focused truth and presentation contracts", start)
+          script = textwrap.dedent(text[start:end])
+          exec(compile(script, "capture-signed-authority-corrective-materializer", "exec"), {"__name__": "__main__"})
+
+      - name: Run focused truth, lifecycle, and presentation contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          python3 scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py -v
+          test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE")" = 0
+          (
+            cd Packages/NembraBluetoothCapture
+            swift test --filter TuyaFieldBuildPresentationAuthoritySourceTests
+            swift test --filter CaptureP0RootVisualAcceptanceTests
+            swift test --filter AuthenticatedStationaryCaptureAppSessionTests
+            swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthorizationInboxAppAdapter
+            swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
+            swift test --filter TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
+          )
+
+      - name: Build standalone Capture on Xcode 27
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "${RUNNER_TEMP}/NembraCaptureCurrentCarrierSignedAuthority" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Publish exact tested source and retire recovery workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git branch --show-current)" = "$TARGET_BRANCH"
+          git fetch --no-tags origin "$TARGET_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          rm "$WORKFLOW"
+          git add -- "$APP_SOURCE" "$WORKFLOW"
+          git diff --cached --check
+          test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n%s\n' "$APP_SOURCE" "$WORKFLOW" | sort)"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Capture: compose signed-attempt authority on live carrier'
+          materialized="$(git rev-parse HEAD)"
+          git fetch --no-tags origin "$TARGET_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          git push origin HEAD:"$TARGET_BRANCH"
+          printf 'NEMBRA_CAPTURE_CURRENT_CARRIER_SIGNED_AUTHORITY materialized=%s carrier=%s physicalAuthorityCreated=false\n' "$materialized" "$CARRIER_HEAD"
