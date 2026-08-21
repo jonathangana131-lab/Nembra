@@ -1,0 +1,94 @@
+name: Capture app-container transport trigger close one-shot
+
+on:
+  push:
+    branches:
+      - fix/capture-transport-proof-self-trigger-gpt56sol-20260820
+    paths:
+      - .github/workflows/capture-app-container-transport-trigger-close-one-shot.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TARGET_BRANCH: fix/capture-transport-proof-self-trigger-gpt56sol-20260820
+      TARGET_WORKFLOW: .github/workflows/capture-app-container-transport-proof.yml
+      SELF_WORKFLOW: .github/workflows/capture-app-container-transport-trigger-close-one-shot.yml
+      EXPECTED_TARGET_BLOB: 8e3cfb06e42ece78aeb214a48229b806ac13f7cf
+    steps:
+      - name: Checkout exact child head
+        uses: actions/checkout@v6
+        with:
+          ref: fix/capture-transport-proof-self-trigger-gpt56sol-20260820
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind reviewed transport workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git branch --show-current)" = "$TARGET_BRANCH"
+          test "$(git rev-parse HEAD:"$TARGET_WORKFLOW")" = "$EXPECTED_TARGET_BLOB"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Close push self-validation trigger hole
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path(".github/workflows/capture-app-container-transport-proof.yml")
+          source = path.read_text(encoding="utf-8")
+          old = """  push:
+    branches:
+      - product/capture-1-0-main-20260818
+    paths:
+      - 'NembraApp/App/NembraCaptureEntrypoint.swift'
+"""
+          new = """  push:
+    branches:
+      - product/capture-1-0-main-20260818
+    paths:
+      - '.github/workflows/capture-app-container-transport-proof.yml'
+      - 'scripts/ci/xcode27_devicectl_manifest_transport_contract.sh'
+      - 'NembraApp/App/NembraCaptureEntrypoint.swift'
+"""
+          if source.count(old) != 1:
+              raise SystemExit(f"push trigger anchor count was {source.count(old)}, expected 1")
+          path.write_text(source.replace(old, new, 1), encoding="utf-8")
+
+      - name: Validate exact trigger closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('.github/workflows/capture-app-container-transport-proof.yml').read_text(encoding='utf-8')
+          push = source.split('  push:\n', 1)[1].split('  workflow_dispatch:\n', 1)[0]
+          required = [
+              "      - '.github/workflows/capture-app-container-transport-proof.yml'",
+              "      - 'scripts/ci/xcode27_devicectl_manifest_transport_contract.sh'",
+          ]
+          for line in required:
+              if push.count(line) != 1:
+                  raise SystemExit(f'missing or duplicate push trigger: {line}')
+          if source.count(required[0]) != 2 or source.count(required[1]) != 2:
+              raise SystemExit('pull_request and push trigger sets are not both self-validating')
+          PY
+
+      - name: Publish direct workflow fix and retire one-shot
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm "$SELF_WORKFLOW"
+          git add -- "$TARGET_WORKFLOW" "$SELF_WORKFLOW"
+          git diff --cached --check
+          test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n%s\n' "$SELF_WORKFLOW" "$TARGET_WORKFLOW" | sort)"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Capture: self-trigger app-container transport proof'
+          git push origin HEAD:"$TARGET_BRANCH"
