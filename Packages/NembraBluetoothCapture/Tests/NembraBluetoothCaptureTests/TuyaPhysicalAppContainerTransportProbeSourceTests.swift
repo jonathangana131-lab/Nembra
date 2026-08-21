@@ -27,6 +27,23 @@ struct TuyaPhysicalAppContainerTransportProbeSourceTests {
         #expect(!probe.contains("signer-rendezvous.json"))
     }
 
+    @Test("probe refuses ambiguous physical iPhone selection before device contact")
+    func probeRejectsConflictingDeviceSelectorsBeforeContact() throws {
+        let probe = try readRepositoryFile(relativePath)
+
+        #expect(probe.contains("ENV_DEVICE_UDID=\"${NEMBRA_CAPTURE_DEVICE_UDID:-}\""))
+        #expect(probe.contains("ARG_DEVICE_UDID=\"${1:-}\""))
+        #expect(probe.contains("[[ $# -le 1 ]]"))
+        #expect(probe.contains("\"$ENV_DEVICE_UDID\" != \"$ARG_DEVICE_UDID\""))
+        #expect(probe.contains("environment and positional iPhone selectors disagree"))
+        #expect(probe.contains("DEVICE_UDID=\"${ENV_DEVICE_UDID:-$ARG_DEVICE_UDID}\""))
+        #expect(!probe.contains("DEVICE_UDID=\"${NEMBRA_CAPTURE_DEVICE_UDID:-${1:-}}\""))
+
+        let rejection = try #require(probe.range(of: "environment and positional iPhone selectors disagree"))
+        let firstDeviceContact = try #require(probe.range(of: "/usr/bin/xcrun devicectl device info files"))
+        #expect(rejection.lowerBound < firstDeviceContact.lowerBound)
+    }
+
     @Test("probe requires exact bidirectional bytes and preserves the physical NO-GO boundary")
     func probeRequiresRoundTripAndFailsClosedOnAuthority() throws {
         let probe = try readRepositoryFile(relativePath)
