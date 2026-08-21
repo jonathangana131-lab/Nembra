@@ -324,7 +324,7 @@ jobs:
               --path "$RESULT_BUNDLE" \
               --output-path "$attachments" \
               > "$artifacts/logs/xcresult-attachments.log" 2>&1; then
-              find "$attachments" -maxdepth 2 -type f -print | sort \
+              /usr/bin/find "$attachments" -type f -print | sort \
                 > "$artifacts/screenshot-attachments.txt"
             else
               {
