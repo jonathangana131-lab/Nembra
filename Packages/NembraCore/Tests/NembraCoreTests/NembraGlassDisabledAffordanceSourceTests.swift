@@ -29,6 +29,25 @@ struct NembraGlassDisabledAffordanceSourceTests {
         #expect(source.contains(".strokeBorder("))
     }
 
+    @Test("Shipping Home quick controls consume the shared disabled affordance")
+    func homeQuickControlsUseSharedGlassStyle() throws {
+        let source = try readRepositoryFile("NembraApp/Features/Home/HomeView.swift")
+        guard let start = source.range(of: "private func actionControl("),
+              let end = source.range(of: "// MARK: - Ride mode", range: start.upperBound..<source.endIndex) else {
+            Issue.record("Home actionControl source section was not found")
+            throw SourceContractError.sectionMissing
+        }
+
+        let actionControl = source[start.lowerBound..<end.lowerBound]
+        guard let glass = actionControl.range(of: ".nembraGlassControl()"),
+              let disabled = actionControl.range(of: ".disabled(") else {
+            Issue.record("Home quick controls are no longer wired through shared glass disabled styling")
+            throw SourceContractError.sectionMissing
+        }
+
+        #expect(glass.lowerBound < disabled.lowerBound)
+    }
+
     private func readRepositoryFile(_ relativePath: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -38,5 +57,9 @@ struct NembraGlassDisabledAffordanceSourceTests {
             .deletingLastPathComponent()
         let data = try Data(contentsOf: repositoryRoot.appendingPathComponent(relativePath))
         return String(decoding: data, as: UTF8.self)
+    }
+
+    private enum SourceContractError: Error {
+        case sectionMissing
     }
 }
