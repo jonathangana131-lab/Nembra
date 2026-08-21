@@ -52,13 +52,19 @@ struct RideJournalVisualClosureSourceTests {
 
         for identifier in [
             "rides.loading",
-            "rides.empty",
-            "rides.error",
             "rides.completed-row",
             "rides.history",
         ] {
             #expect(history.contains("accessibilityIdentifier(\"\(identifier)\")"))
         }
+
+        // Empty and error states flow through journalStateSurface so the identifier
+        // is supplied at the call site and applied by the shared helper. Pin both
+        // halves of that contract instead of requiring a direct modifier literal.
+        for identifier in ["rides.empty", "rides.error"] {
+            #expect(history.contains("identifier: \"\(identifier)\""))
+        }
+        #expect(history.contains(".accessibilityIdentifier(identifier)"))
 
         #expect(history.contains("accessibilityReduceTransparency"))
         #expect(history.contains("dynamicTypeSize.isAccessibilitySize"))
