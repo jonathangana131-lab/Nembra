@@ -1,78 +1,161 @@
-name: Capture app authorization child materializer
+name: Capture app authorization exact-head executor
 
+# Trusted, non-recursive execution surface for the already-reviewed carrier-native
+# lifecycle materializer. The PR head is an event-only request marker: this workflow
+# checks out and executes only the immutable carrier base SHA.
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened]
     branches:
       - product/capture-1-0-main-20260818
+    paths:
+      - .github/capture-app-authorization-executor-request.txt
 
 permissions:
   contents: write
   pull-requests: read
 
+concurrency:
+  group: capture-app-authorization-exact-head-executor
+  cancel-in-progress: false
+
 jobs:
-  materialize:
+  materialize-test-publish:
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.head.ref == 'recovery/capture-app-auth-close-gpt56sol-20260819'
+      github.event.pull_request.head.ref == 'ops/capture-auth-executor-v14-20260821-gpt56sol' &&
+      github.event.pull_request.base.ref == 'product/capture-1-0-main-20260818'
     runs-on: xcode-27
-    timeout-minutes: 35
+    timeout-minutes: 45
     env:
-      EXPECTED_SOURCE_BLOB: 627c17949d15aaf26ca28c12abb9bb684ab0e731
+      TARGET_BRANCH: product/capture-1-0-main-20260818
+      EXECUTOR_BRANCH: ops/capture-auth-executor-v14-20260821-gpt56sol
+      REQUEST_MARKER: .github/capture-app-authorization-executor-request.txt
       APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
       SOURCE_WORKFLOW: .github/workflows/capture-app-authorization-close-one-shot.yml
-      RECOVERY_WORKFLOW: .github/workflows/capture-app-auth-recovery-one-shot.yml
+      RACE_SAFE_WORKFLOW: .github/workflows/capture-app-authorization-race-safe-go.yml
+      EXECUTOR_WORKFLOW: .github/workflows/capture-app-auth-child-materializer.yml
+      STALE_RETRIGGER: .github/workflows/capture-app-authorization-retrigger-go.yml
+      STALE_DIRECT: .github/workflows/capture-authority-v3-direct-materialize-once.yml
+      MATERIALIZER_COMMIT: 3cf110f4ddaa3188ac2bcb44dd2393f1c1a69f10
+      EXPECTED_MATERIALIZER_BLOB: 8a0baf6cbafa5c9a50e853a972b8f7a45c6131f3
+      EXPECTED_SOURCE_WORKFLOW_BLOB: 2cb91114a605be7f6808eb10b4201cd58bb419e0
+      EXPECTED_RACE_SAFE_BLOB: 53ad88389dde37de54b37c6557b9f9749f12b3f3
+      EXPECTED_APP_BLOB: 627c17949d15aaf26ca28c12abb9bb684ab0e731
     steps:
-      - name: Checkout exact recovery head
+      - name: Checkout immutable carrier base only
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Bind exact reviewed source and materializer
+      - name: Bind trusted base, event-only request, and reviewed subjects
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
-          test "$(git rev-parse HEAD:"$APP_SOURCE")" = "$EXPECTED_SOURCE_BLOB"
-          test -f "$SOURCE_WORKFLOW"
-          test -f "$RECOVERY_WORKFLOW"
+          base_sha='${{ github.event.pull_request.base.sha }}'
+          head_sha='${{ github.event.pull_request.head.sha }}'
+          test "$(git rev-parse HEAD)" = "$base_sha"
+
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
+          test "$remote_head" = "$base_sha"
+
+          git merge-base --is-ancestor "$MATERIALIZER_COMMIT" HEAD
+          test "$(git rev-parse "$MATERIALIZER_COMMIT:$RACE_SAFE_WORKFLOW")" = "$EXPECTED_MATERIALIZER_BLOB"
+          test "$(git rev-parse HEAD:"$SOURCE_WORKFLOW")" = "$EXPECTED_SOURCE_WORKFLOW_BLOB"
+          test "$(git rev-parse HEAD:"$RACE_SAFE_WORKFLOW")" = "$EXPECTED_RACE_SAFE_BLOB"
+          test "$(git rev-parse HEAD:"$APP_SOURCE")" = "$EXPECTED_APP_BLOB"
+          test -f "$EXECUTOR_WORKFLOW"
+
+          git fetch --no-tags origin "refs/heads/$EXECUTOR_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$head_sha"
+          changed="$(git diff --name-only "$base_sha" "$head_sha")"
+          test "$changed" = "$REQUEST_MARKER"
+          marker="$(git show "$head_sha:$REQUEST_MARKER")"
+          printf '%s\n' "$marker" | grep -Fxq 'NEMBRA_CAPTURE_AUTHORIZATION_EXECUTOR_V14=1'
+          printf '%s\n' "$marker" | grep -Fxq "base=$base_sha"
+          printf '%s\n' "$marker" | grep -Fxq 'physicalAuthorityCreated=false'
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Materialize exact-freeze authorization lifecycle
+      - name: Execute the reviewed race-safe transform steps verbatim
         shell: python
         run: |
           from pathlib import Path
           import textwrap
 
-          workflow = Path(".github/workflows/capture-app-authorization-close-one-shot.yml").read_text(encoding="utf-8")
-          section = workflow.index("      - name: Materialize field authorization into real SecureLink lifecycle")
-          run_marker = "        run: |\n"
-          start = workflow.index(run_marker, section) + len(run_marker)
-          end = workflow.index("\n      - name: Enforce truth-preserving source shape", start)
-          script = textwrap.dedent(workflow[start:end])
-          exec(compile(script, "capture-app-authorization-materializer", "exec"), {"__name__": "__main__"})
+          workflow = Path(".github/workflows/capture-app-authorization-race-safe-go.yml").read_text(encoding="utf-8")
 
-      - name: Verify strengthened source contracts
+          def execute_step(name: str, next_name: str) -> None:
+              start_marker = f"      - name: {name}\n        shell: python\n        run: |\n"
+              end_marker = f"\n      - name: {next_name}"
+              start = workflow.index(start_marker) + len(start_marker)
+              end = workflow.index(end_marker, start)
+              program = textwrap.dedent(workflow[start:end])
+              namespace = {
+                  "__name__": "__main__",
+                  "__file__": f"<trusted-exact-head-executor:{name}>",
+              }
+              exec(compile(program, namespace["__file__"], "exec", dont_inherit=True), namespace)
+
+          execute_step(
+              "Execute reviewed carrier-native lifecycle materializer",
+              "Keep exact-freeze helper outside watchdog source-oracle interval",
+          )
+          execute_step(
+              "Keep exact-freeze helper outside watchdog source-oracle interval",
+              "Bind selected authentication to exact post-OFF1 authorization stage",
+          )
+          execute_step(
+              "Bind selected authentication to exact post-OFF1 authorization stage",
+              "Enforce transformed authority shape",
+          )
+
+      - name: Enforce transformed authority shape
         shell: bash
         run: |
           set -euo pipefail
           git diff --check
+          test "$(git status --porcelain=v1 | awk '{print $2}' | sort | tr '\n' ' ' | sed 's/ $//')" = "$APP_SOURCE"
+          grep -Fq 'import NembraCaptureAppAuthorization' "$APP_SOURCE"
+          grep -Fq 'fieldBuildCanPrepareAuthorization' "$APP_SOURCE"
+          grep -Fq 'prepareAuthorizationTransferDirectoryForFieldTransport()' "$APP_SOURCE"
+          grep -Fq 'buildIdentity.hasCompleteFieldBuildMetadata' "$APP_SOURCE"
+          grep -Fq 'fieldBuildMetadataComplete' "$APP_SOURCE"
           grep -Fq 'fieldAuthorization.stage == .armed' "$APP_SOURCE"
+          grep -Fq 'fieldAuthorizationObservationAdmitted' "$APP_SOURCE"
+          grep -Fq 'fieldAuthorizationCanAdmitAuthentication' "$APP_SOURCE"
+          grep -Fq 'fieldAuthorization.stage == .off1Started' "$APP_SOURCE"
+          grep -Fq '.disabled(!test.fieldAuthorizationCanAdmitAuthentication || test.membershipBusy)' "$APP_SOURCE"
           grep -Fq 'try self.fieldAuthorization.admitOFF1Start()' "$APP_SOURCE"
           grep -Fq 'try self.fieldAuthorization.admitAuthenticationStart()' "$APP_SOURCE"
           grep -Fq 'try fieldAuthorization.admitOfficialConnectionStart()' "$APP_SOURCE"
           grep -Fq 'try self.fieldAuthorization.admitObservationStart()' "$APP_SOURCE"
           grep -Fq 'try self.freezeAcceptedArtifactForAuthorizationSeal()' "$APP_SOURCE"
           grep -Fq 'try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()' "$APP_SOURCE"
+          grep -Fq 'field_authorization_or_artifact_freeze_rejected' "$APP_SOURCE"
           test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE")" = 0
-          (
-            cd Packages/NembraBluetoothCapture
-            swift test --filter AuthenticatedStationaryCaptureAppSessionTests
-            swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
-            swift test --filter TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
-          )
+
+      - name: Run exact lifecycle source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py -v
+
+      - name: Run focused adversarial authorization contracts
+        working-directory: Packages/NembraBluetoothCapture
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --filter AuthenticatedStationaryCaptureAppSessionTests
+          swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthorizationInboxAppAdapter
+          swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
+          swift test --filter TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
+          swift test --filter TuyaFieldBuildPresentationAuthoritySourceTests
+          swift test --filter TuyaFieldFinalAuthoritySourceTests
+          swift test --filter TuyaFieldGoPrerequisiteSourceTests
+          swift test --filter TuyaCaptureRootProductSurfaceSourceTests
+          swift test --filter CaptureP0RootVisualAcceptanceTests
 
       - name: Build standalone Capture on Xcode 27
         shell: bash
@@ -84,22 +167,30 @@ jobs:
             -scheme 'Nembra Capture' \
             -configuration Debug \
             -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath "${RUNNER_TEMP}/NembraCaptureAppAuthorizationChild" \
+            -derivedDataPath "$RUNNER_TEMP/NembraCaptureAppAuthorizationExactHeadExecutor" \
             CODE_SIGNING_ALLOWED=NO \
             build
 
-      - name: Publish only this exact tested recovery head
+      - name: Publish only the immutable tested carrier subject
         shell: bash
         run: |
           set -euo pipefail
-          rm "$SOURCE_WORKFLOW" "$RECOVERY_WORKFLOW"
-          git add -- "$APP_SOURCE" "$SOURCE_WORKFLOW" "$RECOVERY_WORKFLOW"
+          base_sha='${{ github.event.pull_request.base.sha }}'
+          test "$(git rev-parse HEAD)" = "$base_sha"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
+          test "$remote_head" = "$base_sha"
+
+          rm -f "$SOURCE_WORKFLOW" "$RACE_SAFE_WORKFLOW" "$EXECUTOR_WORKFLOW" "$STALE_RETRIGGER" "$STALE_DIRECT"
+          git add -- "$APP_SOURCE"
+          for retired in "$SOURCE_WORKFLOW" "$RACE_SAFE_WORKFLOW" "$EXECUTOR_WORKFLOW" "$STALE_RETRIGGER" "$STALE_DIRECT"; do
+            if git ls-files --error-unmatch "$retired" >/dev/null 2>&1; then
+              git add -- "$retired"
+            fi
+          done
           git diff --cached --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'feat(capture): wire one-time field authorization into SecureLink'
           materialized="$(git rev-parse HEAD)"
-          git fetch origin 'recovery/capture-app-auth-close-gpt56sol-20260819'
-          test "$(git rev-parse FETCH_HEAD)" = "${{ github.event.pull_request.head.sha }}"
-          git push origin HEAD:'recovery/capture-app-auth-close-gpt56sol-20260819'
-          printf 'NEMBRA_CAPTURE_APP_AUTHORIZATION_CHILD materialized=%s trigger=%s physicalAuthorityCreated=false\n' "$materialized" "${{ github.event.pull_request.head.sha }}"
+          git push --force-with-lease="refs/heads/$TARGET_BRANCH:$base_sha" origin "HEAD:refs/heads/$TARGET_BRANCH"
+          printf 'NEMBRA_CAPTURE_APP_AUTHORIZATION_EXACT_HEAD materialized=%s base=%s request=%s physicalAuthorityCreated=false\n' "$materialized" "$base_sha" '${{ github.event.pull_request.head.sha }}'
