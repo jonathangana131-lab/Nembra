@@ -19,7 +19,7 @@ jobs:
       TRIGGER_WORKFLOW: .github/workflows/capture-entrypoint-auth-current-recovery.yml
       SOURCE_WORKFLOW: .github/workflows/capture-app-authorization-close-one-shot.yml
       APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
-      EXPECTED_TRIGGER_HEAD: 5a659d4b94bdf526be645099f2bff28abb6f6b77
+      EXPECTED_CARRIER_HEAD: 5a659d4b94bdf526be645099f2bff28abb6f6b77
       EXPECTED_APP_BLOB: 627c17949d15aaf26ca28c12abb9bb684ab0e731
     steps:
       - uses: actions/checkout@v6
@@ -34,7 +34,7 @@ jobs:
           set -euo pipefail
           test "$(git branch --show-current)" = "$TARGET_BRANCH"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$GITHUB_SHA" = "$EXPECTED_TRIGGER_HEAD"
+          git merge-base --is-ancestor "$EXPECTED_CARRIER_HEAD" HEAD
           test "$(git rev-parse HEAD:"$APP_SOURCE")" = "$EXPECTED_APP_BLOB"
           test -f "$SOURCE_WORKFLOW"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
@@ -105,4 +105,4 @@ jobs:
           git fetch origin "$TARGET_BRANCH"
           test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
           git push origin HEAD:"$TARGET_BRANCH"
-          printf 'NEMBRA_CAPTURE_ENTRYPOINT_AUTH_RECOVERY materialized=%s parent=%s physicalAuthorityCreated=false\n' "$materialized" "$GITHUB_SHA"
+          printf 'NEMBRA_CAPTURE_ENTRYPOINT_AUTH_RECOVERY materialized=%s trigger=%s carrier=%s physicalAuthorityCreated=false\n' "$materialized" "$GITHUB_SHA" "$EXPECTED_CARRIER_HEAD"
