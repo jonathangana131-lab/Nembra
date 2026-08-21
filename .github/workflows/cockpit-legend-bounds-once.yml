@@ -19,7 +19,7 @@ jobs:
     env:
       TARGET_BRANCH: product/cockpit-energy-rail-mainline-20260820
       EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
-      EXPECTED_PARENT: f813c9559158d01b00104a657ebf5d10ee5ac471
+      EXPECTED_PARENT: d832eb2edee7a8ca476044ffc178d172d63f480f
       SELF_WORKFLOW: .github/workflows/cockpit-legend-bounds-once.yml
       INSTRUMENT_SOURCE: NembraApp/Features/Dashboard/SpeedInstrumentModel.swift
       APP_TESTS: NembraAppTests/NembraAppTests.swift
@@ -46,15 +46,20 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
+          import textwrap
 
-          def replace_once(source: str, old: str, new: str, label: str) -> str:
-              count = source.count(old)
+          def require_once(source: str, token: str, label: str) -> None:
+              count = source.count(token)
               if count != 1:
                   raise SystemExit(f"{label}: expected one anchor, found {count}")
-              return source.replace(old, new, 1)
 
           instrument_path = Path("NembraApp/Features/Dashboard/SpeedInstrumentModel.swift")
           instrument = instrument_path.read_text(encoding="utf-8")
+
+          struct_anchor = "private struct DashboardEnergyRailView: View {"
+          require_once(instrument, struct_anchor, "Energy Rail view")
+          if "enum DashboardEnergyRailLegendPolicy" in instrument:
+              raise SystemExit("legend policy already exists; refuse replay")
 
           policy = '''enum DashboardEnergyRailLegendPolicy {
               static func frameHeight(for pointSize: CGFloat) -> CGFloat {
@@ -88,36 +93,33 @@ jobs:
           }
 
           private struct DashboardEnergyRailView: View {'''
-          instrument = replace_once(
-              instrument,
-              "private struct DashboardEnergyRailView: View {",
-              policy,
-              "legend policy insertion",
+          instrument = instrument.replace(struct_anchor, policy, 1)
+
+          block_start = '                Text("0")\n'
+          block_end = (
+              '\n            }\n'
+              '        }\n'
+              '        .accessibilityElement(children: .ignore)\n'
+              '        .accessibilityLabel("Propulsion power")'
           )
+          require_once(instrument, block_start, "zero legend start")
+          start = instrument.index(block_start)
+          end = instrument.find(block_end, start)
+          if end < 0:
+              raise SystemExit("Energy Rail legend boundary missing")
+          old_block = instrument[start:end]
+          for token in [
+              'Text("PROPULSION  →")',
+              'if let scaleText = semantics.scaleText {',
+              '.position(x: geometry.start.x, y: geometry.start.y + 17)',
+              '.position(x: proxy.size.width * 0.24, y: proxy.size.height * 0.90)',
+              '.position(x: proxy.size.width * 0.78, y: proxy.size.height * 0.90)',
+          ]:
+              require_once(old_block, token, f"legacy legend token {token}")
+          if len(old_block) > 1_600:
+              raise SystemExit(f"legacy legend block unexpectedly large: {len(old_block)} bytes")
 
-          old_labels = '''                Text("0")
-                    .font(.system(size: smallLabelSize, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(NembraColor.secondaryText.opacity(0.88))
-                    .position(x: geometry.start.x, y: geometry.start.y + 17)
-                    .accessibilityHidden(true)
-
-                Text("PROPULSION  →")
-                    .font(.system(size: smallLabelSize, weight: .bold, design: .default))
-                    .tracking(1.5)
-                    .foregroundStyle(NembraColor.secondaryText.opacity(0.88))
-                    .position(x: proxy.size.width * 0.24, y: proxy.size.height * 0.90)
-                    .accessibilityHidden(true)
-
-                if let scaleText = semantics.scaleText {
-                    Text(scaleText)
-                        .font(.system(size: microLabelSize, weight: .semibold, design: .monospaced))
-                        .tracking(0.5)
-                        .foregroundStyle(NembraColor.secondaryText.opacity(0.88))
-                        .position(x: proxy.size.width * 0.78, y: proxy.size.height * 0.90)
-                        .accessibilityHidden(true)
-                }
-          '''.rstrip()
-          new_labels = '''                if let zeroLabelY = DashboardEnergyRailLegendPolicy.centerY(
+          new_block = '''                if let zeroLabelY = DashboardEnergyRailLegendPolicy.centerY(
                       desiredY: geometry.start.y + 17,
                       railHeight: proxy.size.height,
                       pointSize: smallLabelSize
@@ -157,20 +159,19 @@ jobs:
                           .frame(height: DashboardEnergyRailLegendPolicy.frameHeight(for: microLabelSize))
                           .position(x: proxy.size.width * 0.78, y: scaleLabelY)
                           .accessibilityHidden(true)
-                  }
-          '''.rstrip()
-          instrument = replace_once(
-              instrument,
-              old_labels,
-              new_labels,
-              "permanent legend layout",
-          )
+                  }'''
+          instrument = instrument[:start] + new_block + instrument[end:]
           instrument_path.write_text(instrument, encoding="utf-8")
 
           tests_path = Path("NembraAppTests/NembraAppTests.swift")
           tests = tests_path.read_text(encoding="utf-8")
-          anchor = "    func testPowerPeakLabelPolicyStaysInsideRailOrOmitsCompactLabel() throws {\n"
-          regression = '''    func testEnergyRailPermanentLegendPolicyStaysInsideRailOrOmitsCompactLabels() throws {
+          test_anchor = "    func testPowerPeakLabelPolicyStaysInsideRailOrOmitsCompactLabel() throws {\n"
+          require_once(tests, test_anchor, "peak label regression insertion")
+          if "testEnergyRailPermanentLegendPolicyStaysInsideRailOrOmitsCompactLabels" in tests:
+              raise SystemExit("legend regression already exists; refuse replay")
+
+          regression = textwrap.indent(textwrap.dedent('''
+          func testEnergyRailPermanentLegendPolicyStaysInsideRailOrOmitsCompactLabels() throws {
               for pointSize: CGFloat in [8, 13, 15] {
                   XCTAssertNil(
                       DashboardEnergyRailLegendPolicy.centerY(
@@ -197,9 +198,8 @@ jobs:
                   XCTAssertLessThanOrEqual(centerY + frameHeight / 2, railHeight)
               }
           }
-
-          '''.rstrip() + "\n\n"
-          tests = replace_once(tests, anchor, regression + anchor, "legend regression")
+          ''').strip(), "    ") + "\n\n"
+          tests = tests.replace(test_anchor, regression + test_anchor, 1)
           tests_path.write_text(tests, encoding="utf-8")
 
       - name: Enforce bounded source delta
