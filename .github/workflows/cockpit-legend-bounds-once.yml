@@ -19,7 +19,7 @@ jobs:
     env:
       TARGET_BRANCH: product/cockpit-energy-rail-mainline-20260820
       EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
-      EXPECTED_PARENT: a2f5e96cf9b93f377befd7337ecdd9bc72d663ab
+      EXPECTED_PARENT: 3415224a09ff3e2f8a918502cdd34386feb64229
       SELF_WORKFLOW: .github/workflows/cockpit-legend-bounds-once.yml
       INSTRUMENT_SOURCE: NembraApp/Features/Dashboard/SpeedInstrumentModel.swift
       APP_TESTS: NembraAppTests/NembraAppTests.swift
@@ -96,26 +96,26 @@ jobs:
           )
 
           old_labels = '''                Text("0")
-                      .font(.system(size: smallLabelSize, weight: .semibold, design: .monospaced))
-                      .foregroundStyle(NembraColor.secondaryText.opacity(0.88))
-                      .position(x: geometry.start.x, y: geometry.start.y + 17)
-                      .accessibilityHidden(true)
+                    .font(.system(size: smallLabelSize, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(NembraColor.secondaryText.opacity(0.88))
+                    .position(x: geometry.start.x, y: geometry.start.y + 17)
+                    .accessibilityHidden(true)
 
-                  Text("PROPULSION  →")
-                      .font(.system(size: smallLabelSize, weight: .bold, design: .default))
-                      .tracking(1.5)
-                      .foregroundStyle(NembraColor.secondaryText.opacity(0.88))
-                      .position(x: proxy.size.width * 0.24, y: proxy.size.height * 0.90)
-                      .accessibilityHidden(true)
+                Text("PROPULSION  →")
+                    .font(.system(size: smallLabelSize, weight: .bold, design: .default))
+                    .tracking(1.5)
+                    .foregroundStyle(NembraColor.secondaryText.opacity(0.88))
+                    .position(x: proxy.size.width * 0.24, y: proxy.size.height * 0.90)
+                    .accessibilityHidden(true)
 
-                  if let scaleText = semantics.scaleText {
-                      Text(scaleText)
-                          .font(.system(size: microLabelSize, weight: .semibold, design: .monospaced))
-                          .tracking(0.5)
-                          .foregroundStyle(NembraColor.secondaryText.opacity(0.88))
-                          .position(x: proxy.size.width * 0.78, y: proxy.size.height * 0.90)
-                          .accessibilityHidden(true)
-                  }
+                if let scaleText = semantics.scaleText {
+                    Text(scaleText)
+                        .font(.system(size: microLabelSize, weight: .semibold, design: .monospaced))
+                        .tracking(0.5)
+                        .foregroundStyle(NembraColor.secondaryText.opacity(0.88))
+                        .position(x: proxy.size.width * 0.78, y: proxy.size.height * 0.90)
+                        .accessibilityHidden(true)
+                }
           '''
           new_labels = '''                if let zeroLabelY = DashboardEnergyRailLegendPolicy.centerY(
                       desiredY: geometry.start.y + 17,
