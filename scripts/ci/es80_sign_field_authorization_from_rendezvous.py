@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 """Delegate one ES80 field-authorization signing request from an app rendezvous document.
 
-This remains an orchestration wrapper, not a second signer. Before any private-key path is handed
-to signing code, it proves that this wrapper and every Python source that will parse or sign the
-request exactly match immutable Git blob objects at the checked-out HEAD. It then materializes those
-accepted object bytes into a private temporary execution bundle and invokes only that bundle.
+This remains an orchestration wrapper, not a second signer. The caller must supply the independently
+accepted exact source commit that is allowed to select every Python source able to observe the
+private-key path. The wrapper resolves only immutable Git objects from that commit, re-hashes them,
+materializes those bytes into a private execution bundle, and cross-checks that same source commit
+against the independently accepted signed-evidence subject before launching the signer.
 
 Cryptographic payload construction, signed-evidence parsing, signing, self-verification, and
 no-replace publication remain owned by `es80_field_authorization_envelope.py`.
+
+This source change does not promote the wrapper into the physical/private runbook. A production
+invocation still has to execute this wrapper itself from an independently pinned/accepted source
+boundary; mutable checkout execution is not private-key authority.
 """
 from __future__ import annotations
 
@@ -19,7 +24,6 @@ import importlib.util
 import os
 from pathlib import Path
 import re
-import stat
 import subprocess
 import sys
 import tempfile
@@ -41,6 +45,7 @@ EXECUTION_SOURCES = (
 )
 RENDEZVOUS_BASENAME = "es80_field_authorization_rendezvous.py"
 SIGNER_BASENAME = "es80_field_authorization_envelope.py"
+EVIDENCE_BASENAME = "es80_signed_field_artifact_evidence.py"
 
 
 class SignerExecutionCustodyError(RuntimeError):
@@ -88,76 +93,39 @@ def _git_blob_sha(data: bytes) -> str:
     return hashlib.sha1(prefix + data).hexdigest()
 
 
-def _read_exact_worktree(path: Path) -> bytes:
-    """Read one source file through a no-follow descriptor and reject mutable aliases."""
-    requested = path
-    if not requested.is_absolute():
-        raise SignerExecutionCustodyError("execution source path is not absolute")
-    no_follow = getattr(os, "O_NOFOLLOW", None)
-    if no_follow is None:
-        raise SignerExecutionCustodyError("platform cannot guarantee no-follow source custody")
-    try:
-        descriptor = os.open(os.fspath(requested), os.O_RDONLY | no_follow)
-    except OSError as error:
-        raise SignerExecutionCustodyError("execution source cannot be opened safely") from error
-    try:
-        before = os.fstat(descriptor)
-        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
-            raise SignerExecutionCustodyError("execution source is not one regular single-link file")
-        if before.st_size <= 0 or before.st_size > MAX_SOURCE_BYTES:
-            raise SignerExecutionCustodyError("execution source size is invalid")
-        blocks: list[bytes] = []
-        count = 0
-        while True:
-            block = os.read(descriptor, min(65_536, MAX_SOURCE_BYTES + 1 - count))
-            if not block:
-                break
-            blocks.append(block)
-            count += len(block)
-            if count > MAX_SOURCE_BYTES:
-                raise SignerExecutionCustodyError("execution source exceeds the byte limit")
-        after = os.fstat(descriptor)
-        identity = lambda value: (
-            value.st_dev,
-            value.st_ino,
-            value.st_mode,
-            value.st_uid,
-            value.st_nlink,
-            value.st_size,
-            value.st_mtime_ns,
-            value.st_ctime_ns,
+def _canonical_source_commit(raw: str) -> str:
+    if not isinstance(raw, str) or SHA40.fullmatch(raw) is None or raw == "0" * 40:
+        raise SignerExecutionCustodyError(
+            "accepted signer source commit is not one canonical nonzero full SHA"
         )
-        if identity(after) != identity(before) or count != before.st_size:
-            raise SignerExecutionCustodyError("execution source changed during descriptor read")
-        return b"".join(blocks)
-    finally:
-        os.close(descriptor)
+    resolved = _git_text("rev-parse", "--verify", f"{raw}^{{commit}}")
+    if resolved != raw:
+        raise SignerExecutionCustodyError(
+            "accepted signer source resolved to a different Git commit"
+        )
+    return raw
 
 
-def _accepted_blob(relative_path: str) -> bytes:
-    blob_id = _git_text("rev-parse", "--verify", f"HEAD:{relative_path}")
+def _accepted_blob(source_commit: str, relative_path: str) -> bytes:
+    """Capture one execution source only from the independently accepted exact commit."""
+    source_commit = _canonical_source_commit(source_commit)
+    blob_id = _git_text("rev-parse", "--verify", f"{source_commit}:{relative_path}")
     if not SHA40.fullmatch(blob_id):
         raise SignerExecutionCustodyError("execution source Git blob identity is invalid")
     blob = _git_bytes("cat-file", "blob", blob_id)
     if not blob or len(blob) > MAX_SOURCE_BYTES or _git_blob_sha(blob) != blob_id:
         raise SignerExecutionCustodyError("execution source Git blob bytes failed identity validation")
-
-    worktree = _read_exact_worktree(REPOSITORY_ROOT / relative_path)
-    if worktree != blob:
-        raise SignerExecutionCustodyError(
-            f"mutable checkout differs from accepted Git object: {relative_path}"
-        )
     return blob
 
 
 @contextmanager
-def accepted_execution_bundle() -> Iterator[Path]:
-    """Freeze all code that can see the private-key path before signing begins."""
-    head = _git_text("rev-parse", "--verify", "HEAD^{commit}")
-    if not SHA40.fullmatch(head):
-        raise SignerExecutionCustodyError("repository HEAD is not one canonical full Git commit")
-
-    blobs = {relative: _accepted_blob(relative) for relative in EXECUTION_SOURCES}
+def accepted_execution_bundle(source_commit: str) -> Iterator[Path]:
+    """Freeze all key-visible code from one independently accepted exact commit."""
+    source_commit = _canonical_source_commit(source_commit)
+    blobs = {
+        relative: _accepted_blob(source_commit, relative)
+        for relative in EXECUTION_SOURCES
+    }
     with tempfile.TemporaryDirectory(prefix="nembra-es80-field-signer-") as directory:
         root = Path(directory)
         os.chmod(root, 0o700)
@@ -175,17 +143,16 @@ def accepted_execution_bundle() -> Iterator[Path]:
                 os.fsync(descriptor)
             finally:
                 os.close(descriptor)
-            if _read_exact_worktree(destination) != data:
+            measured = destination.read_bytes()
+            if measured != data:
                 raise SignerExecutionCustodyError("execution source snapshot verification failed")
         yield root
 
 
-def _load_rendezvous_helper(path: Path):
-    spec = importlib.util.spec_from_file_location(
-        "es80_field_authorization_rendezvous", path
-    )
+def _load_frozen_module(path: Path, module_name: str):
+    spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
-        raise SignerExecutionCustodyError("accepted signer rendezvous validator is unavailable")
+        raise SignerExecutionCustodyError("accepted signer helper is unavailable")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -225,12 +192,30 @@ def validate_signing_chronology(
         raise ValueError("expires-at exceeds the running app attempt deadline")
 
 
+def verify_accepted_evidence_source(
+    *,
+    evidence_helper,
+    signed_evidence: Path,
+    accepted_source_commit: str,
+) -> None:
+    evidence_bytes = evidence_helper.read_exact_file(
+        signed_evidence,
+        "signed artifact evidence",
+        evidence_helper.MAX_JSON_BYTES,
+    )
+    evidence = evidence_helper.verify_evidence_bytes(evidence_bytes)
+    if evidence.get("sourceCommitSHA") != accepted_source_commit:
+        raise SignerExecutionCustodyError(
+            "signed evidence does not bind the independently accepted signer source commit"
+        )
+
+
 def build_signer_command(
     args: argparse.Namespace,
     rendezvous: dict,
     signer_path: Path,
 ) -> list[str]:
-    """Invoke only the frozen existing signer; evidence remains signer-owned."""
+    """Invoke only the frozen existing signer; stable evidence subjects remain signer-owned."""
     return [
         str(PYTHON),
         str(signer_path),
@@ -248,6 +233,7 @@ def build_signer_command(
 
 def parser() -> argparse.ArgumentParser:
     value = argparse.ArgumentParser(description=__doc__)
+    value.add_argument("--accepted-source-commit", required=True)
     value.add_argument("--rendezvous", type=Path, required=True)
     value.add_argument("--signed-evidence", type=Path, required=True)
     value.add_argument("--private-key", type=Path, required=True)
@@ -263,9 +249,24 @@ def parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
-        with accepted_execution_bundle() as bundle:
-            helper = _load_rendezvous_helper(bundle / RENDEZVOUS_BASENAME)
-            rendezvous = helper.verify_rendezvous_bytes(helper._read_exact(args.rendezvous))
+        accepted_source_commit = _canonical_source_commit(args.accepted_source_commit)
+        with accepted_execution_bundle(accepted_source_commit) as bundle:
+            rendezvous_helper = _load_frozen_module(
+                bundle / RENDEZVOUS_BASENAME,
+                "es80_field_authorization_rendezvous",
+            )
+            evidence_helper = _load_frozen_module(
+                bundle / EVIDENCE_BASENAME,
+                "es80_signed_field_artifact_evidence",
+            )
+            verify_accepted_evidence_source(
+                evidence_helper=evidence_helper,
+                signed_evidence=args.signed_evidence,
+                accepted_source_commit=accepted_source_commit,
+            )
+            rendezvous = rendezvous_helper.verify_rendezvous_bytes(
+                rendezvous_helper._read_exact(args.rendezvous)
+            )
             validate_signing_chronology(
                 attempt_started_at=rendezvous["attemptStartedAtUnixMilliseconds"],
                 must_expire_by=rendezvous["authorizationMustExpireByUnixMilliseconds"],
@@ -292,8 +293,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"REFUSED_NOT_AUTHORITY: {error}", file=sys.stderr)
         return 2
     except Exception as error:
-        # The frozen rendezvous module owns its concrete validation error type; keep the wrapper
-        # fail-closed without importing mutable checkout code merely to name that exception.
+        # Frozen helpers own their concrete validation error types. Keep the wrapper fail-closed
+        # without importing mutable checkout code merely to name those exceptions.
         print(f"REFUSED_NOT_AUTHORITY: {error}", file=sys.stderr)
         return 2
 
