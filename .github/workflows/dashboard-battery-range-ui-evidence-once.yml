@@ -1,0 +1,153 @@
+name: Dashboard battery-range UI evidence once
+
+on:
+  push:
+    branches:
+      - product/dashboard-battery-range-instrument-gpt56sol
+    paths:
+      - '.github/workflows/dashboard-battery-range-ui-evidence-once.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dashboard-battery-range-ui-evidence-once
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TARGET_BRANCH: product/dashboard-battery-range-instrument-gpt56sol
+      SELF: .github/workflows/dashboard-battery-range-ui-evidence-once.yml
+      UI_TESTS: NembraUITests/NembraUITests.swift
+      CLOSURE: .github/workflows/dashboard-cockpit-product-closure.yml
+    steps:
+      - name: Checkout exact authoring subject
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Add battery/range truth UI evidence
+        shell: python
+        run: |
+          from pathlib import Path
+
+          tests_path = Path('NembraUITests/NembraUITests.swift')
+          tests = tests_path.read_text()
+          anchor = '''    @MainActor
+    func testLandscapeDashboardStoppedControlsConfirmEveryModePersonality() throws {
+'''
+          if tests.count(anchor) != 1:
+              raise SystemExit('Dashboard stopped-controls test anchor moved')
+          if 'testLandscapeDashboardBatteryBodyTogglesRangeWithoutInventingEvidence' in tests:
+              raise SystemExit('focused battery/range UI test already exists')
+
+          focused = '''    @MainActor
+    func testLandscapeDashboardBatteryBodyTogglesRangeWithoutInventingEvidence() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+
+        var app = launch(scenario: "connected-stopped", orientation: .landscapeRight)
+        var instrument = app.descendants(matching: .any)["dashboard.battery-range"]
+        XCTAssertTrue(
+            instrument.waitForExistence(timeout: 4),
+            "The battery body must be the cockpit battery/range control."
+        )
+        assertMinimumTouchTarget(instrument, named: "Dashboard battery range")
+        XCTAssertEqual(instrument.label, "Battery")
+        XCTAssertTrue(
+            waitForValue("92%", element: instrument),
+            "Connected-stopped Simulator charge evidence must remain the displayed battery value."
+        )
+
+        instrument.tap()
+        instrument = app.descendants(matching: .any)["dashboard.battery-range"]
+        XCTAssertTrue(
+            waitForLabel("Learned range", element: instrument),
+            "Tapping the battery body must switch the semantic readout to learned range."
+        )
+        XCTAssertTrue(
+            waitForValueContaining(
+                "Unavailable until a verified learned range model exists",
+                element: instrument
+            ),
+            "Dashboard must not synthesize range from battery percentage or advertised range."
+        )
+        keepScreenshot(named: "Dashboard Learned Range Unavailable Landscape")
+
+        instrument.tap()
+        instrument = app.descendants(matching: .any)["dashboard.battery-range"]
+        XCTAssertTrue(waitForLabel("Battery", element: instrument))
+        XCTAssertTrue(waitForValue("92%", element: instrument))
+
+        app.terminate()
+        app = launch(scenario: "cold-disconnected", orientation: .landscapeRight)
+        instrument = app.descendants(matching: .any)["dashboard.battery-range"]
+        XCTAssertTrue(instrument.waitForExistence(timeout: 4))
+        XCTAssertEqual(instrument.label, "Battery")
+        XCTAssertTrue(
+            waitForValueContaining(
+                "Unavailable until battery evidence is display-authoritative",
+                element: instrument
+            ),
+            "Never-observed battery evidence must remain unknown, never a displayed 0%."
+        )
+        XCTAssertFalse(
+            (instrument.value as? String ?? "").localizedCaseInsensitiveContains("0%"),
+            "Unknown battery evidence must not masquerade as measured empty charge."
+        )
+        keepScreenshot(named: "Dashboard Battery Unknown Landscape")
+    }
+
+'''
+          tests_path.write_text(tests.replace(anchor, focused + anchor))
+
+          closure_path = Path('.github/workflows/dashboard-cockpit-product-closure.yml')
+          closure = closure_path.read_text()
+          test_anchor = '''            -only-testing:NembraUITests/NembraUITests/testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls \\
+            -only-testing:NembraUITests/NembraUITests/testLandscapeDashboardStoppedControlsConfirmEveryModePersonality \\
+            test | tee /tmp/nembra-dashboard-xcodebuild.log
+'''
+          replacement = '''            -only-testing:NembraUITests/NembraUITests/testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls \\
+            -only-testing:NembraUITests/NembraUITests/testLandscapeDashboardBatteryBodyTogglesRangeWithoutInventingEvidence \\
+            -only-testing:NembraUITests/NembraUITests/testLandscapeDashboardStoppedControlsConfirmEveryModePersonality \\
+            test | tee /tmp/nembra-dashboard-xcodebuild.log
+'''
+          if closure.count(test_anchor) != 1:
+              raise SystemExit('Dashboard exact-head test invocation anchor moved')
+          closure = closure.replace(test_anchor, replacement)
+          closure = closure.replace('test "$count" -ge 5', 'test "$count" -ge 7')
+          closure_path.write_text(closure)
+
+      - name: Validate focused evidence source shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          grep -Fq 'testLandscapeDashboardBatteryBodyTogglesRangeWithoutInventingEvidence' "$UI_TESTS"
+          grep -Fq 'waitForValue("92%", element: instrument)' "$UI_TESTS"
+          grep -Fq 'Unavailable until a verified learned range model exists' "$UI_TESTS"
+          grep -Fq 'Unavailable until battery evidence is display-authoritative' "$UI_TESTS"
+          grep -Fq 'Dashboard Learned Range Unavailable Landscape' "$UI_TESTS"
+          grep -Fq 'Dashboard Battery Unknown Landscape' "$UI_TESTS"
+          grep -Fq -- '-only-testing:NembraUITests/NembraUITests/testLandscapeDashboardBatteryBodyTogglesRangeWithoutInventingEvidence' "$CLOSURE"
+          grep -Fq 'test "$count" -ge 7' "$CLOSURE"
+          test "$(git status --porcelain=v1 | awk '{print $2}' | sort | tr '\n' ' ' | sed 's/ $//')" = '.github/workflows/dashboard-cockpit-product-closure.yml NembraUITests/NembraUITests.swift'
+
+      - name: Publish exact focused evidence and retire hook
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
+          test "$remote_head" = "$GITHUB_SHA"
+          rm -f "$SELF"
+          git add -- "$UI_TESTS" "$CLOSURE" "$SELF"
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Dashboard: prove battery range truth in real UI'
+          git push origin HEAD:"$TARGET_BRANCH"
