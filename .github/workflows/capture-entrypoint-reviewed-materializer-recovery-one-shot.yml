@@ -1,0 +1,110 @@
+name: Capture entrypoint reviewed materializer recovery one-shot
+
+on:
+  push:
+    branches:
+      - recovery/capture-entrypoint-materialize-reviewed-gpt56sol-20260820
+    paths:
+      - .github/workflows/capture-entrypoint-reviewed-materializer-recovery-one-shot.yml
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    runs-on: xcode-27
+    timeout-minutes: 35
+    env:
+      TARGET_BRANCH: recovery/capture-entrypoint-materialize-reviewed-gpt56sol-20260820
+      APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
+      SELF_WORKFLOW: .github/workflows/capture-entrypoint-reviewed-materializer-recovery-one-shot.yml
+      SOURCE_MATERIALIZER: .github/workflows/capture-entrypoint-signed-authority-close-one-shot.yml
+      MATERIALIZER_COMMIT: 3df06693ec526c00096a69a898fa46cd27742fc7
+      EXPECTED_SOURCE_BLOB: 9107ea5ef2bc023cd3b8c2e15a46297e733ba838
+    steps:
+      - name: Checkout exact triggering head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact stale source and immutable reviewed materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD:"$APP_SOURCE")" = "$EXPECTED_SOURCE_BLOB"
+          git cat-file -e "$MATERIALIZER_COMMIT^{commit}"
+          git cat-file -e "$MATERIALIZER_COMMIT:$SOURCE_MATERIALIZER"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Execute reviewed immutable materializer
+        shell: python
+        run: |
+          import os
+          import subprocess
+
+          workflow_path = os.environ["SOURCE_MATERIALIZER"]
+          materializer_commit = os.environ["MATERIALIZER_COMMIT"]
+          workflow = subprocess.check_output(
+              ["git", "show", f"{materializer_commit}:{workflow_path}"],
+              text=True,
+          )
+          start_marker = "      - name: Materialize signed-attempt authority composition\n        shell: python\n        run: |\n"
+          end_marker = "\n      - name: Run focused truth and presentation contracts"
+          start = workflow.index(start_marker) + len(start_marker)
+          end = workflow.index(end_marker, start)
+          block = workflow[start:end]
+          script = "\n".join(
+              line[10:] if line.startswith("          ") else line
+              for line in block.splitlines()
+          ) + "\n"
+          exec(compile(script, "immutable-capture-entrypoint-materializer", "exec"), {})
+
+      - name: Run focused lifecycle and source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          python3 scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py -v
+          (
+            cd Packages/NembraBluetoothCapture
+            swift test --filter TuyaFieldBuildPresentationAuthoritySourceTests
+            swift test --filter CaptureP0RootVisualAcceptanceTests
+            swift test --filter AuthenticatedStationaryCaptureAppSessionTests
+            swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
+            swift test --filter TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
+          )
+
+      - name: Build standalone Capture on Xcode 27
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "${RUNNER_TEMP}/NembraCaptureReviewedMaterializerRecovery" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Publish tested source and retire recovery one-shot
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
+          test "$remote_head" = "$GITHUB_SHA"
+          rm "$SELF_WORKFLOW"
+          git add -- "$APP_SOURCE" "$SELF_WORKFLOW"
+          git diff --cached --check
+          test "$(git diff --cached --name-only)" = "$APP_SOURCE"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Capture: materialize reviewed signed-attempt authority'
+          materialized="$(git rev-parse HEAD)"
+          git push origin HEAD:"$TARGET_BRANCH"
+          printf 'NEMBRA_CAPTURE_ENTRYPOINT_REVIEWED_MATERIALIZER materialized=%s physicalAuthorityCreated=false\n' "$materialized"
