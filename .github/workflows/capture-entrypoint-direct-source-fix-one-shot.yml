@@ -1,0 +1,102 @@
+name: Capture entrypoint direct-source fix one-shot
+
+on:
+  push:
+    branches:
+      - recovery/capture-entrypoint-auth-after-bootstrap-gpt56sol-20260820
+    paths:
+      - '.github/workflows/capture-entrypoint-direct-source-fix-one-shot.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  materialize-direct-source:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact triggering head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Assert exact triggering head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Fix signed-session lifecycle composition in production entrypoint
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text(encoding="utf-8")
+
+          old_property = "    var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }"
+          new_property = "    var fieldBuildMetadataReady: Bool { buildIdentity.hasCompleteFieldBuildMetadata }"
+          assert text.count(old_property) == 1
+          text = text.replace(old_property, new_property)
+
+          old_handoff = "        guard phase == .idle, buildIdentity.isAuthoritativeFieldBuild else { return }"
+          new_handoff = "        guard phase == .idle, buildIdentity.hasCompleteFieldBuildMetadata else { return }"
+          assert text.count(old_handoff) == 1
+          text = text.replace(old_handoff, new_handoff)
+
+          legacy_guard = '''        guard buildIdentity.isAuthoritativeFieldBuild else {
+              failLocally(buildIdentity.blocker ?? "Exact field-build provenance is unavailable.", "field_build_identity_unavailable")
+              return
+          }
+'''
+          assert text.count(legacy_guard) == 2
+          text = text.replace(legacy_guard, "")
+
+          legacy_connection_guard = "              buildIdentity.isAuthoritativeFieldBuild,\n"
+          assert text.count(legacy_connection_guard) == 1
+          text = text.replace(legacy_connection_guard, "")
+
+          assert text.count("test.fieldBuildIsAuthoritative") >= 1
+          text = text.replace("test.fieldBuildIsAuthoritative", "test.fieldBuildMetadataReady")
+
+          selected_gate = ".disabled(!authorityReady || test.membershipBusy)"
+          assert text.count(selected_gate) == 1
+          text = text.replace(selected_gate, ".disabled(test.membershipBusy)")
+
+          helper_start_marker = "    private func freezeAcceptedArtifactForAuthorizationSeal() throws {"
+          record_marker = "    private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken) async {"
+          watchdog_marker = "    private func startWatchdog(token: TuyaReadOnlyConnectionToken) {"
+          helper_start = text.index(helper_start_marker)
+          record_start = text.index(record_marker, helper_start)
+          helper_block = text[helper_start:record_start]
+          assert "ExactByteArtifactSeal(sealing:" in helper_block
+          assert "verifiedCanonicalValue(" in helper_block
+          text = text[:helper_start] + text[record_start:]
+          watchdog_start = text.index(watchdog_marker)
+          text = text[:watchdog_start] + helper_block + text[watchdog_start:]
+
+          path.write_text(text, encoding="utf-8")
+
+      - name: Run exact source lifecycle regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py -v
+          python3 scripts/ci/tests/test_es80_capture_build_identity.py -v
+          test -z "$(git diff --name-only -- . ':!.github/workflows/capture-entrypoint-direct-source-fix-one-shot.yml' | grep -v '^NembraApp/App/NembraCaptureEntrypoint.swift$' || true)"
+
+      - name: Publish only the tested production source and retire this one-shot
+        shell: bash
+        env:
+          TARGET_BRANCH: recovery/capture-entrypoint-auth-after-bootstrap-gpt56sol-20260820
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote --heads origin "refs/heads/${TARGET_BRANCH}" | awk '{print $1}')"
+          test "$remote_head" = "$GITHUB_SHA"
+          rm .github/workflows/capture-entrypoint-direct-source-fix-one-shot.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift .github/workflows/capture-entrypoint-direct-source-fix-one-shot.yml
+          git diff --cached --check
+          git commit -m "Capture: finish signed-session entrypoint composition"
+          git push origin "HEAD:refs/heads/${TARGET_BRANCH}" --force-with-lease="refs/heads/${TARGET_BRANCH}:${GITHUB_SHA}"
