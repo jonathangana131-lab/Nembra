@@ -1,0 +1,122 @@
+name: Capture Physical App-Container Probe Source
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - product/capture-1-0-main-20260818
+    paths:
+      - 'scripts/field/probe_capture_app_container_transport.command'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPhysicalAppContainerTransportProbeSourceTests.swift'
+      - '.github/workflows/capture-physical-app-container-roundtrip-source.yml'
+  push:
+    branches:
+      - product/capture-1-0-main-20260818
+      - 'recovery/capture-physical-app-container-roundtrip-**'
+    paths:
+      - 'scripts/field/probe_capture_app_container_transport.command'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPhysicalAppContainerTransportProbeSourceTests.swift'
+      - '.github/workflows/capture-physical-app-container-roundtrip-source.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-physical-app-container-probe-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-contract:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 15
+    env:
+      EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PROBE: scripts/field/probe_capture_app_container_transport.command
+    steps:
+      - name: Checkout immutable subject head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact source and macOS syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD_SHA"
+          xcodebuild -version
+          bash -n "$PROBE"
+          test "$(head -n 1 "$PROBE")" = '#!/bin/bash -p'
+          test -x "$PROBE"
+          test "$(grep -Fc "PATH='/usr/bin:/bin:/usr/sbin:/sbin'" "$PROBE")" = 1
+          test "$(grep -Fc 'export PATH' "$PROBE")" = 1
+          test "$(grep -Fc 'readonly PATH' "$PROBE")" = 1
+          test "$(grep -Fc '$(/usr/bin/dirname "$0")' "$PROBE")" = 1
+          test "$(grep -Fc '$(dirname "$0")' "$PROBE" || true)" = 0
+          test "$(grep -Fc 'unset BASH_ENV ENV CDPATH GLOBIGNORE || true' "$PROBE")" = 1
+          test "$(grep -Fc '/usr/bin/env -u BASH_ENV -u ENV -u CDPATH -u GLOBIGNORE /bin/bash -p "$CONTRACT_EXEC"' "$PROBE")" = 1
+          test "$(grep -Fc 'NEMBRA_CAPTURE_PROBE_SELF_TEST' "$PROBE")" -ge 2
+          test "$(grep -Fc 'path_injection_blocked=true' "$PROBE")" = 1
+          test "$(grep -Fc 'devicectl device copy to' "$PROBE")" = 1
+          test "$(grep -Fc 'devicectl device copy from' "$PROBE")" = 1
+          test "$(grep -Fc -- '--remove-existing-content' "$PROBE" || true)" = 0
+          test "$(grep -Ec 'retained-install-manifest[.]json|authorization-envelope[.]json|signer-rendezvous[.]json' "$PROBE" || true)" = 0
+          test "$(grep -Fc 'REMOTE_SENTINEL="tmp/nembra-capture-transport-probe-$NONCE.bin"' "$PROBE")" = 1
+          test "$(grep -Fc 'RUN_DIR="$ARTIFACTS_ROOT/run-$RUN_ID"' "$PROBE")" = 1
+          test "$(grep -Fc '/bin/mkdir "$RUN_DIR"' "$PROBE")" = 1
+          test "$(grep -Fc 'RESULT_TMP="$ARTIFACTS_DIR/.result-$NONCE.tmp"' "$PROBE")" = 1
+          test "$(grep -Fc '/bin/mv -f -- "$RESULT_TMP" "$RESULT_PATH"' "$PROBE")" = 1
+          test "$(grep -Fc 'field_authorization_subdirectory_listing_succeeded=true' "$PROBE")" = 1
+          test "$(grep -Fc 'field_authorization_directory_present=true' "$PROBE" || true)" = 0
+          test "$(grep -Fc 'authorization_payload_file_transferred=false' "$PROBE")" = 1
+          test "$(grep -Fc 'authorization_subject_touched=false' "$PROBE" || true)" = 0
+          test "$(grep -Fc 'DEVICE_UDID="${NEMBRA_CAPTURE_DEVICE_UDID:-}"' "$PROBE")" = 1
+          test "$(grep -Fc 'positional arguments are forbidden' "$PROBE")" = 1
+          test "$(grep -Fc '${1:-}' "$PROBE" || true)" = 0
+          test "$(grep -Fc 'raw_device_output_persisted=false' "$PROBE")" = 1
+          test "$(grep -Fc 'installed_build_identity_verified=false' "$PROBE")" = 1
+          test "$(grep -Fc 'installed_build_identity_verified=true' "$PROBE" || true)" = 0
+          test "$(grep -Fc 'captureAuthorized=false' "$PROBE")" = 1
+          test "$(grep -Fc 'physicalAuthorityCreated=false' "$PROBE")" = 1
+          test "$(grep -Fc 'protocolSemanticsCreated=false' "$PROBE")" = 1
+          test "$(grep -Fc 'probe_initiated_bluetooth=false' "$PROBE")" = 1
+          test "$(grep -Fc 'probe_initiated_tuya=false' "$PROBE")" = 1
+          test "$(grep -Fc 'probe_initiated_es80_contact=false' "$PROBE")" = 1
+          test "$(grep -Ec '(^|[^_])(bluetoothContacted|tuyaContacted|es80Contacted)=false' "$PROBE" || true)" = 0
+
+      - name: Prove hostile shell startup and PATH cannot extend probe execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          hostile="$RUNNER_TEMP/nembra-capture-hostile-bash-env.sh"
+          marker="$RUNNER_TEMP/nembra-capture-hostile-bash-env-ran"
+          hostile_path="$RUNNER_TEMP/nembra-capture-hostile-path"
+          mkdir -p "$hostile_path"
+          rm -f "$marker"
+          printf '%s\n' '[[ -n "${NEMBRA_PROBE_STARTUP_MARKER:-}" ]] && /usr/bin/touch "$NEMBRA_PROBE_STARTUP_MARKER"' > "$hostile"
+          chmod 600 "$hostile"
+          NEMBRA_PROBE_STARTUP_MARKER="$marker" \
+          NEMBRA_CAPTURE_PROBE_SELF_TEST=1 \
+          BASH_ENV="$hostile" \
+          ENV="$hostile" \
+          PATH="$hostile_path:/usr/bin:/bin" \
+          "$PROBE" | tee "$RUNNER_TEMP/nembra-capture-probe-shell-self-test.txt"
+          test ! -e "$marker"
+          grep -Fq 'startup_injection_blocked=true path_injection_blocked=true device_contact=false' "$RUNNER_TEMP/nembra-capture-probe-shell-self-test.txt"
+
+      - name: Run focused probe truth suite
+        working-directory: Packages/NembraBluetoothCapture
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --filter TuyaPhysicalAppContainerTransportProbeSourceTests
+
+      - name: State exact-head truth boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD_SHA"
+          printf '%s\n' 'PROVEN: the exact subject head parses on the Xcode 27 Mac and passes the focused non-authorizing bundle-level app-container probe source contract, including shell-startup/PATH injection isolation, unique-run/atomic-result stale-evidence rejection, environment-only operator device selection, and listing-success-only handoff semantics.'
+          printf '%s\n' 'NOT PROVEN: a physical iPhone round-trip, handoff-directory filesystem existence beyond a successful listing operation, exact installed Capture build identity, authorization payload transfer/acceptance, signing/install custody, whether any other process/app contacted Bluetooth/Tuya/ES80, telemetry semantics, commands, or physical Capture GO.'
