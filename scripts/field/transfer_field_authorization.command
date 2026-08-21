@@ -36,6 +36,7 @@ GIT_CONFIG_GLOBAL=/dev/null; export GIT_CONFIG_GLOBAL
 ROOT="$(cd "$(/usr/bin/dirname "$0")/../.." && /bin/pwd -P)"
 TRANSPORT_RELATIVE_PATH="scripts/field/transfer_field_authorization.command"
 CONTRACT_RELATIVE_PATH="scripts/ci/xcode27_devicectl_manifest_transport_contract.sh"
+PRIVATE_DEVICE_READER_RELATIVE_PATH="scripts/ci/es80_signed_field_artifact_private_runner.py"
 BUNDLE_ID="com.jonathangana131.nembra.capturelearn"
 DOMAIN_TYPE="appDataContainer"
 FIELD_DIRECTORY="Library/Application Support/NembraCapture/FieldAuthorization"
@@ -60,6 +61,7 @@ self_test() {
   [[ "$ENVELOPE_MAX_BYTES" == 32768 ]] || die "Envelope byte bound drifted."
   [[ "$TRANSPORT_RELATIVE_PATH" == "scripts/field/transfer_field_authorization.command" ]] || die "Transport source path drifted."
   [[ "$CONTRACT_RELATIVE_PATH" == "scripts/ci/xcode27_devicectl_manifest_transport_contract.sh" ]] || die "Transport contract path drifted."
+  [[ "$PRIVATE_DEVICE_READER_RELATIVE_PATH" == "scripts/ci/es80_signed_field_artifact_private_runner.py" ]] || die "Private intended-device reader path drifted."
   for path in "$MANIFEST_REMOTE" "$RENDEZVOUS_REMOTE" "$ENVELOPE_REMOTE"; do
     [[ "$path" != /* && "$path" != *".."* ]] || die "Container path is not bounded."
   done
@@ -81,8 +83,9 @@ case "$ACTION" in
   *) die "Choose --stage-manifest, --export-rendezvous, --stage-envelope, or --self-test." ;;
 esac
 
-: "${NEMBRA_FIELD_DEVICE_ID:?Set NEMBRA_FIELD_DEVICE_ID to the intended connected iPhone CoreDevice identifier.}"
-[[ "$NEMBRA_FIELD_DEVICE_ID" =~ ^([0-9A-Fa-f]{40}|[0-9A-Fa-f]{8}-[0-9A-Fa-f]{16})$ ]] || die "NEMBRA_FIELD_DEVICE_ID is not a canonical Apple UDID."
+: "${NEMBRA_FIELD_DEVICE_ID:?Set NEMBRA_FIELD_DEVICE_ID to the intended connected iPhone CoreDevice selector.}"
+[[ "$NEMBRA_FIELD_DEVICE_ID" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]] || die "NEMBRA_FIELD_DEVICE_ID is not a canonical CoreDevice selector."
+: "${NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE:?Set NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE to the private mode-0600 intended-iPhone identifier file.}"
 : "${NEMBRA_RETAINED_INSTALL_MANIFEST_PATH:?Set NEMBRA_RETAINED_INSTALL_MANIFEST_PATH to the exact retained-install manifest for this attempt.}"
 
 SCRATCH="$(/usr/bin/mktemp -d "/private/tmp/nembra-field-authorization-transport.XXXXXX")"
@@ -91,21 +94,29 @@ SCRATCH="$(/usr/bin/mktemp -d "/private/tmp/nembra-field-authorization-transport
 cleanup() { /bin/rm -rf -- "$SCRATCH"; }
 trap cleanup EXIT HUP INT TERM
 
-# Bind the executable transport and the help-contract helper to the exact tracked repository HEAD
-# before any device contact. The helper is then materialized from accepted Git object bytes into the
-# private scratch directory so a later worktree replacement cannot change what this attempt runs.
+# Bind every repository helper that can influence physical-device selection or transport to exact
+# tracked bytes before any device discovery. The helpers are then materialized from accepted Git
+# objects into the private attempt directory so mutable worktree replacements cannot redirect them.
 REPOSITORY_HEAD="$(/usr/bin/git -C "$ROOT" rev-parse --verify 'HEAD^{commit}')"
 TRANSPORT_TRACKED_BLOB="$(/usr/bin/git -C "$ROOT" rev-parse "${REPOSITORY_HEAD}:${TRANSPORT_RELATIVE_PATH}")"
 CONTRACT_TRACKED_BLOB="$(/usr/bin/git -C "$ROOT" rev-parse "${REPOSITORY_HEAD}:${CONTRACT_RELATIVE_PATH}")"
+PRIVATE_DEVICE_READER_TRACKED_BLOB="$(/usr/bin/git -C "$ROOT" rev-parse "${REPOSITORY_HEAD}:${PRIVATE_DEVICE_READER_RELATIVE_PATH}")"
 TRANSPORT_WORKTREE_BLOB="$(/usr/bin/git -C "$ROOT" hash-object "$ROOT/$TRANSPORT_RELATIVE_PATH")"
 CONTRACT_WORKTREE_BLOB="$(/usr/bin/git -C "$ROOT" hash-object "$ROOT/$CONTRACT_RELATIVE_PATH")"
+PRIVATE_DEVICE_READER_WORKTREE_BLOB="$(/usr/bin/git -C "$ROOT" hash-object "$ROOT/$PRIVATE_DEVICE_READER_RELATIVE_PATH")"
 [[ "$TRANSPORT_WORKTREE_BLOB" == "$TRANSPORT_TRACKED_BLOB" ]] || die "Field transport bytes differ from repository HEAD; refusing device transfer."
 [[ "$CONTRACT_WORKTREE_BLOB" == "$CONTRACT_TRACKED_BLOB" ]] || die "Xcode transport-contract bytes differ from repository HEAD; refusing device transfer."
+[[ "$PRIVATE_DEVICE_READER_WORKTREE_BLOB" == "$PRIVATE_DEVICE_READER_TRACKED_BLOB" ]] || die "Private intended-device reader bytes differ from repository HEAD; refusing device selection."
+
 CONTRACT_EXEC="$SCRATCH/xcode27_devicectl_manifest_transport_contract.sh"
+PRIVATE_DEVICE_READER_EXEC="$SCRATCH/es80_signed_field_artifact_private_runner.py"
 /usr/bin/git -C "$ROOT" show "${REPOSITORY_HEAD}:${CONTRACT_RELATIVE_PATH}" > "$CONTRACT_EXEC"
-/bin/chmod 500 "$CONTRACT_EXEC"
+/usr/bin/git -C "$ROOT" show "${REPOSITORY_HEAD}:${PRIVATE_DEVICE_READER_RELATIVE_PATH}" > "$PRIVATE_DEVICE_READER_EXEC"
+/bin/chmod 500 "$CONTRACT_EXEC" "$PRIVATE_DEVICE_READER_EXEC"
 CONTRACT_MATERIALIZED_BLOB="$(/usr/bin/git -C "$ROOT" hash-object "$CONTRACT_EXEC")"
+PRIVATE_DEVICE_READER_MATERIALIZED_BLOB="$(/usr/bin/git -C "$ROOT" hash-object "$PRIVATE_DEVICE_READER_EXEC")"
 [[ "$CONTRACT_MATERIALIZED_BLOB" == "$CONTRACT_TRACKED_BLOB" ]] || die "Materialized Xcode transport-contract bytes failed exact-blob verification."
+[[ "$PRIVATE_DEVICE_READER_MATERIALIZED_BLOB" == "$PRIVATE_DEVICE_READER_TRACKED_BLOB" ]] || die "Materialized private intended-device reader bytes failed exact-blob verification."
 
 # Help-only proof: no device is contacted here. Exact Xcode must document bidirectional
 # appDataContainer copy and bundle-ID domain identity before any field transfer is attempted.
@@ -164,18 +175,22 @@ finally:
 PY
 }
 
-# Cross-bind every transport action to the retained manifest's signed intended-device digest before
-# any CoreDevice operation. The accepted private-runner grammar is reused exactly; the digest is
-# SHA-256 over the exact UDID UTF-8 bytes with no newline. This does not authorize the app/session.
-verify_manifest_device_binding() {
-  /usr/bin/python3 -I -B - "$1" "$NEMBRA_FIELD_DEVICE_ID" <<'PY'
-import hashlib, hmac, json, re, sys
+# Cross-bind the retained manifest to a privately custodied intended-device token. The manifest's
+# intendedDevicePseudonymSHA256 is SHA-256 over the exact private UDID UTF-8 bytes; the raw token is
+# captured only in the protected shell and is never printed, persisted, or passed to devicectl argv.
+read_manifest_bound_private_device() {
+  /usr/bin/python3 -I -B - "$PRIVATE_DEVICE_READER_EXEC" "$1" "$NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE" "$ROOT" <<'PY'
+import hashlib, hmac, importlib.util, json, re, sys
 from pathlib import Path
-manifest_path, device_id = sys.argv[1:]
-if re.fullmatch(r'(?:[0-9A-Fa-f]{40}|[0-9A-Fa-f]{8}-[0-9A-Fa-f]{16})', device_id) is None:
-    raise SystemExit('ERROR: selected device is not a canonical Apple UDID')
-data = Path(manifest_path).read_bytes()
+reader_path, manifest_path, private_device_path, repository_root = sys.argv[1:]
 
+spec = importlib.util.spec_from_file_location("nembra_private_device_reader", reader_path)
+if spec is None or spec.loader is None:
+    raise SystemExit('ERROR: private intended-device reader could not be loaded')
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+data = Path(manifest_path).read_bytes()
 def reject_duplicates(pairs):
     result = {}
     for key, value in pairs:
@@ -196,9 +211,11 @@ if not hmac.compare_digest(canonical, data):
 expected = manifest.get('intendedDevicePseudonymSHA256')
 if not isinstance(expected, str) or re.fullmatch(r'[0-9a-f]{64}', expected) is None or expected == '0' * 64:
     raise SystemExit('ERROR: retained-install manifest intended-device digest is invalid')
-observed = hashlib.sha256(device_id.encode('utf-8')).hexdigest()
+value = module.read_private_identifier(Path(private_device_path), Path(repository_root))
+observed = hashlib.sha256(value.encode('utf-8')).hexdigest()
 if not hmac.compare_digest(observed, expected):
-    raise SystemExit('ERROR: selected CoreDevice does not match retained-install intended-device pseudonym')
+    raise SystemExit('ERROR: private intended-device identifier does not match retained-install intended-device pseudonym')
+sys.stdout.write(value)
 PY
 }
 
@@ -251,12 +268,85 @@ copy_from_container() {
   /usr/bin/xcrun devicectl device copy from --device "$NEMBRA_FIELD_DEVICE_ID" --domain-type "$DOMAIN_TYPE" --domain-identifier "$BUNDLE_ID" --source "$1" --destination "$2"
 }
 
-# Snapshot and bind the retained manifest for every action before the first device contact. This
-# prevents stage-envelope/export-rendezvous from silently selecting a device unrelated to the
-# manifest that names the one-time attempt.
+# Snapshot the retained manifest and bind its intended-device pseudonym to the private mode-0600
+# identifier before the first physical-device query. No caller-selected CoreDevice can bypass this.
 manifest_binding_snapshot="$SCRATCH/retained-install-manifest.binding.json"
 snapshot_local_file "$NEMBRA_RETAINED_INSTALL_MANIFEST_PATH" "$manifest_binding_snapshot" "$MANIFEST_MAX_BYTES" "retained-install manifest"
-verify_manifest_device_binding "$manifest_binding_snapshot"
+if ! INTENDED_DEVICE_UDID="$(read_manifest_bound_private_device "$manifest_binding_snapshot")"; then
+  die "Retained manifest/private intended-device binding failed before device discovery."
+fi
+[[ -n "$INTENDED_DEVICE_UDID" ]] || die "Private intended-device binding produced no identifier."
+
+# Require exactly one matching attached physical iPhone in Xcode's device view. The raw identifier
+# remains inside this shell only and is never persisted or emitted to devicectl argv.
+DEVICE_ROWS="$(/usr/bin/xcrun xctrace list devices 2>/dev/null | /usr/bin/python3 -I -B -c '
+import re, sys
+section = False
+for raw in sys.stdin:
+    line = raw.strip()
+    if line == "== Devices ==":
+        section = True
+        continue
+    if line.startswith("== "):
+        section = False
+        continue
+    if not section or "iPhone" not in line:
+        continue
+    match = re.search(r"\(([0-9A-Fa-f-]{20,})\)\s*$", line)
+    if match:
+        print(match.group(1))
+')"
+[[ -n "$DEVICE_ROWS" ]] || die "Xcode reported no physical iPhone for intended-device binding."
+MATCH_COUNT=0
+INTENDED_NORMALIZED="$(builtin printf '%s' "$INTENDED_DEVICE_UDID" | /usr/bin/tr '[:upper:]' '[:lower:]')"
+while IFS= read -r ROW_UDID; do
+  [[ -n "$ROW_UDID" ]] || continue
+  ROW_NORMALIZED="$(builtin printf '%s' "$ROW_UDID" | /usr/bin/tr '[:upper:]' '[:lower:]')"
+  if [[ "$ROW_NORMALIZED" == "$INTENDED_NORMALIZED" ]]; then
+    MATCH_COUNT=$((MATCH_COUNT + 1))
+  fi
+done <<< "$DEVICE_ROWS"
+[[ "$MATCH_COUNT" == "1" ]] || die "Connected iPhones do not contain exactly one match for the retained manifest's intended device. No arbitrary-device fallback is permitted."
+
+# CoreDevice exposes a separate non-private selector. Correlate that selector to the private UDID
+# through its CoreDevice hostname, then require the caller-selected selector to be exactly that value.
+COREDEVICE_ROWS="$(/usr/bin/xcrun devicectl list devices --hide-headers 2>/dev/null || true)"
+[[ -n "$COREDEVICE_ROWS" ]] || die "CoreDevice reported no available intended iPhone."
+if ! BOUND_COREDEVICE_ID="$(builtin printf '%s\0%s' "$INTENDED_DEVICE_UDID" "$COREDEVICE_ROWS" | /usr/bin/python3 -I -B -c '
+import re, sys
+payload = sys.stdin.buffer.read()
+try:
+    intended_raw, rows_raw = payload.split(b"\0", 1)
+    intended = intended_raw.decode("utf-8").lower()
+    rows = rows_raw.decode("utf-8")
+except (ValueError, UnicodeDecodeError):
+    raise SystemExit(2)
+matches = []
+for raw in rows.splitlines():
+    line = raw.strip()
+    match = re.search(r"(\S+\.coredevice\.local)\s+([0-9A-Fa-f-]{36})\s+(.+)$", line)
+    if match is None:
+        continue
+    hostname, selector, tail = match.groups()
+    if hostname.lower() != intended + ".coredevice.local":
+        continue
+    if re.search(r"\bunavailable\b", tail, re.IGNORECASE):
+        continue
+    matches.append(selector)
+if len(matches) != 1:
+    raise SystemExit(3)
+sys.stdout.write(matches[0])
+')"; then
+  die "CoreDevice could not bind exactly one available selector to the retained manifest's intended device."
+fi
+[[ "$BOUND_COREDEVICE_ID" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]] || die "Bound CoreDevice selector is malformed."
+[[ "$(builtin printf '%s' "$BOUND_COREDEVICE_ID" | /usr/bin/tr '[:upper:]' '[:lower:]')" == "$(builtin printf '%s' "$NEMBRA_FIELD_DEVICE_ID" | /usr/bin/tr '[:upper:]' '[:lower:]')" ]] || die "Caller-selected CoreDevice does not match the retained manifest's intended device."
+
+# Drop raw/private device subjects before any app-container copy. Only the already-correlated
+# non-private CoreDevice selector remains available to the transfer helpers.
+unset INTENDED_DEVICE_UDID INTENDED_NORMALIZED ROW_UDID ROW_NORMALIZED DEVICE_ROWS COREDEVICE_ROWS BOUND_COREDEVICE_ID MATCH_COUNT
+unset NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE || true
+say "Intended CoreDevice matched retained manifest device binding"
 
 case "$ACTION" in
   --stage-manifest)
