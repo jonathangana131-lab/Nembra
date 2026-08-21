@@ -27,6 +27,22 @@ struct TuyaStationaryRunbookCurrentAuthoritySourceTests {
         #expect(!runbook.contains("OFF baseline then ON correlation"))
     }
 
+    @Test("secure-link procedure separates build metadata transport from signed OFF1 authority")
+    func signedAttemptAuthorityCannotCollapseIntoLegacyBuildBoolean() throws {
+        let runbook = try readRepositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
+
+        #expect(runbook.contains("Complete compiled build metadata may prepare only the protected one-time-authorization transport."))
+        #expect(runbook.contains("one-time signed authorization session is freshly `.armed`"))
+        #expect(runbook.contains("NembraCaptureBuildIdentity.isAuthoritativeFieldBuild` remains a non-authorizing fail-closed regression sentinel"))
+        #expect(runbook.contains("One-time signed authorization handoff — required before OFF1"))
+        #expect(runbook.contains("A manifest, copied file, signer stdout line, or envelope by itself is not OFF1 authority."))
+        #expect(runbook.contains("exact build metadata/runtime identity becomes incomplete or mismatched"))
+        #expect(runbook.contains("one-time signed authorization session is missing, revoked, or invalid"))
+
+        #expect(!runbook.contains("authoritative compiled field-build provenance"))
+        #expect(!runbook.contains("field-build provenance becomes non-authoritative"))
+    }
+
     @Test("private SDK provisioning pins dependency and target-correlation provenance")
     func privateProvisioningCannotFloatSDKOrRestoreTwoWindowAuthority() throws {
         let provisioning = try readRepositoryFile("docs/CAPTURE_TUYA_OFFICIAL_SDK_PROVISIONING.md")
