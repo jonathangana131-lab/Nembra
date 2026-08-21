@@ -6,12 +6,6 @@ on:
       - ci/capture-v16-lifecycle-wiring-gpt56sol-20260821
     paths:
       - .github/workflows/capture-v16-lifecycle-wiring-materialize-once.yml
-  pull_request:
-    types: [opened, synchronize, reopened]
-    branches:
-      - product/capture-1-0-main-20260818
-    paths:
-      - .github/workflows/capture-v16-lifecycle-wiring-materialize-once.yml
 
 permissions:
   contents: write
@@ -22,7 +16,6 @@ concurrency:
 
 jobs:
   materialize:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -30,7 +23,7 @@ jobs:
       TARGET_WORKFLOW: .github/workflows/capture-v16-standalone.yml
       SELF_WORKFLOW: .github/workflows/capture-v16-lifecycle-wiring-materialize-once.yml
       LIFECYCLE_ORACLE: scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
-      SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      SUBJECT_SHA: ${{ github.sha }}
     steps:
       - name: Checkout exact authoring head
         uses: actions/checkout@v6
@@ -120,7 +113,21 @@ jobs:
           rm "$SELF_WORKFLOW"
           git add -- "$TARGET_WORKFLOW" "$SELF_WORKFLOW"
           git diff --cached --check
-          test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n%s\n' "$SELF_WORKFLOW" "$TARGET_WORKFLOW" | sort)"
+          /usr/bin/python3 - <<'PY'
+          import os
+          import subprocess
+
+          actual = set(
+              subprocess.check_output(
+                  ["git", "diff", "--cached", "--name-only"], text=True
+              ).splitlines()
+          )
+          expected = {os.environ["SELF_WORKFLOW"], os.environ["TARGET_WORKFLOW"]}
+          if actual != expected:
+              raise SystemExit(
+                  f"staged path set mismatch: actual={sorted(actual)!r} expected={sorted(expected)!r}"
+              )
+          PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'ci(capture): require lifecycle wiring oracle in V16'
