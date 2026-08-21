@@ -124,6 +124,37 @@ jobs:
           source = source[:watchdog_start] + helper_block + source[watchdog_start:]
           path.write_text(source, encoding="utf-8")
 
+      - name: Bind selected authentication action to exact post-OFF1 authority
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text(encoding="utf-8")
+
+          observation_predicate = "    var fieldAuthorizationObservationAdmitted: Bool { fieldAuthorization.stage == .observationAdmitted }\n"
+          authentication_predicate = "    var fieldAuthorizationCanAdmitAuthentication: Bool { fieldAuthorization.stage == .off1Started }\n"
+          if source.count(observation_predicate) != 1:
+              raise SystemExit("signed observation presentation predicate changed; refusing to guess")
+          if authentication_predicate in source:
+              raise SystemExit("post-OFF1 authentication predicate unexpectedly already exists")
+          source = source.replace(
+              observation_predicate,
+              observation_predicate + authentication_predicate,
+              1,
+          )
+
+          panel_start = source.index("    private var secureObservationPanel: some View")
+          panel_end = source.index("    private var failureRecoveryContextPanel: some View", panel_start)
+          panel = source[panel_start:panel_end]
+          old_gate = ".disabled(test.membershipBusy)"
+          new_gate = ".disabled(!test.fieldAuthorizationCanAdmitAuthentication || test.membershipBusy)"
+          if panel.count(old_gate) != 1:
+              raise SystemExit(f"selected authentication gate changed; expected one anchor, found {panel.count(old_gate)}")
+          panel = panel.replace(old_gate, new_gate, 1)
+          source = source[:panel_start] + panel + source[panel_end:]
+          path.write_text(source, encoding="utf-8")
+
       - name: Enforce transformed authority shape
         shell: bash
         run: |
@@ -137,6 +168,8 @@ jobs:
           grep -Fq 'fieldBuildMetadataComplete' "$APP_SOURCE"
           grep -Fq 'fieldAuthorization.stage == .armed' "$APP_SOURCE"
           grep -Fq 'fieldAuthorizationObservationAdmitted' "$APP_SOURCE"
+          grep -Fq 'fieldAuthorizationCanAdmitAuthentication' "$APP_SOURCE"
+          grep -Fq '.disabled(!test.fieldAuthorizationCanAdmitAuthentication || test.membershipBusy)' "$APP_SOURCE"
           grep -Fq 'try self.fieldAuthorization.admitOFF1Start()' "$APP_SOURCE"
           grep -Fq 'try self.fieldAuthorization.admitAuthenticationStart()' "$APP_SOURCE"
           grep -Fq 'try fieldAuthorization.admitOfficialConnectionStart()' "$APP_SOURCE"
@@ -162,6 +195,9 @@ jobs:
           swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
           swift test --filter TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
           swift test --filter TuyaFieldBuildPresentationAuthoritySourceTests
+          swift test --filter TuyaFieldFinalAuthoritySourceTests
+          swift test --filter TuyaFieldGoPrerequisiteSourceTests
+          swift test --filter TuyaCaptureRootProductSurfaceSourceTests
           swift test --filter CaptureP0RootVisualAcceptanceTests
 
       - name: Build standalone Capture on Xcode 27
@@ -201,4 +237,4 @@ jobs:
           git push origin HEAD:"$TARGET_BRANCH"
           printf 'NEMBRA_CAPTURE_APP_AUTHORIZATION_PINNED_GO materialized=%s trigger=%s physicalAuthorityCreated=false\n' "$materialized" "$GITHUB_SHA"
 
-# relay-retrigger: 2026-08-21T04:45-07:00 sequence=4
+# qa-contract-reconciliation: 2026-08-21
