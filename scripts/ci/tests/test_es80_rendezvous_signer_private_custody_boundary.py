@@ -16,16 +16,18 @@ class RendezvousSignerPrivateCustodyBoundaryTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.wrapper = WRAPPER.read_text(encoding="utf-8")
 
-    def test_wrapper_freezes_all_key_visible_python_sources_from_git_objects(self) -> None:
+    def test_wrapper_freezes_all_key_visible_python_sources_from_explicit_accepted_commit(self) -> None:
         for required in (
             "accepted_execution_bundle",
             'GIT = Path("/usr/bin/git")',
             'PYTHON = Path("/usr/bin/python3")',
             '"GIT_NO_REPLACE_OBJECTS": "1"',
             '"GIT_CONFIG_GLOBAL": "/dev/null"',
+            'value.add_argument("--accepted-source-commit", required=True)',
+            'f"{source_commit}:{relative_path}"',
             '"cat-file", "blob"',
             "_git_blob_sha(blob) != blob_id",
-            "worktree != blob",
+            "verify_accepted_evidence_source(",
             '"PYTHONNOUSERSITE": "1"',
             '"PYTHONPATH": ""',
         ):
@@ -39,17 +41,26 @@ class RendezvousSignerPrivateCustodyBoundaryTests(unittest.TestCase):
         ):
             with self.subTest(source_name=source_name):
                 self.assertIn(source_name, self.wrapper)
+        self.assertNotIn('"HEAD:{relative_path}"', self.wrapper)
+        self.assertNotIn('"HEAD^{commit}"', self.wrapper)
         self.assertNotIn("sys.executable,", self.wrapper)
         self.assertNotIn("str(SIGNER)", self.wrapper)
 
     def test_wrapper_is_still_not_promoted_by_unreviewed_production_surfaces(self) -> None:
-        # Exact source custody closes the mutable-code/private-key defect, but field/private runbooks
-        # stay conservative until trust-root review and the full app authority chain are accepted.
+        # Explicit accepted-commit source selection closes the self-selected-HEAD defect for nested
+        # signer code, but the wrapper itself still must be launched through an independently pinned
+        # source boundary and the production trust root/full app chain remain separately unaccepted.
         wrapper_name = WRAPPER.name
         for surface in PRODUCTION_SURFACES:
             with self.subTest(surface=str(surface.relative_to(ROOT))):
                 text = surface.read_text(encoding="utf-8")
                 self.assertNotIn(wrapper_name, text)
+
+    def test_wrapper_cross_checks_accepted_source_against_signed_evidence(self) -> None:
+        source_check = self.wrapper.index("verify_accepted_evidence_source(")
+        signer_launch = self.wrapper.index("completed = subprocess.run(")
+        self.assertLess(source_check, signer_launch)
+        self.assertIn('evidence.get("sourceCommitSHA") != accepted_source_commit', self.wrapper)
 
     def test_wrapper_does_not_duplicate_stable_signing_subjects_from_cli(self) -> None:
         for forbidden in (
