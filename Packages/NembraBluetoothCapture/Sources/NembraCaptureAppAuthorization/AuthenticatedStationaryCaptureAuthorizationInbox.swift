@@ -1,3 +1,4 @@
+import CryptoKit
 import Darwin
 import Foundation
 import NembraBluetoothCapture
@@ -11,20 +12,29 @@ public enum AuthenticatedStationaryCaptureAuthorizationInboxError: Error, Equata
     case ownershipRejected(String)
     case byteLimitExceeded(String)
     case subjectChangedDuringRead(String)
+    case committedByteCountMismatch(String)
+    case committedDigestMismatch(String)
     case readFailed(String)
 }
 
 /// Non-authorizing app-container handoff for the retained install manifest and the later signed
 /// authorization envelope.
 ///
-/// The field Mac may copy these files into the app data container. File presence never grants
-/// physical authority: manifest bytes still pass the canonical runtime cross-binding verifier and
-/// envelope bytes still pass the independently pinned signature/current-attempt/replay verifier.
-/// This inbox only provides bounded, one-shot custody for those bytes.
+/// The field Mac publishes each subject in two phases: immutable digest-addressed staging bytes
+/// first, then a tiny commit record. The live app never consumes staging bytes without a complete,
+/// canonical commit record, so polling cannot mistake a quiescent transfer prefix for a finished
+/// authority artifact. File presence still grants no physical authority: returned bytes must pass
+/// the existing canonical runtime cross-binding/signature/current-attempt/replay verifiers.
 public struct AuthenticatedStationaryCaptureAuthorizationInbox: Sendable {
     public static let directoryName = "NembraCapture/FieldAuthorization"
+
     public static let installManifestFilename = "retained-install-manifest.json"
     public static let authorizationEnvelopeFilename = "authorization-envelope.json"
+    public static let installManifestCommitFilename = "retained-install-manifest.commit-v1"
+    public static let authorizationEnvelopeCommitFilename = "authorization-envelope.commit-v1"
+
+    private static let commitVersion = "NEMBRA-FIELD-HANDOFF-V1"
+    private static let maximumCommitByteCount = 256
 
     private let directoryURL: URL
 
@@ -45,54 +55,144 @@ public struct AuthenticatedStationaryCaptureAuthorizationInbox: Sendable {
         self.directoryURL = directoryURL
     }
 
-    /// Takes the stable retained-install manifest. The returned bytes are still non-authorizing and
-    /// must be passed to `AuthenticatedStationaryCaptureAppSession.prepare(installManifestData:)`.
+    /// Takes a completely published retained-install manifest. A missing, partial, or noncanonical
+    /// commit record is treated as not-yet-published so an app polling during `devicectl copy` does
+    /// not promote an intermediate prefix. Returned bytes remain non-authorizing.
     public func takeInstallManifest() throws -> Data {
-        try take(
-            filename: Self.installManifestFilename,
+        try takeCommitted(
+            logicalFilename: Self.installManifestFilename,
+            commitFilename: Self.installManifestCommitFilename,
+            stagingStem: "retained-install-manifest",
             maximumByteCount: AuthenticatedStationaryCaptureInstallManifestVerifier
                 .maximumManifestByteCount
         )
     }
 
-    /// Takes the post-install signer response. The returned bytes are still non-authorizing and
-    /// must be passed to `AuthenticatedStationaryCaptureAppSession.acceptEnvelope(_:)`.
+    /// Takes a completely published signer response. Returned bytes remain non-authorizing and must
+    /// still pass `AuthenticatedStationaryCaptureAppSession.acceptEnvelope(_:)`.
     public func takeAuthorizationEnvelope() throws -> Data {
-        try take(
-            filename: Self.authorizationEnvelopeFilename,
+        try takeCommitted(
+            logicalFilename: Self.authorizationEnvelopeFilename,
+            commitFilename: Self.authorizationEnvelopeCommitFilename,
+            stagingStem: "authorization-envelope",
             maximumByteCount: AuthenticatedStationaryCaptureFieldAuthorizationVerifier
                 .maximumEnvelopeByteCount
         )
     }
 
-    private func take(filename: String, maximumByteCount: Int) throws -> Data {
-        let directoryFD = try openDirectoryNoFollow(subjectFilename: filename)
+    private func takeCommitted(
+        logicalFilename: String,
+        commitFilename: String,
+        stagingStem: String,
+        maximumByteCount: Int
+    ) throws -> Data {
+        let directoryFD = try openDirectoryNoFollow(subjectFilename: logicalFilename)
         defer { Darwin.close(directoryFD) }
 
-        let descriptor = try openSubjectNoFollow(
-            directoryFD: directoryFD,
-            filename: filename
-        )
-        defer { Darwin.close(descriptor) }
+        let commitDescriptor: Int32
+        do {
+            commitDescriptor = try openSubjectNoFollow(
+                directoryFD: directoryFD,
+                filename: commitFilename
+            )
+        } catch AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject {
+            throw AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(logicalFilename)
+        }
+        defer { Darwin.close(commitDescriptor) }
 
-        var before = stat()
-        guard Darwin.fstat(descriptor, &before) == 0 else {
-            throw AuthenticatedStationaryCaptureAuthorizationInboxError.readFailed(filename)
+        let commitData: Data
+        do {
+            commitData = try readStable(
+                descriptor: commitDescriptor,
+                filename: commitFilename,
+                maximumByteCount: Self.maximumCommitByteCount
+            ).data
+        } catch AuthenticatedStationaryCaptureAuthorizationInboxError.byteLimitExceeded {
+            // The commit itself may still be in flight. Do not unlink or surface transfer prefixes
+            // as a terminal app error; the next poll can observe the complete record.
+            throw AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(logicalFilename)
+        } catch AuthenticatedStationaryCaptureAuthorizationInboxError.subjectChangedDuringRead {
+            throw AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(logicalFilename)
         }
-        guard (before.st_mode & S_IFMT) == S_IFREG else {
-            throw AuthenticatedStationaryCaptureAuthorizationInboxError.nonRegularFile(filename)
+
+        guard let commit = Self.parseCommit(
+            commitData,
+            stagingStem: stagingStem,
+            maximumByteCount: maximumByteCount
+        ) else {
+            // Partial commit publication is intentionally indistinguishable from absence.
+            throw AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(logicalFilename)
         }
-        guard before.st_nlink == 1 else {
-            throw AuthenticatedStationaryCaptureAuthorizationInboxError.multipleLinksRejected(filename)
+
+        let stagedDescriptor: Int32
+        do {
+            stagedDescriptor = try openSubjectNoFollow(
+                directoryFD: directoryFD,
+                filename: commit.stagedFilename
+            )
+        } catch AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject {
+            throw AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(logicalFilename)
         }
-        guard before.st_uid == getuid() else {
-            throw AuthenticatedStationaryCaptureAuthorizationInboxError.ownershipRejected(filename)
+        defer { Darwin.close(stagedDescriptor) }
+
+        let staged = try readStable(
+            descriptor: stagedDescriptor,
+            filename: commit.stagedFilename,
+            maximumByteCount: maximumByteCount
+        )
+        guard staged.data.count == commit.byteCount else {
+            throw AuthenticatedStationaryCaptureAuthorizationInboxError
+                .committedByteCountMismatch(logicalFilename)
         }
+        guard Self.sha256Hex(staged.data) == commit.sha256 else {
+            throw AuthenticatedStationaryCaptureAuthorizationInboxError
+                .committedDigestMismatch(logicalFilename)
+        }
+
+        // Retire the commit first while both validated inodes remain open. A concurrent second poll
+        // then cannot independently promote the same staged subject. Every unlink is descriptor-
+        // rebound: a same-UID replacement at either pathname makes success impossible.
+        try unlinkBound(
+            directoryFD: directoryFD,
+            filename: commitFilename,
+            descriptor: commitDescriptor,
+            before: try snapshot(descriptor: commitDescriptor, filename: commitFilename)
+        )
+        try unlinkBound(
+            directoryFD: directoryFD,
+            filename: commit.stagedFilename,
+            descriptor: stagedDescriptor,
+            before: staged.snapshot
+        )
+
+        return staged.data
+    }
+
+    private struct StableRead {
+        let data: Data
+        let snapshot: stat
+    }
+
+    private struct CommitRecord {
+        let stagedFilename: String
+        let byteCount: Int
+        let sha256: String
+    }
+
+    private func readStable(
+        descriptor: Int32,
+        filename: String,
+        maximumByteCount: Int
+    ) throws -> StableRead {
+        let before = try snapshot(descriptor: descriptor, filename: filename)
         guard before.st_size > 0,
               before.st_size <= off_t(maximumByteCount) else {
             throw AuthenticatedStationaryCaptureAuthorizationInboxError.byteLimitExceeded(filename)
         }
 
+        guard Darwin.lseek(descriptor, 0, SEEK_SET) >= 0 else {
+            throw AuthenticatedStationaryCaptureAuthorizationInboxError.readFailed(filename)
+        }
         var data = Data()
         data.reserveCapacity(Int(before.st_size))
         var buffer = [UInt8](repeating: 0, count: min(64 * 1024, maximumByteCount))
@@ -111,27 +211,81 @@ public struct AuthenticatedStationaryCaptureAuthorizationInbox: Sendable {
             data.append(contentsOf: buffer.prefix(count))
         }
 
-        var afterRead = stat()
-        guard Darwin.fstat(descriptor, &afterRead) == 0,
-              sameSnapshot(before, afterRead),
-              data.count == Int(before.st_size) else {
+        let after = try snapshot(descriptor: descriptor, filename: filename)
+        guard sameSnapshot(before, after), data.count == Int(before.st_size) else {
             throw AuthenticatedStationaryCaptureAuthorizationInboxError.subjectChangedDuringRead(filename)
         }
+        return StableRead(data: data, snapshot: before)
+    }
 
-        // Retire the directory entry while the validated inode is still open. A same-UID rename or
-        // replacement cannot cause success: after unlinking the expected name, the descriptor-bound
-        // inode itself must have zero remaining links before its bytes can leave this custody layer.
+    private func snapshot(descriptor: Int32, filename: String) throws -> stat {
+        var value = stat()
+        guard Darwin.fstat(descriptor, &value) == 0 else {
+            throw AuthenticatedStationaryCaptureAuthorizationInboxError.readFailed(filename)
+        }
+        guard (value.st_mode & S_IFMT) == S_IFREG else {
+            throw AuthenticatedStationaryCaptureAuthorizationInboxError.nonRegularFile(filename)
+        }
+        guard value.st_nlink == 1 else {
+            throw AuthenticatedStationaryCaptureAuthorizationInboxError.multipleLinksRejected(filename)
+        }
+        guard value.st_uid == getuid() else {
+            throw AuthenticatedStationaryCaptureAuthorizationInboxError.ownershipRejected(filename)
+        }
+        return value
+    }
+
+    private func unlinkBound(
+        directoryFD: Int32,
+        filename: String,
+        descriptor: Int32,
+        before: stat
+    ) throws {
         guard Darwin.unlinkat(directoryFD, filename, 0) == 0 else {
             throw AuthenticatedStationaryCaptureAuthorizationInboxError.readFailed(filename)
         }
-
-        var afterUnlink = stat()
-        guard Darwin.fstat(descriptor, &afterUnlink) == 0,
-              sameInode(before, afterUnlink),
-              afterUnlink.st_nlink == 0 else {
+        var after = stat()
+        guard Darwin.fstat(descriptor, &after) == 0,
+              sameInode(before, after),
+              after.st_nlink == 0 else {
             throw AuthenticatedStationaryCaptureAuthorizationInboxError.subjectChangedDuringRead(filename)
         }
-        return data
+    }
+
+    private static func parseCommit(
+        _ data: Data,
+        stagingStem: String,
+        maximumByteCount: Int
+    ) -> CommitRecord? {
+        guard let text = String(data: data, encoding: .utf8),
+              text.hasSuffix("\n") else { return nil }
+        let body = text.dropLast()
+        let lines = body.split(separator: "\n", omittingEmptySubsequences: false)
+        guard lines.count == 4,
+              lines[0] == Substring(commitVersion),
+              let byteCount = Int(lines[2]),
+              byteCount > 0,
+              byteCount <= maximumByteCount else { return nil }
+
+        let digest = String(lines[3])
+        guard digest.count == 64,
+              digest.allSatisfy({ $0.isNumber || ("a"..."f").contains(String($0)) }) else {
+            return nil
+        }
+        let expectedStagedFilename = "\(stagingStem).\(digest).staged"
+        guard lines[1] == Substring(expectedStagedFilename) else { return nil }
+
+        let canonical = "\(commitVersion)\n\(expectedStagedFilename)\n\(byteCount)\n\(digest)\n"
+        guard Data(canonical.utf8) == data else { return nil }
+        return CommitRecord(
+            stagedFilename: expectedStagedFilename,
+            byteCount: byteCount,
+            sha256: digest
+        )
+    }
+
+    private static func sha256Hex(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
     private func openDirectoryNoFollow(subjectFilename: String) throws -> Int32 {
@@ -148,8 +302,7 @@ public struct AuthenticatedStationaryCaptureAuthorizationInbox: Sendable {
                 throw AuthenticatedStationaryCaptureAuthorizationInboxError
                     .missingSubject(subjectFilename)
             default:
-                throw AuthenticatedStationaryCaptureAuthorizationInboxError
-                    .readFailed(subjectFilename)
+                throw AuthenticatedStationaryCaptureAuthorizationInboxError.readFailed(subjectFilename)
             }
         }
         return descriptor
