@@ -74,6 +74,24 @@ struct TuyaPhysicalAppContainerTransportProbeSourceTests {
         #expect(probe.contains("NEMBRA_CAPTURE_DEVICE_UDID"))
     }
 
+    @Test("every attempt has a unique evidence directory and success is atomically sealed")
+    func probeCannotPromoteAStaleResultFromAnEarlierAttempt() throws {
+        let probe = try readRepositoryFile(relativePath)
+
+        #expect(probe.contains("ARTIFACTS_ROOT="))
+        #expect(probe.contains("RUN_ID=\"$(/usr/bin/uuidgen"))
+        #expect(probe.contains("RUN_DIR=\"$ARTIFACTS_ROOT/run-$RUN_ID\""))
+        #expect(probe.contains("/bin/mkdir \"$RUN_DIR\""))
+        #expect(probe.contains("ARTIFACTS_DIR=\"$RUN_DIR\""))
+        #expect(probe.contains("evidence_run_id=%s"))
+        #expect(probe.contains("RESULT_TMP=\"$ARTIFACTS_DIR/.result-$NONCE.tmp\""))
+        #expect(probe.contains("RESULT_PATH=\"$ARTIFACTS_DIR/result.txt\""))
+        #expect(probe.contains("/bin/mv -f -- \"$RESULT_TMP\" \"$RESULT_PATH\""))
+        #expect(probe.contains("/bin/rm -f -- \"$LOCAL_SENTINEL\" \"$ROUNDTRIP_SENTINEL\""))
+        #expect(probe.contains("umask 077"))
+        #expect(probe.contains("accidentally promote stale success"))
+    }
+
     private func readRepositoryFile(_ relativePath: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
