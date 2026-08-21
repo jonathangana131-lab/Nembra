@@ -6,7 +6,7 @@ import Testing
 struct TuyaPhysicalAppContainerTransportProbeSourceTests {
     private let relativePath = "scripts/field/probe_capture_app_container_transport.command"
 
-    @Test("probe binds the installed Capture app without touching authorization subjects")
+    @Test("probe binds only the Capture bundle transport without touching authorization subjects")
     func probeUsesOnlyNonAuthorizingScratchTransport() throws {
         let probe = try readRepositoryFile(relativePath)
 
@@ -41,7 +41,17 @@ struct TuyaPhysicalAppContainerTransportProbeSourceTests {
         #expect(probe.contains("bluetoothContacted=false"))
         #expect(probe.contains("tuyaContacted=false"))
         #expect(probe.contains("es80Contacted=false"))
-        #expect(probe.contains("NOT PROVEN: authorization acceptance"))
+        #expect(probe.contains("installed_build_identity_verified=false"))
+        #expect(probe.contains("NOT PROVEN: exact installed Capture build identity"))
+    }
+
+    @Test("probe cannot promote bundle transport into exact installed-build evidence")
+    func probeKeepsInstalledBuildIdentityExplicitlyUnverified() throws {
+        let probe = try readRepositoryFile(relativePath)
+
+        #expect(probe.contains("installed_build_identity_verified=false"))
+        #expect(!probe.contains("installed_build_identity_verified=true"))
+        #expect(probe.contains("does not prove the exact accepted Capture build is the installed bundle"))
     }
 
     @Test("probe keeps raw physical-device output ephemeral and publishes only a pseudonym")
