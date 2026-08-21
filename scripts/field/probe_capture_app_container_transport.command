@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+umask 077
 
 # This probe proves only bidirectional file transport to the already-installed Nembra Capture
 # appDataContainer selected by bundle ID on one explicitly selected iPhone. It never proves which
@@ -30,9 +31,17 @@ DEVICE_UDID="${NEMBRA_CAPTURE_DEVICE_UDID:-${1:-}}"
   exit 5
 }
 
-ARTIFACTS_DIR="${ARTIFACTS_DIR:-$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/nembra-capture-transport.XXXXXX")}"
-/bin/mkdir -p "$ARTIFACTS_DIR"
-/bin/chmod 700 "$ARTIFACTS_DIR"
+# ARTIFACTS_DIR is treated as an evidence root, never as a reusable result directory. Every probe
+# attempt gets a new UUID-named child. Therefore a failed later attempt cannot leave an older
+# result.txt at the path printed for the current attempt and accidentally promote stale success.
+ARTIFACTS_ROOT="${ARTIFACTS_DIR:-$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/nembra-capture-transport.XXXXXX")}"
+/bin/mkdir -p "$ARTIFACTS_ROOT"
+/bin/chmod 700 "$ARTIFACTS_ROOT"
+RUN_ID="$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')"
+RUN_DIR="$ARTIFACTS_ROOT/run-$RUN_ID"
+/bin/mkdir "$RUN_DIR"
+/bin/chmod 700 "$RUN_DIR"
+ARTIFACTS_DIR="$RUN_DIR"
 export ARTIFACTS_DIR
 
 # Any output produced while contacting the physical iPhone is kept outside the durable evidence
@@ -119,7 +128,13 @@ OUTBOUND_SHA256="$(/usr/bin/shasum -a 256 "$ROUNDTRIP_SENTINEL" | /usr/bin/awk '
   exit 7
 }
 
+# Random sentinel bytes are not evidence and are removed before sealing. Only their exact matching
+# hashes survive. result.txt appears atomically only after every required check has succeeded.
+/bin/rm -f -- "$LOCAL_SENTINEL" "$ROUNDTRIP_SENTINEL"
+RESULT_TMP="$ARTIFACTS_DIR/.result-$NONCE.tmp"
+RESULT_PATH="$ARTIFACTS_DIR/result.txt"
 {
+  printf 'evidence_run_id=%s\n' "$RUN_ID"
   printf 'bundle_id=%s\n' "$BUNDLE_ID"
   printf 'device_pseudonym_sha256=%s\n' "$DEVICE_PSEUDONYM"
   printf 'field_authorization_directory_present=true\n'
@@ -136,7 +151,9 @@ OUTBOUND_SHA256="$(/usr/bin/shasum -a 256 "$ROUNDTRIP_SENTINEL" | /usr/bin/awk '
   printf 'bluetoothContacted=false\n'
   printf 'tuyaContacted=false\n'
   printf 'es80Contacted=false\n'
-} > "$ARTIFACTS_DIR/result.txt"
+} > "$RESULT_TMP"
+/bin/chmod 600 "$RESULT_TMP"
+/bin/mv -f -- "$RESULT_TMP" "$RESULT_PATH"
 
 printf '%s\n' "PROVEN: exact bytes copied to and from the $BUNDLE_ID appDataContainer on the explicitly selected physical iPhone; that bundle's FieldAuthorization directory was present."
 printf '%s\n' 'NOT PROVEN: exact installed Capture build identity, authorization acceptance, signing/install custody, trust-root correctness, Bluetooth/Tuya behavior, ES80 identity, telemetry semantics, commands, or physical Capture GO.'
