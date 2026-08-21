@@ -1,0 +1,95 @@
+name: Capture signer layout current-carrier recovery
+
+on:
+  push:
+    branches:
+      - recovery/capture-signer-layout-current-carrier-sol-20260820
+    paths:
+      - '.github/workflows/capture-signer-layout-current-carrier-recovery-sol.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-signer-layout-current-carrier-recovery-sol
+  cancel-in-progress: false
+
+jobs:
+  recover-test-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TARGET_BRANCH: recovery/capture-signer-layout-current-carrier-sol-20260820
+      EXPECTED_CARRIER: 76485f582d83dd45648db56db8e3e153678849b0
+      SOURCE_HEAD: f6e096268551dd1dfcca1d31852b489daf6290e0
+      SELF_WORKFLOW: .github/workflows/capture-signer-layout-current-carrier-recovery-sol.yml
+    steps:
+      - name: Checkout exact recovery trigger
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact carrier and transplant reviewed signer-layout blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git merge-base HEAD "$EXPECTED_CARRIER")" = "$EXPECTED_CARRIER"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git fetch --no-tags origin "$SOURCE_HEAD"
+          test "$(git rev-parse FETCH_HEAD)" = "$SOURCE_HEAD"
+
+          paths=(
+            '.github/workflows/capture-signer-bundle-layout-exact-head.yml'
+            'scripts/ci/es80_sign_field_authorization_from_rendezvous.py'
+            'scripts/ci/tests/test_es80_sign_field_authorization_execution_custody.py'
+            'scripts/ci/tests/test_es80_signer_bundle_repository_layout.py'
+          )
+          for path in "${paths[@]}"; do
+            mkdir -p "$(dirname "$path")"
+            git show "$SOURCE_HEAD:$path" > "$path"
+            test "$(git hash-object "$path")" = "$(git rev-parse "$SOURCE_HEAD:$path")"
+          done
+
+      - name: Validate recovered repository-layout custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          python3 -m py_compile scripts/ci/es80_sign_field_authorization_from_rendezvous.py
+          python3 -m unittest \
+            scripts.ci.tests.test_es80_sign_field_authorization_from_rendezvous \
+            scripts.ci.tests.test_es80_sign_field_authorization_execution_custody \
+            scripts.ci.tests.test_es80_signer_bundle_repository_layout \
+            scripts.ci.tests.test_es80_field_authorization_signer_custody_source
+          python3 scripts/ci/tests/test_es80_materialized_field_authorization_signer_runtime.py
+          test -z "$(git status --porcelain=v1 --untracked-files=all | grep -v -E '^( M|M |\?\?) (\.github/workflows/capture-signer-bundle-layout-exact-head.yml|scripts/ci/es80_sign_field_authorization_from_rendezvous.py|scripts/ci/tests/test_es80_sign_field_authorization_execution_custody.py|scripts/ci/tests/test_es80_signer_bundle_repository_layout.py)$' || true)"
+
+      - name: Publish tested four-file recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$TARGET_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          rm "$SELF_WORKFLOW"
+          git add -- \
+            '.github/workflows/capture-signer-bundle-layout-exact-head.yml' \
+            'scripts/ci/es80_sign_field_authorization_from_rendezvous.py' \
+            'scripts/ci/tests/test_es80_sign_field_authorization_execution_custody.py' \
+            'scripts/ci/tests/test_es80_signer_bundle_repository_layout.py' \
+            "$SELF_WORKFLOW"
+          git diff --cached --check
+          expected="$(printf '%s\n' \
+            '.github/workflows/capture-signer-bundle-layout-exact-head.yml' \
+            'scripts/ci/es80_sign_field_authorization_from_rendezvous.py' \
+            'scripts/ci/tests/test_es80_sign_field_authorization_execution_custody.py' \
+            'scripts/ci/tests/test_es80_signer_bundle_repository_layout.py' | sort)"
+          actual="$(git diff --cached --name-only "$EXPECTED_CARRIER" | grep -v -F "$SELF_WORKFLOW" | sort)"
+          test "$actual" = "$expected"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Capture: recover signer repository layout on current carrier'
+          git push origin HEAD:"$TARGET_BRANCH"
+          printf 'NEMBRA_CAPTURE_SIGNER_LAYOUT_RECOVERED source=%s carrier=%s physicalAuthorityCreated=false\n' "$SOURCE_HEAD" "$EXPECTED_CARRIER"
