@@ -41,6 +41,12 @@ class FieldAuthorizationContainerTransportSourceTests(unittest.TestCase):
         self.assertNotIn("NEMBRA_FIELD_BUNDLE_ID", self.source)
         self.assertNotIn("NEMBRA_FIELD_DOMAIN_TYPE", self.source)
 
+    def test_transport_byte_bounds_match_package_contracts(self) -> None:
+        self.assertIn("MANIFEST_MAX_BYTES=16384", self.source)
+        self.assertIn("RENDEZVOUS_MAX_BYTES=4096", self.source)
+        self.assertIn("ENVELOPE_MAX_BYTES=32768", self.source)
+        self.assertNotIn("ENVELOPE_MAX_BYTES=1048576", self.source)
+
     def test_only_three_non_authorizing_transfer_actions_exist(self) -> None:
         for action in ("--stage-manifest", "--export-rendezvous", "--stage-envelope"):
             self.assertIn(action, self.source)
