@@ -50,9 +50,15 @@ jobs:
           bash -n "$PROBE"
           test "$(head -n 1 "$PROBE")" = '#!/bin/bash -p'
           test -x "$PROBE"
+          test "$(grep -Fc "PATH='/usr/bin:/bin:/usr/sbin:/sbin'" "$PROBE")" = 1
+          test "$(grep -Fc 'export PATH' "$PROBE")" = 1
+          test "$(grep -Fc 'readonly PATH' "$PROBE")" = 1
+          test "$(grep -Fc '$(/usr/bin/dirname "$0")' "$PROBE")" = 1
+          test "$(grep -Fc '$(dirname "$0")' "$PROBE" || true)" = 0
           test "$(grep -Fc 'unset BASH_ENV ENV CDPATH GLOBIGNORE || true' "$PROBE")" = 1
           test "$(grep -Fc '/usr/bin/env -u BASH_ENV -u ENV -u CDPATH -u GLOBIGNORE /bin/bash -p "$CONTRACT_EXEC"' "$PROBE")" = 1
           test "$(grep -Fc 'NEMBRA_CAPTURE_PROBE_SELF_TEST' "$PROBE")" -ge 2
+          test "$(grep -Fc 'path_injection_blocked=true' "$PROBE")" = 1
           test "$(grep -Fc 'devicectl device copy to' "$PROBE")" = 1
           test "$(grep -Fc 'devicectl device copy from' "$PROBE")" = 1
           test "$(grep -Fc -- '--remove-existing-content' "$PROBE" || true)" = 0
@@ -80,12 +86,14 @@ jobs:
           test "$(grep -Fc 'probe_initiated_es80_contact=false' "$PROBE")" = 1
           test "$(grep -Ec '(^|[^_])(bluetoothContacted|tuyaContacted|es80Contacted)=false' "$PROBE" || true)" = 0
 
-      - name: Prove hostile shell startup cannot extend probe execution
+      - name: Prove hostile shell startup and PATH cannot extend probe execution
         shell: bash
         run: |
           set -euo pipefail
           hostile="$RUNNER_TEMP/nembra-capture-hostile-bash-env.sh"
           marker="$RUNNER_TEMP/nembra-capture-hostile-bash-env-ran"
+          hostile_path="$RUNNER_TEMP/nembra-capture-hostile-path"
+          mkdir -p "$hostile_path"
           rm -f "$marker"
           printf '%s\n' '[[ -n "${NEMBRA_PROBE_STARTUP_MARKER:-}" ]] && /usr/bin/touch "$NEMBRA_PROBE_STARTUP_MARKER"' > "$hostile"
           chmod 600 "$hostile"
@@ -93,9 +101,10 @@ jobs:
           NEMBRA_CAPTURE_PROBE_SELF_TEST=1 \
           BASH_ENV="$hostile" \
           ENV="$hostile" \
+          PATH="$hostile_path:/usr/bin:/bin" \
           "$PROBE" | tee "$RUNNER_TEMP/nembra-capture-probe-shell-self-test.txt"
           test ! -e "$marker"
-          grep -Fq 'startup_injection_blocked=true device_contact=false' "$RUNNER_TEMP/nembra-capture-probe-shell-self-test.txt"
+          grep -Fq 'startup_injection_blocked=true path_injection_blocked=true device_contact=false' "$RUNNER_TEMP/nembra-capture-probe-shell-self-test.txt"
 
       - name: Run focused probe truth suite
         working-directory: Packages/NembraBluetoothCapture
@@ -109,5 +118,5 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD_SHA"
-          printf '%s\n' 'PROVEN: the exact subject head parses on the Xcode 27 Mac and passes the focused non-authorizing bundle-level app-container probe source contract, including shell-startup injection isolation, unique-run/atomic-result stale-evidence rejection, environment-only operator device selection, and listing-success-only handoff semantics.'
+          printf '%s\n' 'PROVEN: the exact subject head parses on the Xcode 27 Mac and passes the focused non-authorizing bundle-level app-container probe source contract, including shell-startup/PATH injection isolation, unique-run/atomic-result stale-evidence rejection, environment-only operator device selection, and listing-success-only handoff semantics.'
           printf '%s\n' 'NOT PROVEN: a physical iPhone round-trip, handoff-directory filesystem existence beyond a successful listing operation, exact installed Capture build identity, authorization payload transfer/acceptance, signing/install custody, whether any other process/app contacted Bluetooth/Tuya/ES80, telemetry semantics, commands, or physical Capture GO.'
