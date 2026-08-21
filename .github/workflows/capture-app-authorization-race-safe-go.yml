@@ -195,6 +195,9 @@ jobs:
           swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
           swift test --filter TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
           swift test --filter TuyaFieldBuildPresentationAuthoritySourceTests
+          swift test --filter TuyaFieldFinalAuthoritySourceTests
+          swift test --filter TuyaFieldGoPrerequisiteSourceTests
+          swift test --filter TuyaCaptureRootProductSurfaceSourceTests
           swift test --filter CaptureP0RootVisualAcceptanceTests
 
       - name: Build standalone Capture on Xcode 27
