@@ -8,6 +8,22 @@ on:
     paths:
       - '.github/workflows/capture-app-container-transport-proof.yml'
       - 'scripts/ci/xcode27_devicectl_manifest_transport_contract.sh'
+      - 'NembraApp/App/NembraCaptureEntrypoint.swift'
+      - 'NembraApp/App/NembraCaptureFieldAuthorizationController.swift'
+      - 'NembraCapture.xcodeproj/**'
+      - 'NembraCapture-Info.plist'
+      - 'Packages/NembraBluetoothCapture/Sources/NembraCaptureAppAuthorization/AuthenticatedStationaryCaptureAuthorizationInbox.swift'
+      - 'Packages/NembraBluetoothCapture/Sources/NembraCaptureAppAuthorization/AuthenticatedStationaryCaptureSignerRendezvousOutbox.swift'
+  push:
+    branches:
+      - product/capture-1-0-main-20260818
+    paths:
+      - 'NembraApp/App/NembraCaptureEntrypoint.swift'
+      - 'NembraApp/App/NembraCaptureFieldAuthorizationController.swift'
+      - 'NembraCapture.xcodeproj/**'
+      - 'NembraCapture-Info.plist'
+      - 'Packages/NembraBluetoothCapture/Sources/NembraCaptureAppAuthorization/AuthenticatedStationaryCaptureAuthorizationInbox.swift'
+      - 'Packages/NembraBluetoothCapture/Sources/NembraCaptureAppAuthorization/AuthenticatedStationaryCaptureSignerRendezvousOutbox.swift'
   workflow_dispatch:
 
 permissions:
@@ -23,22 +39,14 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 15
     env:
-      EXPECTED_PARENT: d635ae9d0460a41c1bed04ee340537d2c994d963
       CONTRACT: scripts/ci/xcode27_devicectl_manifest_transport_contract.sh
       SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
     steps:
-      - name: Checkout immutable PR head
-        if: github.event_name == 'pull_request'
+      - name: Checkout exact subject
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Checkout dispatched ref
-        if: github.event_name != 'pull_request'
-        uses: actions/checkout@v6
-        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -48,15 +56,13 @@ jobs:
           set -euo pipefail
           actual="$(git rev-parse --verify HEAD^{commit})"
           test "$actual" = "$SUBJECT_SHA"
-          if [[ "${{ github.event_name }}" == 'pull_request' ]]; then
-            git fetch --no-tags origin product/capture-1-0-main-20260818
-            test "$(git merge-base "$actual" "$EXPECTED_PARENT")" = "$EXPECTED_PARENT"
+          if [[ -n "$BASE_SHA" ]]; then
+            git fetch --no-tags origin "$BASE_SHA"
+            test "$(git merge-base "$actual" "$BASE_SHA")" = "$BASE_SHA"
           fi
           test -f "$CONTRACT"
           test "$(grep -Ec 'devicectl help device copy (to|from)' "$CONTRACT")" = 2
           test "$(grep -Ec 'devicectl device copy (to|from)' "$CONTRACT" || true)" = 0
-          # The contract is help-only, but it is allowed to parse/document an explicit --device
-          # selector from Xcode help. What remains forbidden is executing a production copy command.
           test "$(grep -Fc '"--device"' "$CONTRACT" || true)" -ge 1
           artifacts_dir="$RUNNER_TEMP/capture-app-container-transport"
           mkdir -p "$artifacts_dir"
@@ -84,7 +90,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: capture-app-container-transport-${{ env.SUBJECT_SHA }}
+          name: capture-app-container-transport-help-${{ env.SUBJECT_SHA }}
           if-no-files-found: error
           retention-days: 14
           path: |
@@ -94,9 +100,211 @@ jobs:
             ${{ runner.temp }}/capture-app-container-transport/devicectl-device-copy-from-help.txt
             ${{ runner.temp }}/capture-app-container-transport-result.txt
 
-      - name: State truth boundary
+      - name: State help truth boundary
         if: success()
         shell: bash
         run: |
           printf '%s\n' 'PROVEN: this exact retained Xcode toolchain documents bidirectional appDataContainer copy controls and bundle-ID domain-identifier semantics for the bound exact source subject.'
           printf '%s\n' 'NOT PROVEN: live iPhone transfer, that Nembra Capture is installed on a particular device, signing/install custody, authorization acceptance, Bluetooth/Tuya behavior, ES80 identity, telemetry, commands, or physical GO.'
+
+  prove-installed-simulator-container:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 30
+    env:
+      SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BUNDLE_ID: com.jonathangana131.nembra.capturelearn
+      PROCEDURE_ID: ES80-AUTHENTICATED-STATIONARY-v1
+    steps:
+      - name: Checkout exact subject
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require materialized non-authorizing root bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$SUBJECT_SHA"
+          grep -Fq 'fieldBuildCanPrepareAuthorization' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'prepareAuthorizationTransport()' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq '.prepareAuthorizationTransferDirectoryForFieldTransport()' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'guard fieldBuildCanPrepareAuthorization else { return }' NembraApp/App/NembraCaptureEntrypoint.swift
+          grep -Fq 'It cannot read a manifest, publish a challenge, accept an envelope, mint/expose a capability' NembraApp/App/NembraCaptureFieldAuthorizationController.swift
+
+      - name: Build metadata-complete Simulator app without physical authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifacts="$RUNNER_TEMP/capture-app-container-simulator"
+          derived="$RUNNER_TEMP/NembraCaptureContainerProofDerivedData"
+          mkdir -p "$artifacts"
+          rm -rf "$derived"
+
+          build_instance='00000000-0000-4000-8000-000000000001'
+          build_identifier="Capture Build V14-${SUBJECT_SHA:0:12}"
+          tuya_lock_sha="$(printf '%s\n' 'SIMULATOR-ONLY-NON-AUTHORIZING-TUYA-LOCK' | /usr/bin/shasum -a 256 | /usr/bin/awk '{print $1}')"
+
+          xcodebuild -version | tee "$artifacts/xcode-version.txt"
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$derived" \
+            CODE_SIGNING_ALLOWED=NO \
+            NEMBRA_CAPTURE_BUILD_IDENTIFIER="$build_identifier" \
+            NEMBRA_CAPTURE_BUILD_INSTANCE_ID="$build_instance" \
+            NEMBRA_CAPTURE_BUILD_COMMIT_SHA="$SUBJECT_SHA" \
+            NEMBRA_CAPTURE_TUYA_DEPENDENCY_LOCK_SHA256="$tuya_lock_sha" \
+            NEMBRA_CAPTURE_PROCEDURE_IDENTIFIER="$PROCEDURE_ID" \
+            build
+
+          app="$derived/Build/Products/Debug-iphonesimulator/Nembra Capture.app"
+          plist="$app/Info.plist"
+          test -d "$app"
+          test -f "$plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" = "$BUNDLE_ID"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :NembraCaptureBuildIdentifier' "$plist")" = "$build_identifier"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :NembraCaptureBuildInstanceID' "$plist")" = "$build_instance"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :NembraCaptureBuildCommitSHA' "$plist")" = "$SUBJECT_SHA"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :NembraCaptureTuyaDependencyLockSHA256' "$plist")" = "$tuya_lock_sha"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :NembraCaptureProcedureIdentifier' "$plist")" = "$PROCEDURE_ID"
+
+          printf '%s\n' "$app" > "$RUNNER_TEMP/capture-container-app-path"
+          {
+            printf 'subject_sha=%s\n' "$SUBJECT_SHA"
+            printf 'build_identifier=%s\n' "$build_identifier"
+            printf 'build_instance_id=%s\n' "$build_instance"
+            printf 'tuya_lock_sha256=%s\n' "$tuya_lock_sha"
+            printf 'procedure=%s\n' "$PROCEDURE_ID"
+            printf 'metadata_complete_for_simulator=true\n'
+            printf 'physicalAuthorityCreated=false\n'
+          } > "$artifacts/build-metadata.txt"
+
+      - name: Create exact iPhone 12 / iOS 27 Simulator
+        id: simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifacts="$RUNNER_TEMP/capture-app-container-simulator"
+          xcrun simctl list runtimes -j > "$artifacts/runtimes.json"
+          xcrun simctl list devicetypes -j > "$artifacts/device-types.json"
+
+          runtime_id="$(/usr/bin/python3 - "$artifacts/runtimes.json" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding='utf-8') as handle:
+              runtimes = json.load(handle).get('runtimes', [])
+          candidates = [r for r in runtimes if r.get('isAvailable') and str(r.get('version', '')).split('.', 1)[0] == '27' and str(r.get('identifier', '')).startswith('com.apple.CoreSimulator.SimRuntime.iOS-27')]
+          if not candidates:
+              raise SystemExit('No available iOS 27 Simulator runtime was found')
+          def version(item):
+              return tuple(int(part) for part in str(item['version']).split('.'))
+          print(max(candidates, key=version)['identifier'])
+          PY
+          )"
+          device_type='com.apple.CoreSimulator.SimDeviceType.iPhone-12'
+          /usr/bin/python3 - "$artifacts/device-types.json" "$device_type" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding='utf-8') as handle:
+              items = json.load(handle).get('devicetypes', [])
+          if not any(item.get('identifier') == sys.argv[2] for item in items):
+              raise SystemExit(f'Required device type unavailable: {sys.argv[2]}')
+          PY
+
+          name="Nembra Capture Container ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          udid="$(xcrun simctl create "$name" "$device_type" "$runtime_id")"
+          printf 'udid=%s\n' "$udid" >> "$GITHUB_OUTPUT"
+          printf 'runtime_id=%s\n' "$runtime_id" >> "$GITHUB_OUTPUT"
+          {
+            printf 'udid=%s\n' "$udid"
+            printf 'runtime=%s\n' "$runtime_id"
+            printf 'device_type=%s\n' "$device_type"
+          } > "$artifacts/simulator.txt"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+
+      - name: Prove installed app creates empty protected transfer destination and exact byte round-trip
+        env:
+          SIMULATOR_UDID: ${{ steps.simulator.outputs.udid }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifacts="$RUNNER_TEMP/capture-app-container-simulator"
+          app="$(cat "$RUNNER_TEMP/capture-container-app-path")"
+          xcrun simctl install "$SIMULATOR_UDID" "$app"
+          launch_output="$(xcrun simctl launch "$SIMULATOR_UDID" "$BUNDLE_ID")"
+          printf '%s\n' "$launch_output" > "$artifacts/launch.txt"
+
+          data_container="$(xcrun simctl get_app_container "$SIMULATOR_UDID" "$BUNDLE_ID" data)"
+          test -d "$data_container"
+          transfer="$data_container/Library/Application Support/NembraCapture/FieldAuthorization"
+          for _ in $(seq 1 80); do
+            [[ -d "$transfer" ]] && break
+            sleep 0.25
+          done
+          test -d "$transfer"
+          mode="$(/usr/bin/stat -f '%Lp' "$transfer")"
+          test "$mode" = '700'
+          test -z "$(/bin/ls -A "$transfer")"
+
+          inbound="$RUNNER_TEMP/retained-install-manifest.json"
+          outbound="$RUNNER_TEMP/retained-install-manifest.roundtrip.json"
+          printf '%s\n' '{"simulatorTransportProof":true,"authorizing":false}' > "$inbound"
+          inbound_sha="$(/usr/bin/shasum -a 256 "$inbound" | /usr/bin/awk '{print $1}')"
+          /bin/cp "$inbound" "$transfer/retained-install-manifest.json"
+          test -f "$transfer/retained-install-manifest.json"
+          /bin/cp "$transfer/retained-install-manifest.json" "$outbound"
+          outbound_sha="$(/usr/bin/shasum -a 256 "$outbound" | /usr/bin/awk '{print $1}')"
+          test "$inbound_sha" = "$outbound_sha"
+          /usr/bin/cmp -s "$inbound" "$outbound"
+
+          # Root bootstrap creates only custody/transport. It must not consume a manifest or publish
+          # a challenge before the user reaches the separately signed SecureLink lifecycle.
+          sleep 1
+          test -f "$transfer/retained-install-manifest.json"
+          test ! -e "$transfer/signer-rendezvous.json"
+          test ! -e "$transfer/authorization-envelope.json"
+
+          {
+            printf 'subject_sha=%s\n' "$SUBJECT_SHA"
+            printf 'bundle_id=%s\n' "$BUNDLE_ID"
+            printf 'simulator_udid=%s\n' "$SIMULATOR_UDID"
+            printf 'transfer_directory_mode=%s\n' "$mode"
+            printf 'inbound_sha256=%s\n' "$inbound_sha"
+            printf 'outbound_sha256=%s\n' "$outbound_sha"
+            printf 'exact_round_trip=true\n'
+            printf 'manifest_remained_non_authorizing=true\n'
+            printf 'physicalDeviceContacted=false\n'
+            printf 'physicalAuthorityCreated=false\n'
+          } > "$artifacts/runtime-proof.txt"
+
+      - name: Retain installed Simulator transport evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: capture-app-container-simulator-${{ env.SUBJECT_SHA }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/capture-app-container-simulator/**
+            ${{ runner.temp }}/retained-install-manifest.json
+            ${{ runner.temp }}/retained-install-manifest.roundtrip.json
+
+      - name: Delete proof Simulator
+        if: always() && steps.simulator.outputs.udid != ''
+        env:
+          SIMULATOR_UDID: ${{ steps.simulator.outputs.udid }}
+        shell: bash
+        run: |
+          xcrun simctl shutdown "$SIMULATOR_UDID" >/dev/null 2>&1 || true
+          xcrun simctl delete "$SIMULATOR_UDID" >/dev/null 2>&1 || true
+
+      - name: State Simulator truth boundary
+        if: success()
+        shell: bash
+        run: |
+          printf '%s\n' 'PROVEN: the exact metadata-complete Nembra Capture build launches on an exact iPhone 12 / iOS 27 Simulator, creates the owner-only empty FieldAuthorization destination, and preserves exact copied manifest bytes bidirectionally without consuming them or publishing a rendezvous at root.'
+          printf '%s\n' 'NOT PROVEN: devicectl transfer to a physical iPhone, production signing/install custody, a production trust root/private key, signed authorization acceptance, Bluetooth/Tuya behavior, ES80 identity, telemetry, commands, or physical GO.'
