@@ -107,3 +107,5 @@ jobs:
           test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
           git push origin HEAD:"$TARGET_BRANCH"
           printf 'NEMBRA_CAPTURE_APP_AUTHORIZATION_GO materialized=%s trigger=%s physicalAuthorityCreated=false\n' "$materialized" "$GITHUB_SHA"
+
+# relay-retrigger: 2026-08-20T21:03-07:00
