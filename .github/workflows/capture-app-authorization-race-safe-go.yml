@@ -124,6 +124,36 @@ jobs:
           source = source[:watchdog_start] + helper_block + source[watchdog_start:]
           path.write_text(source, encoding="utf-8")
 
+      - name: Bind selected authentication to exact post-OFF1 authorization stage
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text(encoding="utf-8")
+
+          old_predicate_anchor = "    var fieldAuthorizationObservationAdmitted: Bool { fieldAuthorization.stage == .observationAdmitted }\n    var fieldBuildIdentifier: String { buildIdentity.buildIdentifier }\n"
+          new_predicate_anchor = "    var fieldAuthorizationObservationAdmitted: Bool { fieldAuthorization.stage == .observationAdmitted }\n    var fieldAuthorizationCanAdmitAuthentication: Bool { fieldAuthorization.stage == .off1Started }\n    var fieldBuildIdentifier: String { buildIdentity.buildIdentifier }\n"
+          if source.count(old_predicate_anchor) != 1:
+              raise SystemExit("post-OFF1 presentation predicate anchor changed; refusing to guess")
+          source = source.replace(old_predicate_anchor, new_predicate_anchor, 1)
+
+          panel_start_marker = "    private var secureObservationPanel: some View {\n"
+          panel_end_marker = "    private var failureRecoveryContextPanel: some View {\n"
+          panel_start = source.index(panel_start_marker)
+          panel_end = source.index(panel_end_marker, panel_start + len(panel_start_marker))
+          panel = source[panel_start:panel_end]
+          selected_end = panel.index("} else if test.phase == .authenticating")
+          selected = panel[:selected_end]
+          old_disabled = ".disabled(test.membershipBusy)"
+          new_disabled = ".disabled(!test.fieldAuthorizationCanAdmitAuthentication || test.membershipBusy)"
+          if selected.count(old_disabled) != 1:
+              raise SystemExit("selected authentication action gate changed; refusing to guess")
+          selected = selected.replace(old_disabled, new_disabled, 1)
+          panel = selected + panel[selected_end:]
+          source = source[:panel_start] + panel + source[panel_end:]
+          path.write_text(source, encoding="utf-8")
+
       - name: Enforce transformed authority shape
         shell: bash
         run: |
@@ -137,6 +167,9 @@ jobs:
           grep -Fq 'fieldBuildMetadataComplete' "$APP_SOURCE"
           grep -Fq 'fieldAuthorization.stage == .armed' "$APP_SOURCE"
           grep -Fq 'fieldAuthorizationObservationAdmitted' "$APP_SOURCE"
+          grep -Fq 'fieldAuthorizationCanAdmitAuthentication' "$APP_SOURCE"
+          grep -Fq 'fieldAuthorization.stage == .off1Started' "$APP_SOURCE"
+          grep -Fq '.disabled(!test.fieldAuthorizationCanAdmitAuthentication || test.membershipBusy)' "$APP_SOURCE"
           grep -Fq 'try self.fieldAuthorization.admitOFF1Start()' "$APP_SOURCE"
           grep -Fq 'try self.fieldAuthorization.admitAuthenticationStart()' "$APP_SOURCE"
           grep -Fq 'try fieldAuthorization.admitOfficialConnectionStart()' "$APP_SOURCE"
@@ -201,4 +234,4 @@ jobs:
           git push origin HEAD:"$TARGET_BRANCH"
           printf 'NEMBRA_CAPTURE_APP_AUTHORIZATION_PINNED_GO materialized=%s trigger=%s physicalAuthorityCreated=false\n' "$materialized" "$GITHUB_SHA"
 
-# relay-retrigger: 2026-08-21T04:45-07:00 sequence=5
+# recovery review: selected authentication requires exact post-OFF1 authorization stage
