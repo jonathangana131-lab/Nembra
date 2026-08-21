@@ -190,7 +190,7 @@ except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
     raise SystemExit(f'ERROR: retained-install manifest is not canonical JSON: {error}')
 if not isinstance(manifest, dict):
     raise SystemExit('ERROR: retained-install manifest root is not an object')
-canonical = json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True).encode('utf-8') + b'\n'
+canonical = json.dumps(manifest, ensure_ascii=False, separators=(',', ':'), sort_keys=True).encode('utf-8')
 if not hmac.compare_digest(canonical, data):
     raise SystemExit('ERROR: retained-install manifest bytes are not canonical')
 expected = manifest.get('intendedDevicePseudonymSHA256')
