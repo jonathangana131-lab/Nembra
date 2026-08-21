@@ -168,3 +168,5 @@ jobs:
           materialized="$(git rev-parse HEAD)"
           git push origin HEAD:"$TARGET_BRANCH"
           printf 'NEMBRA_CAPTURE_APP_AUTHORIZATION_PINNED_GO materialized=%s trigger=%s physicalAuthorityCreated=false\n' "$materialized" "$GITHUB_SHA"
+
+# relay-retrigger: 2026-08-21T04:45-07:00
