@@ -16,24 +16,23 @@ struct AuthenticatedStationaryCaptureAppSessionTests {
         #expect(session.stage == .revoked)
     }
 
-    @Test("ordered authority transitions fail closed before authorization")
-    func authorityTransitionsRequireArmedSession() {
-        let session = AuthenticatedStationaryCaptureAppSession()
+    @Test("out-of-order authority transitions terminally revoke the attempt")
+    func invalidOrderingRevokesAttempt() {
+        let actions: [(AuthenticatedStationaryCaptureAppSession) throws -> Void] = [
+            { try $0.acceptEnvelope(Data()) },
+            { try $0.admitOFF1Start() },
+            { try $0.admitAuthenticationStart() },
+            { try $0.admitOfficialConnectionStart() },
+            { try $0.admitObservationStart() },
+            { try $0.sealAfterAcceptedArtifactFreeze() },
+        ]
 
-        #expect(throws: AuthenticatedStationaryCaptureAppSessionError.invalidTransition) {
-            try session.admitOFF1Start()
-        }
-        #expect(throws: AuthenticatedStationaryCaptureAppSessionError.invalidTransition) {
-            try session.admitAuthenticationStart()
-        }
-        #expect(throws: AuthenticatedStationaryCaptureAppSessionError.invalidTransition) {
-            try session.admitOfficialConnectionStart()
-        }
-        #expect(throws: AuthenticatedStationaryCaptureAppSessionError.invalidTransition) {
-            try session.admitObservationStart()
-        }
-        #expect(throws: AuthenticatedStationaryCaptureAppSessionError.invalidTransition) {
-            try session.sealAfterAcceptedArtifactFreeze()
+        for action in actions {
+            let session = AuthenticatedStationaryCaptureAppSession()
+            #expect(throws: AuthenticatedStationaryCaptureAppSessionError.invalidTransition) {
+                try action(session)
+            }
+            #expect(session.stage == .revoked)
         }
     }
 
