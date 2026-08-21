@@ -81,9 +81,11 @@ class FieldAuthorizationContainerTransportSourceTests(unittest.TestCase):
             "hashlib.sha256(device_id.encode('utf-8')).hexdigest()",
             "hmac.compare_digest(observed, expected)",
             "object_pairs_hook=reject_duplicates",
-            "json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True)",
+            "json.dumps(manifest, ensure_ascii=False, separators=(',', ':'), sort_keys=True)",
         ):
             self.assertIn(token, self.source)
+        self.assertNotIn("indent=2", self.source)
+        self.assertNotIn(".encode('utf-8') + b'\\n'", self.source)
         self.assertLess(
             self.source.index('verify_manifest_device_binding "$manifest_binding_snapshot"'),
             self.source.index('case "$ACTION" in', self.source.index('verify_manifest_device_binding()')),
