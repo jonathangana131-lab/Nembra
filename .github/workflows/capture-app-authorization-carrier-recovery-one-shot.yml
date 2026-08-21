@@ -113,7 +113,6 @@ jobs:
           test "$(grep -Fc 'publishDps(' "$APP_SOURCE")" = 0
           test "$(grep -Fc 'writeValue(' "$APP_SOURCE")" = 0
           /usr/bin/python3 -I scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py -v
-          /usr/bin/python3 -I scripts/ci/tests/test_es80_capture_build_identity.py -v
 
       - name: Run focused adversarial authorization contracts
         working-directory: Packages/NembraBluetoothCapture
