@@ -61,10 +61,10 @@ trap 'exit 143' TERM
 # contract. The contract performs help-only inspection and does not contact a device.
 /bin/bash "$CONTRACT" > "$ARTIFACTS_DIR/devicectl-copy-contract.txt"
 
-# The separate file-listing surface is required only to prove that the selected installed bundle has
-# already created its FieldAuthorization destination. Listing is read-only. This does not establish
-# the exact source/build identity of that installed bundle, and it does access the authorization
-# namespace; the truthful boundary below is that no authorization payload file is transferred.
+# The separate file-listing surface is required only to exercise a read-only request against the
+# intended FieldAuthorization subdirectory before the scratch round trip. A zero exit proves that
+# this exact requested listing operation succeeded; the probe deliberately does not infer stronger
+# filesystem-existence or exact-build identity semantics from human-readable devicectl output.
 /usr/bin/xcrun devicectl help device info files > "$ARTIFACTS_DIR/devicectl-device-info-files-help.txt" 2>&1
 /usr/bin/python3 -I -B - "$ARTIFACTS_DIR/devicectl-device-info-files-help.txt" <<'PY'
 from pathlib import Path
@@ -83,9 +83,8 @@ PY
 # correlate repeated operator evidence without making the raw device identifier part of the report.
 DEVICE_PSEUDONYM="$(printf '%s' "$DEVICE_UDID" | /usr/bin/shasum -a 256 | /usr/bin/awk '{print $1}')"
 
-# Prove the selected installed bundle has already created the intended field handoff directory. This
-# read-only listing does not transfer any authority-bearing file and does not prove the exact accepted
-# Capture build is the installed bundle.
+# Request a read-only listing at the intended handoff subdirectory. This does not transfer any
+# authority-bearing file and does not prove the exact accepted Capture build is the installed bundle.
 /usr/bin/xcrun devicectl device info files \
   --device "$DEVICE_UDID" \
   --domain-type appDataContainer \
@@ -138,7 +137,7 @@ RESULT_PATH="$ARTIFACTS_DIR/result.txt"
   printf 'evidence_run_id=%s\n' "$RUN_ID"
   printf 'bundle_id=%s\n' "$BUNDLE_ID"
   printf 'device_pseudonym_sha256=%s\n' "$DEVICE_PSEUDONYM"
-  printf 'field_authorization_directory_listed_read_only=true\n'
+  printf 'field_authorization_subdirectory_listing_succeeded=true\n'
   printf 'authorization_payload_file_transferred=false\n'
   printf 'installed_build_identity_verified=false\n'
   printf 'remote_sentinel_scope=appDataContainer/tmp\n'
@@ -156,6 +155,6 @@ RESULT_PATH="$ARTIFACTS_DIR/result.txt"
 /bin/chmod 600 "$RESULT_TMP"
 /bin/mv -f -- "$RESULT_TMP" "$RESULT_PATH"
 
-printf '%s\n' "PROVEN: exact bytes copied to and from the $BUNDLE_ID appDataContainer on the explicitly selected physical iPhone; that bundle's FieldAuthorization directory was present by read-only listing."
-printf '%s\n' 'NOT PROVEN: exact installed Capture build identity, authorization payload transfer or acceptance, signing/install custody, trust-root correctness, Bluetooth/Tuya behavior, ES80 identity, telemetry semantics, commands, or physical Capture GO.'
+printf '%s\n' "PROVEN: exact bytes copied to and from the $BUNDLE_ID appDataContainer on the explicitly selected physical iPhone; the read-only listing request for $FIELD_AUTHORIZATION_SUBDIRECTORY also succeeded."
+printf '%s\n' 'NOT PROVEN: handoff-directory filesystem existence beyond devicectl listing success, exact installed Capture build identity, authorization payload transfer or acceptance, signing/install custody, trust-root correctness, Bluetooth/Tuya behavior, ES80 identity, telemetry semantics, commands, or physical Capture GO.'
 printf 'Evidence directory: %s\n' "$ARTIFACTS_DIR"
