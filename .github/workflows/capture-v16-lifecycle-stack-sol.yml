@@ -1,0 +1,117 @@
+name: Capture V16 lifecycle stack onto signer gate
+
+on:
+  push:
+    branches:
+      - capture/v14-v16-signer-closure-20260821
+    paths:
+      - .github/workflows/capture-v16-lifecycle-stack-sol.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-v16-lifecycle-stack-sol
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TARGET_BRANCH: capture/v14-v16-signer-closure-20260821
+      EXPECTED_PARENT: 878beb07237e3b94b18a5879a007a0d8e994dc97
+      TARGET_WORKFLOW: .github/workflows/capture-v16-standalone.yml
+      EXPECTED_TARGET_BLOB: 4f103811f25ebbd15cb82d90e825273e5ecb7648
+      SELF_WORKFLOW: .github/workflows/capture-v16-lifecycle-stack-sol.yml
+      ORACLE: scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
+    steps:
+      - name: Checkout exact stacked head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact signer-gate parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          test "$(git rev-parse HEAD:"$TARGET_WORKFLOW")" = "$EXPECTED_TARGET_BLOB"
+          test "$(git diff --name-only HEAD^ HEAD)" = "$SELF_WORKFLOW"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Add lifecycle oracle to existing V16 signer gate
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+
+          path = Path(os.environ["TARGET_WORKFLOW"])
+          source = path.read_text(encoding="utf-8")
+          oracle = os.environ["ORACLE"]
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one anchor, found {count}")
+              source = source.replace(old, new, 1)
+
+          replace_once(
+              "      - 'scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py'\n      - '.github/workflows/capture-v16-standalone.yml'\n",
+              "      - 'scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py'\n      - 'scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py'\n      - '.github/workflows/capture-v16-standalone.yml'\n",
+              "lifecycle trigger",
+          )
+
+          replace_once(
+              "            scripts/ci/tests/test_es80_field_authorization_private_key_path_custody.py \\\n            scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py\n",
+              "            scripts/ci/tests/test_es80_field_authorization_private_key_path_custody.py \\\n            scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py \\\n            scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py\n",
+              "lifecycle compile",
+          )
+
+          replace_once(
+              "          /usr/bin/python3 scripts/ci/tests/test_es80_field_authorization_private_key_path_custody.py\n          test -z \"$(git status --porcelain=v1 --untracked-files=all)\"\n",
+              "          /usr/bin/python3 scripts/ci/tests/test_es80_field_authorization_private_key_path_custody.py\n          /usr/bin/python3 -I scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py -v\n          test -z \"$(git status --porcelain=v1 --untracked-files=all)\"\n",
+              "lifecycle execution",
+          )
+
+          replace_once(
+              "Validated public handoff and synthetic signer custody/runtime only; CI did not provision secrets, use a production private key, build a private workspace, install an app, or authorize a physical run.",
+              "Validated public handoff, lifecycle wiring, and synthetic signer custody/runtime only; CI did not provision secrets, use a production private key, build a private workspace, install an app, or authorize a physical run.",
+              "truth wording",
+          )
+
+          if source.count(oracle) != 3:
+              raise SystemExit(f"expected lifecycle oracle exactly 3 times, got {source.count(oracle)}")
+          path.write_text(source, encoding="utf-8")
+
+      - name: Verify narrow target-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git diff --name-only)" = "$TARGET_WORKFLOW"
+          git diff --check
+          test "$(grep -Fc "$ORACLE" "$TARGET_WORKFLOW")" = 3
+          grep -Fq "/usr/bin/python3 -I $ORACLE -v" "$TARGET_WORKFLOW"
+          grep -Fq 'test_es80_sign_field_authorization_execution_custody.py' "$TARGET_WORKFLOW"
+          grep -Fq 'test -z "$(git status --porcelain=v1 --untracked-files=all)"' "$TARGET_WORKFLOW"
+
+      - name: Publish combined child and retire self
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
+          test "$remote_head" = "$GITHUB_SHA"
+          rm "$SELF_WORKFLOW"
+          git add -- "$TARGET_WORKFLOW" "$SELF_WORKFLOW"
+          git diff --cached --check
+          actual="$(git diff --cached --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n%s\n' "$SELF_WORKFLOW" "$TARGET_WORKFLOW" | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'ci(capture): combine V16 signer custody and lifecycle oracle'
+          git push origin HEAD:"$TARGET_BRANCH"
+          printf 'NEMBRA_CAPTURE_V16_SIGNER_LIFECYCLE_COMBINED=%s physicalAuthorityCreated=false\n' "$(git rev-parse HEAD)"
