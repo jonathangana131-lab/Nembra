@@ -77,7 +77,7 @@ class AppAuthorizationLifecycleWiringTests(unittest.TestCase):
         self.assertNotIn("buildIdentity.isAuthoritativeFieldBuild", section)
         self.assertIn("admitOFF1Start()", section)
 
-    def test_selected_authentication_action_is_not_gated_by_pre_off1_armed_readiness(self) -> None:
+    def test_selected_authentication_action_requires_exact_post_off1_authorization_stage(self) -> None:
         panel = self.section(
             "private var secureObservationPanel: some View",
             "private var failureRecoveryContextPanel: some View",
@@ -85,7 +85,19 @@ class AppAuthorizationLifecycleWiringTests(unittest.TestCase):
         selected_end = panel.index("} else if test.phase == .authenticating")
         selected = panel[:selected_end]
         self.assertIn("test.authenticate()", selected)
+        self.assertIn("test.fieldAuthorizationCanAdmitAuthentication", selected)
+        self.assertIn(
+            ".disabled(!test.fieldAuthorizationCanAdmitAuthentication || test.membershipBusy)",
+            selected,
+        )
         self.assertNotIn(".disabled(!authorityReady", selected)
+
+        predicate = self.section(
+            "var fieldAuthorizationCanAdmitAuthentication: Bool",
+            "var fieldBuildIdentifier: String",
+        )
+        self.assertIn("fieldAuthorization.stage == .off1Started", predicate)
+        self.assertNotIn("fieldAuthorization.stage == .armed", predicate)
 
     def test_authentication_composition_does_not_recheck_permanently_false_legacy_build_authority(self) -> None:
         section = self.section(
