@@ -49,7 +49,8 @@ struct TuyaPhysicalAppContainerTransportProbeSourceTests {
         #expect(!probe.contains("tuyaContacted=false"))
         #expect(!probe.contains("es80Contacted=false"))
         #expect(probe.contains("installed_build_identity_verified=false"))
-        #expect(probe.contains("NOT PROVEN: handoff-directory filesystem existence beyond devicectl listing success"))
+        #expect(probe.contains("resolved_device_identity_verified=false"))
+        #expect(probe.contains("NOT PROVEN: resolved physical-device identity or intended-device binding"))
         #expect(probe.contains("whether another process or already-running app contacted Bluetooth/Tuya/ES80"))
     }
 
@@ -62,7 +63,7 @@ struct TuyaPhysicalAppContainerTransportProbeSourceTests {
         #expect(probe.contains("does not prove the exact accepted Capture build is the installed bundle"))
     }
 
-    @Test("probe takes device identity only from the environment and never positional argv")
+    @Test("probe takes the requested device selector only from the environment and never positional argv")
     func probeRejectsPositionalRawDeviceIdentity() throws {
         let probe = try readRepositoryFile(relativePath)
 
@@ -74,8 +75,8 @@ struct TuyaPhysicalAppContainerTransportProbeSourceTests {
         #expect(!probe.contains("argument 1"))
     }
 
-    @Test("probe keeps raw physical-device output ephemeral and publishes only a pseudonym")
-    func probePseudonymizesDeviceIdentityInResult() throws {
+    @Test("probe keeps raw device output ephemeral and never promotes the requested selector to resolved identity")
+    func probeKeepsSelectorDistinctFromDeviceIdentity() throws {
         let probe = try readRepositoryFile(relativePath)
 
         #expect(probe.contains("PRIVATE_RUNTIME_DIR"))
@@ -86,12 +87,16 @@ struct TuyaPhysicalAppContainerTransportProbeSourceTests {
         #expect(probe.contains("> \"$PRIVATE_RUNTIME_DIR/field-authorization-directory-listing.txt\" 2>&1"))
         #expect(probe.contains("> \"$PRIVATE_RUNTIME_DIR/copy-to.txt\" 2>&1"))
         #expect(probe.contains("> \"$PRIVATE_RUNTIME_DIR/copy-from.txt\" 2>&1"))
-        #expect(probe.contains("DEVICE_PSEUDONYM"))
-        #expect(probe.contains("device_pseudonym_sha256=%s"))
+        #expect(probe.contains("REQUESTED_DEVICE_SELECTOR_SHA256"))
+        #expect(probe.contains("requested_device_selector_sha256=%s"))
+        #expect(probe.contains("resolved_device_identity_verified=false"))
+        #expect(!probe.contains("device_pseudonym_sha256=%s"))
+        #expect(!probe.contains("DEVICE_PSEUDONYM"))
         #expect(probe.contains("raw_device_output_persisted=false"))
         #expect(!probe.contains("device_udid=%s"))
         #expect(!probe.contains("udid=%s"))
         #expect(probe.contains("NEMBRA_CAPTURE_DEVICE_UDID"))
+        #expect(probe.contains("cannot satisfy\n# the later intended-device authorization binding by itself"))
     }
 
     @Test("every attempt has a unique evidence directory and success is atomically sealed")
