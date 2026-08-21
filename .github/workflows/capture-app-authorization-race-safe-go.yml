@@ -1,5 +1,5 @@
 name: Capture app authorization race-safe GO
-# Carrier-native sole writer. Relevant authority/integration changes retrigger this pinned materializer.
+# Carrier-native sole writer. Every carrier change retriggers this pinned materializer while it exists.
 # Exact-head checkout plus a remote-head compare immediately before publication makes concurrent
 # carrier movement fail closed; the later carrier-changing push then queues a fresh exact subject.
 
@@ -7,13 +7,6 @@ on:
   push:
     branches:
       - product/capture-1-0-main-20260818
-    paths:
-      - .github/workflows/capture-app-authorization-race-safe-go.yml
-      - .github/workflows/capture-app-authorization-close-one-shot.yml
-      - NembraApp/App/NembraCaptureFieldAuthorizationController.swift
-      - Packages/NembraBluetoothCapture/Sources/NembraCaptureAppAuthorization/**
-      - scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
-      - NembraCapture.xcodeproj/**
   workflow_dispatch:
 
 permissions:
