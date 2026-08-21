@@ -34,7 +34,9 @@ struct VehicleHeroView: View {
 
     @ViewBuilder
     private var vehicleArtwork: some View {
-        if profile.identity.manufacturer == "MAXSHOT" && profile.identity.model == "V1S Pro" {
+        if profile.identity.manufacturer == "AOVOPRO" && profile.identity.model == "ES80" {
+            AOVOPROES80SideArtwork(connected: state.connection == .connected)
+        } else if profile.identity.manufacturer == "MAXSHOT" && profile.identity.model == "V1S Pro" {
             MaxshotV1SProSideArtwork(
                 headlightOn: state.isHeadlightOn == true,
                 connected: state.connection == .connected
@@ -61,6 +63,126 @@ struct VehicleHeroView: View {
         case .disconnected:
             return "Scooter offline"
         }
+    }
+}
+
+/// Presentation-only silhouette for Nembra's primary physical target.
+///
+/// The artwork intentionally communicates vehicle identity without implying protocol or telemetry
+/// verification. It remains accessibility-hidden at the call site; semantic vehicle truth comes
+/// from the profile and state labels above, not from decorative geometry.
+private struct AOVOPROES80SideArtwork: View {
+    let connected: Bool
+
+    var body: some View {
+        GeometryReader { proxy in
+            let w = proxy.size.width
+            let h = proxy.size.height
+            let frontWheel = CGPoint(x: w * 0.23, y: h * 0.76)
+            let rearWheel = CGPoint(x: w * 0.79, y: h * 0.76)
+            let wheelSize = min(h * 0.33, w * 0.17)
+
+            ZStack {
+                if connected {
+                    Ellipse()
+                        .fill(.primary.opacity(0.03))
+                        .frame(width: w * 0.72, height: h * 0.22)
+                        .position(x: w * 0.51, y: h * 0.83)
+                }
+
+                // Low, substantial deck keeps the ES80 hero visually distinct from the generic
+                // placeholder while staying intentionally schematic rather than photorealistic.
+                Path { path in
+                    path.move(to: CGPoint(x: w * 0.30, y: h * 0.70))
+                    path.addLine(to: CGPoint(x: w * 0.70, y: h * 0.70))
+                    path.addQuadCurve(
+                        to: CGPoint(x: w * 0.76, y: h * 0.66),
+                        control: CGPoint(x: w * 0.74, y: h * 0.70)
+                    )
+                }
+                .stroke(
+                    .primary.opacity(0.92),
+                    style: StrokeStyle(lineWidth: 13, lineCap: .round, lineJoin: .round)
+                )
+
+                // Front fork and the folding stem are separated so the silhouette reads cleanly
+                // at the compact Home hero size instead of collapsing into a generic triangle.
+                Path { path in
+                    path.move(to: CGPoint(x: w * 0.29, y: h * 0.66))
+                    path.addLine(to: CGPoint(x: frontWheel.x, y: frontWheel.y - wheelSize * 0.08))
+                    path.move(to: CGPoint(x: w * 0.32, y: h * 0.64))
+                    path.addLine(to: CGPoint(x: w * 0.40, y: h * 0.17))
+                }
+                .stroke(
+                    .primary.opacity(0.88),
+                    style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round)
+                )
+
+                // Folding joint / collar. This is visual identity only, not a mechanical-state
+                // indicator and is never tied to live scooter evidence.
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(.secondary.opacity(0.74))
+                    .frame(width: 18, height: 11)
+                    .rotationEffect(.degrees(-8))
+                    .position(x: w * 0.325, y: h * 0.61)
+
+                Path { path in
+                    path.move(to: CGPoint(x: w * 0.34, y: h * 0.16))
+                    path.addLine(to: CGPoint(x: w * 0.51, y: h * 0.16))
+                }
+                .stroke(.primary.opacity(0.92), style: StrokeStyle(lineWidth: 7, lineCap: .round))
+
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(.primary.opacity(0.88))
+                    .frame(width: 18, height: 10)
+                    .position(x: w * 0.405, y: h * 0.175)
+
+                // Rear fender arc adds the primary target's compact commuter stance without
+                // presenting any unverified functional state.
+                Path { path in
+                    path.move(to: CGPoint(x: rearWheel.x - wheelSize * 0.38, y: rearWheel.y - wheelSize * 0.33))
+                    path.addQuadCurve(
+                        to: CGPoint(x: rearWheel.x + wheelSize * 0.40, y: rearWheel.y - wheelSize * 0.20),
+                        control: CGPoint(x: rearWheel.x + wheelSize * 0.03, y: rearWheel.y - wheelSize * 0.60)
+                    )
+                }
+                .stroke(.primary.opacity(0.66), style: StrokeStyle(lineWidth: 5, lineCap: .round))
+
+                es80Wheel(at: frontWheel, size: wheelSize)
+                es80Wheel(at: rearWheel, size: wheelSize)
+
+                // Restrained red hardware accents create a recognizable Nembra product render;
+                // they are decorative and deliberately do not encode lock, light, battery, or BLE.
+                Capsule(style: .continuous)
+                    .fill(.red.opacity(0.66))
+                    .frame(width: 5, height: 14)
+                    .rotationEffect(.degrees(-8))
+                    .position(x: w * 0.322, y: h * 0.54)
+
+                Capsule(style: .continuous)
+                    .fill(.red.opacity(0.56))
+                    .frame(width: w * 0.06, height: 4)
+                    .position(x: w * 0.70, y: h * 0.68)
+            }
+        }
+    }
+
+    private func es80Wheel(at point: CGPoint, size: CGFloat) -> some View {
+        ZStack {
+            Circle()
+                .fill(.primary.opacity(0.92))
+            Circle()
+                .fill(.black.opacity(0.80))
+                .padding(size * 0.17)
+            Circle()
+                .stroke(.secondary.opacity(0.48), lineWidth: 2)
+                .padding(size * 0.25)
+            Circle()
+                .fill(.secondary.opacity(0.30))
+                .padding(size * 0.41)
+        }
+        .frame(width: size, height: size)
+        .position(point)
     }
 }
 
