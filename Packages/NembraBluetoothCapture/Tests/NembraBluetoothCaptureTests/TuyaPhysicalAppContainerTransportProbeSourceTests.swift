@@ -16,8 +16,10 @@ struct TuyaPhysicalAppContainerTransportProbeSourceTests {
         #expect(probe.contains("--domain-type appDataContainer"))
         #expect(probe.contains("--domain-identifier \"$BUNDLE_ID\""))
         #expect(probe.contains("REMOTE_SENTINEL=\"tmp/nembra-capture-transport-probe-$NONCE.bin\""))
-        #expect(probe.contains("field_authorization_directory_listed_read_only=true"))
+        #expect(probe.contains("field_authorization_subdirectory_listing_succeeded=true"))
         #expect(probe.contains("authorization_payload_file_transferred=false"))
+        #expect(!probe.contains("field_authorization_directory_listed_read_only=true"))
+        #expect(!probe.contains("field_authorization_directory_present=true"))
         #expect(!probe.contains("authorization_subject_touched=false"))
         #expect(!probe.contains("--remove-existing-content"))
         #expect(!probe.contains("retained-install-manifest.json"))
@@ -44,7 +46,7 @@ struct TuyaPhysicalAppContainerTransportProbeSourceTests {
         #expect(probe.contains("tuyaContacted=false"))
         #expect(probe.contains("es80Contacted=false"))
         #expect(probe.contains("installed_build_identity_verified=false"))
-        #expect(probe.contains("NOT PROVEN: exact installed Capture build identity"))
+        #expect(probe.contains("NOT PROVEN: handoff-directory filesystem existence beyond devicectl listing success"))
     }
 
     @Test("probe cannot promote bundle transport into exact installed-build evidence")
@@ -53,8 +55,7 @@ struct TuyaPhysicalAppContainerTransportProbeSourceTests {
 
         #expect(probe.contains("installed_build_identity_verified=false"))
         #expect(!probe.contains("installed_build_identity_verified=true"))
-        #expect(probe.contains("does not prove the exact accepted"))
-        #expect(probe.contains("Capture build is the installed bundle"))
+        #expect(probe.contains("does not prove the exact accepted Capture build is the installed bundle"))
     }
 
     @Test("probe keeps raw physical-device output ephemeral and publishes only a pseudonym")
