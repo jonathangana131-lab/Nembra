@@ -122,20 +122,36 @@ struct SimulatedSpeedCurrentnessTests {
 
     @Test("synthetic stopped evidence cannot authorize physical or deferred profiles")
     func physicalProfilesCannotBorrowSimulatorStoppedAuthority() async {
-        for profile in [VehicleProfile.aovoproES80, .maxshotV1SPro] {
-            var initial = SimulatedScooterService.state(for: .connectedStopped)
-            initial.isLocked = false
-            let service = SimulatedScooterService(
-                profile: profile,
-                initialState: initial,
-                commandLatencyNanoseconds: 0
-            )
+        var es80Initial = SimulatedScooterService.state(for: .connectedStopped)
+        es80Initial.isLocked = false
+        let es80Service = SimulatedScooterService(
+            profile: .aovoproES80,
+            initialState: es80Initial,
+            commandLatencyNanoseconds: 0
+        )
 
-            await #expect(throws: ScooterCommandError.commandRejected) {
-                try await service.setLocked(true)
-            }
-            #expect((await service.snapshot()).isLocked == false)
+        // The primary physical profile now fails one layer earlier: lock is not an
+        // advertised ES80 capability until physical protocol + confirmation evidence
+        // exists, so synthetic stopped evidence cannot even reach command authority.
+        await #expect(throws: ScooterCommandError.unsupportedCapability) {
+            try await es80Service.setLocked(true)
         }
+        #expect((await es80Service.snapshot()).isLocked == false)
+
+        var maxshotInitial = SimulatedScooterService.state(for: .connectedStopped)
+        maxshotInitial.isLocked = false
+        let maxshotService = SimulatedScooterService(
+            profile: .maxshotV1SPro,
+            initialState: maxshotInitial,
+            commandLatencyNanoseconds: 0
+        )
+
+        // The deferred MAXSHOT profile still advertises the legacy capability, but
+        // synthetic stopped evidence must not become physical command authority.
+        await #expect(throws: ScooterCommandError.commandRejected) {
+            try await maxshotService.setLocked(true)
+        }
+        #expect((await maxshotService.snapshot()).isLocked == false)
     }
 
     @Test("raw Simulator ride packets use synthetic source identity")
