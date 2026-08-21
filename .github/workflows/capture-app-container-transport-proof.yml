@@ -18,6 +18,8 @@ on:
     branches:
       - product/capture-1-0-main-20260818
     paths:
+      - '.github/workflows/capture-app-container-transport-proof.yml'
+      - 'scripts/ci/xcode27_devicectl_manifest_transport_contract.sh'
       - 'NembraApp/App/NembraCaptureEntrypoint.swift'
       - 'NembraApp/App/NembraCaptureFieldAuthorizationController.swift'
       - 'NembraCapture.xcodeproj/**'
