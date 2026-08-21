@@ -32,7 +32,7 @@ struct ES80CaptureFieldRuntimeRendezvousTests {
         )
     }
 
-    @Test("authenticated preflight exposes the exact running-build rendezvous before OFF 1")
+    @Test("authenticated preflight exposes exact build metadata and signed attempt authority before OFF 1")
     func authenticatedPreflightShowsExactRunningBuildTuple() throws {
         let source = try Self.fieldEntrypointSource()
 
@@ -43,7 +43,8 @@ struct ES80CaptureFieldRuntimeRendezvousTests {
         #expect(source.contains("LabeledContent(\"Build\", value: test.fieldBuildIdentifier)"))
         #expect(source.contains("LabeledContent(\"Source commit\", value: test.fieldBuildSourceCommitSHA)"))
         #expect(source.contains("LabeledContent(\"Procedure\", value: test.fieldProcedureIdentifier)"))
-        #expect(source.contains("requirementRow(\"Capture build\", ready: test.fieldBuildIsAuthoritative)"))
+        #expect(source.contains("requirementRow(\"Capture build metadata\", ready: test.fieldBuildMetadataComplete)"))
+        #expect(source.contains("requirementRow(\"One-time field authorization\", ready: test.fieldAuthorizationReady)"))
         #expect(source.contains("if authorityReady {"))
         #expect(source.contains("stationarySafetyLaunch = .begin"))
         #expect(source.contains("StationarySafetyConfirmationSheet(launch: launch)"))
@@ -52,32 +53,31 @@ struct ES80CaptureFieldRuntimeRendezvousTests {
         #expect(source.contains("\"I confirm — begin at OFF1\""))
     }
 
-    @Test("field rendezvous consumes the centralized build-authorization gate without minting replacement authority in the view")
-    func rendezvousConsumesCurrentBuildIdentityOnly() throws {
+    @Test("field rendezvous consumes the signed attempt gate while legacy build authority stays non-authorizing")
+    func rendezvousConsumesSignedAttemptAuthority() throws {
         let source = try Self.fieldEntrypointSource()
 
+        #expect(source.contains("var fieldBuildMetadataComplete: Bool { buildIdentity.hasCompleteFieldBuildMetadata }"))
         #expect(source.contains("var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }"))
         #expect(!source.contains("PassiveBluetoothCaptureRuntimeBuildIdentityReader"))
         #expect(!source.contains("PassiveBluetoothExperimentOneFieldExecutionGate.ResearchBuild("))
         #expect(!source.contains("permitsPhysicalProcedure = true"))
         #expect(!source.contains("UserDefaults"))
 
-        let start = try #require(source.range(of: "private func beginBaselineAfterCurrentOperatorAttestation()"))
-        let guardRange = try #require(
+        let startRange = try #require(source.range(of: "private func beginBaselineAfterCurrentOperatorAttestation()"))
+        let correlationRange = try #require(
             source.range(
-                of: "guard buildIdentity.isAuthoritativeFieldBuild else",
-                range: start.lowerBound..<source.endIndex
+                of: "private func beginCorrelationSeries()",
+                range: startRange.upperBound..<source.endIndex
             )
         )
-        let configRange = try #require(
-            source.range(
-                of: "guard privateConfig, sdkAccountLoggedIn else",
-                range: guardRange.upperBound..<source.endIndex
-            )
-        )
-        #expect(start.lowerBound < guardRange.lowerBound)
-        #expect(guardRange.lowerBound < configRange.lowerBound)
-        #expect(source.contains("field_build_identity_unavailable"))
+        let start = source[startRange.lowerBound..<correlationRange.lowerBound]
+        #expect(!start.contains("buildIdentity.isAuthoritativeFieldBuild"))
+        #expect(start.contains("fieldAuthorization.admitOFF1Start()"))
+        #expect(start.contains("guard privateConfig, sdkAccountLoggedIn"))
+        #expect(start.contains("verifySDKMembership"))
+        #expect(start.contains("TuyaSDKAccountIdentityLeaseGate.verdict"))
+        #expect(start.contains("beginCorrelationSeries()"))
     }
 
     @Test("well-formed caller-constructible metadata remains mechanically locked before OFF 1")
@@ -93,7 +93,8 @@ struct ES80CaptureFieldRuntimeRendezvousTests {
             )
         )
         let ready = source[readyStart.lowerBound..<readyEnd.lowerBound]
-        #expect(ready.contains("test.fieldBuildIsAuthoritative"))
+        #expect(ready.contains("test.fieldAuthorizationReady"))
+        #expect(!ready.contains("test.fieldBuildIsAuthoritative"))
         #expect(ready.contains("test.privateConfig"))
         #expect(ready.contains("test.sdkAccountLoggedIn"))
         #expect(ready.contains("test.sdkDeviceMembershipVerified"))
