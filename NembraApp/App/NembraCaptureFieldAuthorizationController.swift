@@ -201,3 +201,5 @@ final class NembraCaptureFieldAuthorizationController {
             .retirePublishedRendezvous()
     }
 }
+
+// Exact-head retrigger after retiring the superseded helper-boundary workflow.
