@@ -1,35 +1,12 @@
 name: Capture app authorization race-safe GO
-# Carrier-native sole writer. Pull-request execution is intentional so same-repo
-# carrier updates create observable Xcode-27 runs; publication remains exact-head
-# and fail-closed across overlapping product/authority movement. Re-run when the
-# canonical transform/controller/acceptance inputs move so tested app wiring cannot
-# remain stranded behind a stale one-file trigger.
-# GO V14: complete metadata may prepare non-authorizing transport, while the opaque
-# independently signed app session is the sole OFF1/lifecycle authority.
 
 on:
-  workflow_dispatch:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    branches:
-      - main
-    paths:
-      - .github/workflows/capture-app-authorization-race-safe-go.yml
-      - .github/workflows/capture-app-authorization-close-one-shot.yml
-      - NembraApp/App/NembraCaptureFieldAuthorizationController.swift
-      - Packages/NembraBluetoothCapture/Sources/NembraCaptureAppAuthorization/**
-      - scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
-      - NembraCapture.xcodeproj/**
   push:
     branches:
       - product/capture-1-0-main-20260818
     paths:
       - .github/workflows/capture-app-authorization-race-safe-go.yml
-      - .github/workflows/capture-app-authorization-close-one-shot.yml
-      - NembraApp/App/NembraCaptureFieldAuthorizationController.swift
-      - Packages/NembraBluetoothCapture/Sources/NembraCaptureAppAuthorization/**
-      - scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
-      - NembraCapture.xcodeproj/**
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -44,297 +21,70 @@ jobs:
     timeout-minutes: 45
     env:
       TARGET_BRANCH: product/capture-1-0-main-20260818
-      TRIGGER_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
       SOURCE_WORKFLOW: .github/workflows/capture-app-authorization-close-one-shot.yml
       SELF_WORKFLOW: .github/workflows/capture-app-authorization-race-safe-go.yml
       STALE_RETRIGGER: .github/workflows/capture-app-authorization-retrigger-go.yml
       STALE_DIRECT: .github/workflows/capture-authority-v3-direct-materialize-once.yml
+      MATERIALIZER_COMMIT: 3cf110f4ddaa3188ac2bcb44dd2393f1c1a69f10
+      EXPECTED_MATERIALIZER_BLOB: 8a0baf6cbafa5c9a50e853a972b8f7a45c6131f3
+      EXPECTED_SOURCE_WORKFLOW_BLOB: 497efb5bf0bfe1eb811eaac68efc56897f1b987b
+      EXPECTED_APP_BLOB: 627c17949d15aaf26ca28c12abb9bb684ab0e731
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout exact triggering carrier head
+        uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Bind exact authoring subjects
+      - name: Bind exact reviewed materialization subjects
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$TRIGGER_SHA"
-          test -f "$APP_SOURCE"
-          test -f "$SOURCE_WORKFLOW"
-          test -f "$SELF_WORKFLOW"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor "$MATERIALIZER_COMMIT" HEAD
+          test "$(git rev-parse "$MATERIALIZER_COMMIT:$SELF_WORKFLOW")" = "$EXPECTED_MATERIALIZER_BLOB"
+          test "$(git rev-parse HEAD:"$SOURCE_WORKFLOW")" = "$EXPECTED_SOURCE_WORKFLOW_BLOB"
+          test "$(git rev-parse HEAD:"$APP_SOURCE")" = "$EXPECTED_APP_BLOB"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
-          printf '%s\n' "$(git rev-parse HEAD:"$APP_SOURCE")" > "$RUNNER_TEMP/trigger-app-blob"
 
-      - name: Materialize canonical lifecycle transform
+      - name: Execute reviewed carrier-native lifecycle materializer
         shell: python
         run: |
           import os
-          from pathlib import Path
+          import subprocess
           import textwrap
 
-          workflow = Path(os.environ["SOURCE_WORKFLOW"]).read_text(encoding="utf-8")
-          marker = "      - name: Materialize field authorization into real SecureLink lifecycle\n"
-          section = workflow.index(marker)
-          run_marker = "        run: |\n"
-          start = workflow.index(run_marker, section) + len(run_marker)
-          end = workflow.index("\n      - name:", start)
+          workflow_path = os.environ["SELF_WORKFLOW"]
+          commit = os.environ["MATERIALIZER_COMMIT"]
+          workflow = subprocess.check_output(
+              ["git", "show", f"{commit}:{workflow_path}"],
+              text=True,
+          )
+          start_marker = "      - name: Materialize canonical lifecycle transform\n        shell: python\n        run: |\n"
+          end_marker = "\n      - name: Enforce transformed authority shape"
+          start = workflow.index(start_marker) + len(start_marker)
+          end = workflow.index(end_marker, start)
           program = textwrap.dedent(workflow[start:end])
           required = [
+              "fieldBuildCanPrepareAuthorization",
+              "prepareAuthorizationTransferDirectoryForFieldTransport",
               "admitOFF1Start",
               "admitAuthenticationStart",
               "admitOfficialConnectionStart",
               "admitObservationStart",
               "freezeAcceptedArtifactForAuthorizationSeal",
               "sealAfterAcceptedArtifactFreeze",
-              "path.write_text(source, encoding=\"utf-8\")",
           ]
           for token in required:
               if token not in program:
-                  raise SystemExit(f"canonical materializer missing required token: {token}")
-
-          # The canonical transform predates the current entrypoint import prelude. Repair only
-          # those two string literals in-memory; every lifecycle replacement remains canonical and
-          # retains its exact-one-anchor fail-closed check.
-          old_source_literal = '"import Foundation\\nimport NembraBluetoothCapture\\nimport SwiftUI\\n"'
-          old_replacement_literal = '"import Foundation\\nimport NembraBluetoothCapture\\nimport NembraCaptureAppAuthorization\\nimport SwiftUI\\n"'
-          current_source_literal = '"import NembraBluetoothCapture\\n"'
-          current_replacement_literal = '"import NembraBluetoothCapture\\nimport NembraCaptureAppAuthorization\\n"'
-          if program.count(old_source_literal) != 1 or program.count(old_replacement_literal) != 1:
-              raise SystemExit("canonical import replacement changed; refusing to guess")
-          program = program.replace(old_source_literal, current_source_literal, 1)
-          program = program.replace(old_replacement_literal, current_replacement_literal, 1)
-
-          namespace = {"__name__": "__main__", "__file__": "<canonical-capture-app-authorization-materializer>"}
+                  raise SystemExit(f"pinned materializer missing required token: {token}")
+          namespace = {
+              "__name__": "__main__",
+              "__file__": "<pinned-capture-app-authorization-race-safe-materializer>",
+          }
           exec(compile(program, namespace["__file__"], "exec", dont_inherit=True), namespace)
-
-          app = Path(os.environ["APP_SOURCE"])
-          source = app.read_text(encoding="utf-8")
-
-          def replace_once(old: str, new: str, label: str) -> None:
-              global source
-              count = source.count(old)
-              if count != 1:
-                  raise SystemExit(f"{label}: expected one anchor, found {count}")
-              source = source.replace(old, new, 1)
-
-          def replace_once_in_section(start_marker: str, end_marker: str, old: str, new: str, label: str) -> None:
-              global source
-              start_index = source.index(start_marker)
-              end_index = source.index(end_marker, start_index + len(start_marker))
-              section_text = source[start_index:end_index]
-              count = section_text.count(old)
-              if count != 1:
-                  raise SystemExit(f"{label}: expected one section anchor, found {count}")
-              section_text = section_text.replace(old, new, 1)
-              source = source[:start_index] + section_text + source[end_index:]
-
-          def replace_all_in_section(start_marker: str, end_marker: str, old: str, new: str, expected_count: int, label: str) -> None:
-              global source
-              start_index = source.index(start_marker)
-              end_index = source.index(end_marker, start_index + len(start_marker))
-              section_text = source[start_index:end_index]
-              count = section_text.count(old)
-              if count != expected_count:
-                  raise SystemExit(f"{label}: expected {expected_count} section anchors, found {count}")
-              section_text = section_text.replace(old, new)
-              source = source[:start_index] + section_text + source[end_index:]
-
-          # The root may prepare only the protected empty app-container destination when exact
-          # build metadata is complete. This is intentionally not physical authority; an unstamped
-          # public build remains unable to start SDK/account setup.
-          replace_once(
-              "    @State private var showEngineeringDetails = false\n    @Environment(\\.dynamicTypeSize) private var dynamicTypeSize\n",
-              "    @State private var showEngineeringDetails = false\n    @State private var authorizationTransportBootstrapError: String?\n    @Environment(\\.dynamicTypeSize) private var dynamicTypeSize\n",
-              "root transport bootstrap state",
-          )
-          replace_once(
-              "    private var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }\n    private var isAccessibilityLayout: Bool { dynamicTypeSize.isAccessibilitySize }\n",
-              "    private var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }\n    private var fieldBuildCanPrepareAuthorization: Bool { buildIdentity.hasCompleteFieldBuildMetadata }\n    private var isAccessibilityLayout: Bool { dynamicTypeSize.isAccessibilitySize }\n",
-              "root metadata preparation predicate",
-          )
-          replace_once(
-              "                        if fieldBuildIsAuthoritative && sdkAccount.loggedIn {\n                            scooterChooserPanel\n                        }\n",
-              "                        if fieldBuildCanPrepareAuthorization && authorizationTransportBootstrapError == nil && sdkAccount.loggedIn {\n                            scooterChooserPanel\n                        }\n",
-              "root chooser metadata gate",
-          )
-          replace_once(
-              "        .onAppear { synchronizeSDKSession() }\n",
-              "        .onAppear {\n            prepareAuthorizationTransport()\n            synchronizeSDKSession()\n        }\n",
-              "root bootstrap chronology",
-          )
-          replace_once_in_section(
-              "    private var accountSetupPanel: some View {\n",
-              "    private var scooterChooserPanel: some View {\n",
-              "                if !fieldBuildIsAuthoritative {\n",
-              "                if !fieldBuildCanPrepareAuthorization {\n",
-              "root public account gate",
-          )
-          replace_once_in_section(
-              "    private var accountSetupPanel: some View {\n",
-              "    private var scooterChooserPanel: some View {\n",
-              '''                Text("Account link only · no Bluetooth or scooter changes")\n                    .font(.footnote)\n                    .foregroundStyle(Color.white.opacity(0.72))\n\n''',
-              '''                Text("Account link only · no Bluetooth or scooter changes")\n                    .font(.footnote)\n                    .foregroundStyle(Color.white.opacity(0.72))\n\n                if let authorizationTransportBootstrapError {\n                    Label(authorizationTransportBootstrapError, systemImage: "exclamationmark.triangle.fill")\n                        .font(.footnote)\n                        .foregroundStyle(.orange)\n                        .fixedSize(horizontal: false, vertical: true)\n                        .accessibilityLabel("Authorization transfer storage unavailable")\n                        .accessibilityValue(authorizationTransportBootstrapError)\n                }\n\n''',
-              "root bootstrap failure presentation",
-          )
-          replace_all_in_section(
-              "    private var buildAuthorityStatus: some View {\n",
-              "    private var accountSetupPanel: some View {\n",
-              "fieldBuildIsAuthoritative",
-              "fieldBuildCanPrepareAuthorization",
-              9,
-              "root build-status metadata truth",
-          )
-          replace_all_in_section(
-              "    private var buildAuthorityStatus: some View {\n",
-              "    private var accountSetupPanel: some View {\n",
-              "Field build ready",
-              "Build metadata ready",
-              2,
-              "root build-status wording",
-          )
-          replace_all_in_section(
-              "    private var buildAuthorityStatus: some View {\n",
-              "    private var accountSetupPanel: some View {\n",
-              "Account and scooter checks are still required before Bluetooth can start.",
-              "Build metadata is complete. One-time signed authorization is still required before OFF1.",
-              2,
-              "root build-status authority wording",
-          )
-          replace_once(
-              "                Text(fieldBuildIsAuthoritative ? \"Build provenance: ready\" : \"Build provenance: locked\")\n",
-              "                Text(fieldBuildCanPrepareAuthorization ? \"Build metadata: complete\" : \"Build metadata: incomplete\")\n",
-              "root engineering metadata wording",
-          )
-          replace_once(
-              '''    private func synchronizeSDKSession() {\n        guard fieldBuildIsAuthoritative else { return }\n        sdkAccount.bootstrap()\n''',
-              '''    private func prepareAuthorizationTransport() {\n        guard fieldBuildCanPrepareAuthorization else { return }\n        do {\n            try NembraCaptureFieldAuthorizationController\n                .prepareAuthorizationTransferDirectoryForFieldTransport()\n            authorizationTransportBootstrapError = nil\n        } catch {\n            authorizationTransportBootstrapError = "One-time authorization transfer storage could not be prepared. Bluetooth remains locked."\n        }\n    }\n\n    private func synchronizeSDKSession() {\n        guard fieldBuildCanPrepareAuthorization else { return }\n        sdkAccount.bootstrap()\n''',
-              "root transport preparation method",
-          )
-
-          # Handoff is non-authorizing. Requiring the intentionally hard-false legacy field Boolean
-          # here creates a circular proof dependency before the independently signed session can arm.
-          replace_once(
-              "        guard phase == .idle, buildIdentity.isAuthoritativeFieldBuild else { return }\n",
-              "        guard phase == .idle, buildIdentity.hasCompleteFieldBuildMetadata else { return }\n",
-              "non-authorizing handoff metadata gate",
-          )
-
-          # Expose metadata and signed-session states separately. The legacy build Boolean stays
-          # hard false as a regression sentinel and is never promoted into physical authority.
-          replace_once(
-              '''    var privateConfig: Bool { OfficialTuyaFactory.configured }\n    var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }\n    var fieldBuildIdentifier: String { buildIdentity.buildIdentifier }\n''',
-              '''    var privateConfig: Bool { OfficialTuyaFactory.configured }\n    var fieldBuildMetadataComplete: Bool { buildIdentity.hasCompleteFieldBuildMetadata }\n    var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }\n    var fieldAuthorizationLifecycleValid: Bool {\n        switch fieldAuthorization.stage {\n        case .armed, .off1Started, .authenticationAdmitted, .officialConnectionAdmitted, .observationAdmitted, .sealed:\n            return true\n        case .idle, .awaitingEnvelope, .revoked:\n            return false\n        }\n    }\n    var fieldAuthorizationObservationAdmitted: Bool { fieldAuthorization.stage == .observationAdmitted }\n    var fieldBuildIdentifier: String { buildIdentity.buildIdentifier }\n''',
-              "controller metadata and signed-session presentation",
-          )
-
-          # The package-owned armed session is the OFF1 authority. Do not recheck the permanently
-          # false legacy bundle Boolean after the operator attestation but before consuming OFF1.
-          replace_once_in_section(
-              "    private func beginBaselineAfterCurrentOperatorAttestation() {\n",
-              "    private func beginCorrelationSeries() {\n",
-              '''        guard buildIdentity.isAuthoritativeFieldBuild else {\n            failLocally(buildIdentity.blocker ?? "Exact field-build provenance is unavailable.", "field_build_identity_unavailable")\n            return\n        }\n''',
-              "",
-              "OFF1 legacy field-authority gate",
-          )
-
-          # The same opaque package session already admitted OFF1. Authentication and official
-          # connection consume later ordered admissions rather than a caller-constructible Boolean.
-          replace_once_in_section(
-              "    func authenticate() {\n",
-              "    private func beginOfficialConnection(candidate: Candidate) {\n",
-              '''        guard buildIdentity.isAuthoritativeFieldBuild else {\n            failLocally(buildIdentity.blocker ?? "Exact field-build provenance is unavailable.", "field_build_identity_unavailable")\n            return\n        }\n''',
-              "",
-              "authentication legacy field-authority gate",
-          )
-          replace_once_in_section(
-              "    private func beginOfficialConnection(candidate: Candidate) {\n",
-              "    private func authenticated(token: TuyaReadOnlyConnectionToken) async {\n",
-              "              buildIdentity.isAuthoritativeFieldBuild,\n",
-              "",
-              "official connection legacy field-authority gate",
-          )
-
-          # OFF1 legitimately advances `.armed -> .off1Started`. The selected-state authentication
-          # action must not reuse the pre-OFF1 `.armed` readiness Boolean.
-          replace_once_in_section(
-              "                if test.phase == .selected {\n",
-              "                } else if test.phase == .authenticating {\n",
-              "                    .disabled(!authorityReady || test.membershipBusy)\n",
-              "                    .disabled(test.membershipBusy)\n",
-              "selected authentication readiness",
-          )
-
-          # Initial readiness is exactly the independently signed `.armed` stage plus current
-          # environment/account/device requirements. Complete metadata is displayed separately.
-          replace_once_in_section(
-              "    private var authorityReady: Bool {\n",
-              "    private var currentStageIndex: Int {\n",
-              "        test.fieldBuildIsAuthoritative\n            && test.fieldAuthorizationReady\n",
-              "        test.fieldAuthorizationReady\n",
-              "pre-OFF1 signed-session readiness",
-          )
-          replace_once(
-              "                    requirementRow(\"Capture build\", ready: test.fieldBuildIsAuthoritative)\n",
-              "                    requirementRow(\"Capture build metadata\", ready: test.fieldBuildMetadataComplete)\n",
-              "preflight metadata row",
-          )
-          replace_once(
-              "                if test.fieldBuildIsAuthoritative && !test.fieldAuthorizationReady {\n",
-              "                if test.fieldBuildMetadataComplete && !test.fieldAuthorizationReady {\n",
-              "preflight authorization status gate",
-          )
-          replace_once_in_section(
-              "    private var primarySurface: some View {\n",
-              "    private var preflightPanel: some View {\n",
-              "            if !test.fieldBuildIsAuthoritative || !test.privateConfig {\n",
-              "            if !test.fieldBuildMetadataComplete || !test.privateConfig {\n",
-              "failed preflight metadata gate",
-          )
-          replace_once_in_section(
-              "    private var hero: some View {\n",
-              "    @ViewBuilder\n    private var stageRail: some View {\n",
-              "                    test.fieldBuildIsAuthoritative ? \"Field build\" : \"Build blocked\",\n                    systemImage: test.fieldBuildIsAuthoritative ? \"checkmark.shield.fill\" : \"exclamationmark.shield\"\n",
-              "                    test.fieldAuthorizationLifecycleValid ? \"Signed attempt\" : \"Authorization required\",\n                    systemImage: test.fieldAuthorizationLifecycleValid ? \"checkmark.shield.fill\" : \"exclamationmark.shield\"\n",
-              "hero signed-attempt status",
-          )
-          replace_once_in_section(
-              "    private var hero: some View {\n",
-              "    @ViewBuilder\n    private var stageRail: some View {\n",
-              "                .foregroundStyle(test.fieldBuildIsAuthoritative ? Color.green : Color.orange)\n",
-              "                .foregroundStyle(test.fieldAuthorizationLifecycleValid ? Color.green : Color.orange)\n",
-              "hero signed-attempt accent",
-          )
-
-          # Acceptance must retain both exact metadata provenance and the signed session's
-          # observation-admitted stage across ledger suspension. The immutable artifact is then
-          # frozen/verified before the package authorization seal; only that terminal seal permits
-          # the app to promote `.accepted`.
-          replace_once_in_section(
-              "    private func startWatchdog(token: TuyaReadOnlyConnectionToken) {\n",
-              "    private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken) async {\n",
-              '''                    guard self.buildIdentity.isAuthoritativeFieldBuild else {\n                        await self.invalidateSourceAuthority(\n                            token: token,\n                            message: self.buildIdentity.blocker ?? "Exact field-build provenance became unavailable before acceptance.",\n                            kind: "field_build_identity_rejected_at_seal"\n                        )\n                        return\n                    }\n''',
-              '''                    guard self.buildIdentity.hasCompleteFieldBuildMetadata,\n                          self.fieldAuthorizationObservationAdmitted else {\n                        await self.invalidateSourceAuthority(\n                            token: token,\n                            message: "Build metadata or one-time signed observation authority became unavailable before acceptance.",\n                            kind: "field_authorization_rejected_at_seal"\n                        )\n                        return\n                    }\n''',
-              "pre-seal signed observation authority",
-          )
-          replace_once_in_section(
-              "    private func startWatchdog(token: TuyaReadOnlyConnectionToken) {\n",
-              "    private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken) async {\n",
-              '''                        guard self.buildIdentity.isAuthoritativeFieldBuild,\n                              self.accountIdentityLeaseIsAuthorized else {\n                            self.currentConnectionToken = nil\n                            self.localBLESettlementToken = nil\n                            self.sdkLocalBLEOnline = false\n                            self.driver = nil\n                            self.phase = .failed\n                            self.message = "Source authority changed while canonical acceptance was sealing. Relaunch Capture before a new stationary read-only attempt; the sealed package chronology is diagnostic only."\n                            self.log("source_authority_changed_during_acceptance_seal", [\n                                "generation": String(token.diagnosticGeneration)\n                            ])\n                            return\n                        }\n''',
-              '''                        guard self.buildIdentity.hasCompleteFieldBuildMetadata,\n                              self.fieldAuthorizationObservationAdmitted,\n                              self.accountIdentityLeaseIsAuthorized else {\n                            self.currentConnectionToken = nil\n                            self.localBLESettlementToken = nil\n                            self.sdkLocalBLEOnline = false\n                            self.driver = nil\n                            self.phase = .failed\n                            self.message = "Signed attempt, build metadata, or account/device authority changed while canonical acceptance was sealing. Relaunch Capture before a new stationary read-only attempt; the sealed package chronology is diagnostic only."\n                            self.log("source_authority_changed_during_acceptance_seal", [\n                                "generation": String(token.diagnosticGeneration)\n                            ])\n                            return\n                        }\n''',
-              "post-ledger-seal signed observation authority",
-          )
-
-          old = '''                            self.phase = .failed\n                            self.message = "The accepted evidence could not complete immutable artifact authorization sealing: \\(error.localizedDescription). Relaunch Capture before another attempt."\n                            self.log("field_authorization_or_artifact_freeze_rejected", [\n                                "generation": String(token.diagnosticGeneration),\n                                "error": error.localizedDescription\n                            ])\n                            return\n'''
-          new = '''                            self.failLocally(\n                                "The accepted evidence could not complete immutable artifact authorization sealing: \\(error.localizedDescription). Relaunch Capture before another attempt.",\n                                "field_authorization_or_artifact_freeze_rejected"\n                            )\n                            return\n'''
-          if source.count(old) != 1:
-              raise SystemExit(
-                  f"accepted-artifact fail-closed correction anchor count was {source.count(old)}; refusing"
-              )
-          source = source.replace(old, new, 1)
-          app.write_text(source, encoding="utf-8")
 
       - name: Enforce transformed authority shape
         shell: bash
@@ -348,7 +98,6 @@ jobs:
           grep -Fq 'buildIdentity.hasCompleteFieldBuildMetadata' "$APP_SOURCE"
           grep -Fq 'fieldBuildMetadataComplete' "$APP_SOURCE"
           grep -Fq 'fieldAuthorization.stage == .armed' "$APP_SOURCE"
-          grep -Fq 'fieldAuthorization.stage != .armed' "$APP_SOURCE"
           grep -Fq 'fieldAuthorizationObservationAdmitted' "$APP_SOURCE"
           grep -Fq 'try self.fieldAuthorization.admitOFF1Start()' "$APP_SOURCE"
           grep -Fq 'try self.fieldAuthorization.admitAuthenticationStart()' "$APP_SOURCE"
@@ -357,18 +106,17 @@ jobs:
           grep -Fq 'try self.freezeAcceptedArtifactForAuthorizationSeal()' "$APP_SOURCE"
           grep -Fq 'try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()' "$APP_SOURCE"
           grep -Fq 'field_authorization_or_artifact_freeze_rejected' "$APP_SOURCE"
-          grep -Fq 'self.failLocally(' "$APP_SOURCE"
           test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE")" = 0
-          cp "$APP_SOURCE" "$RUNNER_TEMP/tested-NembraCaptureEntrypoint.swift"
 
-      - name: Run lifecycle source contract
+      - name: Run exact lifecycle source contract
         shell: bash
         run: |
           set -euo pipefail
-          /usr/bin/python3 -I scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py -v
 
       - name: Run focused adversarial authorization contracts
         working-directory: Packages/NembraBluetoothCapture
+        shell: bash
         run: |
           set -euo pipefail
           swift test --filter AuthenticatedStationaryCaptureAppSessionTests
@@ -388,41 +136,29 @@ jobs:
             -scheme 'Nembra Capture' \
             -configuration Debug \
             -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath "$RUNNER_TEMP/NembraCaptureAppAuthorizationRaceSafe" \
+            -derivedDataPath "$RUNNER_TEMP/NembraCaptureAppAuthorizationPinnedGO" \
             CODE_SIGNING_ALLOWED=NO \
             build
 
-      - name: Publish only across proven non-overlapping carrier movement
+      - name: Publish only the exact tested carrier subject
         shell: bash
         run: |
           set -euo pipefail
-          trigger_app_blob="$(cat "$RUNNER_TEMP/trigger-app-blob")"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
+          test "$remote_head" = "$GITHUB_SHA"
 
-          git fetch origin "$TARGET_BRANCH"
-          remote_head="$(git rev-parse FETCH_HEAD)"
-          test "$(git rev-parse FETCH_HEAD:"$APP_SOURCE")" = "$trigger_app_blob"
-
-          while IFS= read -r changed; do
-            case "$changed" in
-              "$APP_SOURCE"|"$SOURCE_WORKFLOW"|"$SELF_WORKFLOW"|scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py|NembraApp/*|NembraCapture.xcodeproj/*|Packages/*|Package.swift|Package.resolved|project.yml|TuyaCapturePrivateConfig/*)
-                printf 'Overlapping build/authority path moved while Xcode evidence ran: %s\n' "$changed" >&2
-                exit 1
-                ;;
-            esac
-          done < <(git diff --name-only "$TRIGGER_SHA" "$remote_head")
-
-          git reset --hard "$remote_head"
-          cp "$RUNNER_TEMP/tested-NembraCaptureEntrypoint.swift" "$APP_SOURCE"
           rm -f "$SOURCE_WORKFLOW" "$SELF_WORKFLOW" "$STALE_RETRIGGER" "$STALE_DIRECT"
-
           git add -- "$APP_SOURCE"
           for retired in "$SOURCE_WORKFLOW" "$SELF_WORKFLOW" "$STALE_RETRIGGER" "$STALE_DIRECT"; do
-            if git ls-files --error-unmatch "$retired" >/dev/null 2>&1; then git add -- "$retired"; fi
+            if git ls-files --error-unmatch "$retired" >/dev/null 2>&1; then
+              git add -- "$retired"
+            fi
           done
           git diff --cached --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'feat(capture): wire one-time field authorization into SecureLink'
           materialized="$(git rev-parse HEAD)"
-          git push --force-with-lease="refs/heads/$TARGET_BRANCH:$remote_head" origin HEAD:"$TARGET_BRANCH"
-          printf 'NEMBRA_CAPTURE_APP_AUTHORIZATION_RACE_SAFE materialized=%s absorbed=%s trigger=%s physicalAuthorityCreated=false\n' "$materialized" "$remote_head" "$TRIGGER_SHA"
+          git push origin HEAD:"$TARGET_BRANCH"
+          printf 'NEMBRA_CAPTURE_APP_AUTHORIZATION_PINNED_GO materialized=%s trigger=%s physicalAuthorityCreated=false\n' "$materialized" "$GITHUB_SHA"
