@@ -1,5 +1,28 @@
 import Foundation
 
+/// Shared preference key used by cockpit and future Settings integration.
+/// Keeping the key outside a Settings view lets app-visible instruments consume
+/// one stable contract without pulling an unrelated screen onto the mainline.
+enum NembraPreferenceKey {
+    static let units = "nembra.preference.units.v1"
+}
+
+enum NembraUnitsPreference: String, CaseIterable, Identifiable {
+    case system
+    case miles
+    case metric
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: "System"
+        case .miles: "Miles · mph"
+        case .metric: "Kilometers · km/h"
+        }
+    }
+}
+
 enum VehicleDisplayFormatting {
     static var usesMetric: Bool {
         Locale.current.measurementSystem == .metric
