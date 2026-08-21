@@ -1,0 +1,89 @@
+name: Capture entrypoint authorization source materialize recovery
+
+on:
+  push:
+    branches:
+      - recovery/capture-entrypoint-auth-current-gpt56sol-20260820
+    paths:
+      - .github/workflows/capture-entrypoint-auth-source-materialize-recovery.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TARGET_BRANCH: recovery/capture-entrypoint-auth-current-gpt56sol-20260820
+      SOURCE_WORKFLOW: .github/workflows/capture-app-authorization-close-one-shot.yml
+      MAC_BOOTSTRAP: .github/workflows/capture-entrypoint-auth-current-recovery.yml
+      SELF_BOOTSTRAP: .github/workflows/capture-entrypoint-auth-source-materialize-recovery.yml
+      APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
+      EXPECTED_CARRIER_HEAD: 5a659d4b94bdf526be645099f2bff28abb6f6b77
+      EXPECTED_APP_BLOB: 627c17949d15aaf26ca28c12abb9bb684ab0e731
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: recovery/capture-entrypoint-auth-current-gpt56sol-20260820
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact reviewed source checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git branch --show-current)" = "$TARGET_BRANCH"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor "$EXPECTED_CARRIER_HEAD" HEAD
+          test "$(git rev-parse HEAD:"$APP_SOURCE")" = "$EXPECTED_APP_BLOB"
+          test -f "$SOURCE_WORKFLOW"
+          test -f "$MAC_BOOTSTRAP"
+          test -f "$SELF_BOOTSTRAP"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize the repository-reviewed lifecycle patch
+        shell: python
+        run: |
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path(".github/workflows/capture-app-authorization-close-one-shot.yml").read_text(encoding="utf-8")
+          section = workflow.index("      - name: Materialize field authorization into real SecureLink lifecycle")
+          run_marker = "        run: |\n"
+          start = workflow.index(run_marker, section) + len(run_marker)
+          end = workflow.index("\n      - name: Enforce truth-preserving source shape", start)
+          script = textwrap.dedent(workflow[start:end])
+          exec(compile(script, "capture-entrypoint-auth-reviewed-materializer", "exec"), {"__name__": "__main__"})
+
+      - name: Verify source truth shape before checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          grep -Fq 'import NembraCaptureAppAuthorization' "$APP_SOURCE"
+          grep -Fq 'fieldAuthorization.stage == .armed' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitOFF1Start()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitAuthenticationStart()' "$APP_SOURCE"
+          grep -Fq 'try fieldAuthorization.admitOfficialConnectionStart()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitObservationStart()' "$APP_SOURCE"
+          grep -Fq 'private func freezeAcceptedArtifactForAuthorizationSeal(' "$APP_SOURCE"
+          grep -Fq 'try self.freezeAcceptedArtifactForAuthorizationSeal()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()' "$APP_SOURCE"
+          test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE")" = 0
+
+      - name: Publish source-only checkpoint for normal exact-head validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm -- "$MAC_BOOTSTRAP" "$SELF_BOOTSTRAP"
+          git add -- "$APP_SOURCE"
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat(capture): wire field authorization into current carrier lifecycle'
+          materialized="$(git rev-parse HEAD)"
+          git fetch origin "$TARGET_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          git push origin HEAD:"$TARGET_BRANCH"
+          printf 'NEMBRA_CAPTURE_ENTRYPOINT_AUTH_SOURCE materialized=%s trigger=%s carrier=%s exactHeadAcceptance=false physicalAuthorityCreated=false\n' "$materialized" "$GITHUB_SHA" "$EXPECTED_CARRIER_HEAD"
