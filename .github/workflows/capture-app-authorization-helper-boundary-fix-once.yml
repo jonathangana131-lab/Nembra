@@ -1,0 +1,78 @@
+name: Capture app authorization helper-boundary fix once
+
+on:
+  push:
+    branches:
+      - product/capture-1-0-main-20260818
+    paths:
+      - .github/workflows/capture-app-authorization-helper-boundary-fix-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-sole-writer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TARGET_BRANCH: product/capture-1-0-main-20260818
+      TARGET_WORKFLOW: .github/workflows/capture-app-authorization-race-safe-go.yml
+      SELF_WORKFLOW: .github/workflows/capture-app-authorization-helper-boundary-fix-once.yml
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: product/capture-1-0-main-20260818
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact trigger and patch helper boundary
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          import textwrap
+
+          target = Path(os.environ["TARGET_WORKFLOW"])
+          source = target.read_text(encoding="utf-8")
+          anchor = "          old = '''                            self.phase = .failed\\n"
+          if source.count(anchor) != 1:
+              raise SystemExit(f"helper-boundary insertion anchor count was {source.count(anchor)}; refusing")
+
+          insertion = """          # Keep the exact-byte freeze helper implementation outside the watchdog call-site\n          # section. The lifecycle source contract must observe package seal -> helper call ->\n          # signed authority seal -> accepted, while separately verifying the helper's byte seal.\n          freeze_helper_marker = \"    private func freezeAcceptedArtifactForAuthorizationSeal() throws {\\n\"\n          transport_loss_marker = \"    private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken) async {\\n\"\n          source_invalidation_marker = \"    private func invalidateSourceAuthority(\\n\"\n          helper_start = source.index(freeze_helper_marker)\n          transport_start = source.index(transport_loss_marker, helper_start)\n          freeze_helper = source[helper_start:transport_start]\n          source = source[:helper_start] + source[transport_start:]\n          invalidation_start = source.index(\n              source_invalidation_marker,\n              source.index(transport_loss_marker),\n          )\n          source = source[:invalidation_start] + freeze_helper + source[invalidation_start:]\n\n"""
+          source = source.replace(anchor, insertion + anchor, 1)
+          target.write_text(source, encoding="utf-8")
+
+          # Syntax-check the embedded Python materializer after editing it.
+          marker = "      - name: Materialize canonical lifecycle transform\n"
+          section = source.index(marker)
+          run_marker = "        run: |\n"
+          start = source.index(run_marker, section) + len(run_marker)
+          end = source.index("\n      - name: Enforce transformed authority shape", start)
+          program = textwrap.dedent(source[start:end])
+          compile(program, "capture-app-authorization-race-safe-go", "exec", dont_inherit=True)
+
+      - name: Verify only sole-writer workflow changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test "$(git diff --name-only)" = "$TARGET_WORKFLOW"
+          grep -Fq 'freeze_helper_marker = "    private func freezeAcceptedArtifactForAuthorizationSeal() throws {\n"' "$TARGET_WORKFLOW"
+          grep -Fq 'source_invalidation_marker = "    private func invalidateSourceAuthority(\n"' "$TARGET_WORKFLOW"
+
+      - name: Publish race-safe writer correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git branch --show-current)" = "$TARGET_BRANCH"
+          rm "$SELF_WORKFLOW"
+          git add -- "$TARGET_WORKFLOW" "$SELF_WORKFLOW"
+          git diff --cached --check
+          test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n%s\n' "$SELF_WORKFLOW" "$TARGET_WORKFLOW" | sort)"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Capture: keep artifact freeze helper outside watchdog boundary'
+          git fetch --no-tags origin "$TARGET_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          git push origin HEAD:"$TARGET_BRANCH"
+          printf 'NEMBRA_CAPTURE_AUTH_WRITER_HELPER_BOUNDARY_FIXED source=%s physicalAuthorityCreated=false\n' "$GITHUB_SHA"
