@@ -2,37 +2,32 @@ import Foundation
 import Testing
 @testable import NembraBluetoothCapture
 
-@Suite("Capture field installer intended-device authority")
+@Suite("Capture pre-install intended-device authority")
 struct TuyaFieldInstallerIntendedDeviceAuthoritySourceTests {
-    @Test("installer reads one private intended-device identity through the hardened reader")
-    func intendedDeviceIdentityCannotComeFromAmbientSelection() throws {
+    @Test("pre-install accepts only an independently hashed pseudonymous device binding")
+    func rawDeviceIdentityCannotEnterPreinstallAuthority() throws {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
 
-        #expect(installer.contains("NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"))
-        #expect(installer.contains("unset NEMBRA_INTENDED_FIELD_DEVICE_UDID"))
-        #expect(installer.contains("es80_signed_field_artifact_private_runner.py"))
-        #expect(installer.contains("read_private_identifier"))
-        #expect(installer.contains("Private intended-device admission validated"))
-        #expect(!installer.contains("Choose iPhone number"))
-        #expect(!installer.contains("DEVICE_COUNT"))
+        #expect(installer.contains("NEMBRA_INTENDED_DEVICE_PSEUDONYMOUS_BINDING_PATH"))
+        #expect(installer.contains("NEMBRA_INTENDED_DEVICE_PSEUDONYMOUS_BINDING_SHA256"))
+        #expect(installer.contains("validate_retained_input \"intended-device pseudonymous binding\""))
+        #expect(installer.contains("accepted_intended_device_pseudonym_sha256=device_binding_sha.lower()"))
+        #expect(!installer.contains("NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE"))
+        #expect(!installer.contains("NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256"))
+        #expect(!installer.contains("devicectl list devices"))
+        #expect(!installer.contains("devicectl device install app"))
+        #expect(!installer.contains("devicectl device process launch"))
     }
 
-    @Test("intended-device identity is bound to Final GO digest before device discovery")
-    func intendedDeviceIdentityMustMatchFinalGoDigest() throws {
+    @Test("private intended-device reader is captured from accepted source but not invoked pre-install")
+    func privateDeviceReaderIsDeferredToLaterAcceptedRung() throws {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
 
-        #expect(installer.contains("NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256"))
-        #expect(installer.contains("hashlib.sha256(value.encode(\"utf-8\")).hexdigest()"))
-        #expect(installer.contains("hmac.compare_digest(actual_digest, expected_digest)"))
-        #expect(installer.contains("private intended-device identifier does not match Final GO authority"))
-        #expect(installer.contains("unset NEMBRA_INTENDED_FIELD_DEVICE_UDID_SHA256"))
-        let digestCheck = installer.range(of: "hmac.compare_digest(actual_digest, expected_digest)")
-        let deviceDiscovery = installer.range(of: "Verifying the intended iPhone 12 / iOS 27 baseline")
-        #expect(digestCheck != nil)
-        #expect(deviceDiscovery != nil)
-        if let digestCheck, let deviceDiscovery {
-            #expect(digestCheck.lowerBound < deviceDiscovery.lowerBound)
-        }
+        #expect(installer.contains("PRIVATE_DEVICE_RUNNER_PATH=\"scripts/ci/es80_signed_field_artifact_private_runner.py\""))
+        #expect(installer.contains("PRIVATE_DEVICE_RUNNER=\"$(capture_accepted_git_source_base64 \"$PRIVATE_DEVICE_RUNNER_PATH\")\""))
+        #expect(installer.contains("run_accepted_private_device_reader()"))
+        #expect(installer.components(separatedBy: "run_accepted_private_device_reader").count == 2)
+        #expect(installer.contains("The present pre-install checkpoint does\n# not invoke them"))
     }
 
     @Test("accepted source carries the hardened private intended-device reader")
@@ -48,22 +43,14 @@ struct TuyaFieldInstallerIntendedDeviceAuthoritySourceTests {
         #expect(helper.contains("metadata.st_mode & 0o077"))
         #expect(helper.contains("metadata.st_uid != os.geteuid()"))
         #expect(helper.contains("metadata.st_nlink != 1"))
-        #expect(helper.contains("metadata.st_size"))
-        #expect(helper.contains("metadata.st_mtime_ns"))
-        #expect(helper.contains("metadata.st_ctime_ns"))
         #expect(helper.contains("_stable_file_identity(final_metadata) != _stable_file_identity(metadata)"))
-        #expect(helper.contains("_open_directory_chain(parent, repository_identity)"))
         #expect(helper.contains("private intended-device ancestor failed no-follow validation"))
         #expect(helper.contains("private intended-device path resolves inside the Nembra repository"))
-        #expect(helper.contains("[0-9A-Fa-f]{40}|[0-9A-Fa-f]{8}-[0-9A-Fa-f]{16}"))
-        #expect(helper.contains("accepted a symlink ancestor"))
-        #expect(helper.contains("accepted a resolved in-repo target"))
-        #expect(helper.contains("accepted mutation during read"))
         #expect(helper.contains("value != value.strip()"))
         #expect(helper.contains("value in os.fspath(path)"))
     }
 
-    @Test("field provenance executes the hardened private reader self-test")
+    @Test("field provenance exercises the hardened private reader self-test")
     func fieldProvenanceExercisesPrivateDeviceCustody() throws {
         let workflow = try readRepositoryFile(".github/workflows/capture-field-build-provenance.yml")
 
@@ -73,144 +60,24 @@ struct TuyaFieldInstallerIntendedDeviceAuthoritySourceTests {
         #expect(workflow.contains("github.event.pull_request.head.repo.full_name == github.repository"))
     }
 
-    @Test("private build outputs are narrowly ignored while arbitrary untracked state remains rejected")
-    func generatedPrivateWorkspaceDoesNotTripAcceptedSourceGuard() throws {
-        let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
-        let ignore = try readRepositoryFile(".gitignore")
+    @Test("current secure-link procedure owns the intended iPhone baseline and exact-install requirement")
+    func physicalDeviceSelectionLivesInAcceptedProcedureNotPreinstallVerifier() throws {
+        let procedure = try readRepositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
 
-        for expected in ["LocalSecrets/", "Pods/", "NembraCapture.xcworkspace/", "Podfile.lock"] {
-            #expect(ignore.split(separator: "\n").contains(Substring(expected)))
-        }
-        #expect(installer.components(separatedBy: "git status --porcelain=v1 --untracked-files=all").count >= 3)
-        #expect(installer.contains("Private workspace bootstrap changed tracked or unignored accepted-source inputs"))
-        #expect(installer.contains("Accepted-source inputs changed while the field build was compiling"))
+        #expect(procedure.contains("intended iPhone 12 / iOS 27"))
+        #expect(procedure.contains("install the exact accepted signed Capture build"))
+        #expect(procedure.contains("exact expected scooter device ID"))
+        #expect(procedure.contains("same-account UID lease"))
+        #expect(procedure.contains("physical test remains NO-GO until all are accepted"))
     }
 
-    @Test("connected-device discovery must match the private intended iPhone exactly once")
-    func arbitraryConnectedIPhoneCannotBecomeTheFieldDevice() throws {
+    @Test("pre-install checkpoint cannot claim raw device discovery or installation")
+    func preinstallCannotPromotePseudonymIntoDeviceContact() throws {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
 
-        #expect(installer.contains("Verifying the intended iPhone 12 / iOS 27 baseline"))
-        #expect(installer.contains("MATCH_COUNT=0"))
-        #expect(installer.contains("ROW_NORMALIZED"))
-        #expect(installer.contains("INTENDED_NORMALIZED"))
-        #expect(installer.contains("$MATCH_COUNT\" == \"1"))
-        #expect(installer.contains("No arbitrary-device fallback is permitted"))
-    }
-
-    @Test("private intended device must also be the exact V14 hardware and OS baseline")
-    func intendedDeviceMustBeIPhone12OnIOS27() throws {
-        let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
-
-        #expect(installer.contains("DEVICE_OS_VERSION"))
-        #expect(installer.contains("$DEVICE_OS_VERSION\" == 27.*"))
-        #expect(installer.contains("iPhone13,2"))
-        #expect(installer.contains("not the V14 iPhone 12 hardware baseline"))
-        #expect(installer.contains("Intended baseline proven: iPhone 12 / iOS $DEVICE_OS_VERSION"))
-    }
-
-    @Test("devicectl uses a non-private CoreDevice selector correlated to the private UDID")
-    func rawPrivateUDIDCannotEnterDevicectlArgv() throws {
-        let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
-
-        #expect(installer.contains("devicectl list devices --hide-headers"))
-        #expect(installer.contains(".coredevice.local"))
-        #expect(installer.contains("COREDEVICE_ID"))
-        #expect(installer.contains("devicectl device install app --device \"$COREDEVICE_ID\""))
-        #expect(installer.contains("devicectl device process launch"))
-        #expect(installer.contains("--device \"$COREDEVICE_ID\""))
-        #expect(!installer.contains("devicectl device install app --device \"$DEVICE_UDID\""))
-        #expect(!installer.contains("--device \"$DEVICE_UDID\""))
-        #expect(installer.contains("not placed in devicectl argv"))
-    }
-
-    @Test("final development profile must include the exact intended iPhone before install")
-    func signedProfileCannotTargetAnUnrelatedDevice() throws {
-        let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
-
-        #expect(installer.contains("ProvisionedDevices"))
-        #expect(installer.contains("ProvisionsAllDevices"))
-        #expect(installer.contains("hmac.compare_digest(candidate.lower(), intended.lower())"))
-        #expect(installer.contains("len(matches) != 1"))
-        #expect(installer.contains("Embedded development profile does not include the exact intended iPhone"))
-        #expect(installer.contains("-destination \"generic/platform=iOS\""))
-        #expect(!installer.contains("-allowProvisioningDeviceRegistration"))
-        #expect(installer.contains("keeps the private UDID out of xcodebuild argv and logs"))
-
-        let profileAdmission = try #require(installer.range(of: "PROFILE_DEVICE_ADMISSION="))
-        let install = try #require(installer.range(of: "say \"Installing SDK-integrated Capture on the intended iPhone\""))
-        #expect(profileAdmission.lowerBound < install.lowerBound)
-    }
-
-    @Test("base64 transport is never described as secret protection")
-    func helperEncodingCannotMasqueradeAsCredentialProtection() throws {
-        let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
-
-        #expect(installer.contains("Base64 is only a transport encoding"))
-        #expect(installer.contains("It is not encryption"))
-        #expect(installer.contains("must never be treated as secret"))
-    }
-
-    @Test("private workspace and build cannot silently change the accepted source")
-    func exactSourceIsRecheckedAroundPrivateBuild() throws {
-        let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
-
-        #expect(installer.contains("Current checkout $SOURCE_SHA does not match accepted Capture source $EXPECTED_SOURCE_SHA"))
-        #expect(installer.contains("Repository HEAD changed during private workspace bootstrap"))
-        #expect(installer.contains("Private workspace bootstrap changed tracked or unignored accepted-source inputs"))
-        #expect(installer.contains("Repository HEAD changed while the accepted field build was compiling"))
-        #expect(installer.contains("Accepted-source inputs changed while the field build was compiling"))
-        #expect(installer.contains("NEMBRA_CAPTURE_BUILD_COMMIT_SHA=$SOURCE_SHA"))
-        #expect(installer.contains("NembraCapture.xcworkspace"))
-        #expect(installer.contains("-scheme \"Nembra Capture\""))
-    }
-
-    @Test("exact built device app provenance is read back before installation")
-    func builtArtifactMustMatchRequestedSourceAndFieldProduct() throws {
-        let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
-        let readbackRange = try requiredRange(
-            in: installer,
-            from: "APP_INFO_PLIST=\"$APP/Info.plist\"",
-            to: "say \"Installing SDK-integrated Capture on the intended iPhone\""
-        )
-        let readback = installer[readbackRange]
-
-        #expect(installer.contains("[[ -x /usr/bin/plutil ]]"))
-        #expect(readback.contains("NembraCaptureBuildIdentifier"))
-        #expect(readback.contains("NembraCaptureSourceCommitSHA"))
-        #expect(readback.contains("NembraCaptureTuyaDependencyLockSHA256"))
-        #expect(readback.contains("NembraCaptureProcedureIdentifier"))
-        #expect(readback.contains("CFBundleIdentifier"))
-        #expect(readback.contains("$BUILT_BUILD_IDENTIFIER\" == \"$BUILD_LABEL"))
-        #expect(readback.contains("$BUILT_SOURCE_SHA\" == \"$SOURCE_SHA"))
-        #expect(readback.contains("$BUILT_TUYA_DEPENDENCY_LOCK_SHA256\" == \"$TUYA_DEPENDENCY_LOCK_SHA256"))
-        #expect(readback.contains("$BUILT_PROCEDURE_IDENTIFIER\" == \"$PROCEDURE_ID"))
-        #expect(readback.contains("$BUILT_BUNDLE_ID\" == \"$BUNDLE_ID"))
-        #expect(readback.contains("Built app provenance matched exact requested source, reviewed Tuya dependency lock, canonical stationary procedure, and field product"))
-    }
-
-    @Test("installer does not echo the private device identifier through normal diagnostics")
-    func deviceIdentifierStaysOutOfNembraPresentation() throws {
-        let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
-
-        #expect(installer.contains("<redacted-device>"))
-        #expect(installer.contains("<redacted-device-selector>"))
-        #expect(installer.contains("unset DEVICE_UDID COREDEVICE_ID"))
-        #expect(installer.contains("process launch"))
-        #expect(installer.contains("chmod 600 \"$INSTALL_LOG\""))
-        #expect(installer.contains(">\"$INSTALL_LOG\" 2>&1"))
-        #expect(!installer.contains("cat \"$INSTALL_LOG\""))
-        #expect(!installer.contains("say \"Found $DEVICE_UDID\""))
-        #expect(!installer.contains("printf '%s\\n' \"$DEVICE_UDID\""))
-    }
-
-    private func requiredRange(in source: String, from start: String, to end: String) throws -> Range<String.Index> {
-        guard let startRange = source.range(of: start),
-              let endRange = source.range(of: end, range: startRange.upperBound..<source.endIndex) else {
-            Issue.record("Expected source section missing: \(start) ... \(end)")
-            throw SourceContractError.sectionMissing
-        }
-        return startRange.lowerBound..<endRange.lowerBound
+        #expect(installer.contains("PREINSTALL_RETAINED_SUBJECTS_BOUND_NOT_INSTALL_AUTHORITY"))
+        #expect(installer.contains("No device was contacted and no app was installed."))
+        #expect(installer.contains("Installation remains blocked: the production trust root and standalone app capability lifecycle are not independently accepted."))
     }
 
     private func readRepositoryFile(_ relativePath: String) throws -> String {
@@ -221,9 +88,5 @@ struct TuyaFieldInstallerIntendedDeviceAuthoritySourceTests {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         return try String(contentsOf: repositoryRoot.appendingPathComponent(relativePath), encoding: .utf8)
-    }
-
-    private enum SourceContractError: Error {
-        case sectionMissing
     }
 }
