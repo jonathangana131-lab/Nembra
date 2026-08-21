@@ -8,6 +8,11 @@ on:
     paths:
       - 'scripts/ci/es80_run_materialized_field_authorization_signer.py'
       - 'scripts/ci/es80_materialize_field_authorization_signer_runtime.py'
+      - 'scripts/ci/es80_materialize_field_authorization_signer_bundle.py'
+      - 'scripts/ci/es80_sign_field_authorization_from_rendezvous.py'
+      - 'scripts/ci/es80_field_authorization_rendezvous.py'
+      - 'scripts/ci/es80_field_authorization_envelope.py'
+      - 'scripts/ci/es80_signed_field_artifact_evidence.py'
       - 'scripts/ci/tests/test_es80_materialized_field_authorization_signer_runtime.py'
       - '.github/workflows/capture-materialized-signer-runtime-exact-head.yml'
 
