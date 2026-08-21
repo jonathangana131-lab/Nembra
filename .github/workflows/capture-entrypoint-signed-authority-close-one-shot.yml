@@ -6,6 +6,7 @@ on:
       - recovery/capture-entrypoint-auth-after-bootstrap-gpt56sol-20260820
     paths:
       - .github/workflows/capture-entrypoint-signed-authority-close-one-shot.yml
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -18,288 +19,53 @@ jobs:
       TARGET_BRANCH: recovery/capture-entrypoint-auth-after-bootstrap-gpt56sol-20260820
       APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
       WORKFLOW: .github/workflows/capture-entrypoint-signed-authority-close-one-shot.yml
+      RECOVERY_WORKFLOW: .github/workflows/capture-entrypoint-materializer-recovery-one-shot.yml
+      MATERIALIZER_COMMIT: 3df06693ec526c00096a69a898fa46cd27742fc7
       EXPECTED_SOURCE_BLOB: 9107ea5ef2bc023cd3b8c2e15a46297e733ba838
       ACCEPTED_PARENT: 23b8e26abf1f6a860377daca9aa64a48568ea909
     steps:
-      - name: Checkout exact branch head
+      - name: Checkout exact recovery branch
         uses: actions/checkout@v6
         with:
           ref: recovery/capture-entrypoint-auth-after-bootstrap-gpt56sol-20260820
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Bind reviewed source and current carrier
+      - name: Bind reviewed source and accepted parent
         shell: bash
         run: |
           set -euo pipefail
           test "$(git branch --show-current)" = "$TARGET_BRANCH"
           test "$(git rev-parse HEAD:"$APP_SOURCE")" = "$EXPECTED_SOURCE_BLOB"
           git merge-base --is-ancestor "$ACCEPTED_PARENT" HEAD
+          git cat-file -e "$MATERIALIZER_COMMIT^{commit}"
+          git cat-file -e "$MATERIALIZER_COMMIT:$WORKFLOW"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Materialize signed-attempt authority composition
+      - name: Execute reviewed materializer from immutable Git object
         shell: python
         run: |
-          from pathlib import Path
+          import os
+          import subprocess
 
-          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
-          source = path.read_text(encoding="utf-8")
+          workflow_path = os.environ["WORKFLOW"]
+          materializer_commit = os.environ["MATERIALIZER_COMMIT"]
+          workflow = subprocess.check_output(
+              ["git", "show", f"{materializer_commit}:{workflow_path}"],
+              text=True,
+          )
+          start_marker = "      - name: Materialize signed-attempt authority composition\n        shell: python\n        run: |\n"
+          end_marker = "\n      - name: Run focused truth and presentation contracts"
+          start = workflow.index(start_marker) + len(start_marker)
+          end = workflow.index(end_marker, start)
+          block = workflow[start:end]
+          script = "\n".join(
+              line[10:] if line.startswith("          ") else line
+              for line in block.splitlines()
+          ) + "\n"
+          exec(compile(script, "immutable-capture-entrypoint-materializer", "exec"), {})
 
-          def replace_once(old: str, new: str, label: str) -> None:
-              global source
-              count = source.count(old)
-              if count != 1:
-                  raise SystemExit(f"{label}: expected one anchor, found {count}")
-              source = source.replace(old, new, 1)
-
-          # Root may prepare only non-authorizing transfer/account setup from complete build metadata.
-          replace_once(
-              '    @State private var showEngineeringDetails = false\n    @Environment(\\.dynamicTypeSize) private var dynamicTypeSize\n',
-              '    @State private var showEngineeringDetails = false\n    @State private var authorizationTransportBootstrapError: String?\n    @Environment(\\.dynamicTypeSize) private var dynamicTypeSize\n',
-              'root bootstrap state',
-          )
-          replace_once(
-              '    private let buildIdentity = NembraCaptureBuildIdentity.current\n\n    private var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }\n',
-              '    private let buildIdentity = NembraCaptureBuildIdentity.current\n\n    private var fieldBuildCanPrepareAuthorization: Bool { buildIdentity.hasCompleteFieldBuildMetadata }\n    private var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }\n',
-              'root metadata distinction',
-          )
-          replace_once(
-              '                        if fieldBuildIsAuthoritative && sdkAccount.loggedIn {\n                            scooterChooserPanel\n                        }\n',
-              '                        if fieldBuildCanPrepareAuthorization && authorizationTransportBootstrapError == nil && sdkAccount.loggedIn {\n                            scooterChooserPanel\n                        }\n',
-              'root scooter chooser authority',
-          )
-          replace_once(
-              '        .onAppear { synchronizeSDKSession() }\n',
-              '        .onAppear {\n            prepareAuthorizationTransport()\n            synchronizeSDKSession()\n        }\n',
-              'root bootstrap order',
-          )
-          replace_once(
-              '                if !fieldBuildIsAuthoritative {\n',
-              '                if !fieldBuildCanPrepareAuthorization {\n',
-              'root public branch',
-          )
-          replace_once(
-              '    private func synchronizeSDKSession() {\n        guard fieldBuildIsAuthoritative else { return }\n',
-              '''    private func prepareAuthorizationTransport() {
-        guard fieldBuildCanPrepareAuthorization else { return }
-        do {
-            try NembraCaptureFieldAuthorizationController.prepareAuthorizationTransferDirectoryForFieldTransport()
-            authorizationTransportBootstrapError = nil
-        } catch {
-            authorizationTransportBootstrapError = "One-time authorization transfer storage could not be prepared. Bluetooth remains locked."
-        }
-    }
-
-    private func synchronizeSDKSession() {
-        guard fieldBuildCanPrepareAuthorization else { return }
-''',
-              'root prepare transport seam',
-          )
-
-          # Root status must describe metadata preparation rather than pretending the legacy hard-false
-          # build boolean is the final physical authority.
-          replace_once(
-              '            Image(systemName: fieldBuildIsAuthoritative ? "checkmark.shield.fill" : "lock.shield.fill")\n',
-              '            Image(systemName: fieldBuildCanPrepareAuthorization ? "checkmark.shield.fill" : "lock.shield.fill")\n',
-              'root status symbol',
-          )
-          replace_once(
-              '                .foregroundStyle(fieldBuildIsAuthoritative ? Color.green : Color.orange)\n',
-              '                .foregroundStyle(fieldBuildCanPrepareAuthorization ? Color.green : Color.orange)\n',
-              'root status symbol color',
-          )
-          replace_once(
-              '                Text(fieldBuildIsAuthoritative ? "Field build ready" : "Capture locked")\n',
-              '                Text(fieldBuildCanPrepareAuthorization ? "Field metadata ready" : "Capture locked")\n',
-              'root status title',
-          )
-          replace_once(
-              '                    .foregroundStyle(fieldBuildIsAuthoritative ? Color.green : Color.orange)\n',
-              '                    .foregroundStyle(fieldBuildCanPrepareAuthorization ? Color.green : Color.orange)\n',
-              'root status title color',
-          )
-          replace_once(
-              '''                    Text(fieldBuildIsAuthoritative
-                         ? "Account and scooter checks are still required before Bluetooth can start."
-                         : "Bluetooth stays locked until the reviewed field build is installed.")
-''',
-              '''                    Text(fieldBuildCanPrepareAuthorization
-                         ? "Account setup and one-time authorization can begin. Bluetooth remains locked until the signed attempt is verified."
-                         : "This build is missing the complete field metadata required even to prepare authorization.")
-''',
-              'root status explanation',
-          )
-          replace_once(
-              '        .background(Color.orange.opacity(fieldBuildIsAuthoritative ? 0 : 0.09), in: RoundedRectangle(cornerRadius: 16, style: .continuous))\n',
-              '        .background(Color.orange.opacity(fieldBuildCanPrepareAuthorization ? 0 : 0.09), in: RoundedRectangle(cornerRadius: 16, style: .continuous))\n',
-              'root status background',
-          )
-          replace_once(
-              '                .stroke((fieldBuildIsAuthoritative ? Color.green : Color.orange).opacity(0.28), lineWidth: 1)\n',
-              '                .stroke((fieldBuildCanPrepareAuthorization ? Color.green : Color.orange).opacity(0.28), lineWidth: 1)\n',
-              'root status stroke',
-          )
-          replace_once(
-              '        .accessibilityLabel(fieldBuildIsAuthoritative ? "Field build ready" : "Physical capture locked")\n        .accessibilityValue(fieldBuildIsAuthoritative\n                            ? "Account and scooter checks are still required before Bluetooth starts."\n                            : "This public build cannot authorize Bluetooth or collect physical evidence.")\n',
-              '        .accessibilityLabel(fieldBuildCanPrepareAuthorization ? "Field metadata ready" : "Physical capture locked")\n        .accessibilityValue(fieldBuildCanPrepareAuthorization\n                            ? "Account setup may proceed, but Bluetooth remains locked until an independently signed attempt is verified."\n                            : "This public build cannot authorize Bluetooth or collect physical evidence.")\n',
-              'root status accessibility',
-          )
-          replace_once(
-              '                Text(fieldBuildIsAuthoritative ? "Build provenance: ready" : "Build provenance: locked")\n',
-              '                Text(fieldBuildCanPrepareAuthorization ? "Build metadata: complete" : "Build metadata: incomplete")\n',
-              'root engineering metadata',
-          )
-
-          # Move field-authorization presentation into the canonical authority surface.
-          replace_once(
-              '    var fieldAuthorizationReady: Bool { fieldAuthorization.stage == .armed }\n\n    func advanceFieldAuthorizationHandoffIfAvailable() {\n',
-              '    func advanceFieldAuthorizationHandoffIfAvailable() {\n',
-              'move field authorization ready',
-          )
-          replace_once(
-              '        guard phase == .idle, buildIdentity.isAuthoritativeFieldBuild else { return }\n',
-              '        guard phase == .idle, buildIdentity.hasCompleteFieldBuildMetadata else { return }\n',
-              'handoff metadata gate',
-          )
-          replace_once(
-              '    var privateConfig: Bool { OfficialTuyaFactory.configured }\n    var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }\n',
-              '''    var privateConfig: Bool { OfficialTuyaFactory.configured }
-    var fieldBuildMetadataComplete: Bool { buildIdentity.hasCompleteFieldBuildMetadata }
-    var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }
-    var fieldAuthorizationReady: Bool { fieldAuthorization.stage == .armed }
-    var fieldAuthorizationObservationAdmitted: Bool { fieldAuthorization.stage == .observationAdmitted }
-    var fieldAuthorizationLifecycleValid: Bool {
-        switch fieldAuthorization.stage {
-        case .armed, .off1Started, .authenticationAdmitted, .officialConnectionAdmitted, .observationAdmitted, .sealed:
-            return true
-        case .idle, .awaitingEnvelope, .revoked:
-            return false
-        }
-    }
-''',
-              'controller authority projection',
-          )
-
-          legacy_guard = '''        guard buildIdentity.isAuthoritativeFieldBuild else {
-            failLocally(buildIdentity.blocker ?? "Exact field-build provenance is unavailable.", "field_build_identity_unavailable")
-            return
-        }
-'''
-          metadata_guard = '''        guard fieldBuildMetadataComplete else {
-            failLocally("Complete field-build metadata is unavailable.", "field_build_metadata_unavailable")
-            return
-        }
-'''
-          if source.count(legacy_guard) != 2:
-              raise SystemExit(f'legacy OFF1/auth guards: expected 2 anchors, found {source.count(legacy_guard)}')
-          source = source.replace(legacy_guard, metadata_guard, 2)
-
-          replace_once(
-              '              buildIdentity.isAuthoritativeFieldBuild,\n              sdkDeviceMembershipVerified,\n',
-              '              fieldBuildMetadataComplete,\n              sdkDeviceMembershipVerified,\n',
-              'official connection metadata check',
-          )
-
-          # Acceptance keeps complete metadata as provenance and requires the signed session to still
-          # own observation authority through immutable artifact freeze + capability seal.
-          replace_once(
-              '''                    guard self.buildIdentity.isAuthoritativeFieldBuild else {
-                        await self.invalidateSourceAuthority(
-                            token: token,
-                            message: self.buildIdentity.blocker ?? "Exact field-build provenance became unavailable before acceptance.",
-                            kind: "field_build_identity_rejected_at_seal"
-                        )
-                        return
-                    }
-''',
-              '''                    guard self.buildIdentity.hasCompleteFieldBuildMetadata,
-                          self.fieldAuthorizationObservationAdmitted else {
-                        await self.invalidateSourceAuthority(
-                            token: token,
-                            message: "Complete build metadata or the independently signed observation authority became unavailable before acceptance.",
-                            kind: "field_authorization_or_build_metadata_rejected_at_seal"
-                        )
-                        return
-                    }
-''',
-              'pre-seal signed observation authority',
-          )
-          replace_once(
-              '''                        guard self.buildIdentity.isAuthoritativeFieldBuild,
-                              self.accountIdentityLeaseIsAuthorized else {
-''',
-              '''                        guard self.buildIdentity.hasCompleteFieldBuildMetadata,
-                              self.fieldAuthorizationObservationAdmitted,
-                              self.accountIdentityLeaseIsAuthorized else {
-''',
-              'post-package-seal signed observation authority',
-          )
-
-          # The watchdog section is the call-site acceptance boundary. Keep the verified byte-freeze
-          # helper outside that section so source-contract ordering observes the helper invocation,
-          # not the helper implementation body.
-          helper_marker = '    private func freezeAcceptedArtifactForAuthorizationSeal() throws {'
-          transport_marker = '    private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken) async {'
-          invalidation_marker = '    private func invalidateSourceAuthority('
-          helper_start = source.index(helper_marker)
-          transport_start = source.index(transport_marker, helper_start)
-          helper = source[helper_start:transport_start]
-          source = source[:helper_start] + source[transport_start:]
-          invalidation_start = source.index(invalidation_marker, source.index(transport_marker))
-          source = source[:invalidation_start] + helper + source[invalidation_start:]
-
-          # Product presentation consumes signed attempt authority, while metadata remains provenance.
-          replace_once(
-              '''                Label(
-                    test.fieldBuildIsAuthoritative ? "Field build" : "Build blocked",
-                    systemImage: test.fieldBuildIsAuthoritative ? "checkmark.shield.fill" : "exclamationmark.shield"
-                )
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(test.fieldBuildIsAuthoritative ? Color.green : Color.orange)
-''',
-              '''                Label(
-                    test.fieldAuthorizationLifecycleValid ? "Signed attempt" : "Authorization required",
-                    systemImage: test.fieldAuthorizationLifecycleValid ? "checkmark.shield.fill" : "exclamationmark.shield"
-                )
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(test.fieldAuthorizationLifecycleValid ? Color.green : Color.orange)
-''',
-              'hero signed attempt authority',
-          )
-          replace_once(
-              '            if !test.fieldBuildIsAuthoritative || !test.privateConfig {\n',
-              '            if !test.fieldBuildMetadataComplete || !test.privateConfig {\n',
-              'failed primary metadata gate',
-          )
-          replace_once(
-              '                    requirementRow("Capture build", ready: test.fieldBuildIsAuthoritative)\n',
-              '                    requirementRow("Capture build metadata", ready: test.fieldBuildMetadataComplete)\n',
-              'preflight metadata row',
-          )
-          replace_once(
-              '                if test.fieldBuildIsAuthoritative && !test.fieldAuthorizationReady {\n',
-              '                if test.fieldBuildMetadataComplete && !test.fieldAuthorizationReady {\n',
-              'preflight authorization status',
-          )
-          replace_once(
-              '''    private var authorityReady: Bool {
-        test.fieldBuildIsAuthoritative
-            && test.fieldAuthorizationReady
-''',
-              '''    private var authorityReady: Bool {
-        test.fieldAuthorizationReady
-''',
-              'signed preflight readiness',
-          )
-          replace_once(
-              '                    .disabled(!authorityReady || test.membershipBusy)\n',
-              '                    .disabled(test.membershipBusy || !test.sdkAccountLoggedIn || !test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized)\n',
-              'selected authentication action',
-          )
-
-          path.write_text(source, encoding="utf-8")
-
-      - name: Run focused truth and presentation contracts
+      - name: Run lifecycle and source contracts
         shell: bash
         run: |
           set -euo pipefail
@@ -324,22 +90,22 @@ jobs:
             -scheme 'Nembra Capture' \
             -configuration Debug \
             -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath "${RUNNER_TEMP}/NembraCaptureSignedAuthorityClose" \
+            -derivedDataPath "${RUNNER_TEMP}/NembraCaptureEntrypointRecovery" \
             CODE_SIGNING_ALLOWED=NO \
             build
 
-      - name: Publish exact tested source and retire materializer
+      - name: Publish tested source and retire one-shots
         shell: bash
         run: |
           set -euo pipefail
           test "$(git branch --show-current)" = "$TARGET_BRANCH"
-          rm "$WORKFLOW"
-          git add -- "$APP_SOURCE" "$WORKFLOW"
+          rm "$WORKFLOW" "$RECOVERY_WORKFLOW"
+          git add -- "$APP_SOURCE" "$WORKFLOW" "$RECOVERY_WORKFLOW"
           git diff --cached --check
-          test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n%s\n' "$WORKFLOW" "$APP_SOURCE" | sort)"
+          test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n%s\n%s\n' "$APP_SOURCE" "$WORKFLOW" "$RECOVERY_WORKFLOW" | sort)"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'Capture: make signed attempt the runtime authority'
+          git commit -m 'Capture: recover signed attempt runtime authority'
           materialized="$(git rev-parse HEAD)"
           git push origin HEAD:"$TARGET_BRANCH"
-          printf 'NEMBRA_CAPTURE_SIGNED_AUTHORITY_CLOSE materialized=%s physicalAuthorityCreated=false\n' "$materialized"
+          printf 'NEMBRA_CAPTURE_ENTRYPOINT_RECOVERY materialized=%s physicalAuthorityCreated=false\n' "$materialized"
