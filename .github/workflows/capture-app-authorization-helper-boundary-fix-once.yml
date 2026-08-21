@@ -6,9 +6,14 @@ on:
       - product/capture-1-0-main-20260818
     paths:
       - .github/workflows/capture-app-authorization-helper-boundary-fix-once.yml
+      - .github/workflows/capture-app-authorization-race-safe-go.yml
 
 permissions:
   contents: write
+
+concurrency:
+  group: capture-app-authorization-helper-boundary-fix-once
+  cancel-in-progress: false
 
 jobs:
   patch-sole-writer:
@@ -21,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: product/capture-1-0-main-20260818
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: true
 
@@ -30,9 +35,11 @@ jobs:
         run: |
           import os
           from pathlib import Path
+          import subprocess
           import textwrap
 
           target = Path(os.environ["TARGET_WORKFLOW"])
+          self_workflow = Path(os.environ["SELF_WORKFLOW"])
           source = target.read_text(encoding="utf-8")
           anchor = "          old = '''                            self.phase = .failed\\n"
           if source.count(anchor) != 1:
@@ -42,7 +49,6 @@ jobs:
           source = source.replace(anchor, insertion + anchor, 1)
           target.write_text(source, encoding="utf-8")
 
-          # Syntax-check the embedded Python materializer after editing it.
           marker = "      - name: Materialize canonical lifecycle transform\n"
           section = source.index(marker)
           run_marker = "        run: |\n"
@@ -51,7 +57,18 @@ jobs:
           program = textwrap.dedent(source[start:end])
           compile(program, "capture-app-authorization-race-safe-go", "exec", dont_inherit=True)
 
-      - name: Verify only sole-writer workflow changed
+          trigger_target_blob = subprocess.check_output(
+              ["git", "rev-parse", f"HEAD:{target.as_posix()}"], text=True
+          ).strip()
+          trigger_self_blob = subprocess.check_output(
+              ["git", "rev-parse", f"HEAD:{self_workflow.as_posix()}"], text=True
+          ).strip()
+          temp = Path(os.environ["RUNNER_TEMP"])
+          (temp / "capture-auth-helper-trigger-target-blob").write_text(trigger_target_blob + "\n", encoding="utf-8")
+          (temp / "capture-auth-helper-trigger-self-blob").write_text(trigger_self_blob + "\n", encoding="utf-8")
+          (temp / "capture-auth-helper-patched-race-safe-go.yml").write_text(source, encoding="utf-8")
+
+      - name: Verify exact patch shape
         shell: bash
         run: |
           set -euo pipefail
@@ -60,19 +77,44 @@ jobs:
           grep -Fq 'freeze_helper_marker = "    private func freezeAcceptedArtifactForAuthorizationSeal() throws {\n"' "$TARGET_WORKFLOW"
           grep -Fq 'source_invalidation_marker = "    private func invalidateSourceAuthority(\n"' "$TARGET_WORKFLOW"
 
-      - name: Publish race-safe writer correction
+      - name: Publish across unrelated carrier movement without overwriting authority changes
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git branch --show-current)" = "$TARGET_BRANCH"
-          rm "$SELF_WORKFLOW"
-          git add -- "$TARGET_WORKFLOW" "$SELF_WORKFLOW"
-          git diff --cached --check
-          test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n%s\n' "$SELF_WORKFLOW" "$TARGET_WORKFLOW" | sort)"
+          trigger_target_blob="$(cat "$RUNNER_TEMP/capture-auth-helper-trigger-target-blob")"
+          trigger_self_blob="$(cat "$RUNNER_TEMP/capture-auth-helper-trigger-self-blob")"
+          patched="$RUNNER_TEMP/capture-auth-helper-patched-race-safe-go.yml"
+
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'Capture: keep artifact freeze helper outside watchdog boundary'
-          git fetch --no-tags origin "$TARGET_BRANCH"
-          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
-          git push origin HEAD:"$TARGET_BRANCH"
-          printf 'NEMBRA_CAPTURE_AUTH_WRITER_HELPER_BOUNDARY_FIXED source=%s physicalAuthorityCreated=false\n' "$GITHUB_SHA"
+
+          for attempt in 1 2 3 4 5; do
+            git fetch --no-tags origin "$TARGET_BRANCH"
+            remote_head="$(git rev-parse FETCH_HEAD)"
+
+            if ! git cat-file -e "FETCH_HEAD:$SELF_WORKFLOW" 2>/dev/null; then
+              printf 'Helper-boundary one-shot already retired by another successful run; nothing to publish.\n'
+              exit 0
+            fi
+            test "$(git rev-parse FETCH_HEAD:"$SELF_WORKFLOW")" = "$trigger_self_blob"
+            test "$(git rev-parse FETCH_HEAD:"$TARGET_WORKFLOW")" = "$trigger_target_blob"
+
+            git reset --hard "$remote_head"
+            cp "$patched" "$TARGET_WORKFLOW"
+            rm "$SELF_WORKFLOW"
+            git add -- "$TARGET_WORKFLOW" "$SELF_WORKFLOW"
+            git diff --cached --check
+            test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n%s\n' "$SELF_WORKFLOW" "$TARGET_WORKFLOW" | sort)"
+            git commit -m 'Capture: keep artifact freeze helper outside watchdog boundary'
+
+            if git push origin HEAD:"$TARGET_BRANCH"; then
+              printf 'NEMBRA_CAPTURE_AUTH_WRITER_HELPER_BOUNDARY_FIXED source=%s parent=%s physicalAuthorityCreated=false\n' "$GITHUB_SHA" "$remote_head"
+              exit 0
+            fi
+
+            printf 'Carrier moved during publish attempt %s; retrying only if helper and target workflow blobs are unchanged.\n' "$attempt" >&2
+            sleep 1
+          done
+
+          printf 'Carrier remained too hot to publish safely after bounded retries; no source was overwritten.\n' >&2
+          exit 1
