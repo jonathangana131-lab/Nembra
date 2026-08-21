@@ -1,0 +1,217 @@
+name: Capture field device pseudonym binding one-shot
+
+on:
+  push:
+    branches:
+      - capture/v14-field-device-pseudonym-bind-sol-20260821
+    paths:
+      - .github/workflows/capture-field-device-pseudonym-bind-sol-one-shot.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-field-device-pseudonym-bind-sol
+  cancel-in-progress: false
+
+jobs:
+  materialize-test-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TARGET_BRANCH: capture/v14-field-device-pseudonym-bind-sol-20260821
+      EXPECTED_PARENT: 3cb6003d523df51e311b6a07ebe80fbfea77ab16
+      TRANSPORT: scripts/field/transfer_field_authorization.command
+      EXPECTED_TRANSPORT_BLOB: 9c6b18fa37d4c73a4d4a9872c3a836c9c0026055
+      TEST: scripts/ci/tests/test_es80_field_authorization_container_transport.py
+      EXPECTED_TEST_BLOB: 21762eaa8dd043314551e1d4bc764db464bd7b68
+      SELF: .github/workflows/capture-field-device-pseudonym-bind-sol-one-shot.yml
+    steps:
+      - name: Checkout exact stacked subject
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact non-conflicting parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          test "$(git rev-parse HEAD:"$TRANSPORT")" = "$EXPECTED_TRANSPORT_BLOB"
+          test "$(git rev-parse HEAD:"$TEST")" = "$EXPECTED_TEST_BLOB"
+          test "$(git diff --name-only HEAD^ HEAD)" = "$SELF"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Bind every device contact to retained signed device pseudonym
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("scripts/field/transfer_field_authorization.command")
+          source = path.read_text(encoding="utf-8")
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one anchor, found {count}")
+              source = source.replace(old, new, 1)
+
+          replace_once(
+              'CONTRACT_RELATIVE_PATH="scripts/ci/xcode27_devicectl_manifest_transport_contract.sh"\n',
+              'CONTRACT_RELATIVE_PATH="scripts/ci/xcode27_devicectl_manifest_transport_contract.sh"\nMANIFEST_VERIFIER_RELATIVE_PATH="scripts/ci/es80_retained_install_manifest.py"\n',
+              "verifier source path",
+          )
+          replace_once(
+              '  [[ "$CONTRACT_RELATIVE_PATH" == "scripts/ci/xcode27_devicectl_manifest_transport_contract.sh" ]] || die "Transport contract path drifted."\n',
+              '  [[ "$CONTRACT_RELATIVE_PATH" == "scripts/ci/xcode27_devicectl_manifest_transport_contract.sh" ]] || die "Transport contract path drifted."\n  [[ "$MANIFEST_VERIFIER_RELATIVE_PATH" == "scripts/ci/es80_retained_install_manifest.py" ]] || die "Manifest verifier path drifted."\n',
+              "self-test verifier source",
+          )
+          replace_once(
+              '[[ -n "$NEMBRA_FIELD_DEVICE_ID" && "$NEMBRA_FIELD_DEVICE_ID" != *$\'\\n\'* && "$NEMBRA_FIELD_DEVICE_ID" != *$\'\\r\'* ]] || die "NEMBRA_FIELD_DEVICE_ID is malformed."\n',
+              '[[ -n "$NEMBRA_FIELD_DEVICE_ID" && "$NEMBRA_FIELD_DEVICE_ID" != *$\'\\n\'* && "$NEMBRA_FIELD_DEVICE_ID" != *$\'\\r\'* ]] || die "NEMBRA_FIELD_DEVICE_ID is malformed."\n: "${NEMBRA_RETAINED_INSTALL_MANIFEST_PATH:?Set NEMBRA_RETAINED_INSTALL_MANIFEST_PATH to the exact retained-install manifest for every device transfer action.}"\n: "${NEMBRA_RETAINED_INSTALL_MANIFEST_SHA256:?Set NEMBRA_RETAINED_INSTALL_MANIFEST_SHA256 to its independently accepted lowercase SHA-256.}"\n[[ "$NEMBRA_RETAINED_INSTALL_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ && "$NEMBRA_RETAINED_INSTALL_MANIFEST_SHA256" != "0000000000000000000000000000000000000000000000000000000000000000" ]] || die "NEMBRA_RETAINED_INSTALL_MANIFEST_SHA256 must be one canonical nonzero lowercase SHA-256."\n',
+              "accepted manifest inputs",
+          )
+          replace_once(
+              'CONTRACT_TRACKED_BLOB="$(/usr/bin/git -C "$ROOT" rev-parse "${REPOSITORY_HEAD}:${CONTRACT_RELATIVE_PATH}")"\nTRANSPORT_WORKTREE_BLOB="$(/usr/bin/git -C "$ROOT" hash-object "$ROOT/$TRANSPORT_RELATIVE_PATH")"\nCONTRACT_WORKTREE_BLOB="$(/usr/bin/git -C "$ROOT" hash-object "$ROOT/$CONTRACT_RELATIVE_PATH")"\n',
+              'CONTRACT_TRACKED_BLOB="$(/usr/bin/git -C "$ROOT" rev-parse "${REPOSITORY_HEAD}:${CONTRACT_RELATIVE_PATH}")"\nMANIFEST_VERIFIER_TRACKED_BLOB="$(/usr/bin/git -C "$ROOT" rev-parse "${REPOSITORY_HEAD}:${MANIFEST_VERIFIER_RELATIVE_PATH}")"\nTRANSPORT_WORKTREE_BLOB="$(/usr/bin/git -C "$ROOT" hash-object "$ROOT/$TRANSPORT_RELATIVE_PATH")"\nCONTRACT_WORKTREE_BLOB="$(/usr/bin/git -C "$ROOT" hash-object "$ROOT/$CONTRACT_RELATIVE_PATH")"\nMANIFEST_VERIFIER_WORKTREE_BLOB="$(/usr/bin/git -C "$ROOT" hash-object "$ROOT/$MANIFEST_VERIFIER_RELATIVE_PATH")"\n',
+              "verifier exact blob binding",
+          )
+          replace_once(
+              '[[ "$CONTRACT_WORKTREE_BLOB" == "$CONTRACT_TRACKED_BLOB" ]] || die "Xcode transport-contract bytes differ from repository HEAD; refusing device transfer."\nCONTRACT_EXEC="$SCRATCH/xcode27_devicectl_manifest_transport_contract.sh"\n',
+              '[[ "$CONTRACT_WORKTREE_BLOB" == "$CONTRACT_TRACKED_BLOB" ]] || die "Xcode transport-contract bytes differ from repository HEAD; refusing device transfer."\n[[ "$MANIFEST_VERIFIER_WORKTREE_BLOB" == "$MANIFEST_VERIFIER_TRACKED_BLOB" ]] || die "Retained-manifest verifier bytes differ from repository HEAD; refusing device transfer."\nCONTRACT_EXEC="$SCRATCH/xcode27_devicectl_manifest_transport_contract.sh"\n',
+              "verifier worktree equality",
+          )
+          replace_once(
+              '[[ "$CONTRACT_MATERIALIZED_BLOB" == "$CONTRACT_TRACKED_BLOB" ]] || die "Materialized Xcode transport-contract bytes failed exact-blob verification."\n\n# Help-only proof:',
+              '[[ "$CONTRACT_MATERIALIZED_BLOB" == "$CONTRACT_TRACKED_BLOB" ]] || die "Materialized Xcode transport-contract bytes failed exact-blob verification."\nMANIFEST_VERIFIER_EXEC="$SCRATCH/es80_retained_install_manifest.py"\n/usr/bin/git -C "$ROOT" show "${REPOSITORY_HEAD}:${MANIFEST_VERIFIER_RELATIVE_PATH}" > "$MANIFEST_VERIFIER_EXEC"\n/bin/chmod 400 "$MANIFEST_VERIFIER_EXEC"\nMANIFEST_VERIFIER_MATERIALIZED_BLOB="$(/usr/bin/git -C "$ROOT" hash-object "$MANIFEST_VERIFIER_EXEC")"\n[[ "$MANIFEST_VERIFIER_MATERIALIZED_BLOB" == "$MANIFEST_VERIFIER_TRACKED_BLOB" ]] || die "Materialized retained-manifest verifier bytes failed exact-blob verification."\n\n# Help-only proof:',
+              "materialize exact manifest verifier",
+          )
+
+          custody_end = "PY\n}\n\n# Publish copied rendezvous bytes only to a fresh caller-selected file."
+          if source.count(custody_end) != 1:
+              raise SystemExit("manifest custody insertion anchor changed")
+          binding = r'''PY
+}
+
+# Every operation that can contact a physical CoreDevice is bound first to the independently
+# accepted retained-manifest bytes. The manifest's intendedDevicePseudonymSHA256 is the one-way
+# SHA-256 of the raw Apple/CoreDevice identifier used by the physical transport probe; callers
+# cannot substitute a second expected pseudonym. This remains device-selection custody only and
+# creates no install, app, Bluetooth, Tuya, scooter, or Capture authority.
+MANIFEST_SNAPSHOT="$SCRATCH/retained-install-manifest.json"
+snapshot_local_file "$NEMBRA_RETAINED_INSTALL_MANIFEST_PATH" "$MANIFEST_SNAPSHOT" "$MANIFEST_MAX_BYTES" "retained-install manifest"
+/usr/bin/python3 -I -B - "$MANIFEST_VERIFIER_EXEC" "$MANIFEST_SNAPSHOT" "$NEMBRA_RETAINED_INSTALL_MANIFEST_SHA256" "$NEMBRA_FIELD_DEVICE_ID" "$BUNDLE_ID" <<'PY'
+import hashlib
+import hmac
+import os
+import re
+import stat
+import sys
+
+verifier_path, manifest_path, accepted_manifest_sha256, device_id, bundle_id = sys.argv[1:]
+if re.fullmatch(r"[0-9a-f]{64}", accepted_manifest_sha256) is None or accepted_manifest_sha256 == "0" * 64:
+    raise SystemExit("ERROR: accepted retained-manifest digest is malformed")
+no_follow = getattr(os, "O_NOFOLLOW", None)
+if no_follow is None:
+    raise SystemExit("ERROR: no-follow manifest verification is unavailable")
+
+def stable_read(path: str, maximum: int, label: str) -> bytes:
+    fd = os.open(path, os.O_RDONLY | no_follow)
+    try:
+        before = os.fstat(fd)
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_uid != os.geteuid():
+            raise SystemExit(f"ERROR: {label} identity rejected")
+        if before.st_size <= 0 or before.st_size > maximum:
+            raise SystemExit(f"ERROR: {label} size rejected")
+        data = bytearray()
+        while len(data) <= maximum:
+            block = os.read(fd, min(65536, maximum + 1 - len(data)))
+            if not block:
+                break
+            data.extend(block)
+        after = os.fstat(fd)
+        identity = lambda value: (
+            value.st_dev, value.st_ino, value.st_mode, value.st_uid, value.st_nlink,
+            value.st_size, value.st_mtime_ns, value.st_ctime_ns,
+        )
+        if identity(before) != identity(after) or len(data) != before.st_size:
+            raise SystemExit(f"ERROR: {label} changed during read")
+        return bytes(data)
+    finally:
+        os.close(fd)
+
+manifest_bytes = stable_read(manifest_path, 16_384, "retained-install manifest snapshot")
+if not hmac.compare_digest(hashlib.sha256(manifest_bytes).hexdigest(), accepted_manifest_sha256):
+    raise SystemExit("ERROR: retained-install manifest does not match independently accepted digest")
+verifier_source = stable_read(verifier_path, 128_000, "retained-manifest verifier")
+namespace = {"__name__": "nembra_transport_manifest_verifier", "__file__": "<exact-retained-manifest-verifier>"}
+exec(compile(verifier_source.decode("utf-8"), namespace["__file__"], "exec", dont_inherit=True), namespace)
+verify = namespace.get("verify_manifest_bytes")
+if not callable(verify):
+    raise SystemExit("ERROR: exact retained-manifest verifier entrypoint is unavailable")
+manifest = verify(manifest_bytes)
+if manifest.get("bundleIdentifier") != bundle_id:
+    raise SystemExit("ERROR: retained manifest names a different app bundle")
+expected_device_pseudonym = manifest.get("intendedDevicePseudonymSHA256")
+actual_device_pseudonym = hashlib.sha256(device_id.encode("utf-8")).hexdigest()
+if not isinstance(expected_device_pseudonym, str) or not hmac.compare_digest(actual_device_pseudonym, expected_device_pseudonym):
+    raise SystemExit("ERROR: selected CoreDevice does not match retained intended-device pseudonym")
+PY
+builtin printf '%s\n' 'FIELD_AUTHORIZATION_DEVICE_PSEUDONYM_BOUND_NON_AUTHORIZING'
+
+# Publish copied rendezvous bytes only to a fresh caller-selected file.'''
+          source = source.replace(custody_end, binding, 1)
+
+          replace_once(
+              '    staged="$SCRATCH/retained-install-manifest.json"\n    snapshot_local_file "$NEMBRA_RETAINED_INSTALL_MANIFEST_PATH" "$staged" "$MANIFEST_MAX_BYTES" "retained-install manifest"\n    copy_to_container "$staged" "$MANIFEST_REMOTE"\n',
+              '    staged="$MANIFEST_SNAPSHOT"\n    copy_to_container "$staged" "$MANIFEST_REMOTE"\n',
+              "reuse authenticated manifest snapshot",
+          )
+          path.write_text(source, encoding="utf-8")
+
+      - name: Strengthen source contract
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("scripts/ci/tests/test_es80_field_authorization_container_transport.py")
+          source = path.read_text(encoding="utf-8")
+          anchor = '''    def test_transport_has_no_install_launch_or_scooter_write_primitive(self) -> None:\n'''
+          if source.count(anchor) != 1:
+              raise SystemExit("source-test insertion anchor changed")
+          test = '''    def test_selected_device_is_bound_to_exact_accepted_manifest_pseudonym_before_dispatch(self) -> None:\n        required = (\n            'MANIFEST_VERIFIER_RELATIVE_PATH="scripts/ci/es80_retained_install_manifest.py"',\n            "NEMBRA_RETAINED_INSTALL_MANIFEST_SHA256",\n            "MANIFEST_VERIFIER_TRACKED_BLOB",\n            "MANIFEST_VERIFIER_WORKTREE_BLOB",\n            "MANIFEST_VERIFIER_MATERIALIZED_BLOB",\n            "verify_manifest_bytes",\n            "intendedDevicePseudonymSHA256",\n            'hashlib.sha256(device_id.encode("utf-8")).hexdigest()',\n            "hmac.compare_digest(actual_device_pseudonym, expected_device_pseudonym)",\n            "FIELD_AUTHORIZATION_DEVICE_PSEUDONYM_BOUND_NON_AUTHORIZING",\n        )\n        for token in required:\n            self.assertIn(token, self.source)\n        self.assertNotIn("NEMBRA_INTENDED_DEVICE_PSEUDONYM", self.source)\n        marker = self.source.index("FIELD_AUTHORIZATION_DEVICE_PSEUDONYM_BOUND_NON_AUTHORIZING")\n        final_dispatch = self.source.rindex('case "$ACTION" in')\n        self.assertLess(marker, final_dispatch)\n        self.assertIn('staged="$MANIFEST_SNAPSHOT"', self.source)\n        self.assertEqual(\n            self.source.count('snapshot_local_file "$NEMBRA_RETAINED_INSTALL_MANIFEST_PATH"'),\n            1,\n        )\n\n'''
+          source = source.replace(anchor, test + anchor, 1)
+          path.write_text(source, encoding="utf-8")
+
+      - name: Run exact focused contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          /bin/bash -n "$TRANSPORT"
+          /bin/bash -p "$TRANSPORT" --self-test
+          /usr/bin/python3 -I scripts/ci/es80_retained_install_manifest.py --self-test
+          /usr/bin/python3 -I -m unittest -v scripts.ci.tests.test_es80_field_authorization_container_transport
+          test "$(git diff --name-only | LC_ALL=C sort)" = "$(printf '%s\n%s\n' "$TEST" "$TRANSPORT" | LC_ALL=C sort)"
+
+      - name: Publish tested child and retire authoring workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
+          test "$remote_head" = "$GITHUB_SHA"
+          rm "$SELF"
+          git add -- "$TRANSPORT" "$TEST" "$SELF"
+          git diff --cached --check
+          actual="$(git diff --cached --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n%s\n%s\n' "$SELF" "$TEST" "$TRANSPORT" | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat(capture): bind field transport to intended iPhone pseudonym'
+          git push origin HEAD:"$TARGET_BRANCH"
+          printf 'NEMBRA_CAPTURE_FIELD_DEVICE_PSEUDONYM_BOUND=%s physicalAuthorityCreated=false\n' "$(git rev-parse HEAD)"
