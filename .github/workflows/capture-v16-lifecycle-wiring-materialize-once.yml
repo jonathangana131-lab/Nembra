@@ -1,3 +1,4 @@
+# Retriggered against the live Capture carrier; target workflow anchors remain unchanged.
 name: Capture V16 lifecycle wiring gate materialize once
 
 on:
