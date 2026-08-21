@@ -34,7 +34,7 @@ jobs:
       STALE_DIRECT: .github/workflows/capture-authority-v3-direct-materialize-once.yml
       MATERIALIZER_COMMIT: 3cf110f4ddaa3188ac2bcb44dd2393f1c1a69f10
       EXPECTED_MATERIALIZER_BLOB: 8a0baf6cbafa5c9a50e853a972b8f7a45c6131f3
-      EXPECTED_SOURCE_WORKFLOW_BLOB: dd4a7e1b7c88b3548bbdc88c2ab1f422217e44a0
+      EXPECTED_SOURCE_WORKFLOW_BLOB: 2cb91114a605be7f6808eb10b4201cd58bb419e0
       EXPECTED_APP_BLOB: 627c17949d15aaf26ca28c12abb9bb684ab0e731
     steps:
       - name: Checkout exact triggering carrier head
@@ -169,4 +169,4 @@ jobs:
           git push origin HEAD:"$TARGET_BRANCH"
           printf 'NEMBRA_CAPTURE_APP_AUTHORIZATION_PINNED_GO materialized=%s trigger=%s physicalAuthorityCreated=false\n' "$materialized" "$GITHUB_SHA"
 
-# relay-retrigger: 2026-08-21T04:45-07:00 sequence=2
+# relay-retrigger: 2026-08-21T04:45-07:00 sequence=3
