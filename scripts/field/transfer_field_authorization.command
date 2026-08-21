@@ -16,12 +16,15 @@ CONTRACT_RELATIVE_PATH="scripts/ci/xcode27_devicectl_manifest_transport_contract
 BUNDLE_ID="com.jonathangana131.nembra.capturelearn"
 DOMAIN_TYPE="appDataContainer"
 FIELD_DIRECTORY="Library/Application Support/NembraCapture/FieldAuthorization"
-MANIFEST_REMOTE="$FIELD_DIRECTORY/retained-install-manifest.json"
+MANIFEST_INCOMING_REMOTE="$FIELD_DIRECTORY/retained-install-manifest.incoming"
+MANIFEST_COMMIT_REMOTE="$FIELD_DIRECTORY/retained-install-manifest.commit"
 RENDEZVOUS_REMOTE="$FIELD_DIRECTORY/signer-rendezvous.json"
-ENVELOPE_REMOTE="$FIELD_DIRECTORY/authorization-envelope.json"
+ENVELOPE_INCOMING_REMOTE="$FIELD_DIRECTORY/authorization-envelope.incoming"
+ENVELOPE_COMMIT_REMOTE="$FIELD_DIRECTORY/authorization-envelope.commit"
 MANIFEST_MAX_BYTES=16384
 RENDEZVOUS_MAX_BYTES=4096
 ENVELOPE_MAX_BYTES=32768
+COMMIT_RECORD_BYTES=65
 
 say() { builtin printf '\n==> %s\n' "$*"; }
 die() { builtin printf '\nERROR: %s\n' "$*" >&2; exit 1; }
@@ -29,15 +32,18 @@ die() { builtin printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 self_test() {
   [[ "$BUNDLE_ID" == "com.jonathangana131.nembra.capturelearn" ]] || die "Capture bundle identity drifted."
   [[ "$DOMAIN_TYPE" == "appDataContainer" ]] || die "Capture container domain drifted."
-  [[ "$MANIFEST_REMOTE" == */NembraCapture/FieldAuthorization/retained-install-manifest.json ]] || die "Manifest path drifted."
+  [[ "$MANIFEST_INCOMING_REMOTE" == */NembraCapture/FieldAuthorization/retained-install-manifest.incoming ]] || die "Manifest incoming path drifted."
+  [[ "$MANIFEST_COMMIT_REMOTE" == */NembraCapture/FieldAuthorization/retained-install-manifest.commit ]] || die "Manifest commit path drifted."
   [[ "$RENDEZVOUS_REMOTE" == */NembraCapture/FieldAuthorization/signer-rendezvous.json ]] || die "Rendezvous path drifted."
-  [[ "$ENVELOPE_REMOTE" == */NembraCapture/FieldAuthorization/authorization-envelope.json ]] || die "Envelope path drifted."
+  [[ "$ENVELOPE_INCOMING_REMOTE" == */NembraCapture/FieldAuthorization/authorization-envelope.incoming ]] || die "Envelope incoming path drifted."
+  [[ "$ENVELOPE_COMMIT_REMOTE" == */NembraCapture/FieldAuthorization/authorization-envelope.commit ]] || die "Envelope commit path drifted."
   [[ "$MANIFEST_MAX_BYTES" == 16384 ]] || die "Manifest byte bound drifted."
   [[ "$RENDEZVOUS_MAX_BYTES" == 4096 ]] || die "Rendezvous byte bound drifted."
   [[ "$ENVELOPE_MAX_BYTES" == 32768 ]] || die "Envelope byte bound drifted."
+  [[ "$COMMIT_RECORD_BYTES" == 65 ]] || die "Commit record byte bound drifted."
   [[ "$TRANSPORT_RELATIVE_PATH" == "scripts/field/transfer_field_authorization.command" ]] || die "Transport source path drifted."
   [[ "$CONTRACT_RELATIVE_PATH" == "scripts/ci/xcode27_devicectl_manifest_transport_contract.sh" ]] || die "Transport contract path drifted."
-  for path in "$MANIFEST_REMOTE" "$RENDEZVOUS_REMOTE" "$ENVELOPE_REMOTE"; do
+  for path in "$MANIFEST_INCOMING_REMOTE" "$MANIFEST_COMMIT_REMOTE" "$RENDEZVOUS_REMOTE" "$ENVELOPE_INCOMING_REMOTE" "$ENVELOPE_COMMIT_REMOTE"; do
     [[ "$path" != /* && "$path" != *".."* ]] || die "Container path is not bounded."
   done
   builtin printf '%s\n' 'FIELD_AUTHORIZATION_TRANSPORT_SELF_TEST_OK_NOT_PHYSICAL_GO'
@@ -87,7 +93,6 @@ CONTRACT_MATERIALIZED_BLOB="$(/usr/bin/git -C "$ROOT" hash-object "$CONTRACT_EXE
 # appDataContainer copy and bundle-ID domain identity before any field transfer is attempted.
 ARTIFACTS_DIR="$SCRATCH/devicectl-help" /bin/bash -p "$CONTRACT_EXEC" >/dev/null
 
-# Snapshot a caller-supplied local subject through descriptor custody before devicectl can see it.
 snapshot_local_file() {
   /usr/bin/python3 -I -B - "$1" "$2" "$3" "$4" <<'PY'
 import os, stat, sys
@@ -140,8 +145,6 @@ finally:
 PY
 }
 
-# Publish copied rendezvous bytes only to a fresh caller-selected file. Every parent component is
-# opened O_NOFOLLOW, so a symlinked parent cannot redirect this private handoff.
 publish_fresh_local_file() {
   /usr/bin/python3 -I -B - "$1" "$2" "$3" "$4" <<'PY'
 import os, stat, sys
@@ -182,6 +185,17 @@ finally:
 PY
 }
 
+make_commit_record() {
+  local source="$1"
+  local destination="$2"
+  local digest
+  digest="$(/usr/bin/shasum -a 256 "$source" | /usr/bin/awk '{print $1}')"
+  [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || die "Could not derive canonical SHA-256 completion record."
+  builtin printf '%s\n' "$digest" > "$destination"
+  /bin/chmod 600 "$destination"
+  [[ "$(/usr/bin/stat -f '%z' "$destination")" == "$COMMIT_RECORD_BYTES" ]] || die "Completion record byte count drifted."
+}
+
 copy_to_container() {
   /usr/bin/xcrun devicectl device copy to --device "$NEMBRA_FIELD_DEVICE_ID" --domain-type "$DOMAIN_TYPE" --domain-identifier "$BUNDLE_ID" --source "$1" --destination "$2"
 }
@@ -193,9 +207,12 @@ case "$ACTION" in
   --stage-manifest)
     : "${NEMBRA_RETAINED_INSTALL_MANIFEST_PATH:?Set NEMBRA_RETAINED_INSTALL_MANIFEST_PATH to the exact retained-install manifest.}"
     staged="$SCRATCH/retained-install-manifest.json"
+    commit="$SCRATCH/retained-install-manifest.commit"
     snapshot_local_file "$NEMBRA_RETAINED_INSTALL_MANIFEST_PATH" "$staged" "$MANIFEST_MAX_BYTES" "retained-install manifest"
-    copy_to_container "$staged" "$MANIFEST_REMOTE"
-    say "Retained manifest copied into the fixed Nembra Capture inbox."
+    make_commit_record "$staged" "$commit"
+    copy_to_container "$staged" "$MANIFEST_INCOMING_REMOTE"
+    copy_to_container "$commit" "$MANIFEST_COMMIT_REMOTE"
+    say "Retained manifest staged and completion-bound in the fixed Nembra Capture inbox."
     builtin printf '%s\n' 'FIELD_AUTHORIZATION_MANIFEST_STAGED_NON_AUTHORIZING'
     ;;
   --export-rendezvous)
@@ -209,9 +226,12 @@ case "$ACTION" in
   --stage-envelope)
     : "${NEMBRA_FIELD_AUTHORIZATION_ENVELOPE_PATH:?Set NEMBRA_FIELD_AUTHORIZATION_ENVELOPE_PATH to the independently signed envelope.}"
     staged="$SCRATCH/authorization-envelope.json"
+    commit="$SCRATCH/authorization-envelope.commit"
     snapshot_local_file "$NEMBRA_FIELD_AUTHORIZATION_ENVELOPE_PATH" "$staged" "$ENVELOPE_MAX_BYTES" "signed authorization envelope"
-    copy_to_container "$staged" "$ENVELOPE_REMOTE"
-    say "Signed envelope copied into the fixed Nembra Capture inbox; the app must still verify and consume it."
+    make_commit_record "$staged" "$commit"
+    copy_to_container "$staged" "$ENVELOPE_INCOMING_REMOTE"
+    copy_to_container "$commit" "$ENVELOPE_COMMIT_REMOTE"
+    say "Signed envelope staged and completion-bound in the fixed Nembra Capture inbox; the app must still verify and consume it."
     builtin printf '%s\n' 'FIELD_AUTHORIZATION_ENVELOPE_STAGED_NOT_AUTHORITY_NOT_PHYSICAL_GO'
     ;;
 esac
