@@ -1,4 +1,10 @@
-name: Capture app authorization materialize GO
+name: Capture app authorization materialize GO (retired)
+
+# RETIRED: this legacy publisher is intentionally non-authorizing and non-writing.
+# The carrier-native `capture-app-authorization-race-safe-go.yml` is the sole
+# production-source materializer because it applies the reviewed root bootstrap,
+# stage-aware readiness, lifecycle oracle, adversarial suites, and Xcode 27 gate.
+# Keeping this tombstone briefly makes any stale/manual invocation fail closed.
 
 on:
   push:
@@ -6,180 +12,19 @@ on:
       - product/capture-1-0-main-20260818
     paths:
       - .github/workflows/capture-app-authorization-materialize-go-20260820.yml
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  materialize:
-    runs-on: xcode-27
-    timeout-minutes: 35
-    env:
-      TARGET_BRANCH: product/capture-1-0-main-20260818
-      SOURCE_WORKFLOW: .github/workflows/capture-app-authorization-close-one-shot.yml
-      SELF_WORKFLOW: .github/workflows/capture-app-authorization-materialize-go-20260820.yml
-      APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
+  retired:
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout exact carrier head
-        uses: actions/checkout@v6
-        with:
-          ref: product/capture-1-0-main-20260818
-          fetch-depth: 0
-          persist-credentials: true
-
-      - name: Bind exact clean trigger head
+      - name: Refuse legacy publication path
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git branch --show-current)" = "$TARGET_BRANCH"
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test -f "$SOURCE_WORKFLOW"
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
-
-      - name: Execute reviewed lifecycle materializer
-        shell: python
-        run: |
-          from pathlib import Path
-          import textwrap
-
-          workflow = Path(".github/workflows/capture-app-authorization-close-one-shot.yml").read_text(encoding="utf-8")
-          section = workflow.index("      - name: Materialize field authorization into real SecureLink lifecycle")
-          run_marker = "        run: |\n"
-          start = workflow.index(run_marker, section) + len(run_marker)
-          end = workflow.index("\n      - name: Enforce truth-preserving source shape", start)
-          script = textwrap.dedent(workflow[start:end])
-          exec(compile(script, "capture-app-authorization-materializer", "exec"), {"__name__": "__main__"})
-
-      - name: Normalize signed-session authority composition
-        shell: python
-        run: |
-          from pathlib import Path
-
-          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
-          source = path.read_text(encoding="utf-8")
-
-          def replace_once(old: str, new: str, label: str) -> None:
-              global source
-              count = source.count(old)
-              if count != 1:
-                  raise SystemExit(f"{label}: expected one anchor, found {count}")
-              source = source.replace(old, new, 1)
-
-          def replace_in_section(start: str, end: str, old: str, new: str, label: str) -> None:
-              global source
-              start_index = source.index(start)
-              end_index = source.index(end, start_index + len(start))
-              section = source[start_index:end_index]
-              count = section.count(old)
-              if count != 1:
-                  raise SystemExit(f"{label}: expected one section anchor, found {count}")
-              section = section.replace(old, new, 1)
-              source = source[:start_index] + section + source[end_index:]
-
-          replace_once(
-              "        guard phase == .idle, buildIdentity.isAuthoritativeFieldBuild else { return }\n",
-              "        guard phase == .idle, buildIdentity.hasCompleteFieldBuildMetadata else { return }\n",
-              "handoff uses complete metadata rather than legacy authority",
-          )
-
-          replace_in_section(
-              "private func beginBaselineAfterCurrentOperatorAttestation()",
-              "private func beginCorrelationSeries()",
-              '''        guard buildIdentity.isAuthoritativeFieldBuild else {\n            failLocally(buildIdentity.blocker ?? "Exact field-build provenance is unavailable.", "field_build_identity_unavailable")\n            return\n        }\n''',
-              '''        guard buildIdentity.hasCompleteFieldBuildMetadata else {\n            failLocally(buildIdentity.blocker ?? "Complete field-build metadata is unavailable.", "field_build_metadata_unavailable")\n            return\n        }\n''',
-              "OFF1 legacy build-authority recheck",
-          )
-
-          replace_in_section(
-              "func authenticate()",
-              "private func beginOfficialConnection(candidate: Candidate)",
-              '''        guard buildIdentity.isAuthoritativeFieldBuild else {\n            failLocally(buildIdentity.blocker ?? "Exact field-build provenance is unavailable.", "field_build_identity_unavailable")\n            return\n        }\n''',
-              "",
-              "authentication legacy build-authority recheck",
-          )
-
-          replace_in_section(
-              "private func beginOfficialConnection(candidate: Candidate)",
-              "private func authenticated(token: TuyaReadOnlyConnectionToken)",
-              "              buildIdentity.isAuthoritativeFieldBuild,\n",
-              "",
-              "official connection legacy build-authority recheck",
-          )
-
-          replace_in_section(
-              "private var secureObservationPanel: some View",
-              "private var failureRecoveryContextPanel: some View",
-              ".disabled(!authorityReady || test.membershipBusy)",
-              ".disabled(test.membershipBusy)",
-              "selected authentication action pre-OFF1 readiness gate",
-          )
-
-          replace_once(
-              '''    private var authorityReady: Bool {\n        test.fieldBuildIsAuthoritative\n            && test.fieldAuthorizationReady\n            && test.privateConfig\n''',
-              '''    private var authorityReady: Bool {\n        test.fieldAuthorizationReady\n            && test.privateConfig\n''',
-              "preflight readiness signed-session authority",
-          )
-
-          path.write_text(source, encoding="utf-8")
-
-      - name: Verify exact authorization lifecycle shape
-        shell: bash
-        run: |
-          set -euo pipefail
-          git diff --check
-          test "$(git status --porcelain=v1 | awk '{print $2}' | sort | tr '\n' ' ' | sed 's/ $//')" = "$APP_SOURCE"
-          grep -Fq 'import NembraCaptureAppAuthorization' "$APP_SOURCE"
-          grep -Fq 'buildIdentity.hasCompleteFieldBuildMetadata' "$APP_SOURCE"
-          grep -Fq 'fieldAuthorization.stage == .armed' "$APP_SOURCE"
-          grep -Fq 'fieldAuthorization.stage != .armed' "$APP_SOURCE"
-          grep -Fq 'try self.fieldAuthorization.admitOFF1Start()' "$APP_SOURCE"
-          grep -Fq 'try self.fieldAuthorization.admitAuthenticationStart()' "$APP_SOURCE"
-          grep -Fq 'try fieldAuthorization.admitOfficialConnectionStart()' "$APP_SOURCE"
-          grep -Fq 'try self.fieldAuthorization.admitObservationStart()' "$APP_SOURCE"
-          grep -Fq 'try self.freezeAcceptedArtifactForAuthorizationSeal()' "$APP_SOURCE"
-          grep -Fq 'try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()' "$APP_SOURCE"
-          test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE")" = 0
-          python3 scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
-
-      - name: Run focused authorization contracts
-        working-directory: Packages/NembraBluetoothCapture
-        run: |
-          set -euo pipefail
-          swift test --filter AuthenticatedStationaryCaptureAppSessionTests
-          swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthorizationInboxAppAdapter
-          swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
-          swift test --filter TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
-
-      - name: Build standalone Capture on Xcode 27
-        shell: bash
-        run: |
-          set -euo pipefail
-          xcodebuild -version
-          xcodebuild \
-            -project NembraCapture.xcodeproj \
-            -scheme 'Nembra Capture' \
-            -configuration Debug \
-            -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath "${RUNNER_TEMP}/NembraCaptureAppAuthorizationMaterializeGO" \
-            CODE_SIGNING_ALLOWED=NO \
-            build
-
-      - name: Publish only the exact tested lifecycle wiring
-        shell: bash
-        run: |
-          set -euo pipefail
-          git fetch origin "$TARGET_BRANCH"
-          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
-          rm "$SOURCE_WORKFLOW" "$SELF_WORKFLOW"
-          git add -- "$APP_SOURCE" "$SOURCE_WORKFLOW" "$SELF_WORKFLOW"
-          git diff --cached --check
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'feat(capture): wire one-time field authorization into SecureLink'
-          materialized="$(git rev-parse HEAD)"
-          git fetch origin "$TARGET_BRANCH"
-          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
-          git push origin HEAD:"$TARGET_BRANCH"
-          printf 'NEMBRA_CAPTURE_APP_AUTHORIZATION_GO materialized=%s trigger=%s physicalAuthorityCreated=false\n' "$materialized" "$GITHUB_SHA"
-
-# relay-retrigger: 2026-08-21T04:52-07:00
+          echo 'This Capture authorization publisher is retired.' >&2
+          echo 'Use capture-app-authorization-race-safe-go.yml; no source or physical authority was created.' >&2
+          exit 1
