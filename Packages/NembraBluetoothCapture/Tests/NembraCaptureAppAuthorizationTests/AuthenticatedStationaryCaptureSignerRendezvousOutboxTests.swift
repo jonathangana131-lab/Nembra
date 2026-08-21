@@ -4,6 +4,69 @@ import Testing
 
 @Suite("Authenticated stationary Capture signer rendezvous outbox")
 struct AuthenticatedStationaryCaptureSignerRendezvousOutboxTests {
+    @Test("transport bootstrap creates only protected empty directories and is idempotent")
+    func prepareAuthorizationTransferDirectory() throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let outbox = AuthenticatedStationaryCaptureSignerRendezvousOutbox(
+            applicationSupportURL: root
+        )
+
+        try outbox.prepareAuthorizationTransferDirectory()
+        try outbox.prepareAuthorizationTransferDirectory()
+
+        let nembraDirectory = root.appendingPathComponent("NembraCapture", isDirectory: true)
+        let transferDirectory = root.appendingPathComponent(
+            AuthenticatedStationaryCaptureAuthorizationInbox.directoryName,
+            isDirectory: true
+        )
+        var isDirectory: ObjCBool = false
+        #expect(FileManager.default.fileExists(
+            atPath: transferDirectory.path,
+            isDirectory: &isDirectory
+        ))
+        #expect(isDirectory.boolValue)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: transferDirectory.path).isEmpty)
+
+        for directory in [nembraDirectory, transferDirectory] {
+            let attributes = try FileManager.default.attributesOfItem(atPath: directory.path)
+            let permissions = try #require(attributes[.posixPermissions] as? NSNumber)
+            #expect(permissions.intValue & 0o022 == 0)
+        }
+    }
+
+    @Test("transport bootstrap creates a missing Application Support base without publishing bytes")
+    func prepareAuthorizationTransferDirectoryFromFreshContainer() throws {
+        let parent = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: parent) }
+        let applicationSupport = parent.appendingPathComponent("Application Support", isDirectory: true)
+        #expect(!FileManager.default.fileExists(atPath: applicationSupport.path))
+
+        let outbox = AuthenticatedStationaryCaptureSignerRendezvousOutbox(
+            applicationSupportURL: applicationSupport
+        )
+        try outbox.prepareAuthorizationTransferDirectory()
+        try outbox.prepareAuthorizationTransferDirectory()
+
+        let transferDirectory = applicationSupport.appendingPathComponent(
+            AuthenticatedStationaryCaptureAuthorizationInbox.directoryName,
+            isDirectory: true
+        )
+        var isDirectory: ObjCBool = false
+        #expect(FileManager.default.fileExists(
+            atPath: transferDirectory.path,
+            isDirectory: &isDirectory
+        ))
+        #expect(isDirectory.boolValue)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: transferDirectory.path).isEmpty)
+
+        for directory in [applicationSupport, transferDirectory] {
+            let attributes = try FileManager.default.attributesOfItem(atPath: directory.path)
+            let permissions = try #require(attributes[.posixPermissions] as? NSNumber)
+            #expect((permissions.intValue & 0o022) == 0)
+        }
+    }
+
     @Test("publish is canonical owner-only no-replace and retirement is one-shot")
     func publishAndRetire() throws {
         let root = try temporaryDirectory()
@@ -53,7 +116,7 @@ struct AuthenticatedStationaryCaptureSignerRendezvousOutboxTests {
         )
 
         #expect(throws: AuthenticatedStationaryCaptureSignerRendezvousOutboxError.applicationSupportUnavailable) {
-            _ = try outbox.publish(makeRendezvous())
+            try outbox.prepareAuthorizationTransferDirectory()
         }
     }
 
@@ -74,7 +137,7 @@ struct AuthenticatedStationaryCaptureSignerRendezvousOutboxTests {
         )
 
         #expect(throws: AuthenticatedStationaryCaptureSignerRendezvousOutboxError.directoryCustodyRejected("NembraCapture")) {
-            _ = try outbox.publish(makeRendezvous())
+            try outbox.prepareAuthorizationTransferDirectory()
         }
     }
 
@@ -104,7 +167,7 @@ struct AuthenticatedStationaryCaptureSignerRendezvousOutboxTests {
         #expect(FileManager.default.fileExists(atPath: file.path))
     }
 
-    @Test("source binds publication success to the descriptor-backed pathname inode")
+    @Test("source binds publication success to descriptor-relative no-follow custody")
     func sourcePinsCustodyContract() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -118,12 +181,14 @@ struct AuthenticatedStationaryCaptureSignerRendezvousOutboxTests {
         )
 
         #expect(source.contains("O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC"))
-        #expect(source.contains("Darwin.mkdirat"))
-        #expect(source.contains("Darwin.open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)"))
+        #expect(source.contains("Darwin.mkdirat(parentFD, component, mode_t(0o700))"))
+        #expect(source.contains("Darwin.openat(\n            parentFD,\n            component,\n            O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC"))
+        #expect(source.contains("Darwin.mkdirat(parentFD, name, mode_t(0o700))"))
         #expect(source.contains("Darwin.fstatat(directoryFD, Self.filename, &published, AT_SYMLINK_NOFOLLOW)"))
         #expect(source.contains("pathStillNamesDescriptor(directoryFD: directoryFD, descriptor: descriptor)"))
         #expect(source.contains("Darwin.unlinkat(directoryFD, Self.filename, 0)"))
         #expect(source.contains("after.st_nlink == 0"))
+        #expect(!source.contains("Darwin.mkdir(path"))
         #expect(!source.contains("write(to:"))
         #expect(!source.contains("removeItem"))
     }

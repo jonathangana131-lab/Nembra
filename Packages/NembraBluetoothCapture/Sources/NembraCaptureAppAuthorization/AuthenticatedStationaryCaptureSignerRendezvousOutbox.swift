@@ -37,6 +37,15 @@ public struct AuthenticatedStationaryCaptureSignerRendezvousOutbox: Sendable {
         self.applicationSupportURL = applicationSupportURL
     }
 
+    /// Creates and verifies only the owner-controlled app-container directory needed by the
+    /// external exact-file transport for the first retained manifest. This publishes no bytes,
+    /// creates no challenge, consumes no manifest, mints no capability, and grants no Bluetooth
+    /// authority. It is safe to call repeatedly before the independent signer handoff begins.
+    public func prepareAuthorizationTransferDirectory() throws {
+        let directoryFD = try openFieldAuthorizationDirectory(createIfMissing: true)
+        Darwin.close(directoryFD)
+    }
+
     /// Publishes exactly one canonical document without replacing any earlier attempt's rendezvous.
     /// Returns the same bytes written to disk for diagnostics/tests; the bytes are non-authorizing.
     @discardableResult
@@ -147,24 +156,7 @@ public struct AuthenticatedStationaryCaptureSignerRendezvousOutbox: Sendable {
     }
 
     private func openFieldAuthorizationDirectory(createIfMissing: Bool) throws -> Int32 {
-        let baseFD = applicationSupportURL.withUnsafeFileSystemRepresentation { path -> Int32 in
-            guard let path else { return -1 }
-            return Darwin.open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-        }
-        guard baseFD >= 0 else {
-            throw AuthenticatedStationaryCaptureSignerRendezvousOutboxError
-                .applicationSupportUnavailable
-        }
-
-        var baseMetadata = stat()
-        guard Darwin.fstat(baseFD, &baseMetadata) == 0,
-              (baseMetadata.st_mode & S_IFMT) == S_IFDIR,
-              baseMetadata.st_uid == getuid(),
-              (baseMetadata.st_mode & mode_t(0o022)) == 0 else {
-            Darwin.close(baseFD)
-            throw AuthenticatedStationaryCaptureSignerRendezvousOutboxError
-                .directoryCustodyRejected("Application Support")
-        }
+        let baseFD = try openApplicationSupportDirectory(createIfMissing: createIfMissing)
 
         var currentFD = baseFD
         do {
@@ -181,6 +173,74 @@ public struct AuthenticatedStationaryCaptureSignerRendezvousOutbox: Sendable {
             return currentFD
         } catch {
             Darwin.close(currentFD)
+            throw error
+        }
+    }
+
+    /// Opens an already-materialized Application Support root with the original no-follow custody
+    /// contract. Only a genuinely missing root takes the descriptor-relative creation path beneath
+    /// its already-existing owner-controlled parent. This keeps injected existing test roots valid
+    /// even when their parent is a shared temporary directory, while fresh-container creation never
+    /// performs an absolute-path mkdir followed by a later custody check.
+    private func openApplicationSupportDirectory(createIfMissing: Bool) throws -> Int32 {
+        let existingFD = applicationSupportURL.withUnsafeFileSystemRepresentation { path -> Int32 in
+            guard let path else { return -1 }
+            return Darwin.open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        }
+        if existingFD >= 0 {
+            do {
+                try verifyOwnedDirectory(existingFD, name: "Application Support")
+                return existingFD
+            } catch {
+                Darwin.close(existingFD)
+                throw error
+            }
+        }
+
+        guard createIfMissing, errno == ENOENT else {
+            throw AuthenticatedStationaryCaptureSignerRendezvousOutboxError
+                .applicationSupportUnavailable
+        }
+
+        let parentURL = applicationSupportURL.deletingLastPathComponent()
+        let component = applicationSupportURL.lastPathComponent
+        guard !component.isEmpty, component != ".", component != ".." else {
+            throw AuthenticatedStationaryCaptureSignerRendezvousOutboxError
+                .applicationSupportUnavailable
+        }
+
+        let parentFD = parentURL.withUnsafeFileSystemRepresentation { path -> Int32 in
+            guard let path else { return -1 }
+            return Darwin.open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        }
+        guard parentFD >= 0 else {
+            throw AuthenticatedStationaryCaptureSignerRendezvousOutboxError
+                .applicationSupportUnavailable
+        }
+        defer { Darwin.close(parentFD) }
+
+        try verifyOwnedDirectory(parentFD, name: "Application Support parent")
+
+        if Darwin.mkdirat(parentFD, component, mode_t(0o700)) != 0, errno != EEXIST {
+            throw AuthenticatedStationaryCaptureSignerRendezvousOutboxError
+                .directoryCustodyRejected("Application Support")
+        }
+
+        let baseFD = Darwin.openat(
+            parentFD,
+            component,
+            O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
+        )
+        guard baseFD >= 0 else {
+            throw AuthenticatedStationaryCaptureSignerRendezvousOutboxError
+                .applicationSupportUnavailable
+        }
+
+        do {
+            try verifyOwnedDirectory(baseFD, name: "Application Support")
+            return baseFD
+        } catch {
+            Darwin.close(baseFD)
             throw error
         }
     }
@@ -205,16 +265,24 @@ public struct AuthenticatedStationaryCaptureSignerRendezvousOutbox: Sendable {
                 .directoryCustodyRejected(name)
         }
 
+        do {
+            try verifyOwnedDirectory(descriptor, name: name)
+            return descriptor
+        } catch {
+            Darwin.close(descriptor)
+            throw error
+        }
+    }
+
+    private func verifyOwnedDirectory(_ descriptor: Int32, name: String) throws {
         var metadata = stat()
         guard Darwin.fstat(descriptor, &metadata) == 0,
               (metadata.st_mode & S_IFMT) == S_IFDIR,
               metadata.st_uid == getuid(),
               (metadata.st_mode & mode_t(0o022)) == 0 else {
-            Darwin.close(descriptor)
             throw AuthenticatedStationaryCaptureSignerRendezvousOutboxError
                 .directoryCustodyRejected(name)
         }
-        return descriptor
     }
 
     private func pathStillNamesDescriptor(directoryFD: Int32, descriptor: Int32) -> Bool {
