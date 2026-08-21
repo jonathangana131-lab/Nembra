@@ -69,16 +69,30 @@ struct AuthenticatedStationaryCaptureAuthoritySurfaceSourceTests {
     }
 
     private func repositorySource(_ relativePath: String) throws -> String {
-        let packageRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let repositoryRoot = packageRoot
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
-            contentsOf: repositoryRoot.appendingPathComponent(relativePath),
-            encoding: .utf8
-        )
+        let fileManager = FileManager.default
+        let starts = [
+            URL(fileURLWithPath: fileManager.currentDirectoryPath, isDirectory: true),
+            URL(fileURLWithPath: #filePath).deletingLastPathComponent(),
+        ]
+
+        for start in starts {
+            var directory = start.standardizedFileURL
+            while true {
+                let candidate = directory.appendingPathComponent(relativePath)
+                if fileManager.fileExists(atPath: candidate.path) {
+                    return try String(contentsOf: candidate, encoding: .utf8)
+                }
+
+                let parent = directory.deletingLastPathComponent()
+                if parent.path == directory.path { break }
+                directory = parent
+            }
+        }
+
+        throw RepositorySourceError.notFound(relativePath)
+    }
+
+    private enum RepositorySourceError: Error {
+        case notFound(String)
     }
 }
