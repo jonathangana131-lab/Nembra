@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 public enum AuthenticatedStationaryCaptureAppSessionError: Error, Equatable, Sendable {
@@ -65,7 +66,15 @@ public final class AuthenticatedStationaryCaptureAppSession {
 
     /// Consumes the post-install, challenge-bound envelope. Any failure terminally revokes this
     /// attempt so corrected/replayed bytes cannot be retried against the same process-local challenge.
-    public func acceptEnvelope(_ envelopeData: Data) throws {
+    ///
+    /// On success the package returns only a non-authorizing digest receipt derived from the exact
+    /// envelope bytes that passed the pinned signature/runtime/replay verifier. The raw capability
+    /// remains private to this session. App-container transport may publish this receipt so the field
+    /// Mac can prove which exact envelope bytes were consumed despite the inbox's one-shot unlink.
+    @discardableResult
+    public func acceptEnvelope(
+        _ envelopeData: Data
+    ) throws -> AuthenticatedStationaryCaptureVerifiedEnvelopeTransportReceipt {
         guard stage == .awaitingEnvelope,
               let preparedAttempt,
               let retainedInstallManifestData else {
@@ -78,9 +87,15 @@ public final class AuthenticatedStationaryCaptureAppSession {
                 installManifestData: retainedInstallManifestData,
                 preparedAttempt: preparedAttempt
             )
+            let receipt = AuthenticatedStationaryCaptureVerifiedEnvelopeTransportReceipt(
+                envelopeData: envelopeData,
+                attemptChallengeSHA256: preparedAttempt.challengeSHA256,
+                procedureID: preparedAttempt.procedureID
+            )
             self.preparedAttempt = nil
             self.retainedInstallManifestData = nil
             stage = .armed
+            return receipt
         } catch {
             revoke()
             throw error
