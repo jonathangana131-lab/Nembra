@@ -53,15 +53,20 @@ struct TuyaPhysicalAppContainerTransportProbeSourceTests {
         #expect(probe.contains("whether another process or already-running app contacted Bluetooth/Tuya/ES80"))
     }
 
-    @Test("exact-source execution blocks caller shell startup injection")
-    func probeBlocksShellStartupInjection() throws {
+    @Test("exact-source execution blocks caller shell startup and PATH injection")
+    func probeBlocksShellAndExecutablePathInjection() throws {
         let probe = try readRepositoryFile(relativePath)
 
         #expect(probe.hasPrefix("#!/bin/bash -p\n"))
+        #expect(probe.contains("PATH='/usr/bin:/bin:/usr/sbin:/sbin'"))
+        #expect(probe.contains("export PATH"))
+        #expect(probe.contains("readonly PATH"))
         #expect(probe.contains("unset BASH_ENV ENV CDPATH GLOBIGNORE || true"))
+        #expect(probe.contains("$(/usr/bin/dirname \"$0\")"))
+        #expect(!probe.contains("$(dirname \"$0\")"))
         #expect(probe.contains("NEMBRA_CAPTURE_PROBE_SELF_TEST"))
         #expect(probe.contains("BASH_ENV=\"$SELF_TEST_HOSTILE\" ENV=\"$SELF_TEST_HOSTILE\" /bin/bash -p -c 'true'"))
-        #expect(probe.contains("startup_injection_blocked=true device_contact=false"))
+        #expect(probe.contains("startup_injection_blocked=true path_injection_blocked=true device_contact=false"))
         #expect(probe.contains("/usr/bin/env -u BASH_ENV -u ENV -u CDPATH -u GLOBIGNORE /bin/bash -p \"$CONTRACT_EXEC\""))
         #expect(!probe.contains("/bin/bash \"$CONTRACT_EXEC\""))
     }
@@ -148,7 +153,7 @@ struct TuyaPhysicalAppContainerTransportProbeSourceTests {
         #expect(probe.contains("transport_contract_sha256=%s"))
         #expect(probe.contains("xcode_identity=%s"))
         #expect(probe.contains("PROVEN PROVENANCE:"))
-        #expect(probe.contains("executed with shell startup injection disabled"))
+        #expect(probe.contains("executed with shell startup and executable-path injection disabled"))
     }
 
     private func readRepositoryFile(_ relativePath: String) throws -> String {
