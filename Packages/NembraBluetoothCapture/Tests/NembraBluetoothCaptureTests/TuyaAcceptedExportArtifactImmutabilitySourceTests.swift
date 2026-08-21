@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Capture accepted export artifact immutability")
 struct TuyaAcceptedExportArtifactImmutabilitySourceTests {
-    @Test("current-attempt acceptance cut freezes the complete export before another post-seal suspension")
+    @Test("current-attempt acceptance cut freezes exact bytes and seals signed authorization before accepted UI")
     func cutFreezesWholeAcceptedEnvelopeBeforeAcceptedPhase() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let watchdog = try section(
@@ -21,26 +21,33 @@ struct TuyaAcceptedExportArtifactImmutabilitySourceTests {
 
         guard let cutPrefix = body.range(of: "let acceptedEventPrefixAtCut = Array(self.events.dropFirst(self.captureAttemptEventStartIndex))"),
               let packageSeal = body.range(of: "try await sessionLedger.sealAcceptedObservation(for: token)", range: cutPrefix.upperBound..<body.endIndex),
-              let sourceRecheck = body.range(of: "guard self.buildIdentity.isAuthoritativeFieldBuild,", range: packageSeal.upperBound..<body.endIndex),
-              let envelopeFreeze = body.range(of: "self.sealedAcceptedExport = self.makeExport(", range: sourceRecheck.upperBound..<body.endIndex),
-              let acceptedPhase = body.range(of: "self.phase = .accepted", range: envelopeFreeze.upperBound..<body.endIndex) else {
-            Issue.record("Accepted path must freeze the current-attempt cut, seal the package, re-check source authority, then freeze the complete export before accepted UI.")
+              let sourceRecheck = body.range(of: "guard self.buildIdentity.hasCompleteFieldBuildMetadata,", range: packageSeal.upperBound..<body.endIndex),
+              let exactFreeze = body.range(of: "try self.freezeAcceptedArtifactForAuthorizationSeal()", range: sourceRecheck.upperBound..<body.endIndex),
+              let authorizationSeal = body.range(of: "try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()", range: exactFreeze.upperBound..<body.endIndex),
+              let acceptedPhase = body.range(of: "self.phase = .accepted", range: authorizationSeal.upperBound..<body.endIndex) else {
+            Issue.record("Accepted path must seal the package, re-check metadata + signed observation authority, freeze exact accepted bytes, seal authorization, then expose accepted UI.")
             throw SourceContractError.sectionMissing
         }
 
         #expect(cutPrefix.lowerBound < packageSeal.lowerBound)
         #expect(packageSeal.lowerBound < sourceRecheck.lowerBound)
-        #expect(sourceRecheck.lowerBound < envelopeFreeze.lowerBound)
-        #expect(envelopeFreeze.lowerBound < acceptedPhase.lowerBound)
+        #expect(sourceRecheck.lowerBound < exactFreeze.lowerBound)
+        #expect(exactFreeze.lowerBound < authorizationSeal.lowerBound)
+        #expect(authorizationSeal.lowerBound < acceptedPhase.lowerBound)
+        #expect(body.contains("self.fieldAuthorizationObservationAdmitted"))
         #expect(body.contains("self.accountIdentityLeaseIsAuthorized"))
-        #expect(body.contains("source_authority_changed_during_acceptance_seal"))
-        #expect(body.contains("self.sealedAcceptedEventPrefix = acceptedEventPrefixAtCut"))
-        #expect(body.contains("phase: .accepted"))
-        #expect(body.contains("events: acceptedEventPrefixAtCut"))
-        #expect(body.contains("self.exportData = nil"), Comment(rawValue: "Any diagnostic JSON prepared before acceptance must be retired before accepted Share is shown."))
+        #expect(!body.contains("guard self.buildIdentity.isAuthoritativeFieldBuild,"))
+        #expect(body.contains("field_authorization_rejected_at_seal"))
+        #expect(body.contains("field_authorization_or_artifact_freeze_rejected"))
 
-        let afterSeal = body[packageSeal.upperBound..<envelopeFreeze.lowerBound]
-        #expect(!afterSeal.contains("await "), Comment(rawValue: "No suspension may let mutable app authority drift between package seal and full accepted artifact freeze."))
+        let freeze = try function(in: app, startingAt: "private func freezeAcceptedArtifactForAuthorizationSeal()")
+        #expect(freeze.contains("ExactByteArtifactSeal(sealing:"))
+        #expect(freeze.contains(".verifies("))
+        #expect(freeze.contains("verifiedCanonicalValue("))
+        #expect(freeze.contains("verifiedBytes()"))
+        #expect(freeze.contains("sealedAcceptedEventPrefix"))
+        #expect(freeze.contains("sealedAcceptedExport"))
+        #expect(freeze.contains("exportData = nil"), Comment(rawValue: "Any diagnostic JSON prepared before acceptance must be retired before accepted Share is shown."))
     }
 
     @Test("accepted Prepare uses only the sealed envelope and not mutable post-seal authority")
