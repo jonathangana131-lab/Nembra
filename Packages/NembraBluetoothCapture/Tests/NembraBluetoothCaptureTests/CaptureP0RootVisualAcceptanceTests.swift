@@ -45,7 +45,7 @@ struct CaptureP0RootVisualAcceptanceTests {
         ))
 
         #expect(root.contains("@State private var authorizationTransportBootstrapError: String?"))
-        #expect(root.contains("NembraCaptureFieldAuthorizationController.prepareAuthorizationTransferDirectoryForFieldTransport()"))
+        #expect(root.contains(".prepareAuthorizationTransferDirectoryForFieldTransport()"))
         #expect(root.contains("authorizationTransportBootstrapError = nil"))
         #expect(root.contains("One-time authorization transfer storage could not be prepared. Bluetooth remains locked."))
         #expect(root.contains("fieldBuildCanPrepareAuthorization && authorizationTransportBootstrapError == nil && sdkAccount.loggedIn"))

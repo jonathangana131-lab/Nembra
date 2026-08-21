@@ -18,7 +18,7 @@ struct TuyaFieldBuildPresentationAuthoritySourceTests {
         #expect(identity.contains("var isAuthoritativeFieldBuild: Bool {\n        false\n    }"))
         #expect(controllerAuthority.contains("var fieldBuildMetadataComplete: Bool { buildIdentity.hasCompleteFieldBuildMetadata }"))
         #expect(controllerAuthority.contains("var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }"))
-        #expect(controllerAuthority.contains("var fieldAuthorizationReady: Bool { fieldAuthorization.stage == .armed }"))
+        #expect(app.contains("var fieldAuthorizationReady: Bool { fieldAuthorization.stage == .armed }"))
         #expect(controllerAuthority.contains("var fieldAuthorizationObservationAdmitted: Bool { fieldAuthorization.stage == .observationAdmitted }"))
     }
 
