@@ -181,7 +181,7 @@ capture_accepted_git_source_base64() {
 
   measured_blob="$(
     printf '%s' "$source_b64" |
-      /usr/bin/python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.buffer.read(), validate=True))' |
+      /usr/bin/python3 -I -B -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.buffer.read(), validate=True))' |
       GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git -C "$ROOT" hash-object --stdin
   )" || die "Accepted nested repository tool capture could not be re-hashed: $relative_path"
   [[ "$measured_blob" == "$blob" ]] || die "Captured nested repository tool bytes do not match the accepted Git object: $relative_path"
