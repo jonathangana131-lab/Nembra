@@ -5,7 +5,7 @@ umask 077
 # This probe proves only bidirectional file transport to the already-installed Nembra Capture
 # appDataContainer selected by bundle ID on one explicitly selected iPhone. It never proves which
 # exact Capture build is installed, never transfers an authorization payload, never grants Capture
-# authority, and never contacts Bluetooth/Tuya/ES80.
+# authority, and its own code path initiates no Bluetooth/Tuya/ES80 operation.
 
 [[ "$(/usr/bin/uname -s)" == "Darwin" ]] || {
   echo 'ERROR: this probe must run on the Xcode Mac.' >&2
@@ -19,10 +19,15 @@ PROBE_PATH="$REPOSITORY_ROOT/$PROBE_RELATIVE_PATH"
 CONTRACT="$REPOSITORY_ROOT/$CONTRACT_RELATIVE_PATH"
 BUNDLE_ID='com.jonathangana131.nembra.capturelearn'
 FIELD_AUTHORIZATION_SUBDIRECTORY='Library/Application Support/NembraCapture/FieldAuthorization'
-DEVICE_UDID="${NEMBRA_CAPTURE_DEVICE_UDID:-${1:-}}"
 
+[[ "$#" -eq 0 ]] || {
+  echo 'ERROR: positional arguments are forbidden; set NEMBRA_CAPTURE_DEVICE_UDID in the environment for the intended iPhone.' >&2
+  exit 3
+}
+DEVICE_UDID="${NEMBRA_CAPTURE_DEVICE_UDID:-}"
+unset NEMBRA_CAPTURE_DEVICE_UDID || true
 [[ -n "$DEVICE_UDID" ]] || {
-  echo 'ERROR: set NEMBRA_CAPTURE_DEVICE_UDID (or pass the intended iPhone UDID as argument 1).' >&2
+  echo 'ERROR: set NEMBRA_CAPTURE_DEVICE_UDID in the environment for the intended iPhone.' >&2
   exit 3
 }
 [[ -x /usr/bin/xcrun ]] || {
@@ -188,14 +193,14 @@ RESULT_PATH="$ARTIFACTS_DIR/result.txt"
   printf 'captureAuthorized=false\n'
   printf 'physicalAuthorityCreated=false\n'
   printf 'protocolSemanticsCreated=false\n'
-  printf 'bluetoothContacted=false\n'
-  printf 'tuyaContacted=false\n'
-  printf 'es80Contacted=false\n'
+  printf 'probe_initiated_bluetooth=false\n'
+  printf 'probe_initiated_tuya=false\n'
+  printf 'probe_initiated_es80_contact=false\n'
 } > "$RESULT_TMP"
 /bin/chmod 600 "$RESULT_TMP"
 /bin/mv -f -- "$RESULT_TMP" "$RESULT_PATH"
 
 printf '%s\n' "PROVEN: exact bytes copied to and from the $BUNDLE_ID appDataContainer on the explicitly selected physical iPhone; the read-only listing request for $FIELD_AUTHORIZATION_SUBDIRECTORY also succeeded."
 printf '%s\n' "PROVEN PROVENANCE: repository HEAD $REPOSITORY_HEAD with exact checked-in probe blob $PROBE_TRACKED_BLOB and transport-contract blob $CONTRACT_TRACKED_BLOB."
-printf '%s\n' 'NOT PROVEN: handoff-directory filesystem existence beyond devicectl listing success, exact installed Capture build identity, authorization payload transfer or acceptance, signing/install custody, trust-root correctness, Bluetooth/Tuya behavior, ES80 identity, telemetry semantics, commands, or physical Capture GO.'
+printf '%s\n' 'NOT PROVEN: handoff-directory filesystem existence beyond devicectl listing success, exact installed Capture build identity, authorization payload transfer or acceptance, signing/install custody, trust-root correctness, whether another process or already-running app contacted Bluetooth/Tuya/ES80, ES80 identity, telemetry semantics, commands, or physical Capture GO.'
 printf 'Evidence directory: %s\n' "$ARTIFACTS_DIR"
