@@ -3,7 +3,7 @@ name: Capture app-container transport trigger close one-shot
 on:
   push:
     branches:
-      - fix/capture-transport-proof-self-trigger-gpt56sol-20260820
+      - recovery/capture-transport-proof-exact-head-gpt56sol-20260820
     paths:
       - .github/workflows/capture-app-container-transport-trigger-close-one-shot.yml
 
@@ -15,23 +15,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      TARGET_BRANCH: fix/capture-transport-proof-self-trigger-gpt56sol-20260820
+      TARGET_BRANCH: recovery/capture-transport-proof-exact-head-gpt56sol-20260820
       TARGET_WORKFLOW: .github/workflows/capture-app-container-transport-proof.yml
       SELF_WORKFLOW: .github/workflows/capture-app-container-transport-trigger-close-one-shot.yml
       EXPECTED_TARGET_BLOB: 8e3cfb06e42ece78aeb214a48229b806ac13f7cf
     steps:
-      - name: Checkout exact child head
+      - name: Checkout exact triggering head
         uses: actions/checkout@v6
         with:
-          ref: fix/capture-transport-proof-self-trigger-gpt56sol-20260820
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Bind reviewed transport workflow
+      - name: Bind exact subject and reviewed transport workflow
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git branch --show-current)" = "$TARGET_BRANCH"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD:"$TARGET_WORKFLOW")" = "$EXPECTED_TARGET_BLOB"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
@@ -84,6 +84,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
+          test "$remote_head" = "$GITHUB_SHA"
           rm "$SELF_WORKFLOW"
           git add -- "$TARGET_WORKFLOW" "$SELF_WORKFLOW"
           git diff --cached --check
