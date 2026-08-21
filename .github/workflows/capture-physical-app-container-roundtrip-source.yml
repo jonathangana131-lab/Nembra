@@ -5,6 +5,7 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     branches:
       - product/capture-1-0-main-20260818
+      - 'recovery/capture-physical-app-container-roundtrip-**'
     paths:
       - 'scripts/field/probe_capture_app_container_transport.command'
       - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPhysicalAppContainerTransportProbeSourceTests.swift'
