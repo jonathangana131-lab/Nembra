@@ -1,67 +1,127 @@
 name: Dashboard Cockpit Product Closure
 
 on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+    paths:
+      - '.github/workflows/dashboard-cockpit-product-closure.yml'
+      - 'NembraApp/Features/Dashboard/**'
+      - 'NembraAppTests/**'
+      - 'NembraUITests/**'
+      - 'Nembra.xcodeproj/**'
   push:
     branches:
-      - agent/v14-dashboard-currentness-current-main
+      - main
+    paths:
+      - '.github/workflows/dashboard-cockpit-product-closure.yml'
+      - 'NembraApp/Features/Dashboard/**'
+      - 'NembraAppTests/**'
+      - 'NembraUITests/**'
+      - 'Nembra.xcodeproj/**'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: dashboard-cockpit-product-closure-${{ github.ref }}
+  group: dashboard-cockpit-product-closure-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   cockpit:
-    name: Real app cockpit screenshots and timing
+    name: Exact iPhone 12 / iOS 27 cockpit evidence
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: xcode-27
-    timeout-minutes: 30
+    timeout-minutes: 35
+    env:
+      SUBJECT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
     steps:
-      - name: Checkout exact product head
-        uses: actions/checkout@v4
+      - name: Checkout exact product subject
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.SUBJECT_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
 
-      - name: Confirm product branch and untouched disposable Capture branch
+      - name: Bind exact Dashboard subject and scope
         shell: bash
         run: |
           set -euo pipefail
-          test "${GITHUB_REF_NAME}" = "agent/v14-dashboard-currentness-current-main"
-          echo "Product head: $(git rev-parse HEAD)"
-          if git show --format= --name-only HEAD | grep -Eq '^NembraApp/Features/Research/'; then
-            echo "ERROR: Dashboard product closure commit must not edit disposable Capture/Research source."
-            exit 1
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          test "$actual" = "$SUBJECT_SHA"
+
+          if [[ -n "$BASE_SHA" ]]; then
+            git fetch --no-tags origin "$BASE_SHA"
+            test "$(git merge-base "$actual" "$BASE_SHA")" = "$BASE_SHA"
+            if git diff --name-only "$BASE_SHA...$actual" | grep -Eq '^NembraApp/Features/Research/'; then
+              echo 'ERROR: Dashboard product closure must not edit disposable Capture/Research source.' >&2
+              exit 1
+            fi
           fi
 
-      - name: Show Xcode and available simulators
+          printf 'dashboard_subject_sha=%s\n' "$actual" | tee /tmp/nembra-dashboard-subject.txt
+          printf 'physical_es80_authority_created=false\n' | tee -a /tmp/nembra-dashboard-subject.txt
+
+      - name: Show Xcode and Simulator inventory
         shell: bash
         run: |
           set -euo pipefail
-          xcodebuild -version
-          xcrun simctl list devices available
+          xcodebuild -version | tee /tmp/nembra-dashboard-xcode-version.txt
+          xcrun simctl list runtimes -j > /tmp/nembra-dashboard-runtimes.json
+          xcrun simctl list devicetypes -j > /tmp/nembra-dashboard-device-types.json
 
-      - name: Select iPhone Simulator
+      - name: Create exact iPhone 12 / iOS 27 Simulator
         id: sim
         shell: bash
         run: |
           set -euo pipefail
-          xcrun simctl list devices available > /tmp/nembra-sim-devices.txt
-          DEVICE=$(python3 - <<'PY'
-          import re
+          runtime_id="$(python3 - <<'PY'
+          import json
           from pathlib import Path
-          for line in Path('/tmp/nembra-sim-devices.txt').read_text().splitlines():
-              match = re.match(r'^\s*(iPhone[^()]*)\s+\(([0-9A-F-]+)\)\s+\((?:Shutdown|Booted)\)', line)
-              if match:
-                  print(f"{match.group(1).strip()}|{match.group(2)}")
-                  break
+
+          runtimes = json.loads(Path('/tmp/nembra-dashboard-runtimes.json').read_text()).get('runtimes', [])
+          candidates = [
+              runtime for runtime in runtimes
+              if runtime.get('isAvailable')
+              and str(runtime.get('identifier', '')).startswith('com.apple.CoreSimulator.SimRuntime.iOS-27')
+              and str(runtime.get('version', '')).split('.', 1)[0] == '27'
+          ]
+          if not candidates:
+              raise SystemExit('Required iOS 27 Simulator runtime is unavailable')
+
+          def version(runtime):
+              return tuple(int(part) for part in str(runtime['version']).split('.'))
+
+          print(max(candidates, key=version)['identifier'])
           PY
-          )
-          test -n "$DEVICE"
-          NAME=${DEVICE%%|*}
-          UDID=${DEVICE##*|}
-          echo "name=$NAME" >> "$GITHUB_OUTPUT"
-          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
-          echo "Using $NAME ($UDID)"
+          )"
+
+          device_type='com.apple.CoreSimulator.SimDeviceType.iPhone-12'
+          python3 - "$device_type" <<'PY'
+          import json, sys
+          from pathlib import Path
+
+          device_type = sys.argv[1]
+          items = json.loads(Path('/tmp/nembra-dashboard-device-types.json').read_text()).get('devicetypes', [])
+          if not any(item.get('identifier') == device_type for item in items):
+              raise SystemExit(f'Required device type unavailable: {device_type}')
+          PY
+
+          name="Nembra Dashboard ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          udid="$(xcrun simctl create "$name" "$device_type" "$runtime_id")"
+          printf 'udid=%s\n' "$udid" >> "$GITHUB_OUTPUT"
+          printf 'runtime_id=%s\n' "$runtime_id" >> "$GITHUB_OUTPUT"
+          {
+            printf 'simulator_udid=%s\n' "$udid"
+            printf 'simulator_runtime=%s\n' "$runtime_id"
+            printf 'simulator_device_type=%s\n' "$device_type"
+          } | tee /tmp/nembra-dashboard-simulator.txt
+
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
 
       - name: Run real Dashboard/Cockpit UI acceptance
         shell: bash
@@ -69,12 +129,13 @@ jobs:
           SIM_UDID: ${{ steps.sim.outputs.udid }}
         run: |
           set -euo pipefail
-          rm -rf /tmp/NembraDashboardDerived /tmp/NembraDashboard.xcresult
+          rm -rf /tmp/NembraDashboardDerived /tmp/NembraDashboard.xcresult /tmp/NembraDashboardAttachments
           start=$(python3 - <<'PY'
           import time
           print(time.monotonic())
           PY
           )
+
           set -o pipefail
           xcodebuild \
             -project Nembra.xcodeproj \
@@ -87,6 +148,7 @@ jobs:
             -only-testing:NembraUITests/NembraUITests/testLandscapeDashboardIsDedicatedCockpitAndHidesMovingControls \
             -only-testing:NembraUITests/NembraUITests/testLandscapeDashboardStoppedControlsConfirmEveryModePersonality \
             test | tee /tmp/nembra-dashboard-xcodebuild.log
+
           end=$(python3 - <<'PY'
           import time
           print(time.monotonic())
@@ -110,15 +172,35 @@ jobs:
           echo "screenshot_count=$count" | tee -a /tmp/nembra-dashboard-timing.txt
           test "$count" -ge 5
 
-      - name: Upload Dashboard product evidence
+      - name: Upload exact-head Dashboard product evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
-          name: dashboard-cockpit-product-evidence
+          name: dashboard-cockpit-product-evidence-${{ env.SUBJECT_SHA }}
+          retention-days: 14
+          if-no-files-found: warn
           path: |
             /tmp/NembraDashboard.xcresult
             /tmp/NembraDashboardAttachments
             /tmp/nembra-dashboard-xcodebuild.log
             /tmp/nembra-dashboard-timing.txt
             /tmp/nembra-dashboard-attachments.txt
-          if-no-files-found: ignore
+            /tmp/nembra-dashboard-subject.txt
+            /tmp/nembra-dashboard-xcode-version.txt
+            /tmp/nembra-dashboard-simulator.txt
+
+      - name: Delete proof Simulator
+        if: always() && steps.sim.outputs.udid != ''
+        env:
+          SIM_UDID: ${{ steps.sim.outputs.udid }}
+        shell: bash
+        run: |
+          xcrun simctl shutdown "$SIM_UDID" >/dev/null 2>&1 || true
+          xcrun simctl delete "$SIM_UDID" >/dev/null 2>&1 || true
+
+      - name: State Dashboard truth boundary
+        if: success()
+        shell: bash
+        run: |
+          printf '%s\n' 'PROVEN: this exact Dashboard source subject built and passed the retained cockpit UI acceptance on an exact iPhone 12 / iOS 27 Simulator with retained screenshot evidence.'
+          printf '%s\n' 'NOT PROVEN: physical ES80 telemetry, battery/current/power semantics, learned range, writable command safety, Capture field authorization, or physical GO.'
