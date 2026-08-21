@@ -19,7 +19,10 @@ struct HomeView: View {
                 }
 
                 machineHero
-                controlsSection
+
+                if hasQuickControls {
+                    controlsSection
+                }
 
                 if !supportedModes.isEmpty {
                     modeSection
@@ -357,6 +360,11 @@ struct HomeView: View {
     }
 
     // MARK: - Confirmed controls
+
+    private var hasQuickControls: Bool {
+        let capabilities = vehicle.profile.capabilities
+        return capabilities.supportsHeadlight || capabilities.supportsLock
+    }
 
     private var controlsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
