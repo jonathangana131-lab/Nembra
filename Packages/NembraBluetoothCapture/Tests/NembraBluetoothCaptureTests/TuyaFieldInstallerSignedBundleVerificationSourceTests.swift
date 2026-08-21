@@ -2,45 +2,60 @@ import Foundation
 import Testing
 @testable import NembraBluetoothCapture
 
-@Suite("Capture field installer signed-bundle verification")
+@Suite("Capture pre-install retained-candidate verification")
 struct TuyaFieldInstallerSignedBundleVerificationSourceTests {
-    @Test("strict recursive signature validation precedes entitlement authority and install")
-    func signedBundleSealMustValidateBeforeAuthorityReadbackOrDeviceInstall() throws {
+    @Test("accepted IPA and authority subjects are hash validated before cross-binding")
+    func retainedCandidateSubjectsAreValidatedBeforeCrossBinding() throws {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
 
-        let verify = try requiredOffset(
-            containing: "/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/codesign --verify --deep --strict \"$APP\"",
+        let ipaValidation = try requiredOffset(
+            containing: "validate_retained_input \"retained accepted signed IPA\"",
             in: installer
         )
-        let entitlementReadback = try requiredOffset(
-            containing: "/usr/bin/codesign -d --entitlements :- --xml \"$APP\"",
+        let manifestValidation = try requiredOffset(
+            containing: "validate_retained_input \"canonical retained-install manifest\"",
             in: installer
         )
-        let install = try requiredOffset(
-            containing: "xcrun devicectl device install app --device \"$COREDEVICE_ID\" \"$APP\"",
+        let finalGoValidation = try requiredOffset(
+            containing: "validate_retained_input \"accepted Final-GO subject\"",
+            in: installer
+        )
+        let deviceBindingValidation = try requiredOffset(
+            containing: "validate_retained_input \"intended-device pseudonymous binding\"",
+            in: installer
+        )
+        let crossBinding = try requiredOffset(
+            containing: "helper.verify_cross_binding(",
             in: installer
         )
 
-        #expect(verify < entitlementReadback)
-        #expect(entitlementReadback < install)
-        #expect(installer.contains("failed recursive strict code-signature verification"))
-        #expect(installer.contains("passed recursive strict code-signature verification"))
+        #expect(ipaValidation < crossBinding)
+        #expect(manifestValidation < crossBinding)
+        #expect(finalGoValidation < crossBinding)
+        #expect(deviceBindingValidation < crossBinding)
     }
 
-    @Test("verification is validation-only and closed-environment")
-    func verifierCannotResignOrInheritCallerToolingEnvironment() throws {
+    @Test("cross-binding names the exact retained IPA final GO Tuya lock and device pseudonym")
+    func crossBindingCannotDropStableAuthoritySubjects() throws {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
-        let verifyLine = try requiredLine(
-            containing: "/usr/bin/codesign --verify --deep --strict \"$APP\"",
-            in: installer
-        )
 
-        #expect(verifyLine.contains("/usr/bin/env -i PATH=/usr/bin:/bin"))
-        #expect(verifyLine.contains("--verify"))
-        #expect(verifyLine.contains("--deep"))
-        #expect(verifyLine.contains("--strict"))
-        #expect(!verifyLine.contains("--sign"))
-        #expect(!verifyLine.contains("--force"))
+        #expect(installer.contains("accepted_retained_ipa_sha256=retained_ipa_sha.lower()"))
+        #expect(installer.contains("accepted_final_go_record_sha256=final_go_sha.lower()"))
+        #expect(installer.contains("accepted_tuya_lock_sha256=tuya_lock_sha.lower()"))
+        #expect(installer.contains("accepted_intended_device_pseudonym_sha256=device_binding_sha.lower()"))
+        #expect(installer.contains("accepted_source_commit_sha=accepted_source_sha"))
+    }
+
+    @Test("pre-install verifier cannot resign install or launch the candidate")
+    func verifierIsValidationOnly() throws {
+        let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
+
+        #expect(installer.contains("PRE-INSTALL ONLY."))
+        #expect(installer.contains("PREINSTALL_RETAINED_SUBJECTS_BOUND_NOT_INSTALL_AUTHORITY"))
+        #expect(!installer.contains("codesign --sign"))
+        #expect(!installer.contains("devicectl device install app"))
+        #expect(!installer.contains("devicectl device process launch"))
+        #expect(installer.contains("No device was contacted and no app was installed."))
     }
 
     private func requiredOffset(containing token: String, in source: String) throws -> String.Index {
@@ -49,16 +64,6 @@ struct TuyaFieldInstallerSignedBundleVerificationSourceTests {
             throw SourceContractError.tokenMissing
         }
         return range.lowerBound
-    }
-
-    private func requiredLine(containing token: String, in source: String) throws -> String {
-        guard let line = source.split(separator: "\n", omittingEmptySubsequences: false)
-            .map(String.init)
-            .first(where: { $0.contains(token) }) else {
-            Issue.record("Expected source line missing: \(token)")
-            throw SourceContractError.tokenMissing
-        }
-        return line
     }
 
     private func readRepositoryFile(_ relativePath: String) throws -> String {
