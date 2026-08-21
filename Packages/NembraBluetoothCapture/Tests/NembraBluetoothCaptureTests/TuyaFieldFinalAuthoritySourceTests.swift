@@ -19,19 +19,25 @@ struct TuyaFieldFinalAuthoritySourceTests {
         #expect(seal.lowerBound < accepted.lowerBound)
     }
 
-    @Test("OFF1 correlation is mechanically downstream of exact build, current SDK account, membership, and identity lease authority")
+    @Test("OFF1 correlation is mechanically downstream of signed attempt, current SDK account, membership, and identity lease authority")
     func correlationCannotStartFromUIStateAlone() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let start = try section(in: source, from: "private func beginBaselineAfterCurrentOperatorAttestation()", to: "private func beginCorrelationSeries()")
         let begin = try section(in: source, from: "private func beginCorrelationSeries()", to: "func startNextCorrelationWindow()")
 
-        #expect(start.contains("buildIdentity.isAuthoritativeFieldBuild"))
+        #expect(!start.contains("buildIdentity.isAuthoritativeFieldBuild"))
+        #expect(start.contains("fieldAuthorization.admitOFF1Start()"))
+        #expect(start.contains("field_authorization_rejected_off1"))
         #expect(start.contains("guard privateConfig, sdkAccountLoggedIn"))
         #expect(start.contains("operatorSafetyAttestationIsCurrent"))
         #expect(!start.contains("StationaryCaptureOperatorAttestation("))
         #expect(start.contains("verifySDKMembership"))
         #expect(start.contains("TuyaSDKAccountIdentityLeaseGate.verdict"))
         #expect(start.contains("beginCorrelationSeries()"))
+
+        let authorizationAdmission = try #require(start.range(of: "fieldAuthorization.admitOFF1Start()"))
+        let correlationStart = try #require(start.range(of: "beginCorrelationSeries()"))
+        #expect(authorizationAdmission.lowerBound < correlationStart.lowerBound)
 
         #expect(begin.contains("sdkAccountLoggedIn"))
         #expect(begin.contains("sdkDeviceMembershipVerified"))
