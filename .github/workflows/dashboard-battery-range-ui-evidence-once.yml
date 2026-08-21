@@ -1,3 +1,4 @@
+# GO 2026-08-21: retrigger the existing exact-head materializer after the accessibility/evidence anchors were repaired.
 name: Dashboard battery-range UI evidence once
 
 on:
