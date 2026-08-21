@@ -11,6 +11,8 @@ unset BASH_ENV ENV CDPATH GLOBIGNORE XCODE_XCCONFIG_FILE OTHER_SWIFT_FLAGS SWIFT
 umask 077
 
 ROOT="$(cd "$(/usr/bin/dirname "$0")/../.." && /bin/pwd -P)"
+TRANSPORT_RELATIVE_PATH="scripts/field/transfer_field_authorization.command"
+CONTRACT_RELATIVE_PATH="scripts/ci/xcode27_devicectl_manifest_transport_contract.sh"
 BUNDLE_ID="com.jonathangana131.nembra.capturelearn"
 DOMAIN_TYPE="appDataContainer"
 FIELD_DIRECTORY="Library/Application Support/NembraCapture/FieldAuthorization"
@@ -33,6 +35,8 @@ self_test() {
   [[ "$MANIFEST_MAX_BYTES" == 16384 ]] || die "Manifest byte bound drifted."
   [[ "$RENDEZVOUS_MAX_BYTES" == 4096 ]] || die "Rendezvous byte bound drifted."
   [[ "$ENVELOPE_MAX_BYTES" == 32768 ]] || die "Envelope byte bound drifted."
+  [[ "$TRANSPORT_RELATIVE_PATH" == "scripts/field/transfer_field_authorization.command" ]] || die "Transport source path drifted."
+  [[ "$CONTRACT_RELATIVE_PATH" == "scripts/ci/xcode27_devicectl_manifest_transport_contract.sh" ]] || die "Transport contract path drifted."
   for path in "$MANIFEST_REMOTE" "$RENDEZVOUS_REMOTE" "$ENVELOPE_REMOTE"; do
     [[ "$path" != /* && "$path" != *".."* ]] || die "Container path is not bounded."
   done
@@ -46,7 +50,7 @@ if [[ "${1:-}" == "--self-test" ]]; then
 fi
 
 [[ "$(/usr/bin/uname -s)" == "Darwin" ]] || die "Run field transport on the Xcode Mac connected to the intended iPhone."
-[[ -x /usr/bin/xcrun && -x /usr/bin/python3 && -x /usr/bin/mktemp ]] || die "Xcode command-line tools and system Python are required."
+[[ -x /usr/bin/xcrun && -x /usr/bin/python3 && -x /usr/bin/mktemp && -x /usr/bin/git ]] || die "Xcode command-line tools, system Python, and Git are required."
 ACTION="${1:-}"
 [[ "$#" == 1 ]] || die "Choose one action; paths/device identity must come from environment variables, not extra argv values."
 case "$ACTION" in
@@ -63,9 +67,25 @@ SCRATCH="$(/usr/bin/mktemp -d "/private/tmp/nembra-field-authorization-transport
 cleanup() { /bin/rm -rf -- "$SCRATCH"; }
 trap cleanup EXIT HUP INT TERM
 
+# Bind the executable transport and the help-contract helper to the exact tracked repository HEAD
+# before any device contact. The helper is then materialized from accepted Git object bytes into the
+# private scratch directory so a later worktree replacement cannot change what this attempt runs.
+REPOSITORY_HEAD="$(/usr/bin/git -C "$ROOT" rev-parse --verify 'HEAD^{commit}')"
+TRANSPORT_TRACKED_BLOB="$(/usr/bin/git -C "$ROOT" rev-parse "${REPOSITORY_HEAD}:${TRANSPORT_RELATIVE_PATH}")"
+CONTRACT_TRACKED_BLOB="$(/usr/bin/git -C "$ROOT" rev-parse "${REPOSITORY_HEAD}:${CONTRACT_RELATIVE_PATH}")"
+TRANSPORT_WORKTREE_BLOB="$(/usr/bin/git -C "$ROOT" hash-object "$ROOT/$TRANSPORT_RELATIVE_PATH")"
+CONTRACT_WORKTREE_BLOB="$(/usr/bin/git -C "$ROOT" hash-object "$ROOT/$CONTRACT_RELATIVE_PATH")"
+[[ "$TRANSPORT_WORKTREE_BLOB" == "$TRANSPORT_TRACKED_BLOB" ]] || die "Field transport bytes differ from repository HEAD; refusing device transfer."
+[[ "$CONTRACT_WORKTREE_BLOB" == "$CONTRACT_TRACKED_BLOB" ]] || die "Xcode transport-contract bytes differ from repository HEAD; refusing device transfer."
+CONTRACT_EXEC="$SCRATCH/xcode27_devicectl_manifest_transport_contract.sh"
+/usr/bin/git -C "$ROOT" show "${REPOSITORY_HEAD}:${CONTRACT_RELATIVE_PATH}" > "$CONTRACT_EXEC"
+/bin/chmod 500 "$CONTRACT_EXEC"
+CONTRACT_MATERIALIZED_BLOB="$(/usr/bin/git -C "$ROOT" hash-object "$CONTRACT_EXEC")"
+[[ "$CONTRACT_MATERIALIZED_BLOB" == "$CONTRACT_TRACKED_BLOB" ]] || die "Materialized Xcode transport-contract bytes failed exact-blob verification."
+
 # Help-only proof: no device is contacted here. Exact Xcode must document bidirectional
 # appDataContainer copy and bundle-ID domain identity before any field transfer is attempted.
-ARTIFACTS_DIR="$SCRATCH/devicectl-help" /bin/bash -p "$ROOT/scripts/ci/xcode27_devicectl_manifest_transport_contract.sh" >/dev/null
+ARTIFACTS_DIR="$SCRATCH/devicectl-help" /bin/bash -p "$CONTRACT_EXEC" >/dev/null
 
 # Snapshot a caller-supplied local subject through descriptor custody before devicectl can see it.
 snapshot_local_file() {
