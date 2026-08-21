@@ -25,28 +25,28 @@ struct TuyaFieldProcedureRendezvousSourceTests {
         #expect(!app.contains("schemaVersion: 9"))
     }
 
-    @Test("canonical runbook and field installer pin the same exact required procedure")
+    @Test("runbook build identity and immutable retained manifest pin the same required procedure")
     func fieldSurfacesShareCanonicalProcedure() throws {
         let runbook = try readRepositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
+        let identity = try readRepositoryFile("NembraApp/App/NembraCaptureBuildIdentity.swift")
+        let manifest = try readRepositoryFile("scripts/ci/es80_retained_install_manifest.py")
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
 
         #expect(runbook.contains("PROCEDURE_ID: `\(Self.procedure)`"))
-        #expect(installer.contains("PROCEDURE_ID=\"\(Self.procedure)\""))
-        #expect(installer.contains("Field procedure: $PROCEDURE_ID"))
-        #expect(installer.contains("INFOPLIST_KEY_NembraCaptureProcedureIdentifier=$PROCEDURE_ID"))
-        #expect(installer.contains("plutil -extract NembraCaptureProcedureIdentifier"))
-        let readback = try #require(installer.range(of: "BUILT_PROCEDURE_IDENTIFIER=\"$(/usr/bin/plutil"))
-        let check = try #require(installer.range(of: "[[ \"$BUILT_PROCEDURE_IDENTIFIER\" == \"$PROCEDURE_ID\" ]]"))
-        let install = try #require(installer.range(of: "Installing SDK-integrated Capture on the intended iPhone"))
-        #expect(readback.lowerBound < check.lowerBound)
-        #expect(check.lowerBound < install.lowerBound)
+        #expect(identity.contains("requiredFieldProcedureIdentifier = \"\(Self.procedure)\""))
+        #expect(manifest.contains("PROCEDURE_ID = \"\(Self.procedure)\""))
+        #expect(installer.contains("manifest_source_path = \"scripts/ci/es80_retained_install_manifest.py\""))
+        #expect(installer.contains("immutable_git_source(manifest_source_path)"))
+        #expect(installer.contains("helper.verify_cross_binding("))
+        #expect(!installer.contains("PROCEDURE_ID=\"\(Self.procedure)\""))
     }
 
-    @Test("procedure authority is mechanical rather than duplicated acceptance prose")
+    @Test("procedure authority is mechanical rather than a pre-install caller override")
     func currentSourceHasMechanicalProcedureAuthority() throws {
         let identity = try readRepositoryFile("NembraApp/App/NembraCaptureBuildIdentity.swift")
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let runbook = try readRepositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
+        let manifest = try readRepositoryFile("scripts/ci/es80_retained_install_manifest.py")
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
 
         #expect(identity.contains("static let requiredFieldProcedureIdentifier = \"\(Self.procedure)\""))
@@ -54,7 +54,10 @@ struct TuyaFieldProcedureRendezvousSourceTests {
         #expect(identity.contains("current.procedureIdentifier"))
         #expect(app.contains("NembraCaptureBuildIdentity.fieldProcedureIdentifier"))
         #expect(runbook.contains(Self.procedure))
-        #expect(installer.contains(Self.procedure))
+        #expect(manifest.contains(Self.procedure))
+        #expect(installer.contains("NEMBRA_RETAINED_INSTALL_MANIFEST_SHA256"))
+        #expect(installer.contains("accepted_install_manifest_sha256=manifest_sha.lower()"))
+        #expect(installer.contains("PREINSTALL_RETAINED_SUBJECTS_BOUND_NOT_INSTALL_AUTHORITY"))
     }
 
     private func readRepositoryFile(_ relativePath: String) throws -> String {
