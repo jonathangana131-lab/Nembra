@@ -176,7 +176,7 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
             Issue.record("Expected source section missing: \(start) ... \(end)")
             throw SourceContractError.sectionMissing
         }
-        return source[startRange.lowerBound..<end.lowerBound]
+        return source[startRange.lowerBound..<endRange.lowerBound]
     }
 
     private func readRepositoryFile(_ relativePath: String) throws -> String {
