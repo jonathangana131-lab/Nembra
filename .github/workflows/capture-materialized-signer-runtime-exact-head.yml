@@ -9,6 +9,7 @@ on:
       - 'scripts/ci/es80_run_materialized_field_authorization_signer.py'
       - 'scripts/ci/es80_materialize_field_authorization_signer_runtime.py'
       - 'scripts/ci/tests/test_es80_materialized_field_authorization_signer_runtime.py'
+      - 'scripts/ci/tests/test_es80_materialized_field_authorization_signer_execution_snapshot.py'
       - '.github/workflows/capture-materialized-signer-runtime-exact-head.yml'
 
 permissions:
@@ -54,8 +55,10 @@ jobs:
           /usr/bin/python3 -m py_compile \
             scripts/ci/es80_run_materialized_field_authorization_signer.py \
             scripts/ci/es80_materialize_field_authorization_signer_runtime.py \
-            scripts/ci/tests/test_es80_materialized_field_authorization_signer_runtime.py
+            scripts/ci/tests/test_es80_materialized_field_authorization_signer_runtime.py \
+            scripts/ci/tests/test_es80_materialized_field_authorization_signer_execution_snapshot.py
           /usr/bin/python3 scripts/ci/tests/test_es80_materialized_field_authorization_signer_runtime.py
+          /usr/bin/python3 scripts/ci/tests/test_es80_materialized_field_authorization_signer_execution_snapshot.py
           test -z "$(/usr/bin/git status --porcelain=v1 --untracked-files=all)"
 
       - name: Reject pull-request head movement
