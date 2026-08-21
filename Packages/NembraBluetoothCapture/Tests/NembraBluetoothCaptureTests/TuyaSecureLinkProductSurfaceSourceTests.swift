@@ -51,13 +51,17 @@ struct TuyaSecureLinkProductSurfaceSourceTests {
         #expect(body.contains("exact accepted JSON bytes are sealed and verified"))
     }
 
-    @Test("truth gates remain visible in the guided product surface")
+    @Test("truth gates remain visible while signed attempt authority owns the guided flow")
     func truthGatesRemainProductVisible() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let surface = try section(in: app, from: "private struct SecureLinkView: View", to: "private struct SecureTransfer: Transferable")
         let body = String(surface)
 
-        #expect(body.contains("test.fieldBuildIsAuthoritative"))
+        #expect(body.contains("test.fieldBuildMetadataComplete"))
+        #expect(body.contains("test.fieldAuthorizationLifecycleValid"))
+        #expect(body.contains("test.fieldAuthorizationReady"))
+        #expect(body.contains("test.fieldAuthorizationCanAdmitAuthentication"))
+        #expect(body.contains("One-time field authorization"))
         #expect(body.contains("test.accountIdentityLeaseIsAuthorized"))
         #expect(body.contains("test.correlationWindowIsScanning"))
         #expect(body.contains("test.confirmCorrelatedTarget()"))
