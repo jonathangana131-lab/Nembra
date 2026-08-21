@@ -6,7 +6,7 @@ import Testing
 struct TuyaPhysicalAppContainerTransportProbeSourceTests {
     private let relativePath = "scripts/field/probe_capture_app_container_transport.command"
 
-    @Test("probe binds only the Capture bundle transport without touching authorization subjects")
+    @Test("probe binds only the Capture bundle transport without transferring authorization payloads")
     func probeUsesOnlyNonAuthorizingScratchTransport() throws {
         let probe = try readRepositoryFile(relativePath)
 
@@ -16,6 +16,9 @@ struct TuyaPhysicalAppContainerTransportProbeSourceTests {
         #expect(probe.contains("--domain-type appDataContainer"))
         #expect(probe.contains("--domain-identifier \"$BUNDLE_ID\""))
         #expect(probe.contains("REMOTE_SENTINEL=\"tmp/nembra-capture-transport-probe-$NONCE.bin\""))
+        #expect(probe.contains("field_authorization_directory_listed_read_only=true"))
+        #expect(probe.contains("authorization_payload_file_transferred=false"))
+        #expect(!probe.contains("authorization_subject_touched=false"))
         #expect(!probe.contains("--remove-existing-content"))
         #expect(!probe.contains("retained-install-manifest.json"))
         #expect(!probe.contains("authorization-envelope.json"))
@@ -34,7 +37,6 @@ struct TuyaPhysicalAppContainerTransportProbeSourceTests {
         #expect(probe.contains("OUTBOUND_SHA256"))
         #expect(probe.contains("/usr/bin/cmp -s"))
         #expect(probe.contains("exact_round_trip=true"))
-        #expect(probe.contains("authorization_subject_touched=false"))
         #expect(probe.contains("captureAuthorized=false"))
         #expect(probe.contains("physicalAuthorityCreated=false"))
         #expect(probe.contains("protocolSemanticsCreated=false"))
@@ -51,7 +53,8 @@ struct TuyaPhysicalAppContainerTransportProbeSourceTests {
 
         #expect(probe.contains("installed_build_identity_verified=false"))
         #expect(!probe.contains("installed_build_identity_verified=true"))
-        #expect(probe.contains("does not prove the exact accepted Capture build is the installed bundle"))
+        #expect(probe.contains("does not prove the exact accepted"))
+        #expect(probe.contains("Capture build is the installed bundle"))
     }
 
     @Test("probe keeps raw physical-device output ephemeral and publishes only a pseudonym")
