@@ -4,7 +4,7 @@ import Testing
 
 @Suite("Capture root product surface")
 struct TuyaCaptureRootProductSurfaceSourceTests {
-    @Test("public launch is guided and cannot bootstrap account or Bluetooth authority")
+    @Test("public launch is guided and only complete metadata may prepare non-authorizing transport")
     func publicRootIsGuidedPreflight() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
         let root = String(try section(
@@ -15,8 +15,11 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
 
         #expect(root.contains(".navigationTitle(\"Nembra Capture\")"))
         #expect(root.contains("Text(\"Link your scooter\")"))
-        #expect(root.contains(".onAppear { synchronizeSDKSession() }"))
-        #expect(root.contains("guard fieldBuildIsAuthoritative else { return }\n        sdkAccount.bootstrap()"))
+        #expect(root.contains("private var fieldBuildCanPrepareAuthorization: Bool { buildIdentity.hasCompleteFieldBuildMetadata }"))
+        #expect(root.contains(".onAppear {\n            prepareAuthorizationTransport()\n            synchronizeSDKSession()\n        }"))
+        #expect(root.contains("guard fieldBuildCanPrepareAuthorization else { return }\n        sdkAccount.bootstrap()"))
+        #expect(!root.contains("guard fieldBuildIsAuthoritative else { return }\n        sdkAccount.bootstrap()"))
+        #expect(root.contains("prepareAuthorizationTransferDirectoryForFieldTransport()"))
         #expect(root.contains("Label(\"Review field requirements\", systemImage: \"lock.shield\")"))
         #expect(root.contains("This public build cannot authorize Bluetooth or collect physical evidence."))
         #expect(root.contains("No scooter command, DP query, or second Bluetooth ownership path is authorized here."))
@@ -173,7 +176,7 @@ struct TuyaCaptureRootProductSurfaceSourceTests {
             Issue.record("Expected source section missing: \(start) ... \(end)")
             throw SourceContractError.sectionMissing
         }
-        return source[startRange.lowerBound..<endRange.lowerBound]
+        return source[startRange.lowerBound..<end.lowerBound]
     }
 
     private func readRepositoryFile(_ relativePath: String) throws -> String {
