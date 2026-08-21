@@ -94,18 +94,22 @@ struct TuyaFieldGoPrerequisiteSourceTests {
         #expect(app.contains("TuyaLocalBLEAcquisitionWindow.maximumWaitNanoseconds"))
     }
 
-    @Test("canonical acceptance is impossible when compiled build provenance is not authoritative")
-    func acceptanceChecksBuildIdentityAtTheSealBoundary() throws {
+    @Test("canonical acceptance requires exact build metadata and the signed observation attempt")
+    func acceptanceChecksSignedAttemptAtTheSealBoundary() throws {
         let app = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
 
         guard let ready = app.range(of: "case .readyForStationaryMapping:"),
               let accepted = app.range(of: "phase = .accepted", range: ready.upperBound..<app.endIndex),
-              let buildCheck = app.range(of: "isAuthoritativeFieldBuild", range: ready.upperBound..<accepted.lowerBound) else {
-            Issue.record("The canonical-ready path must re-check exact compiled build provenance before UI acceptance.")
+              let metadataCheck = app.range(of: "buildIdentity.hasCompleteFieldBuildMetadata", range: ready.upperBound..<accepted.lowerBound),
+              let signedCheck = app.range(of: "fieldAuthorizationObservationAdmitted", range: ready.upperBound..<accepted.lowerBound) else {
+            Issue.record("The canonical-ready path must re-check exact build metadata and signed observation authority before UI acceptance.")
             return
         }
-        #expect(ready.lowerBound < buildCheck.lowerBound)
-        #expect(buildCheck.lowerBound < accepted.lowerBound)
+        #expect(ready.lowerBound < metadataCheck.lowerBound)
+        #expect(ready.lowerBound < signedCheck.lowerBound)
+        #expect(metadataCheck.lowerBound < accepted.lowerBound)
+        #expect(signedCheck.lowerBound < accepted.lowerBound)
+        #expect(app.range(of: "buildIdentity.isAuthoritativeFieldBuild", range: ready.upperBound..<accepted.lowerBound) == nil)
     }
 
     private func readRepositoryFile(_ relativePath: String) throws -> String {
