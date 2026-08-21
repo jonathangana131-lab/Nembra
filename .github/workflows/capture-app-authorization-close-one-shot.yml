@@ -3,6 +3,7 @@
 # GO execution trigger: run the exact carrier closure after the structural guard merged.
 # GO execution retry: bind after nested accepted-Git custody converged at ee7a015d6620b7f7b6075d9885df8537e237bee9.
 # GO V14 current-head retrigger: consume the reviewed lifecycle transform from ea03716d6fb608e26b133506fd9f1f58c8086b67.
+# GO V14 exact-head retrigger after transport self-trigger closure at b359fc891368dbe91a5cb1bbbf8a2ee29c65f0b9.
 name: Capture app authorization close one-shot
 
 on:
