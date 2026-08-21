@@ -3,7 +3,7 @@ name: Capture entrypoint materializer recovery one-shot
 on:
   push:
     branches:
-      - recovery/capture-entrypoint-auth-after-bootstrap-gpt56sol-20260820
+      - recovery/capture-entrypoint-exact-head-pin-gpt56sol-20260820
     paths:
       - .github/workflows/capture-entrypoint-materializer-recovery-one-shot.yml
 
@@ -15,26 +15,28 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 35
     env:
-      TARGET_BRANCH: recovery/capture-entrypoint-auth-after-bootstrap-gpt56sol-20260820
+      TARGET_BRANCH: recovery/capture-entrypoint-exact-head-pin-gpt56sol-20260820
       APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
       SOURCE_MATERIALIZER: .github/workflows/capture-entrypoint-signed-authority-close-one-shot.yml
       RECOVERY_WORKFLOW: .github/workflows/capture-entrypoint-materializer-recovery-one-shot.yml
       EXPECTED_SOURCE_BLOB: 9107ea5ef2bc023cd3b8c2e15a46297e733ba838
+      EXPECTED_MATERIALIZER_BLOB: e5cbda84d2951552aa33ec1b9025564689781f23
       ACCEPTED_PARENT: 23b8e26abf1f6a860377daca9aa64a48568ea909
     steps:
-      - name: Checkout exact recovery branch
+      - name: Checkout exact triggering head
         uses: actions/checkout@v6
         with:
-          ref: recovery/capture-entrypoint-auth-after-bootstrap-gpt56sol-20260820
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Bind reviewed source and accepted parent
+      - name: Bind reviewed source, materializer, and accepted parent
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git branch --show-current)" = "$TARGET_BRANCH"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD:"$APP_SOURCE")" = "$EXPECTED_SOURCE_BLOB"
+          test "$(git rev-parse HEAD:"$SOURCE_MATERIALIZER")" = "$EXPECTED_MATERIALIZER_BLOB"
           git merge-base --is-ancestor "$ACCEPTED_PARENT" HEAD
           test -f "$SOURCE_MATERIALIZER"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
@@ -89,7 +91,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git branch --show-current)" = "$TARGET_BRANCH"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
+          test "$remote_head" = "$GITHUB_SHA"
           rm "$SOURCE_MATERIALIZER" "$RECOVERY_WORKFLOW"
           git add -- "$APP_SOURCE" "$SOURCE_MATERIALIZER" "$RECOVERY_WORKFLOW"
           git diff --cached --check
