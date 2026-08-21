@@ -123,7 +123,8 @@ final class NembraCaptureFieldAuthorizationController {
     }
 
     /// Advances only the app-container handoff that is valid for the current single-use session
-    /// stage. Production callers keep this seam behind accepted field-build authority. The earlier
+    /// stage. Production callers keep this non-authorizing handoff behind complete field-build
+    /// metadata; only the package session's independently signed stage can admit OFF1. The earlier
     /// root/controller bootstrap is deliberately narrower: it can create only the empty protected
     /// destination and cannot read a manifest, publish a challenge, arm the session, or admit OFF1.
     ///
