@@ -10,6 +10,29 @@ PATH="/usr/bin:/bin:/usr/sbin:/sbin"; export PATH
 unset BASH_ENV ENV CDPATH GLOBIGNORE XCODE_XCCONFIG_FILE OTHER_SWIFT_FLAGS SWIFT_ACTIVE_COMPILATION_CONDITIONS || true
 umask 077
 
+# Git-derived provenance must come only from this checkout. Reject inherited repository/object/config
+# steering before the first Git read, then pin the remaining global/system/replace-object behavior.
+for inherited_git_name in \
+  GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES \
+  GIT_INDEX_FILE GIT_REPLACE_REF_BASE GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS GIT_CONFIG_SYSTEM \
+  GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM GIT_NO_REPLACE_OBJECTS; do
+  if [[ -n "${!inherited_git_name+x}" ]]; then
+    builtin printf 'ERROR: inherited %s is not allowed for field transport provenance.\n' "$inherited_git_name" >&2
+    exit 1
+  fi
+done
+while IFS='=' read -r inherited_git_name _; do
+  case "$inherited_git_name" in
+    GIT_CONFIG_KEY_*|GIT_CONFIG_VALUE_*)
+      builtin printf 'ERROR: inherited %s is not allowed for field transport provenance.\n' "$inherited_git_name" >&2
+      exit 1
+      ;;
+  esac
+done < <(/usr/bin/env)
+GIT_NO_REPLACE_OBJECTS=1; export GIT_NO_REPLACE_OBJECTS
+GIT_CONFIG_NOSYSTEM=1; export GIT_CONFIG_NOSYSTEM
+GIT_CONFIG_GLOBAL=/dev/null; export GIT_CONFIG_GLOBAL
+
 ROOT="$(cd "$(/usr/bin/dirname "$0")/../.." && /bin/pwd -P)"
 TRANSPORT_RELATIVE_PATH="scripts/field/transfer_field_authorization.command"
 CONTRACT_RELATIVE_PATH="scripts/ci/xcode27_devicectl_manifest_transport_contract.sh"
@@ -59,7 +82,8 @@ case "$ACTION" in
 esac
 
 : "${NEMBRA_FIELD_DEVICE_ID:?Set NEMBRA_FIELD_DEVICE_ID to the intended connected iPhone CoreDevice identifier.}"
-[[ -n "$NEMBRA_FIELD_DEVICE_ID" && "$NEMBRA_FIELD_DEVICE_ID" != *$'\n'* && "$NEMBRA_FIELD_DEVICE_ID" != *$'\r'* ]] || die "NEMBRA_FIELD_DEVICE_ID is malformed."
+[[ "$NEMBRA_FIELD_DEVICE_ID" =~ ^([0-9A-Fa-f]{40}|[0-9A-Fa-f]{8}-[0-9A-Fa-f]{16})$ ]] || die "NEMBRA_FIELD_DEVICE_ID is not a canonical Apple UDID."
+: "${NEMBRA_RETAINED_INSTALL_MANIFEST_PATH:?Set NEMBRA_RETAINED_INSTALL_MANIFEST_PATH to the exact retained-install manifest for this attempt.}"
 
 SCRATCH="$(/usr/bin/mktemp -d "/private/tmp/nembra-field-authorization-transport.XXXXXX")"
 [[ "$SCRATCH" == "/private/tmp/nembra-field-authorization-transport."* ]] || die "Temporary path is invalid."
@@ -140,6 +164,44 @@ finally:
 PY
 }
 
+# Cross-bind every transport action to the retained manifest's signed intended-device digest before
+# any CoreDevice operation. The accepted private-runner grammar is reused exactly; the digest is
+# SHA-256 over the exact UDID UTF-8 bytes with no newline. This does not authorize the app/session.
+verify_manifest_device_binding() {
+  /usr/bin/python3 -I -B - "$1" "$NEMBRA_FIELD_DEVICE_ID" <<'PY'
+import hashlib, hmac, json, re, sys
+from pathlib import Path
+manifest_path, device_id = sys.argv[1:]
+if re.fullmatch(r'(?:[0-9A-Fa-f]{40}|[0-9A-Fa-f]{8}-[0-9A-Fa-f]{16})', device_id) is None:
+    raise SystemExit('ERROR: selected device is not a canonical Apple UDID')
+data = Path(manifest_path).read_bytes()
+
+def reject_duplicates(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError('duplicate manifest member')
+        result[key] = value
+    return result
+
+try:
+    manifest = json.loads(data.decode('utf-8'), object_pairs_hook=reject_duplicates)
+except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
+    raise SystemExit(f'ERROR: retained-install manifest is not canonical JSON: {error}')
+if not isinstance(manifest, dict):
+    raise SystemExit('ERROR: retained-install manifest root is not an object')
+canonical = json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True).encode('utf-8') + b'\n'
+if not hmac.compare_digest(canonical, data):
+    raise SystemExit('ERROR: retained-install manifest bytes are not canonical')
+expected = manifest.get('intendedDevicePseudonymSHA256')
+if not isinstance(expected, str) or re.fullmatch(r'[0-9a-f]{64}', expected) is None or expected == '0' * 64:
+    raise SystemExit('ERROR: retained-install manifest intended-device digest is invalid')
+observed = hashlib.sha256(device_id.encode('utf-8')).hexdigest()
+if not hmac.compare_digest(observed, expected):
+    raise SystemExit('ERROR: selected CoreDevice does not match retained-install intended-device pseudonym')
+PY
+}
+
 # Publish copied rendezvous bytes only to a fresh caller-selected file. Every parent component is
 # opened O_NOFOLLOW, so a symlinked parent cannot redirect this private handoff.
 publish_fresh_local_file() {
@@ -189,12 +251,16 @@ copy_from_container() {
   /usr/bin/xcrun devicectl device copy from --device "$NEMBRA_FIELD_DEVICE_ID" --domain-type "$DOMAIN_TYPE" --domain-identifier "$BUNDLE_ID" --source "$1" --destination "$2"
 }
 
+# Snapshot and bind the retained manifest for every action before the first device contact. This
+# prevents stage-envelope/export-rendezvous from silently selecting a device unrelated to the
+# manifest that names the one-time attempt.
+manifest_binding_snapshot="$SCRATCH/retained-install-manifest.binding.json"
+snapshot_local_file "$NEMBRA_RETAINED_INSTALL_MANIFEST_PATH" "$manifest_binding_snapshot" "$MANIFEST_MAX_BYTES" "retained-install manifest"
+verify_manifest_device_binding "$manifest_binding_snapshot"
+
 case "$ACTION" in
   --stage-manifest)
-    : "${NEMBRA_RETAINED_INSTALL_MANIFEST_PATH:?Set NEMBRA_RETAINED_INSTALL_MANIFEST_PATH to the exact retained-install manifest.}"
-    staged="$SCRATCH/retained-install-manifest.json"
-    snapshot_local_file "$NEMBRA_RETAINED_INSTALL_MANIFEST_PATH" "$staged" "$MANIFEST_MAX_BYTES" "retained-install manifest"
-    copy_to_container "$staged" "$MANIFEST_REMOTE"
+    copy_to_container "$manifest_binding_snapshot" "$MANIFEST_REMOTE"
     say "Retained manifest copied into the fixed Nembra Capture inbox."
     builtin printf '%s\n' 'FIELD_AUTHORIZATION_MANIFEST_STAGED_NON_AUTHORIZING'
     ;;
