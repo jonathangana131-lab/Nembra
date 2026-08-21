@@ -1,0 +1,85 @@
+name: Capture V16 macOS evidence portability materializer
+
+on:
+  push:
+    branches:
+      - capture/v16-macos-evidence-portability-gpt56sol-20260820
+    paths:
+      - .github/workflows/capture-v16-macos-evidence-portability-materialize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: xcode-27
+    timeout-minutes: 10
+    env:
+      TARGET_BRANCH: capture/v16-macos-evidence-portability-gpt56sol-20260820
+      EXPECTED_PARENT: 5a659d4b94bdf526be645099f2bff28abb6f6b77
+      EXPECTED_TARGET_BLOB: 6dc545a21adef28417d47752b02b34c1cebd7352
+      TARGET: .github/workflows/capture-v16-standalone.yml
+      AUTHORING_WORKFLOW: .github/workflows/capture-v16-macos-evidence-portability-materialize.yml
+    steps:
+      - name: Checkout exact authoring head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact parent and target
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          test "$(git rev-parse HEAD:"$TARGET")" = "$EXPECTED_TARGET_BLOB"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize BSD-find-safe attachment listing
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path(".github/workflows/capture-v16-standalone.yml")
+          source = path.read_text(encoding="utf-8")
+          old = '''              find "$attachments" -maxdepth 2 -type f -print | sort \\
+                > "$artifacts/screenshot-attachments.txt"'''
+          new = '''              find "$attachments" -type f -print | sort \\
+                > "$artifacts/screenshot-attachments.txt"'''
+          if source.count(old) != 1:
+              raise SystemExit(f"expected exactly one GNU-only attachment listing, found {source.count(old)}")
+          path.write_text(source.replace(old, new, 1), encoding="utf-8")
+
+      - name: Verify macOS portability and workflow shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          ! grep -Fq 'find "$attachments" -maxdepth' "$TARGET"
+          grep -Fq 'find "$attachments" -type f -print | sort' "$TARGET"
+          /usr/bin/ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' "$TARGET"
+
+          fixture="${RUNNER_TEMP}/capture-v16-attachments"
+          rm -rf "$fixture"
+          mkdir -p "$fixture/level-one/level-two"
+          printf 'root\n' > "$fixture/root.txt"
+          printf 'nested\n' > "$fixture/level-one/level-two/nested.png"
+          find "$fixture" -type f -print | sort > "${RUNNER_TEMP}/capture-v16-attachment-list.txt"
+          grep -Fq "$fixture/root.txt" "${RUNNER_TEMP}/capture-v16-attachment-list.txt"
+          grep -Fq "$fixture/level-one/level-two/nested.png" "${RUNNER_TEMP}/capture-v16-attachment-list.txt"
+
+      - name: Publish only the verified portability fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm "$AUTHORING_WORKFLOW"
+          git add -- "$TARGET" "$AUTHORING_WORKFLOW"
+          git diff --cached --check
+          test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n%s\n' "$AUTHORING_WORKFLOW" "$TARGET" | sort)"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'ci(capture): make V16 attachment listing macOS-portable'
+          git fetch origin "$TARGET_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          git push origin HEAD:"$TARGET_BRANCH"
