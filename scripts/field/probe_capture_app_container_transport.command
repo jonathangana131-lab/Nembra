@@ -2,8 +2,9 @@
 set -euo pipefail
 
 # This probe proves only bidirectional file transport to the already-installed Nembra Capture
-# appDataContainer on one explicitly selected iPhone. It never touches authorization subjects,
-# never grants Capture authority, and never contacts Bluetooth/Tuya/ES80.
+# appDataContainer selected by bundle ID on one explicitly selected iPhone. It never proves which
+# exact Capture build is installed, never touches authorization subjects, never grants Capture
+# authority, and never contacts Bluetooth/Tuya/ES80.
 
 [[ "$(/usr/bin/uname -s)" == "Darwin" ]] || {
   echo 'ERROR: this probe must run on the Xcode Mac.' >&2
@@ -51,8 +52,9 @@ trap 'exit 143' TERM
 # contract. The contract performs help-only inspection and does not contact a device.
 /bin/bash "$CONTRACT" > "$ARTIFACTS_DIR/devicectl-copy-contract.txt"
 
-# The separate file-listing surface is required only to prove that the intended installed app has
-# already created its FieldAuthorization destination. Listing is read-only.
+# The separate file-listing surface is required only to prove that the selected installed bundle has
+# already created its FieldAuthorization destination. Listing is read-only. This does not establish
+# the exact source/build identity of that installed bundle.
 /usr/bin/xcrun devicectl help device info files > "$ARTIFACTS_DIR/devicectl-device-info-files-help.txt" 2>&1
 /usr/bin/python3 -I -B - "$ARTIFACTS_DIR/devicectl-device-info-files-help.txt" <<'PY'
 from pathlib import Path
@@ -71,8 +73,9 @@ PY
 # correlate repeated operator evidence without making the raw device identifier part of the report.
 DEVICE_PSEUDONYM="$(printf '%s' "$DEVICE_UDID" | /usr/bin/shasum -a 256 | /usr/bin/awk '{print $1}')"
 
-# Prove the exact installed app has already created the intended field handoff directory. This does
-# not read or copy any authority-bearing file from that directory.
+# Prove the selected installed bundle has already created the intended field handoff directory. This
+# does not read or copy any authority-bearing file from that directory and does not prove the exact
+# accepted Capture build is the installed bundle.
 /usr/bin/xcrun devicectl device info files \
   --device "$DEVICE_UDID" \
   --domain-type appDataContainer \
@@ -120,6 +123,7 @@ OUTBOUND_SHA256="$(/usr/bin/shasum -a 256 "$ROUNDTRIP_SENTINEL" | /usr/bin/awk '
   printf 'bundle_id=%s\n' "$BUNDLE_ID"
   printf 'device_pseudonym_sha256=%s\n' "$DEVICE_PSEUDONYM"
   printf 'field_authorization_directory_present=true\n'
+  printf 'installed_build_identity_verified=false\n'
   printf 'remote_sentinel_scope=appDataContainer/tmp\n'
   printf 'inbound_sha256=%s\n' "$INBOUND_SHA256"
   printf 'outbound_sha256=%s\n' "$OUTBOUND_SHA256"
@@ -134,6 +138,6 @@ OUTBOUND_SHA256="$(/usr/bin/shasum -a 256 "$ROUNDTRIP_SENTINEL" | /usr/bin/awk '
   printf 'es80Contacted=false\n'
 } > "$ARTIFACTS_DIR/result.txt"
 
-printf '%s\n' "PROVEN: exact bytes copied to and from $BUNDLE_ID appDataContainer on the explicitly selected physical iPhone; the installed app's FieldAuthorization directory was present."
-printf '%s\n' 'NOT PROVEN: authorization acceptance, signing/install custody, trust-root correctness, Bluetooth/Tuya behavior, ES80 identity, telemetry semantics, commands, or physical Capture GO.'
+printf '%s\n' "PROVEN: exact bytes copied to and from the $BUNDLE_ID appDataContainer on the explicitly selected physical iPhone; that bundle's FieldAuthorization directory was present."
+printf '%s\n' 'NOT PROVEN: exact installed Capture build identity, authorization acceptance, signing/install custody, trust-root correctness, Bluetooth/Tuya behavior, ES80 identity, telemetry semantics, commands, or physical Capture GO.'
 printf 'Evidence directory: %s\n' "$ARTIFACTS_DIR"
