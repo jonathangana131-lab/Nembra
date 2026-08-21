@@ -13,7 +13,10 @@ umask 077
 }
 
 REPOSITORY_ROOT="$(cd "$(dirname "$0")/../.." && pwd -P)"
-CONTRACT="$REPOSITORY_ROOT/scripts/ci/xcode27_devicectl_manifest_transport_contract.sh"
+PROBE_RELATIVE_PATH='scripts/field/probe_capture_app_container_transport.command'
+CONTRACT_RELATIVE_PATH='scripts/ci/xcode27_devicectl_manifest_transport_contract.sh'
+PROBE_PATH="$REPOSITORY_ROOT/$PROBE_RELATIVE_PATH"
+CONTRACT="$REPOSITORY_ROOT/$CONTRACT_RELATIVE_PATH"
 BUNDLE_ID='com.jonathangana131.nembra.capturelearn'
 FIELD_AUTHORIZATION_SUBDIRECTORY='Library/Application Support/NembraCapture/FieldAuthorization'
 DEVICE_UDID="${NEMBRA_CAPTURE_DEVICE_UDID:-${1:-}}"
@@ -30,6 +33,30 @@ DEVICE_UDID="${NEMBRA_CAPTURE_DEVICE_UDID:-${1:-}}"
   echo "ERROR: missing exact devicectl transport contract: $CONTRACT" >&2
   exit 5
 }
+[[ -x /usr/bin/git ]] || {
+  echo 'ERROR: git is unavailable for exact probe provenance binding.' >&2
+  exit 8
+}
+
+# Bind the future physical result to exact checked-in probe and transport-contract bytes before any
+# device contact. A locally edited probe/contract fails closed even if the repository HEAD itself is
+# an accepted SHA. This result still does not prove which app build is installed on the iPhone.
+REPOSITORY_HEAD="$(/usr/bin/git -C "$REPOSITORY_ROOT" rev-parse --verify 'HEAD^{commit}')"
+PROBE_TRACKED_BLOB="$(/usr/bin/git -C "$REPOSITORY_ROOT" rev-parse "${REPOSITORY_HEAD}:${PROBE_RELATIVE_PATH}")"
+CONTRACT_TRACKED_BLOB="$(/usr/bin/git -C "$REPOSITORY_ROOT" rev-parse "${REPOSITORY_HEAD}:${CONTRACT_RELATIVE_PATH}")"
+PROBE_WORKTREE_BLOB="$(/usr/bin/git -C "$REPOSITORY_ROOT" hash-object "$PROBE_PATH")"
+CONTRACT_WORKTREE_BLOB="$(/usr/bin/git -C "$REPOSITORY_ROOT" hash-object "$CONTRACT")"
+[[ "$PROBE_WORKTREE_BLOB" == "$PROBE_TRACKED_BLOB" ]] || {
+  echo 'ERROR: probe bytes differ from repository HEAD; refusing physical evidence.' >&2
+  exit 9
+}
+[[ "$CONTRACT_WORKTREE_BLOB" == "$CONTRACT_TRACKED_BLOB" ]] || {
+  echo 'ERROR: transport-contract bytes differ from repository HEAD; refusing physical evidence.' >&2
+  exit 10
+}
+PROBE_SHA256="$(/usr/bin/shasum -a 256 "$PROBE_PATH" | /usr/bin/awk '{print $1}')"
+CONTRACT_SHA256="$(/usr/bin/shasum -a 256 "$CONTRACT" | /usr/bin/awk '{print $1}')"
+XCODE_IDENTITY="$(/usr/bin/xcodebuild -version | /usr/bin/tr '\n' ';' | /usr/bin/sed 's/;$//')"
 
 # ARTIFACTS_DIR is treated as an evidence root, never as a reusable result directory. Every probe
 # attempt gets a new UUID-named child. Therefore a failed later attempt cannot leave an older
@@ -57,9 +84,16 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# First bind this Xcode installation to the already-reviewed copy-to/copy-from appDataContainer help
-# contract. The contract performs help-only inspection and does not contact a device.
-/bin/bash "$CONTRACT" > "$ARTIFACTS_DIR/devicectl-copy-contract.txt"
+# Execute the exact contract blob already bound above, not a pathname that could be replaced between
+# verification and execution. The contract performs help-only inspection and does not contact a device.
+CONTRACT_EXEC="$PRIVATE_RUNTIME_DIR/devicectl-manifest-transport-contract.sh"
+/usr/bin/git -C "$REPOSITORY_ROOT" cat-file blob "$CONTRACT_TRACKED_BLOB" > "$CONTRACT_EXEC"
+/bin/chmod 500 "$CONTRACT_EXEC"
+[[ "$(/usr/bin/git -C "$REPOSITORY_ROOT" hash-object "$CONTRACT_EXEC")" == "$CONTRACT_TRACKED_BLOB" ]] || {
+  echo 'ERROR: exact transport-contract materialization changed; refusing physical evidence.' >&2
+  exit 11
+}
+/bin/bash "$CONTRACT_EXEC" > "$ARTIFACTS_DIR/devicectl-copy-contract.txt"
 
 # The separate file-listing surface is required only to exercise a read-only request against the
 # intended FieldAuthorization subdirectory before the scratch round trip. A zero exit proves that
@@ -135,6 +169,12 @@ RESULT_TMP="$ARTIFACTS_DIR/.result-$NONCE.tmp"
 RESULT_PATH="$ARTIFACTS_DIR/result.txt"
 {
   printf 'evidence_run_id=%s\n' "$RUN_ID"
+  printf 'repository_head=%s\n' "$REPOSITORY_HEAD"
+  printf 'probe_git_blob=%s\n' "$PROBE_TRACKED_BLOB"
+  printf 'probe_sha256=%s\n' "$PROBE_SHA256"
+  printf 'transport_contract_git_blob=%s\n' "$CONTRACT_TRACKED_BLOB"
+  printf 'transport_contract_sha256=%s\n' "$CONTRACT_SHA256"
+  printf 'xcode_identity=%s\n' "$XCODE_IDENTITY"
   printf 'bundle_id=%s\n' "$BUNDLE_ID"
   printf 'device_pseudonym_sha256=%s\n' "$DEVICE_PSEUDONYM"
   printf 'field_authorization_subdirectory_listing_succeeded=true\n'
@@ -156,5 +196,6 @@ RESULT_PATH="$ARTIFACTS_DIR/result.txt"
 /bin/mv -f -- "$RESULT_TMP" "$RESULT_PATH"
 
 printf '%s\n' "PROVEN: exact bytes copied to and from the $BUNDLE_ID appDataContainer on the explicitly selected physical iPhone; the read-only listing request for $FIELD_AUTHORIZATION_SUBDIRECTORY also succeeded."
+printf '%s\n' "PROVEN PROVENANCE: repository HEAD $REPOSITORY_HEAD with exact checked-in probe blob $PROBE_TRACKED_BLOB and transport-contract blob $CONTRACT_TRACKED_BLOB."
 printf '%s\n' 'NOT PROVEN: handoff-directory filesystem existence beyond devicectl listing success, exact installed Capture build identity, authorization payload transfer or acceptance, signing/install custody, trust-root correctness, Bluetooth/Tuya behavior, ES80 identity, telemetry semantics, commands, or physical Capture GO.'
 printf 'Evidence directory: %s\n' "$ARTIFACTS_DIR"
