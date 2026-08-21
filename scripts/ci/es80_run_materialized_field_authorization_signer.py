@@ -7,6 +7,11 @@ copy from inside that external private bundle. Before delegating any private-key
 code, this runner verifies its canonical bundle location, owner-only directory/file custody, the
 canonical manifest, every materialized source digest, and the caller-supplied exact commit/hash.
 
+Verified execution sources are snapshotted into this process before the private-key path is delegated.
+The wrapper and rendezvous validator execute from those in-memory bytes. The signer and its evidence
+module execute in a child from inherited anonymous file descriptors, so verified code is never
+re-opened by mutable bundle pathname after verification.
+
 This runner does not establish physical ES80 identity, telemetry semantics, command safety, or a
 physical GO. Cryptographic payload construction and key opening remain owned by the frozen existing
 `es80_field_authorization_envelope.py` signer.
@@ -15,7 +20,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -23,6 +27,7 @@ import re
 import stat
 import subprocess
 import sys
+import tempfile
 from types import ModuleType
 from typing import Any
 
@@ -250,11 +255,11 @@ def _require_expected_subject(raw_commit: str, raw_manifest_sha256: str) -> tupl
     return raw_commit, raw_manifest_sha256
 
 
-def verify_materialized_bundle(
+def _snapshot_materialized_bundle(
     bundle_directory: Path,
     expected_source_commit: str,
     expected_manifest_sha256: str,
-) -> tuple[Path, dict[str, Any]]:
+) -> tuple[Path, dict[str, Any], dict[str, bytes]]:
     expected_commit, expected_manifest = _require_expected_subject(
         expected_source_commit, expected_manifest_sha256
     )
@@ -274,6 +279,7 @@ def verify_materialized_bundle(
         )
 
     root_descriptor = _open_bundle_root(bundle)
+    verified_sources: dict[str, bytes] = {}
     try:
         manifest_bytes = _read_relative_file(
             root_descriptor, Path(MANIFEST_NAME), MAX_MANIFEST_BYTES
@@ -284,8 +290,7 @@ def verify_materialized_bundle(
         if manifest["sourceCommitSHA"] != expected_commit:
             raise MaterializedSignerRunnerError("pre-key bundle exact source commit mismatch")
 
-        entries = manifest["executionSources"]
-        for entry in entries:
+        for entry in manifest["executionSources"]:
             relative = Path(entry["path"])
             data = _read_relative_file(root_descriptor, relative, MAX_SOURCE_BYTES)
             if len(data) != entry["byteCount"]:
@@ -301,18 +306,146 @@ def verify_materialized_bundle(
                 raise MaterializedSignerRunnerError(
                     f"materialized source Git blob mismatch: {entry['path']}"
                 )
+            verified_sources[entry["path"]] = data
     finally:
         os.close(root_descriptor)
+
+    if tuple(verified_sources) != REQUIRED_EXECUTION_SOURCES:
+        raise MaterializedSignerRunnerError("verified execution snapshot is incomplete")
+    return bundle, manifest, verified_sources
+
+
+def verify_materialized_bundle(
+    bundle_directory: Path,
+    expected_source_commit: str,
+    expected_manifest_sha256: str,
+) -> tuple[Path, dict[str, Any]]:
+    bundle, manifest, _ = _snapshot_materialized_bundle(
+        bundle_directory, expected_source_commit, expected_manifest_sha256
+    )
     return bundle, manifest
 
 
-def _load_module(path: Path, name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(name, path)
-    if spec is None or spec.loader is None:
-        raise MaterializedSignerRunnerError("verified materialized Python module is unavailable")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+def _load_module(data: bytes, virtual_path: Path, name: str) -> ModuleType:
+    if not data or len(data) > MAX_SOURCE_BYTES:
+        raise MaterializedSignerRunnerError("verified materialized Python module bytes are invalid")
+    try:
+        code = compile(data, os.fspath(virtual_path), "exec")
+    except (SyntaxError, ValueError) as error:
+        raise MaterializedSignerRunnerError(
+            "verified materialized Python module cannot be compiled"
+        ) from error
+    module = ModuleType(name)
+    module.__file__ = os.fspath(virtual_path)
+    module.__package__ = ""
+    exec(code, module.__dict__)
     return module
+
+
+_FROZEN_SIGNER_BOOTSTRAP = r"""
+import os
+from pathlib import Path
+import sys
+from types import ModuleType
+
+def read_frozen(fd, maximum, label):
+    chunks = []
+    count = 0
+    while True:
+        chunk = os.read(fd, min(65536, maximum + 1 - count))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        count += len(chunk)
+        if count > maximum:
+            raise RuntimeError(label + " exceeds frozen source limit")
+    data = b"".join(chunks)
+    if not data:
+        raise RuntimeError(label + " is empty")
+    return data
+
+signer_fd = int(os.environ.pop("NEMBRA_SIGNER_SOURCE_FD"))
+evidence_fd = int(os.environ.pop("NEMBRA_EVIDENCE_SOURCE_FD"))
+maximum = int(os.environ.pop("NEMBRA_MAX_SOURCE_BYTES"))
+signer_virtual = os.environ.pop("NEMBRA_SIGNER_VIRTUAL_PATH")
+evidence_virtual = os.environ.pop("NEMBRA_EVIDENCE_VIRTUAL_PATH")
+bundle_root = os.environ.pop("NEMBRA_BUNDLE_ROOT")
+
+try:
+    signer_source = read_frozen(signer_fd, maximum, "signer source")
+    evidence_source = read_frozen(evidence_fd, maximum, "evidence source")
+finally:
+    os.close(signer_fd)
+    os.close(evidence_fd)
+
+evidence = ModuleType("es80_signed_field_artifact_evidence")
+evidence.__file__ = evidence_virtual
+evidence.__package__ = ""
+exec(compile(evidence_source, evidence_virtual, "exec"), evidence.__dict__)
+sys.modules["es80_signed_field_artifact_evidence"] = evidence
+
+namespace = {
+    "__name__": "nembra_frozen_field_authorization_signer",
+    "__file__": signer_virtual,
+    "__package__": "",
+}
+exec(compile(signer_source, signer_virtual, "exec"), namespace)
+
+# The executed code is now held by anonymous descriptors, not the bundle pathname. Keep the
+# signer's repository exclusion boundary bound to the already-verified lexical bundle root.
+namespace["REPOSITORY_ROOT"] = Path(bundle_root)
+
+try:
+    result = namespace["main"](sys.argv[1:])
+except (namespace["AuthorizationEnvelopeError"], evidence.EvidenceError, OSError) as error:
+    print(f"ERROR: {error}", file=sys.stderr)
+    result = 2
+raise SystemExit(result)
+"""
+
+
+def _anonymous_source_file(data: bytes):
+    handle = tempfile.TemporaryFile(mode="w+b")
+    handle.write(data)
+    handle.flush()
+    handle.seek(0)
+    return handle
+
+
+def _run_frozen_signer(
+    *,
+    bundle: Path,
+    wrapper: ModuleType,
+    verified_sources: dict[str, bytes],
+    arguments: list[str],
+) -> subprocess.CompletedProcess[bytes]:
+    signer_source = verified_sources[os.fspath(SIGNER_RELATIVE_PATH)]
+    evidence_source = verified_sources[os.fspath(EVIDENCE_RELATIVE_PATH)]
+    with _anonymous_source_file(signer_source) as signer_handle, \
+            _anonymous_source_file(evidence_source) as evidence_handle:
+        signer_fd = signer_handle.fileno()
+        evidence_fd = evidence_handle.fileno()
+        environment = {
+            "PATH": "/usr/bin:/bin",
+            "HOME": "/tmp",
+            "LC_ALL": "C",
+            "PYTHONNOUSERSITE": "1",
+            "PYTHONPATH": "",
+            "NEMBRA_SIGNER_SOURCE_FD": str(signer_fd),
+            "NEMBRA_EVIDENCE_SOURCE_FD": str(evidence_fd),
+            "NEMBRA_MAX_SOURCE_BYTES": str(MAX_SOURCE_BYTES),
+            "NEMBRA_SIGNER_VIRTUAL_PATH": os.fspath(bundle / SIGNER_RELATIVE_PATH),
+            "NEMBRA_EVIDENCE_VIRTUAL_PATH": os.fspath(bundle / EVIDENCE_RELATIVE_PATH),
+            "NEMBRA_BUNDLE_ROOT": os.fspath(bundle),
+        }
+        return subprocess.run(
+            [str(wrapper.PYTHON), "-I", "-c", _FROZEN_SIGNER_BOOTSTRAP, *arguments],
+            cwd="/",
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            check=False,
+            pass_fds=(signer_fd, evidence_fd),
+        )
 
 
 def parser() -> argparse.ArgumentParser:
@@ -335,16 +468,29 @@ def parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
-        bundle, _ = verify_materialized_bundle(
+        # Keep the public verifier as the first gate for compatibility/source contracts, then
+        # take the execution snapshot that is actually consumed below. The second pass is the
+        # authority-bearing one: only its exact bytes can reach private-key-aware code.
+        verify_materialized_bundle(
+            args.bundle_directory,
+            args.expected_source_commit,
+            args.expected_manifest_sha256,
+        )
+        bundle, _, verified_sources = _snapshot_materialized_bundle(
             args.bundle_directory,
             args.expected_source_commit,
             args.expected_manifest_sha256,
         )
         wrapper = _load_module(
+            verified_sources[os.fspath(WRAPPER_RELATIVE_PATH)],
             bundle / WRAPPER_RELATIVE_PATH,
             "nembra_verified_materialized_field_authorization_wrapper",
         )
-        helper = wrapper._load_rendezvous_helper(bundle / RENDEZVOUS_RELATIVE_PATH)
+        helper = _load_module(
+            verified_sources[os.fspath(RENDEZVOUS_RELATIVE_PATH)],
+            bundle / RENDEZVOUS_RELATIVE_PATH,
+            "nembra_verified_materialized_field_authorization_rendezvous",
+        )
         rendezvous = helper.verify_rendezvous_bytes(helper._read_exact(args.rendezvous))
         wrapper.validate_signing_chronology(
             attempt_started_at=rendezvous["attemptStartedAtUnixMilliseconds"],
@@ -353,28 +499,29 @@ def main(argv: list[str] | None = None) -> int:
             not_before=wrapper.timestamp_unix_milliseconds(args.not_before, "not-before"),
             expires_at=wrapper.timestamp_unix_milliseconds(args.expires_at, "expires-at"),
         )
-        signer = bundle / SIGNER_RELATIVE_PATH
-        command = wrapper.build_signer_command(args, rendezvous, signer)
-        environment = {
-            "PATH": "/usr/bin:/bin",
-            "HOME": "/tmp",
-            "LC_ALL": "C",
-            "PYTHONNOUSERSITE": "1",
-            "PYTHONPATH": "",
-        }
-        completed = subprocess.run(
-            command,
-            cwd=bundle,
-            env=environment,
-            stdin=subprocess.DEVNULL,
-            check=False,
+        signer_arguments = [
+            "--signed-evidence", str(args.signed_evidence),
+            "--private-key", str(args.private_key),
+            "--openssl", str(args.openssl),
+            "--output", str(args.output),
+            "--authorization-id", args.authorization_id,
+            "--attempt-challenge-sha256", rendezvous["attemptChallengeSHA256"],
+            "--issued-at", args.issued_at,
+            "--not-before", args.not_before,
+            "--expires-at", args.expires_at,
+        ]
+        completed = _run_frozen_signer(
+            bundle=bundle,
+            wrapper=wrapper,
+            verified_sources=verified_sources,
+            arguments=signer_arguments,
         )
     except (MaterializedSignerRunnerError, RuntimeError, ValueError, OSError) as error:
         print(f"REFUSED_NOT_AUTHORITY: {error}", file=sys.stderr)
         return 2
     except Exception as error:
-        # The verified frozen helper owns its concrete validation type; stay fail-closed without
-        # importing mutable checkout code merely to name that exception class.
+        # Frozen accepted helpers own their concrete validation types. Stay fail-closed without
+        # importing mutable checkout code merely to name those exception classes.
         print(f"REFUSED_NOT_AUTHORITY: {error}", file=sys.stderr)
         return 2
 
