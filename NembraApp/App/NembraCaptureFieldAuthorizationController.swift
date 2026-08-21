@@ -8,6 +8,7 @@ import NembraCaptureAppAuthorization
 /// ordered lifecycle admission, sealing, and terminal revocation. Stable manifest and later
 /// envelope bytes enter only through the descriptor-bound one-shot app-container inbox.
 /// Complete build metadata may prepare transport; only the package session stages admit OFF1.
+/// Exact-head materialization must therefore validate these contracts together before publishing.
 @MainActor
 final class NembraCaptureFieldAuthorizationController {
     enum HandoffProgress: Equatable {
