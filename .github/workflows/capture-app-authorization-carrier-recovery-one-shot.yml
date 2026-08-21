@@ -42,7 +42,7 @@ jobs:
           test -f "$RECOVERY_WRITER"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Execute existing reviewed lifecycle materializer
+      - name: Execute reviewed lifecycle materializer and signed-attempt correction
         shell: python
         run: |
           from pathlib import Path
@@ -56,6 +56,55 @@ jobs:
           script = textwrap.dedent(workflow[start:end])
           exec(compile(script, "capture-app-authorization-carrier-recovery-materializer", "exec"), {"__name__": "__main__"})
 
+          # Recover the already-reviewed #3783 correction after materializing the legacy donor.
+          # Complete bundle metadata is provenance/transport eligibility only; the independently
+          # signed live attempt owns OFF1 and the subsequent read-only lifecycle authority.
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text(encoding="utf-8")
+
+          old_property = "    var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }"
+          new_property = "    var fieldBuildMetadataReady: Bool { buildIdentity.hasCompleteFieldBuildMetadata }"
+          assert text.count(old_property) == 1
+          text = text.replace(old_property, new_property)
+
+          old_handoff = "        guard phase == .idle, buildIdentity.isAuthoritativeFieldBuild else { return }"
+          new_handoff = "        guard phase == .idle, buildIdentity.hasCompleteFieldBuildMetadata else { return }"
+          assert text.count(old_handoff) == 1
+          text = text.replace(old_handoff, new_handoff)
+
+          legacy_guard = '''        guard buildIdentity.isAuthoritativeFieldBuild else {
+              failLocally(buildIdentity.blocker ?? "Exact field-build provenance is unavailable.", "field_build_identity_unavailable")
+              return
+          }
+'''
+          assert text.count(legacy_guard) == 2
+          text = text.replace(legacy_guard, "")
+
+          legacy_connection_guard = "              buildIdentity.isAuthoritativeFieldBuild,\n"
+          assert text.count(legacy_connection_guard) == 1
+          text = text.replace(legacy_connection_guard, "")
+
+          assert text.count("test.fieldBuildIsAuthoritative") >= 1
+          text = text.replace("test.fieldBuildIsAuthoritative", "test.fieldBuildMetadataReady")
+
+          selected_gate = ".disabled(!authorityReady || test.membershipBusy)"
+          assert text.count(selected_gate) == 1
+          text = text.replace(selected_gate, ".disabled(test.membershipBusy)")
+
+          helper_start_marker = "    private func freezeAcceptedArtifactForAuthorizationSeal() throws {"
+          record_marker = "    private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken) async {"
+          watchdog_marker = "    private func startWatchdog(token: TuyaReadOnlyConnectionToken) {"
+          helper_start = text.index(helper_start_marker)
+          record_start = text.index(record_marker, helper_start)
+          helper_block = text[helper_start:record_start]
+          assert "ExactByteArtifactSeal(sealing:" in helper_block
+          assert "verifiedCanonicalValue(" in helper_block
+          text = text[:helper_start] + text[record_start:]
+          watchdog_start = text.index(watchdog_marker)
+          text = text[:watchdog_start] + helper_block + text[watchdog_start:]
+
+          path.write_text(text, encoding="utf-8")
+
       - name: Enforce fail-closed lifecycle source shape
         shell: bash
         run: |
@@ -63,6 +112,8 @@ jobs:
           git diff --check
           grep -Fq 'import NembraCaptureAppAuthorization' "$APP_SOURCE"
           grep -Fq 'private let fieldAuthorization = NembraCaptureFieldAuthorizationController()' "$APP_SOURCE"
+          grep -Fq 'buildIdentity.hasCompleteFieldBuildMetadata' "$APP_SOURCE"
+          test "$(grep -Fc 'buildIdentity.isAuthoritativeFieldBuild' "$APP_SOURCE")" = 0
           grep -Fq 'fieldAuthorization.stage == .armed' "$APP_SOURCE"
           grep -Fq 'try self.fieldAuthorization.admitOFF1Start()' "$APP_SOURCE"
           grep -Fq 'try self.fieldAuthorization.admitAuthenticationStart()' "$APP_SOURCE"
@@ -74,6 +125,7 @@ jobs:
           test "$(grep -Fc 'publishDps(' "$APP_SOURCE")" = 0
           test "$(grep -Fc 'writeValue(' "$APP_SOURCE")" = 0
           /usr/bin/python3 -I scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py -v
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_capture_build_identity.py -v
 
       - name: Run focused authorization truth contracts
         shell: bash
@@ -110,7 +162,7 @@ jobs:
           test "$actual" = "$expected"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'feat(capture): wire one-time field authorization into SecureLink'
+          git commit -m 'feat(capture): wire signed-attempt field authorization into SecureLink'
           successor="$(git rev-parse HEAD)"
           git fetch origin "$TARGET_BRANCH"
           test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
