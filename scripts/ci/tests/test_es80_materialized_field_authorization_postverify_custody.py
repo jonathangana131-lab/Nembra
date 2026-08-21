@@ -22,7 +22,7 @@ class MaterializedSignerPostVerificationCustodySourceTests(unittest.TestCase):
         self.assertIn("compile(source", verify)
         self.assertNotIn("spec_from_file_location", verify)
 
-        self.assertIn("verified_sources = verify_materialized_bundle(", main)
+        self.assertIn("bundle, _, verified_sources = verify_materialized_bundle(", main)
         self.assertIn("verified_sources[os.fspath(WRAPPER_RELATIVE_PATH)]", main)
         self.assertIn("verified_sources[os.fspath(RENDEZVOUS_RELATIVE_PATH)]", main)
         self.assertIn("verified_sources[os.fspath(SIGNER_RELATIVE_PATH)]", main)
