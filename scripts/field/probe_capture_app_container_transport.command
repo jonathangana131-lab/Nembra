@@ -1,15 +1,22 @@
 #!/bin/bash -p
 set -euo pipefail
 umask 077
+PATH='/usr/bin:/bin:/usr/sbin:/sbin'
+export PATH
+readonly PATH
 
 # Privileged bash mode is part of the evidence contract: caller-controlled BASH_ENV/ENV startup
-# content, inherited shell functions, and shell-option path variables must not add code to this
-# reviewed probe or to the exact materialized transport contract it executes.
+# content, inherited shell functions, shell-option path variables, and caller-selected executable
+# search paths must not add code to this reviewed probe or the exact materialized contract it runs.
 unset BASH_ENV ENV CDPATH GLOBIGNORE || true
 
 # Source/runtime self-test used by the exact-head macOS gate. It performs no device contact.
 if [[ "${NEMBRA_CAPTURE_PROBE_SELF_TEST:-0}" == "1" ]]; then
   unset NEMBRA_CAPTURE_PROBE_SELF_TEST
+  [[ "$PATH" == '/usr/bin:/bin:/usr/sbin:/sbin' ]] || {
+    echo 'ERROR: system executable search path was not pinned.' >&2
+    exit 15
+  }
   SELF_TEST_DIR="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/nembra-capture-probe-shell-self-test.XXXXXX")"
   /bin/chmod 700 "$SELF_TEST_DIR"
   SELF_TEST_HOSTILE="$SELF_TEST_DIR/hostile-bash-env.sh"
@@ -24,7 +31,7 @@ if [[ "${NEMBRA_CAPTURE_PROBE_SELF_TEST:-0}" == "1" ]]; then
     echo 'ERROR: privileged bash startup isolation failed.' >&2
     exit 14
   }
-  printf '%s\n' 'NEMBRA_CAPTURE_PROBE_SHELL_STARTUP_SELF_TEST startup_injection_blocked=true device_contact=false'
+  printf '%s\n' 'NEMBRA_CAPTURE_PROBE_SHELL_STARTUP_SELF_TEST startup_injection_blocked=true path_injection_blocked=true device_contact=false'
   exit 0
 fi
 
@@ -38,7 +45,7 @@ fi
   exit 2
 }
 
-REPOSITORY_ROOT="$(cd "$(dirname "$0")/../.." && pwd -P)"
+REPOSITORY_ROOT="$(cd "$(/usr/bin/dirname "$0")/../.." && pwd -P)"
 PROBE_RELATIVE_PATH='scripts/field/probe_capture_app_container_transport.command'
 CONTRACT_RELATIVE_PATH='scripts/ci/xcode27_devicectl_manifest_transport_contract.sh'
 PROBE_PATH="$REPOSITORY_ROOT/$PROBE_RELATIVE_PATH"
@@ -228,6 +235,6 @@ RESULT_PATH="$ARTIFACTS_DIR/result.txt"
 /bin/mv -f -- "$RESULT_TMP" "$RESULT_PATH"
 
 printf '%s\n' "PROVEN: exact bytes copied to and from the $BUNDLE_ID appDataContainer on the explicitly selected physical iPhone; the read-only listing request for $FIELD_AUTHORIZATION_SUBDIRECTORY also succeeded."
-printf '%s\n' "PROVEN PROVENANCE: repository HEAD $REPOSITORY_HEAD with exact checked-in probe blob $PROBE_TRACKED_BLOB and transport-contract blob $CONTRACT_TRACKED_BLOB, executed with shell startup injection disabled."
+printf '%s\n' "PROVEN PROVENANCE: repository HEAD $REPOSITORY_HEAD with exact checked-in probe blob $PROBE_TRACKED_BLOB and transport-contract blob $CONTRACT_TRACKED_BLOB, executed with shell startup and executable-path injection disabled."
 printf '%s\n' 'NOT PROVEN: handoff-directory filesystem existence beyond devicectl listing success, exact installed Capture build identity, authorization payload transfer or acceptance, signing/install custody, trust-root correctness, whether another process or already-running app contacted Bluetooth/Tuya/ES80, ES80 identity, telemetry semantics, commands, or physical Capture GO.'
 printf 'Evidence directory: %s\n' "$ARTIFACTS_DIR"
