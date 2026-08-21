@@ -1,0 +1,119 @@
+name: Capture field transport proof trigger materialize
+
+on:
+  push:
+    branches:
+      - ci/capture-field-transport-proof-trigger-sol-20260821
+    paths:
+      - .github/workflows/capture-field-transport-proof-trigger-sol.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-field-transport-proof-trigger-sol
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TARGET_BRANCH: ci/capture-field-transport-proof-trigger-sol-20260821
+      EXPECTED_PARENT: 1b6af0ddcf97201aa937c2b04eaec896614b4364
+      TARGET_WORKFLOW: .github/workflows/capture-app-container-transport-proof.yml
+      EXPECTED_TARGET_BLOB: fd0174ad60a8fe12265e35c282cece802b8c8444
+      SELF_WORKFLOW: .github/workflows/capture-field-transport-proof-trigger-sol.yml
+      TRANSPORT: scripts/field/transfer_field_authorization.command
+      SOURCE_TEST: scripts/ci/tests/test_es80_field_authorization_container_transport.py
+    steps:
+      - name: Checkout exact authoring head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact transport child parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          test "$(git rev-parse HEAD:"$TARGET_WORKFLOW")" = "$EXPECTED_TARGET_BLOB"
+          test -f "$TRANSPORT"
+          test -f "$SOURCE_TEST"
+          test "$(git diff --name-only HEAD^ HEAD)" = "$SELF_WORKFLOW"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Bind field transport sources into flagship proof
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+
+          path = Path(os.environ["TARGET_WORKFLOW"])
+          source = path.read_text(encoding="utf-8")
+          transport = os.environ["TRANSPORT"]
+          test_path = os.environ["SOURCE_TEST"]
+
+          trigger_anchor = "      - 'scripts/ci/xcode27_devicectl_manifest_transport_contract.sh'\n"
+          trigger_replacement = (
+              "      - 'scripts/ci/xcode27_devicectl_manifest_transport_contract.sh'\n"
+              f"      - '{transport}'\n"
+              f"      - '{test_path}'\n"
+          )
+          if source.count(trigger_anchor) != 2:
+              raise SystemExit(f"expected pull/push trigger anchor twice, found {source.count(trigger_anchor)}")
+          source = source.replace(trigger_anchor, trigger_replacement)
+
+          bind_anchor = (
+              "          test -f \"$CONTRACT\"\n"
+              "          test \"$(grep -Ec 'devicectl help device copy (to|from)' \"$CONTRACT\")\" = 2\n"
+          )
+          bind_replacement = (
+              "          test -f \"$CONTRACT\"\n"
+              f"          test -f {transport}\n"
+              f"          test -f {test_path}\n"
+              f"          /bin/bash -n {transport}\n"
+              f"          /bin/bash -p {transport} --self-test\n"
+              f"          /usr/bin/python3 -I {test_path} -v\n"
+              "          test \"$(grep -Ec 'devicectl help device copy (to|from)' \"$CONTRACT\")\" = 2\n"
+          )
+          if source.count(bind_anchor) != 1:
+              raise SystemExit(f"transport validation anchor count was {source.count(bind_anchor)}")
+          source = source.replace(bind_anchor, bind_replacement, 1)
+
+          if source.count(transport) != 4:
+              raise SystemExit(f"transport path expected 4 occurrences, got {source.count(transport)}")
+          if source.count(test_path) != 3:
+              raise SystemExit(f"source-test path expected 3 occurrences, got {source.count(test_path)}")
+          path.write_text(source, encoding="utf-8")
+
+      - name: Verify target-only acceptance delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git diff --name-only)" = "$TARGET_WORKFLOW"
+          git diff --check
+          test "$(grep -Fc "$TRANSPORT" "$TARGET_WORKFLOW")" = 4
+          test "$(grep -Fc "$SOURCE_TEST" "$TARGET_WORKFLOW")" = 3
+          grep -Fq "/bin/bash -p $TRANSPORT --self-test" "$TARGET_WORKFLOW"
+          grep -Fq "/usr/bin/python3 -I $SOURCE_TEST -v" "$TARGET_WORKFLOW"
+
+      - name: Publish tested workflow delta and retire self
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
+          test "$remote_head" = "$GITHUB_SHA"
+          rm "$SELF_WORKFLOW"
+          git add -- "$TARGET_WORKFLOW" "$SELF_WORKFLOW"
+          git diff --cached --check
+          actual="$(git diff --cached --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n%s\n' "$SELF_WORKFLOW" "$TARGET_WORKFLOW" | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'ci(capture): gate field transport in app-container proof'
+          git push origin HEAD:"$TARGET_BRANCH"
+          printf 'NEMBRA_CAPTURE_FIELD_TRANSPORT_PROOF_BOUND=%s physicalAuthorityCreated=false\n' "$(git rev-parse HEAD)"
