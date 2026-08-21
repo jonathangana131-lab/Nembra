@@ -1,5 +1,31 @@
 import SwiftUI
 
+/// Selected Nembra 1.0 graphite / warm-gold product palette.
+///
+/// These colors belong to the content layer. Native Liquid Glass remains the
+/// material for navigation and interactive chrome; telemetry and information
+/// surfaces must not become stacks of custom translucent effects.
+enum NembraColor {
+    static let gold = Color(red: 0xEF / 255, green: 0xBC / 255, blue: 0x58 / 255)
+    static let activeGold = Color(red: 0xE5 / 255, green: 0xA8 / 255, blue: 0x3C / 255)
+    static let deepGold = Color(red: 0x9A / 255, green: 0x5F / 255, blue: 0x18 / 255)
+    static let warmGraphite = Color(red: 0x0B / 255, green: 0x0B / 255, blue: 0x0A / 255)
+    static let baseBlack = Color(red: 0x06 / 255, green: 0x07 / 255, blue: 0x06 / 255)
+    static let primaryText = Color(red: 0xF4 / 255, green: 0xF7 / 255, blue: 0xFB / 255)
+    static let secondaryText = Color(red: 0x8D / 255, green: 0x98 / 255, blue: 0xAA / 255)
+    /// Opaque cool copy for small measurements rendered across graphite and
+    /// energy materials. Do not recreate this role with alpha on a variable
+    /// Canvas background: the hosted contrast audit evaluates the composite.
+    static let instrumentSecondaryText = Color(
+        red: 0xC8 / 255,
+        green: 0xD0 / 255,
+        blue: 0xDC / 255
+    )
+    static let warningRed = Color(red: 1.00, green: 0.38, blue: 0.34)
+    static let quietLine = Color.white.opacity(0.10)
+    static let quietSurface = Color.white.opacity(0.045)
+}
+
 enum NembraMetrics {
     static let compact: CGFloat = 8
     static let control: CGFloat = 12

@@ -67,6 +67,18 @@ struct NavigationVisualSurfaceSourceTests {
         #expect(beforeDebounce.contains("isSearching = true"))
     }
 
+    @Test("Shipping Navigation consumes the bounded versioned recent-destination codec")
+    func recentDestinationPersistenceIsAppWired() throws {
+        let source = try String(contentsOf: nembraAppURL, encoding: .utf8)
+
+        #expect(source.contains("import NembraCore"))
+        #expect(source.contains("NavigationRecentDestinationsPersistence.load(json: recentDestinationsJSON)"))
+        #expect(source.contains("NavigationRecentDestinationsPersistence.promoting(recent, in: recentDestinations)"))
+        #expect(source.contains("NavigationRecentDestinationsPersistence.encode(destinations)"))
+        #expect(source.contains("repairRecentDestinationsIfNeeded()"))
+        #expect(!source.contains("JSONDecoder().decode([NembraRecentDestination].self"))
+    }
+
     private func slice(_ source: String, after start: String, before end: String) -> String {
         let tail = source.components(separatedBy: start).dropFirst().first ?? ""
         return tail.components(separatedBy: end).first ?? ""
