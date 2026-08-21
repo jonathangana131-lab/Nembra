@@ -1,0 +1,220 @@
+name: Capture field device bind recovery one-shot
+
+on:
+  push:
+    branches:
+      - capture/v14-field-device-bind-recovery-sol-20260821
+    paths:
+      - .github/workflows/capture-field-device-bind-recovery-sol-one-shot.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-field-device-bind-recovery-sol
+  cancel-in-progress: false
+
+jobs:
+  materialize-test-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TARGET_BRANCH: capture/v14-field-device-bind-recovery-sol-20260821
+      EXPECTED_PARENT: 032f801683a10e1220ce2c74887f639627e98deb
+      TRANSPORT: scripts/field/transfer_field_authorization.command
+      EXPECTED_TRANSPORT_BLOB: 16bfa78592257b361e239054326659711791973f
+      TEST: scripts/ci/tests/test_es80_field_authorization_container_transport.py
+      EXPECTED_TEST_BLOB: a8586bf36cfa94e964e1fa73addca82569578816
+      VERIFIER: scripts/ci/es80_retained_install_manifest.py
+      EXPECTED_VERIFIER_BLOB: 2bb16d2b481d4168c4e60b5446a4e284733f0500
+      SELF: .github/workflows/capture-field-device-bind-recovery-sol-one-shot.yml
+    steps:
+      - name: Checkout exact latest handoff child
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact parent and subjects
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          test "$(git rev-parse HEAD:"$TRANSPORT")" = "$EXPECTED_TRANSPORT_BLOB"
+          test "$(git rev-parse HEAD:"$TEST")" = "$EXPECTED_TEST_BLOB"
+          test "$(git rev-parse HEAD:"$VERIFIER")" = "$EXPECTED_VERIFIER_BLOB"
+          test "$(git diff --name-only HEAD^ HEAD)" = "$SELF"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Replace duplicate manifest grammar with canonical verifier
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("scripts/field/transfer_field_authorization.command")
+          source = path.read_text(encoding="utf-8")
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one anchor, found {count}")
+              source = source.replace(old, new, 1)
+
+          replace_once(
+              'CONTRACT_RELATIVE_PATH="scripts/ci/xcode27_devicectl_manifest_transport_contract.sh"\n',
+              'CONTRACT_RELATIVE_PATH="scripts/ci/xcode27_devicectl_manifest_transport_contract.sh"\nMANIFEST_VERIFIER_RELATIVE_PATH="scripts/ci/es80_retained_install_manifest.py"\n',
+              "verifier path",
+          )
+          replace_once(
+              '  [[ "$CONTRACT_RELATIVE_PATH" == "scripts/ci/xcode27_devicectl_manifest_transport_contract.sh" ]] || die "Transport contract path drifted."\n',
+              '  [[ "$CONTRACT_RELATIVE_PATH" == "scripts/ci/xcode27_devicectl_manifest_transport_contract.sh" ]] || die "Transport contract path drifted."\n  [[ "$MANIFEST_VERIFIER_RELATIVE_PATH" == "scripts/ci/es80_retained_install_manifest.py" ]] || die "Manifest verifier path drifted."\n',
+              "verifier self-test",
+          )
+          replace_once(
+              ': "${NEMBRA_RETAINED_INSTALL_MANIFEST_PATH:?Set NEMBRA_RETAINED_INSTALL_MANIFEST_PATH to the exact retained-install manifest for this attempt.}"\n',
+              ': "${NEMBRA_RETAINED_INSTALL_MANIFEST_PATH:?Set NEMBRA_RETAINED_INSTALL_MANIFEST_PATH to the exact retained-install manifest for this attempt.}"\n: "${NEMBRA_RETAINED_INSTALL_MANIFEST_SHA256:?Set NEMBRA_RETAINED_INSTALL_MANIFEST_SHA256 to the independently accepted retained-install manifest SHA-256.}"\n[[ "$NEMBRA_RETAINED_INSTALL_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ && "$NEMBRA_RETAINED_INSTALL_MANIFEST_SHA256" != "0000000000000000000000000000000000000000000000000000000000000000" ]] || die "NEMBRA_RETAINED_INSTALL_MANIFEST_SHA256 must be one canonical nonzero lowercase SHA-256."\n',
+              "accepted manifest digest",
+          )
+
+          replace_once(
+              'CONTRACT_TRACKED_BLOB="$(/usr/bin/git -C "$ROOT" rev-parse "${REPOSITORY_HEAD}:${CONTRACT_RELATIVE_PATH}")"\nTRANSPORT_WORKTREE_BLOB="$(/usr/bin/git -C "$ROOT" hash-object "$ROOT/$TRANSPORT_RELATIVE_PATH")"\nCONTRACT_WORKTREE_BLOB="$(/usr/bin/git -C "$ROOT" hash-object "$ROOT/$CONTRACT_RELATIVE_PATH")"\n',
+              'CONTRACT_TRACKED_BLOB="$(/usr/bin/git -C "$ROOT" rev-parse "${REPOSITORY_HEAD}:${CONTRACT_RELATIVE_PATH}")"\nMANIFEST_VERIFIER_TRACKED_BLOB="$(/usr/bin/git -C "$ROOT" rev-parse "${REPOSITORY_HEAD}:${MANIFEST_VERIFIER_RELATIVE_PATH}")"\nTRANSPORT_WORKTREE_BLOB="$(/usr/bin/git -C "$ROOT" hash-object "$ROOT/$TRANSPORT_RELATIVE_PATH")"\nCONTRACT_WORKTREE_BLOB="$(/usr/bin/git -C "$ROOT" hash-object "$ROOT/$CONTRACT_RELATIVE_PATH")"\nMANIFEST_VERIFIER_WORKTREE_BLOB="$(/usr/bin/git -C "$ROOT" hash-object "$ROOT/$MANIFEST_VERIFIER_RELATIVE_PATH")"\n',
+              "verifier git binding",
+          )
+          replace_once(
+              '[[ "$CONTRACT_WORKTREE_BLOB" == "$CONTRACT_TRACKED_BLOB" ]] || die "Xcode transport-contract bytes differ from repository HEAD; refusing device transfer."\nCONTRACT_EXEC="$SCRATCH/xcode27_devicectl_manifest_transport_contract.sh"\n',
+              '[[ "$CONTRACT_WORKTREE_BLOB" == "$CONTRACT_TRACKED_BLOB" ]] || die "Xcode transport-contract bytes differ from repository HEAD; refusing device transfer."\n[[ "$MANIFEST_VERIFIER_WORKTREE_BLOB" == "$MANIFEST_VERIFIER_TRACKED_BLOB" ]] || die "Retained-manifest verifier bytes differ from repository HEAD; refusing device transfer."\nCONTRACT_EXEC="$SCRATCH/xcode27_devicectl_manifest_transport_contract.sh"\n',
+              "verifier worktree binding",
+          )
+          replace_once(
+              '[[ "$CONTRACT_MATERIALIZED_BLOB" == "$CONTRACT_TRACKED_BLOB" ]] || die "Materialized Xcode transport-contract bytes failed exact-blob verification."\n\n# Help-only proof:',
+              '[[ "$CONTRACT_MATERIALIZED_BLOB" == "$CONTRACT_TRACKED_BLOB" ]] || die "Materialized Xcode transport-contract bytes failed exact-blob verification."\nMANIFEST_VERIFIER_EXEC="$SCRATCH/es80_retained_install_manifest.py"\n/usr/bin/git -C "$ROOT" show "${REPOSITORY_HEAD}:${MANIFEST_VERIFIER_RELATIVE_PATH}" > "$MANIFEST_VERIFIER_EXEC"\n/bin/chmod 400 "$MANIFEST_VERIFIER_EXEC"\nMANIFEST_VERIFIER_MATERIALIZED_BLOB="$(/usr/bin/git -C "$ROOT" hash-object "$MANIFEST_VERIFIER_EXEC")"\n[[ "$MANIFEST_VERIFIER_MATERIALIZED_BLOB" == "$MANIFEST_VERIFIER_TRACKED_BLOB" ]] || die "Materialized retained-manifest verifier bytes failed exact-blob verification."\n\n# Help-only proof:',
+              "verifier materialization",
+          )
+
+          start_marker = 'verify_manifest_device_binding() {\n'
+          end_marker = '\n# Publish copied rendezvous bytes only to a fresh caller-selected file.'
+          start = source.index(start_marker)
+          end = source.index(end_marker, start)
+          replacement = r'''verify_manifest_device_binding() {
+  /usr/bin/python3 -I -B - \
+    "$1" "$NEMBRA_RETAINED_INSTALL_MANIFEST_SHA256" "$NEMBRA_FIELD_DEVICE_ID" \
+    "$MANIFEST_VERIFIER_EXEC" "$BUNDLE_ID" <<'PY'
+import hashlib
+import hmac
+import os
+import re
+import stat
+import sys
+
+manifest_path, accepted_sha256, device_id, verifier_path, bundle_id = sys.argv[1:]
+if re.fullmatch(r'[0-9a-f]{64}', accepted_sha256) is None or accepted_sha256 == '0' * 64:
+    raise SystemExit('ERROR: independently accepted retained-manifest digest is malformed')
+if re.fullmatch(r'(?:[0-9A-Fa-f]{40}|[0-9A-Fa-f]{8}-[0-9A-Fa-f]{16})', device_id) is None:
+    raise SystemExit('ERROR: selected device is not a canonical Apple UDID')
+no_follow = getattr(os, 'O_NOFOLLOW', None)
+if no_follow is None:
+    raise SystemExit('ERROR: no-follow retained-manifest verification is unavailable')
+
+def stable_read(path: str, maximum: int, label: str) -> bytes:
+    fd = os.open(path, os.O_RDONLY | no_follow)
+    try:
+        before = os.fstat(fd)
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_uid != os.geteuid():
+            raise SystemExit(f'ERROR: {label} identity rejected')
+        if before.st_size <= 0 or before.st_size > maximum:
+            raise SystemExit(f'ERROR: {label} size rejected')
+        data = bytearray()
+        while len(data) <= maximum:
+            block = os.read(fd, min(65536, maximum + 1 - len(data)))
+            if not block:
+                break
+            data.extend(block)
+        after = os.fstat(fd)
+        identity = lambda value: (
+            value.st_dev, value.st_ino, value.st_mode, value.st_uid, value.st_nlink,
+            value.st_size, value.st_mtime_ns, value.st_ctime_ns,
+        )
+        if identity(before) != identity(after) or len(data) != before.st_size:
+            raise SystemExit(f'ERROR: {label} changed during read')
+        return bytes(data)
+    finally:
+        os.close(fd)
+
+manifest_bytes = stable_read(manifest_path, 16_384, 'retained-install manifest snapshot')
+if not hmac.compare_digest(hashlib.sha256(manifest_bytes).hexdigest(), accepted_sha256):
+    raise SystemExit('ERROR: retained-install manifest does not match independently accepted digest')
+verifier_source = stable_read(verifier_path, 128_000, 'retained-manifest verifier')
+namespace = {
+    '__name__': 'nembra_field_transport_retained_manifest_verifier',
+    '__file__': '<exact-retained-manifest-verifier>',
+}
+exec(compile(verifier_source.decode('utf-8'), namespace['__file__'], 'exec', dont_inherit=True), namespace)
+verify = namespace.get('verify_manifest_bytes')
+if not callable(verify):
+    raise SystemExit('ERROR: exact retained-manifest verifier entrypoint is unavailable')
+try:
+    manifest = verify(manifest_bytes)
+except Exception as error:
+    raise SystemExit(f'ERROR: retained-install manifest failed canonical verifier: {error}') from error
+if manifest.get('bundleIdentifier') != bundle_id:
+    raise SystemExit('ERROR: retained-install manifest names a different Capture bundle')
+expected = manifest.get('intendedDevicePseudonymSHA256')
+observed = hashlib.sha256(device_id.encode('utf-8')).hexdigest()
+if not isinstance(expected, str) or not hmac.compare_digest(observed, expected):
+    raise SystemExit('ERROR: selected CoreDevice does not match retained-install intended-device pseudonym')
+PY
+}
+'''
+          source = source[:start] + replacement + source[end:]
+          path.write_text(source, encoding="utf-8")
+
+      - name: Strengthen canonical-device source contract
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("scripts/ci/tests/test_es80_field_authorization_container_transport.py")
+          source = path.read_text(encoding="utf-8")
+
+          old = '''    def test_selected_device_is_cross_bound_to_retained_manifest_before_device_contact(self) -> None:\n        for token in (\n            '[[ "$NEMBRA_FIELD_DEVICE_ID" =~ ^([0-9A-Fa-f]{40}|[0-9A-Fa-f]{8}-[0-9A-Fa-f]{16})$ ]]',\n            'manifest_binding_snapshot="$SCRATCH/retained-install-manifest.binding.json"',\n            'verify_manifest_device_binding "$manifest_binding_snapshot"',\n            "intendedDevicePseudonymSHA256",\n            "hashlib.sha256(device_id.encode('utf-8')).hexdigest()",\n            "hmac.compare_digest(observed, expected)",\n            "object_pairs_hook=reject_duplicates",\n            "json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True)",\n        ):\n            self.assertIn(token, self.source)\n        self.assertLess(\n            self.source.index('verify_manifest_device_binding "$manifest_binding_snapshot"'),\n            self.source.index('case "$ACTION" in', self.source.index('verify_manifest_device_binding()')),\n        )\n        self.assertIn(\n            ': "${NEMBRA_RETAINED_INSTALL_MANIFEST_PATH:?Set NEMBRA_RETAINED_INSTALL_MANIFEST_PATH to the exact retained-install manifest for this attempt.}"',\n            self.source,\n        )\n\n'''
+          new = '''    def test_selected_device_is_cross_bound_to_exact_accepted_canonical_manifest_before_device_contact(self) -> None:\n        for token in (\n            '[[ "$NEMBRA_FIELD_DEVICE_ID" =~ ^([0-9A-Fa-f]{40}|[0-9A-Fa-f]{8}-[0-9A-Fa-f]{16})$ ]]',\n            'manifest_binding_snapshot="$SCRATCH/retained-install-manifest.binding.json"',\n            'verify_manifest_device_binding "$manifest_binding_snapshot"',\n            'MANIFEST_VERIFIER_RELATIVE_PATH="scripts/ci/es80_retained_install_manifest.py"',\n            "NEMBRA_RETAINED_INSTALL_MANIFEST_SHA256",\n            "MANIFEST_VERIFIER_TRACKED_BLOB",\n            "MANIFEST_VERIFIER_WORKTREE_BLOB",\n            "MANIFEST_VERIFIER_MATERIALIZED_BLOB",\n            "verify_manifest_bytes",\n            "intendedDevicePseudonymSHA256",\n            "hashlib.sha256(device_id.encode('utf-8')).hexdigest()",\n            "hmac.compare_digest(observed, expected)",\n        ):\n            self.assertIn(token, self.source)\n        self.assertNotIn("json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True)", self.source)\n        self.assertNotIn("object_pairs_hook=reject_duplicates", self.source)\n        self.assertLess(\n            self.source.index('verify_manifest_device_binding "$manifest_binding_snapshot"'),\n            self.source.index('case "$ACTION" in', self.source.index('verify_manifest_device_binding()')),\n        )\n        self.assertIn(\n            ': "${NEMBRA_RETAINED_INSTALL_MANIFEST_PATH:?Set NEMBRA_RETAINED_INSTALL_MANIFEST_PATH to the exact retained-install manifest for this attempt.}"',\n            self.source,\n        )\n        self.assertIn(\n            ': "${NEMBRA_RETAINED_INSTALL_MANIFEST_SHA256:?Set NEMBRA_RETAINED_INSTALL_MANIFEST_SHA256 to the independently accepted retained-install manifest SHA-256.}"',\n            self.source,\n        )\n\n'''
+          if source.count(old) != 1:
+              raise SystemExit("current device-binding source test changed; refusing to guess")
+          source = source.replace(old, new, 1)
+          path.write_text(source, encoding="utf-8")
+
+      - name: Run focused non-authorizing contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          /bin/bash -n "$TRANSPORT"
+          /bin/bash -p "$TRANSPORT" --self-test
+          /usr/bin/python3 -I "$VERIFIER" --self-test
+          /usr/bin/python3 -I -m unittest -v scripts.ci.tests.test_es80_retained_install_manifest
+          /usr/bin/python3 -I -m unittest -v scripts.ci.tests.test_es80_field_authorization_container_transport
+          actual="$(git diff --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n%s\n' "$TEST" "$TRANSPORT" | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+
+      - name: Publish exact tested child and retire authoring workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
+          test "$remote_head" = "$GITHUB_SHA"
+          rm "$SELF"
+          git add -- "$TRANSPORT" "$TEST" "$SELF"
+          git diff --cached --check
+          actual="$(git diff --cached --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n%s\n%s\n' "$SELF" "$TEST" "$TRANSPORT" | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(capture): bind field transport through canonical manifest verifier'
+          git push origin HEAD:"$TARGET_BRANCH"
+          printf 'NEMBRA_CAPTURE_FIELD_DEVICE_BIND_RECOVERY=%s physicalAuthorityCreated=false\n' "$(git rev-parse HEAD)"
