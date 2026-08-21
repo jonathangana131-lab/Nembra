@@ -29,17 +29,27 @@ DEVICE_UDID="${NEMBRA_CAPTURE_DEVICE_UDID:-${1:-}}"
   exit 5
 }
 
-ARTIFACTS_DIR="${ARTIFACTS_DIR:-$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/nembra-capture-transport.XXXXXX")}" 
+ARTIFACTS_DIR="${ARTIFACTS_DIR:-$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/nembra-capture-transport.XXXXXX")}"
 /bin/mkdir -p "$ARTIFACTS_DIR"
 /bin/chmod 700 "$ARTIFACTS_DIR"
 export ARTIFACTS_DIR
+
+# Any output produced while contacting the physical iPhone is kept outside the durable evidence
+# directory and erased on exit. devicectl may render raw device identity in human-readable output;
+# only the one-way device pseudonym below is allowed into result.txt.
+PRIVATE_RUNTIME_DIR="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/nembra-capture-transport-private.XXXXXX")"
+/bin/chmod 700 "$PRIVATE_RUNTIME_DIR"
+cleanup_private_runtime() {
+  /bin/rm -rf -- "$PRIVATE_RUNTIME_DIR"
+}
+trap cleanup_private_runtime EXIT HUP INT TERM
 
 # First bind this Xcode installation to the already-reviewed copy-to/copy-from appDataContainer help
 # contract. The contract performs help-only inspection and does not contact a device.
 /bin/bash "$CONTRACT" > "$ARTIFACTS_DIR/devicectl-copy-contract.txt"
 
 # The separate file-listing surface is required only to prove that the intended installed app has
-# already created its owner-only FieldAuthorization destination. Listing is read-only.
+# already created its FieldAuthorization destination. Listing is read-only.
 /usr/bin/xcrun devicectl help device info files > "$ARTIFACTS_DIR/devicectl-device-info-files-help.txt" 2>&1
 /usr/bin/python3 -I -B - "$ARTIFACTS_DIR/devicectl-device-info-files-help.txt" <<'PY'
 from pathlib import Path
@@ -54,7 +64,7 @@ if "appDataContainer" not in text:
     raise SystemExit("ERROR: devicectl device info files help does not enumerate appDataContainer")
 PY
 
-# Never publish the raw UDID into the durable result. A one-way local pseudonym is sufficient to
+# Never publish the raw UDID into durable evidence. A one-way local pseudonym is sufficient to
 # correlate repeated operator evidence without making the raw device identifier part of the report.
 DEVICE_PSEUDONYM="$(printf '%s' "$DEVICE_UDID" | /usr/bin/shasum -a 256 | /usr/bin/awk '{print $1}')"
 
@@ -65,7 +75,7 @@ DEVICE_PSEUDONYM="$(printf '%s' "$DEVICE_UDID" | /usr/bin/shasum -a 256 | /usr/b
   --domain-type appDataContainer \
   --domain-identifier "$BUNDLE_ID" \
   --subdirectory "$FIELD_AUTHORIZATION_SUBDIRECTORY" \
-  > "$ARTIFACTS_DIR/field-authorization-directory-listing.txt"
+  > "$PRIVATE_RUNTIME_DIR/field-authorization-directory-listing.txt" 2>&1
 
 # The round-trip sentinel lives only in the app sandbox tmp directory. It is deliberately outside
 # FieldAuthorization and cannot be interpreted as a retained manifest, envelope, rendezvous, GO
@@ -83,7 +93,7 @@ INBOUND_SHA256="$(/usr/bin/shasum -a 256 "$LOCAL_SENTINEL" | /usr/bin/awk '{prin
   --domain-identifier "$BUNDLE_ID" \
   --source "$LOCAL_SENTINEL" \
   --destination "$REMOTE_SENTINEL" \
-  > "$ARTIFACTS_DIR/copy-to.txt"
+  > "$PRIVATE_RUNTIME_DIR/copy-to.txt" 2>&1
 
 /usr/bin/xcrun devicectl device copy from \
   --device "$DEVICE_UDID" \
@@ -91,7 +101,7 @@ INBOUND_SHA256="$(/usr/bin/shasum -a 256 "$LOCAL_SENTINEL" | /usr/bin/awk '{prin
   --domain-identifier "$BUNDLE_ID" \
   --source "$REMOTE_SENTINEL" \
   --destination "$ROUNDTRIP_SENTINEL" \
-  > "$ARTIFACTS_DIR/copy-from.txt"
+  > "$PRIVATE_RUNTIME_DIR/copy-from.txt" 2>&1
 
 OUTBOUND_SHA256="$(/usr/bin/shasum -a 256 "$ROUNDTRIP_SENTINEL" | /usr/bin/awk '{print $1}')"
 [[ "$INBOUND_SHA256" == "$OUTBOUND_SHA256" ]] || {
@@ -111,6 +121,7 @@ OUTBOUND_SHA256="$(/usr/bin/shasum -a 256 "$ROUNDTRIP_SENTINEL" | /usr/bin/awk '
   printf 'inbound_sha256=%s\n' "$INBOUND_SHA256"
   printf 'outbound_sha256=%s\n' "$OUTBOUND_SHA256"
   printf 'exact_round_trip=true\n'
+  printf 'raw_device_output_persisted=false\n'
   printf 'authorization_subject_touched=false\n'
   printf 'captureAuthorized=false\n'
   printf 'physicalAuthorityCreated=false\n'
