@@ -11,20 +11,24 @@ struct VehicleTargetTests {
         #expect(VehicleProfile.aovoproES80.identity.protocolFamily.contains("hardware validation pending"))
     }
 
-    @Test("ES80 keeps protocol-specific mode and power claims unverified")
+    @Test("ES80 keeps writable controls fail closed until physical protocol proof exists")
     func es80ConservativeProtocolCapabilities() {
         let capabilities = VehicleProfile.aovoproES80.capabilities
 
-        // Public/user-visible stock-app behavior establishes these broad product
-        // functions, while actual GATT/DP semantics remain hardware work.
+        // Read-only product expectations remain broad research leads. Their actual
+        // values still require downstream source/evidence authority before display.
         #expect(capabilities.supportsBatteryPercent)
         #expect(capabilities.supportsLiveSpeed)
         #expect(capabilities.supportsOdometer)
-        #expect(capabilities.supportsLock)
-        #expect(capabilities.supportsHeadlight)
-        #expect(capabilities.supportsCruise)
-        #expect(capabilities.supportsStartMode)
-        #expect(capabilities.supportsSpeedLimit)
+
+        // Stock-app/user observation does not authorize Nembra writes. These flags
+        // gate shipping Home/Vehicle control surfaces and stay false until physical
+        // protocol semantics plus acknowledgement/confirmation behavior are accepted.
+        #expect(!capabilities.supportsLock)
+        #expect(!capabilities.supportsHeadlight)
+        #expect(!capabilities.supportsCruise)
+        #expect(!capabilities.supportsStartMode)
+        #expect(!capabilities.supportsSpeedLimit)
 
         // Do not project deferred MAXSHOT/Tuya findings onto the ES80.
         #expect(!capabilities.supportsPowerWatts)
@@ -32,6 +36,17 @@ struct VehicleTargetTests {
         #expect(capabilities.supportedRideModes.isEmpty)
         #expect(capabilities.speedLimitRangesBySlot.isEmpty)
         #expect(capabilities.verifiedSpeedLimitSlotByRideMode.isEmpty)
+    }
+
+    @Test("Simulator retains synthetic control coverage without widening ES80 authority")
+    func simulatorControlsRemainAvailable() {
+        let capabilities = VehicleProfile.simulatorQA.capabilities
+        #expect(capabilities.supportsLock)
+        #expect(capabilities.supportsHeadlight)
+        #expect(capabilities.supportsCruise)
+        #expect(capabilities.supportsStartMode)
+        #expect(capabilities.supportsSpeedLimit)
+        #expect(!capabilities.supportedRideModes.isEmpty)
     }
 
     @Test("deferred MAXSHOT profile remains preserved")
