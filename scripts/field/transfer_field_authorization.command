@@ -18,8 +18,8 @@ MANIFEST_REMOTE="$FIELD_DIRECTORY/retained-install-manifest.json"
 RENDEZVOUS_REMOTE="$FIELD_DIRECTORY/signer-rendezvous.json"
 ENVELOPE_REMOTE="$FIELD_DIRECTORY/authorization-envelope.json"
 MANIFEST_MAX_BYTES=16384
-RENDEZVOUS_MAX_BYTES=16384
-ENVELOPE_MAX_BYTES=1048576
+RENDEZVOUS_MAX_BYTES=4096
+ENVELOPE_MAX_BYTES=32768
 
 say() { builtin printf '\n==> %s\n' "$*"; }
 die() { builtin printf '\nERROR: %s\n' "$*" >&2; exit 1; }
@@ -30,6 +30,9 @@ self_test() {
   [[ "$MANIFEST_REMOTE" == */NembraCapture/FieldAuthorization/retained-install-manifest.json ]] || die "Manifest path drifted."
   [[ "$RENDEZVOUS_REMOTE" == */NembraCapture/FieldAuthorization/signer-rendezvous.json ]] || die "Rendezvous path drifted."
   [[ "$ENVELOPE_REMOTE" == */NembraCapture/FieldAuthorization/authorization-envelope.json ]] || die "Envelope path drifted."
+  [[ "$MANIFEST_MAX_BYTES" == 16384 ]] || die "Manifest byte bound drifted."
+  [[ "$RENDEZVOUS_MAX_BYTES" == 4096 ]] || die "Rendezvous byte bound drifted."
+  [[ "$ENVELOPE_MAX_BYTES" == 32768 ]] || die "Envelope byte bound drifted."
   for path in "$MANIFEST_REMOTE" "$RENDEZVOUS_REMOTE" "$ENVELOPE_REMOTE"; do
     [[ "$path" != /* && "$path" != *".."* ]] || die "Container path is not bounded."
   done
