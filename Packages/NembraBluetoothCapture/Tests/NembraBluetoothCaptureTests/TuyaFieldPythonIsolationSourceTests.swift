@@ -29,8 +29,8 @@ struct TuyaFieldPythonIsolationSourceTests {
         #expect(!installer.contains("/usr/bin/python3 -c"))
         #expect(installer.contains("/usr/bin/python3 -I -B -c 'import base64,sys;"))
         #expect(installer.contains("/usr/bin/python3 -I -B - \"$PRIVATE_DEVICE_RUNNER\" \"$@\""))
-        #expect(installer.contains("/usr/bin/env -i \\\"))
-        #expect(installer.contains("/usr/bin/python3 -I -B - \\\"))
+        #expect(installer.contains("PATH=/usr/bin:/bin"))
+        #expect(installer.contains("LC_ALL=C"))
     }
 
     private func readRepositoryFile(_ relativePath: String) throws -> String {
