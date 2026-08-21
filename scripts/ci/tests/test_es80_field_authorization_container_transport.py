@@ -67,33 +67,108 @@ class FieldAuthorizationContainerTransportSourceTests(unittest.TestCase):
 
     def test_device_and_local_subjects_do_not_travel_on_positional_argv(self) -> None:
         self.assertIn("NEMBRA_FIELD_DEVICE_ID", self.source)
+        self.assertIn("NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE", self.source)
         self.assertIn("NEMBRA_RETAINED_INSTALL_MANIFEST_PATH", self.source)
         self.assertIn("NEMBRA_SIGNER_RENDEZVOUS_OUTPUT", self.source)
         self.assertIn("NEMBRA_FIELD_AUTHORIZATION_ENVELOPE_PATH", self.source)
         self.assertIn('[[ "$#" == 1 ]]', self.source)
+        self.assertNotIn('--device "$INTENDED_DEVICE_UDID"', self.source)
+        self.assertNotIn('--device "$DEVICE_UDID"', self.source)
 
-    def test_selected_device_is_cross_bound_to_retained_manifest_before_device_contact(self) -> None:
-        for token in (
+    def test_selected_device_is_non_private_coredevice_selector(self) -> None:
+        self.assertIn(
+            '[[ "$NEMBRA_FIELD_DEVICE_ID" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]',
+            self.source,
+        )
+        self.assertIn("NEMBRA_FIELD_DEVICE_ID is not a canonical CoreDevice selector", self.source)
+        self.assertNotIn(
             '[[ "$NEMBRA_FIELD_DEVICE_ID" =~ ^([0-9A-Fa-f]{40}|[0-9A-Fa-f]{8}-[0-9A-Fa-f]{16})$ ]]',
+            self.source,
+        )
+        self.assertNotIn("hashlib.sha256(device_id.encode('utf-8')).hexdigest()", self.source)
+
+    def test_private_device_reader_is_bound_to_exact_tracked_bytes(self) -> None:
+        for token in (
+            'PRIVATE_DEVICE_READER_RELATIVE_PATH="scripts/ci/es80_signed_field_artifact_private_runner.py"',
+            "PRIVATE_DEVICE_READER_TRACKED_BLOB=",
+            "PRIVATE_DEVICE_READER_WORKTREE_BLOB=",
+            "PRIVATE_DEVICE_READER_MATERIALIZED_BLOB=",
+            'PRIVATE_DEVICE_READER_EXEC="$SCRATCH/es80_signed_field_artifact_private_runner.py"',
+            'git -C "$ROOT" show "${REPOSITORY_HEAD}:${PRIVATE_DEVICE_READER_RELATIVE_PATH}"',
+        ):
+            self.assertIn(token, self.source)
+        self.assertIn(
+            '[[ "$PRIVATE_DEVICE_READER_WORKTREE_BLOB" == "$PRIVATE_DEVICE_READER_TRACKED_BLOB" ]]',
+            self.source,
+        )
+        self.assertIn(
+            '[[ "$PRIVATE_DEVICE_READER_MATERIALIZED_BLOB" == "$PRIVATE_DEVICE_READER_TRACKED_BLOB" ]]',
+            self.source,
+        )
+
+    def test_retained_manifest_digest_is_bound_to_privately_read_udid(self) -> None:
+        for token in (
             'manifest_binding_snapshot="$SCRATCH/retained-install-manifest.binding.json"',
-            'verify_manifest_device_binding "$manifest_binding_snapshot"',
+            'read_manifest_bound_private_device "$manifest_binding_snapshot"',
             "intendedDevicePseudonymSHA256",
-            "hashlib.sha256(device_id.encode('utf-8')).hexdigest()",
+            "module.read_private_identifier(Path(private_device_path), Path(repository_root))",
+            "hashlib.sha256(value.encode('utf-8')).hexdigest()",
             "hmac.compare_digest(observed, expected)",
             "object_pairs_hook=reject_duplicates",
             "json.dumps(manifest, ensure_ascii=False, separators=(',', ':'), sort_keys=True)",
+            "private intended-device identifier does not match retained-install intended-device pseudonym",
         ):
             self.assertIn(token, self.source)
-        self.assertNotIn("indent=2", self.source)
-        self.assertNotIn(".encode('utf-8') + b'\\n'", self.source)
-        self.assertLess(
-            self.source.index('verify_manifest_device_binding "$manifest_binding_snapshot"'),
-            self.source.index('case "$ACTION" in', self.source.index('verify_manifest_device_binding()')),
-        )
         self.assertIn(
-            ': "${NEMBRA_RETAINED_INSTALL_MANIFEST_PATH:?Set NEMBRA_RETAINED_INSTALL_MANIFEST_PATH to the exact retained-install manifest for this attempt.}"',
+            ': "${NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE:?Set NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE to the private mode-0600 intended-iPhone identifier file.}"',
             self.source,
         )
+        binding = self.source.index(
+            'read_manifest_bound_private_device "$manifest_binding_snapshot"'
+        )
+        xctrace = self.source.index("xcrun xctrace list devices")
+        devicectl_list = self.source.index("devicectl list devices --hide-headers")
+        self.assertLess(binding, xctrace)
+        self.assertLess(binding, devicectl_list)
+
+    def test_connected_physical_iphone_must_match_private_identifier_exactly_once(self) -> None:
+        for token in (
+            "xcrun xctrace list devices",
+            "INTENDED_NORMALIZED=",
+            "ROW_NORMALIZED=",
+            "MATCH_COUNT=0",
+            '[[ "$MATCH_COUNT" == "1" ]]',
+            "No arbitrary-device fallback is permitted",
+        ):
+            self.assertIn(token, self.source)
+
+    def test_coredevice_selector_is_correlated_to_private_udid_before_copy(self) -> None:
+        for token in (
+            "devicectl list devices --hide-headers",
+            ".coredevice.local",
+            "BOUND_COREDEVICE_ID=",
+            "Caller-selected CoreDevice does not match the retained manifest's intended device",
+            '--device "$NEMBRA_FIELD_DEVICE_ID"',
+        ):
+            self.assertIn(token, self.source)
+        selector_match = self.source.index(
+            "Caller-selected CoreDevice does not match the retained manifest's intended device"
+        )
+        action_case = self.source.index(
+            'case "$ACTION" in',
+            self.source.index('say "Intended CoreDevice matched retained manifest device binding"'),
+        )
+        self.assertLess(selector_match, action_case)
+        self.assertNotIn('--device "$INTENDED_DEVICE_UDID"', self.source)
+
+    def test_raw_private_device_subject_is_dropped_before_transfer_action(self) -> None:
+        drop = self.source.index(
+            "unset INTENDED_DEVICE_UDID INTENDED_NORMALIZED ROW_UDID ROW_NORMALIZED"
+        )
+        action_case = self.source.index('case "$ACTION" in', drop)
+        self.assertLess(drop, action_case)
+        self.assertIn("unset NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE", self.source)
+        self.assertIn("Intended CoreDevice matched retained manifest device binding", self.source)
 
     def test_local_custody_is_fail_closed(self) -> None:
         for token in (
