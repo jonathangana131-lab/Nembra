@@ -1,0 +1,181 @@
+name: Capture entrypoint authorization current-carrier recovery
+
+on:
+  push:
+    branches:
+      - recovery/capture-entrypoint-auth-current-carrier-20260820-sol2
+    paths:
+      - '.github/workflows/capture-entrypoint-auth-current-carrier-recovery-sol2.yml'
+      - 'NembraApp/App/NembraCaptureEntrypoint.swift'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-entrypoint-auth-current-carrier-recovery-sol2
+  cancel-in-progress: false
+
+jobs:
+  repair-test-publish:
+    runs-on: xcode-27
+    timeout-minutes: 45
+    env:
+      TARGET_BRANCH: recovery/capture-entrypoint-auth-current-carrier-20260820-sol2
+      APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
+      SELF_WORKFLOW: .github/workflows/capture-entrypoint-auth-current-carrier-recovery-sol2.yml
+      EXPECTED_TRANSPLANT_BLOB: 9107ea5ef2bc023cd3b8c2e15a46297e733ba838
+    steps:
+      - name: Checkout exact recovery head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact re-anchored source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          test "$(git rev-parse HEAD:"$APP_SOURCE")" = "$EXPECTED_TRANSPLANT_BLOB"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          test "$(git merge-base HEAD 3db6e616aa88b4945896d0c433bbf48683a1ccd9)" = "3db6e616aa88b4945896d0c433bbf48683a1ccd9"
+
+      - name: Apply reviewed race-safe lifecycle corrections
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+
+          app = Path(os.environ["APP_SOURCE"])
+          source = app.read_text(encoding="utf-8")
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one anchor, found {count}")
+              source = source.replace(old, new, 1)
+
+          def replace_once_in_section(start_marker: str, end_marker: str, old: str, new: str, label: str) -> None:
+              global source
+              start_index = source.index(start_marker)
+              end_index = source.index(end_marker, start_index + len(start_marker))
+              section_text = source[start_index:end_index]
+              count = section_text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one section anchor, found {count}")
+              section_text = section_text.replace(old, new, 1)
+              source = source[:start_index] + section_text + source[end_index:]
+
+          # The app-container handoff is non-authorizing transport/verification work. Requiring the
+          # intentionally hard-false final field-build Boolean here creates a circular dependency.
+          replace_once(
+              "        guard phase == .idle, buildIdentity.isAuthoritativeFieldBuild else { return }\n",
+              "        guard phase == .idle, buildIdentity.hasCompleteFieldBuildMetadata else { return }\n",
+              "non-authorizing handoff metadata gate",
+          )
+
+          # OFF1 already consumes the package-owned armed session. The later baseline transition must
+          # not re-check the legacy final-build Boolean after that capability has advanced.
+          replace_once_in_section(
+              "    private func beginBaselineAfterCurrentOperatorAttestation() {\n",
+              "    private func beginCorrelationSeries() {\n",
+              """        guard buildIdentity.isAuthoritativeFieldBuild else {
+            failLocally(buildIdentity.blocker ?? "Exact field-build provenance is unavailable.", "field_build_identity_unavailable")
+            return
+        }
+""",
+              "",
+              "OFF1 legacy field-authority gate",
+          )
+
+          # `.armed` legitimately becomes `.off1Started`; selected-state authentication must not
+          # keep requiring the pre-OFF1 readiness Boolean.
+          replace_once_in_section(
+              "                if test.phase == .selected {\n",
+              "                } else if test.phase == .authenticating {\n",
+              "                    .disabled(!authorityReady || test.membershipBusy)\n",
+              "                    .disabled(test.membershipBusy)\n",
+              "selected authentication readiness",
+          )
+
+          # Reuse the controller's canonical fail-closed cleanup path when artifact freeze/seal fails.
+          old = """                            self.phase = .failed
+                            self.message = "The accepted evidence could not complete immutable artifact authorization sealing: \\(error.localizedDescription). Relaunch Capture before another attempt."
+                            self.log("field_authorization_or_artifact_freeze_rejected", [
+                                "generation": String(token.diagnosticGeneration),
+                                "error": error.localizedDescription
+                            ])
+                            return
+"""
+          new = """                            self.failLocally(
+                                "The accepted evidence could not complete immutable artifact authorization sealing: \\(error.localizedDescription). Relaunch Capture before another attempt.",
+                                "field_authorization_or_artifact_freeze_rejected"
+                            )
+                            return
+"""
+          replace_once(old, new, "accepted-artifact fail-closed cleanup")
+
+          app.write_text(source, encoding="utf-8")
+
+      - name: Enforce recovered authority shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test "$(git status --porcelain=v1 | awk '{print $2}' | sort | tr '\n' ' ' | sed 's/ $//')" = "$APP_SOURCE"
+          grep -Fq 'import NembraCaptureAppAuthorization' "$APP_SOURCE"
+          grep -Fq 'guard phase == .idle, buildIdentity.hasCompleteFieldBuildMetadata else { return }' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitOFF1Start()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitAuthenticationStart()' "$APP_SOURCE"
+          grep -Fq 'try fieldAuthorization.admitOfficialConnectionStart()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitObservationStart()' "$APP_SOURCE"
+          grep -Fq 'try self.freezeAcceptedArtifactForAuthorizationSeal()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()' "$APP_SOURCE"
+          test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE")" = 0
+
+      - name: Run lifecycle source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
+
+      - name: Run focused authorization and bootstrap contracts
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          swift test --filter AuthenticatedStationaryCaptureAppSessionTests
+          swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthorizationInboxAppAdapter
+          swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
+          swift test --filter CaptureAuthorizationTransferBootstrapSourceTests
+          swift test --filter TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
+
+      - name: Build standalone Capture on Xcode 27
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/NembraCaptureEntrypointCurrentCarrierRecovery" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Publish tested one-file recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin "$TARGET_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "${{ github.sha }}"
+          git rm -- "$SELF_WORKFLOW"
+          git add -- "$APP_SOURCE"
+          git diff --cached --check
+          test "$(git diff --cached --name-only 3db6e616aa88b4945896d0c433bbf48683a1ccd9 | sort | tr '\n' ' ' | sed 's/ $//')" = "$APP_SOURCE"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Capture: close race-safe field lifecycle on bootstrap carrier'
+          git push origin HEAD:"$TARGET_BRANCH"
