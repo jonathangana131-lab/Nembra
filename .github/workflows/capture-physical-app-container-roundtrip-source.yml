@@ -9,27 +9,35 @@ on:
       - 'scripts/field/probe_capture_app_container_transport.command'
       - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPhysicalAppContainerTransportProbeSourceTests.swift'
       - '.github/workflows/capture-physical-app-container-roundtrip-source.yml'
+  push:
+    branches:
+      - product/capture-1-0-main-20260818
+      - 'recovery/capture-physical-app-container-roundtrip-**'
+    paths:
+      - 'scripts/field/probe_capture_app_container_transport.command'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPhysicalAppContainerTransportProbeSourceTests.swift'
+      - '.github/workflows/capture-physical-app-container-roundtrip-source.yml'
 
 permissions:
   contents: read
 
 concurrency:
-  group: capture-physical-app-container-probe-${{ github.event.pull_request.number }}
+  group: capture-physical-app-container-probe-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   source-contract:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: xcode-27
     timeout-minutes: 15
     env:
-      EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       PROBE: scripts/field/probe_capture_app_container_transport.command
     steps:
-      - name: Checkout immutable PR head
+      - name: Checkout immutable subject head
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -79,5 +87,5 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD_SHA"
-          printf '%s\n' 'PROVEN: the exact PR head parses on the Xcode 27 Mac and passes the focused non-authorizing bundle-level app-container probe source contract, including unique-run/atomic-result stale-evidence rejection, environment-only operator device selection, and listing-success-only handoff semantics.'
+          printf '%s\n' 'PROVEN: the exact subject head parses on the Xcode 27 Mac and passes the focused non-authorizing bundle-level app-container probe source contract, including unique-run/atomic-result stale-evidence rejection, environment-only operator device selection, and listing-success-only handoff semantics.'
           printf '%s\n' 'NOT PROVEN: a physical iPhone round-trip, handoff-directory filesystem existence beyond a successful listing operation, exact installed Capture build identity, authorization payload transfer/acceptance, signing/install custody, whether any other process/app contacted Bluetooth/Tuya/ES80, telemetry semantics, commands, or physical Capture GO.'
