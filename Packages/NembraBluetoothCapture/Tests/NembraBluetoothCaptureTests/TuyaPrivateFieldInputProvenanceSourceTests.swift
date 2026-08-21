@@ -55,24 +55,19 @@ struct TuyaPrivateFieldInputProvenanceSourceTests {
         #expect(helper.contains("O_NOFOLLOW"))
     }
 
-    @Test("installer re-verifies ignored inputs immediately around the signed build")
-    func installerCannotBuildAcrossPrivateInputDrift() throws {
+    @Test("pre-install captures the accepted provenance helper but cannot execute private build admission")
+    func preinstallDefersPrivateInputVerificationToLaterAcceptedRung() throws {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
-        let calls = installer.split(separator: "\n").filter {
-            $0.trimmingCharacters(in: .whitespaces) == "verify_private_tuya_inputs"
-        }
-        #expect(calls.count == 2)
 
-        let firstCall = try requiredIndex(of: "say \"Field procedure: $PROCEDURE_ID\"\nverify_private_tuya_inputs", in: installer)
-        let build = try requiredIndex(of: "xcodebuild \\", in: installer)
-        let secondCall = try requiredIndex(of: "\nverify_private_tuya_inputs\n[[ \"$(git rev-parse HEAD", in: installer)
-        let appReadback = try requiredIndex(of: "APP_INFO_PLIST=\"$APP/Info.plist\"", in: installer)
-
-        #expect(firstCall < build)
-        #expect(build < secondCall)
-        #expect(secondCall < appReadback)
-        #expect(installer.contains("--record \"$TUYA_DEPENDENCY_PROVENANCE\""))
-        #expect(installer.contains("Private Tuya SDK/app-identity inputs no longer match the bootstrap fingerprint record"))
+        #expect(installer.contains("TUYA_PROVENANCE_PATH=\"Scripts/capture_tuya_private_input_provenance.py\""))
+        #expect(installer.contains("TUYA_PROVENANCE_SOURCE_B64=\"$(capture_accepted_git_source_base64 \"$TUYA_PROVENANCE_PATH\")\""))
+        #expect(installer.contains("run_accepted_tuya_provenance()"))
+        #expect(installer.components(separatedBy: "run_accepted_tuya_provenance").count == 2)
+        #expect(installer.contains("The present pre-install checkpoint does\n# not invoke them"))
+        #expect(!installer.contains("verify_private_tuya_inputs"))
+        #expect(!installer.contains("xcodebuild"))
+        #expect(installer.contains("PREINSTALL_RETAINED_SUBJECTS_BOUND_NOT_INSTALL_AUTHORITY"))
+        #expect(installer.contains("No device was contacted and no app was installed."))
     }
 
     @Test("private review authority stays opaque and does not serialize secret values")
