@@ -1,0 +1,118 @@
+name: Capture app authorization carrier recovery one-shot
+
+on:
+  push:
+    branches:
+      - product/capture-1-0-main-20260818
+    paths:
+      - .github/workflows/capture-app-authorization-carrier-recovery-one-shot.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: xcode-27
+    timeout-minutes: 35
+    concurrency:
+      group: capture-app-authorization-carrier-writer
+      cancel-in-progress: false
+    env:
+      TARGET_BRANCH: product/capture-1-0-main-20260818
+      EXPECTED_SOURCE_BLOB: 627c17949d15aaf26ca28c12abb9bb684ab0e731
+      APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
+      SOURCE_WORKFLOW: .github/workflows/capture-app-authorization-close-one-shot.yml
+      RECOVERY_WRITER: .github/workflows/capture-app-authorization-carrier-recovery-one-shot.yml
+    steps:
+      - name: Checkout exact carrier trigger head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact fail-closed carrier subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git branch --show-current)" = "$TARGET_BRANCH"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD:"$APP_SOURCE")" = "$EXPECTED_SOURCE_BLOB"
+          test -f "$SOURCE_WORKFLOW"
+          test -f "$RECOVERY_WRITER"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Execute existing reviewed lifecycle materializer
+        shell: python
+        run: |
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path(".github/workflows/capture-app-authorization-close-one-shot.yml").read_text(encoding="utf-8")
+          section = workflow.index("      - name: Materialize field authorization into real SecureLink lifecycle")
+          run_marker = "        run: |\n"
+          start = workflow.index(run_marker, section) + len(run_marker)
+          end = workflow.index("\n      - name: Enforce truth-preserving source shape", start)
+          script = textwrap.dedent(workflow[start:end])
+          exec(compile(script, "capture-app-authorization-carrier-recovery-materializer", "exec"), {"__name__": "__main__"})
+
+      - name: Enforce fail-closed lifecycle source shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          grep -Fq 'import NembraCaptureAppAuthorization' "$APP_SOURCE"
+          grep -Fq 'private let fieldAuthorization = NembraCaptureFieldAuthorizationController()' "$APP_SOURCE"
+          grep -Fq 'fieldAuthorization.stage == .armed' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitOFF1Start()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitAuthenticationStart()' "$APP_SOURCE"
+          grep -Fq 'try fieldAuthorization.admitOfficialConnectionStart()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.admitObservationStart()' "$APP_SOURCE"
+          grep -Fq 'try self.freezeAcceptedArtifactForAuthorizationSeal()' "$APP_SOURCE"
+          grep -Fq 'try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()' "$APP_SOURCE"
+          test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE")" = 0
+          test "$(grep -Fc 'publishDps(' "$APP_SOURCE")" = 0
+          test "$(grep -Fc 'writeValue(' "$APP_SOURCE")" = 0
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py -v
+
+      - name: Run focused authorization truth contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd Packages/NembraBluetoothCapture
+          swift test --filter AuthenticatedStationaryCaptureAppSessionTests
+          swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
+          swift test --filter TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
+
+      - name: Build standalone Capture on Xcode 27
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild \
+            -project NembraCapture.xcodeproj \
+            -scheme 'Nembra Capture' \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "${RUNNER_TEMP}/NembraCaptureAppAuthorizationRecovery" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Publish only the clean tested carrier successor
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm "$SOURCE_WORKFLOW" "$RECOVERY_WRITER"
+          git add -- "$APP_SOURCE" "$SOURCE_WORKFLOW" "$RECOVERY_WRITER"
+          git diff --cached --check
+          actual="$(git diff --cached --name-status | LC_ALL=C sort)"
+          expected="$(printf 'D\t%s\nD\t%s\nM\t%s\n' "$RECOVERY_WRITER" "$SOURCE_WORKFLOW" "$APP_SOURCE" | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat(capture): wire one-time field authorization into SecureLink'
+          successor="$(git rev-parse HEAD)"
+          git fetch origin "$TARGET_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          git push origin HEAD:"$TARGET_BRANCH"
+          printf 'NEMBRA_CAPTURE_APP_AUTHORIZATION_RECOVERY materialized=%s trigger=%s physicalAuthorityCreated=false\n' "$successor" "$GITHUB_SHA"
