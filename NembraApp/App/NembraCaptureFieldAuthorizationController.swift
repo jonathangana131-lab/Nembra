@@ -9,6 +9,7 @@ import NembraCaptureAppAuthorization
 /// envelope bytes enter only through the descriptor-bound one-shot app-container inbox.
 /// Complete build metadata may prepare transport; only the package session stages admit OFF1.
 /// Exact-head materialization must therefore validate these contracts together before publishing.
+/// Touching this adapter intentionally retriggers the sole race-safe materializer after legacy-writer retirement.
 @MainActor
 final class NembraCaptureFieldAuthorizationController {
     enum HandoffProgress: Equatable {
