@@ -22,6 +22,7 @@ jobs:
     env:
       TARGET_BRANCH: product/dashboard-battery-range-instrument-gpt56sol
       SELF: .github/workflows/dashboard-battery-range-ui-evidence-once.yml
+      DASHBOARD: NembraApp/Features/Dashboard/DashboardView.swift
       UI_TESTS: NembraUITests/NembraUITests.swift
       CLOSURE: .github/workflows/dashboard-cockpit-product-closure.yml
     steps:
@@ -31,6 +32,92 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: true
+
+      - name: Keep battery-as-control available at accessibility sizes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('NembraApp/Features/Dashboard/DashboardView.swift')
+          source = path.read_text()
+          old = '''            HStack(spacing: 14) {
+                compactAccessibilityMetric(
+                    title: "Battery",
+                    value: batteryText,
+                    warning: batteryInstrumentWarning,
+                    retained: isRetainedBatteryData
+                )
+                compactAccessibilityMetric(
+                    title: "Trip",
+                    value: tripText,
+                    retained: isRetainedVehicleData
+                )
+            }
+'''
+          new = '''            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: 14) {
+                    accessibilityBatteryRangeInstrument
+                    compactAccessibilityMetric(
+                        title: "Trip",
+                        value: tripText,
+                        retained: isRetainedVehicleData
+                    )
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    accessibilityBatteryRangeInstrument
+                    compactAccessibilityMetric(
+                        title: "Trip",
+                        value: tripText,
+                        retained: isRetainedVehicleData
+                    )
+                }
+            }
+'''
+          if source.count(old) != 1:
+              raise SystemExit('accessibility battery summary anchor moved')
+          source = source.replace(old, new)
+
+          anchor = '''    private func compactAccessibilityMetric(
+'''
+          if source.count(anchor) != 1:
+              raise SystemExit('compact accessibility metric anchor moved')
+          control = '''    private var accessibilityBatteryRangeInstrument: some View {
+        Button {
+            batteryReadout = batteryReadout == .charge ? .range : .charge
+        } label: {
+            HStack(spacing: 8) {
+                batterySilhouette
+                    .scaleEffect(0.78)
+                    .frame(width: 44, height: 28)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(batteryReadout == .charge ? "BATTERY" : "LEARNED RANGE")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(batteryInstrumentWarning ? Color.red : Color.secondary)
+                        .lineLimit(1)
+                    Text(batteryPrimaryText)
+                        .font(.headline.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(batteryPrimaryColor)
+                        .contentTransition(reduceMotion ? .identity : .numericText())
+                        .lineLimit(1)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+        .sensoryFeedback(.selection, trigger: batteryReadout)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(batteryReadout == .charge ? "Battery" : "Learned range")
+        .accessibilityValue(batteryAccessibilityValue)
+        .accessibilityHint(batteryAccessibilityHint)
+        .accessibilityIdentifier("dashboard.battery-range")
+    }
+
+'''
+          source = source.replace(anchor, control + anchor)
+          path.write_text(source)
 
       - name: Add battery/range truth UI evidence
         shell: python
@@ -101,6 +188,33 @@ jobs:
             "Unknown battery evidence must not masquerade as measured empty charge."
         )
         keepScreenshot(named: "Dashboard Battery Unknown Landscape")
+
+        app.terminate()
+        XCUIDevice.shared.orientation = .landscapeRight
+        app = XCUIApplication()
+        app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = "connected-stopped"
+        app.launchArguments += [
+            "-UIPreferredContentSizeCategoryName",
+            "UICTContentSizeCategoryAccessibilityXXXL"
+        ]
+        app.launch()
+        instrument = app.descendants(matching: .any)["dashboard.battery-range"]
+        XCTAssertTrue(
+            instrument.waitForExistence(timeout: 4),
+            "Accessibility XXXL must retain the same battery-as-control interaction."
+        )
+        assertMinimumTouchTarget(instrument, named: "Dashboard battery range Accessibility XXXL")
+        XCTAssertTrue(waitForValue("92%", element: instrument))
+        instrument.tap()
+        instrument = app.descendants(matching: .any)["dashboard.battery-range"]
+        XCTAssertTrue(waitForLabel("Learned range", element: instrument))
+        XCTAssertTrue(
+            waitForValueContaining(
+                "Unavailable until a verified learned range model exists",
+                element: instrument
+            )
+        )
+        keepScreenshot(named: "Dashboard Learned Range Accessibility XXXL Landscape")
     }
 
 '''
@@ -136,24 +250,29 @@ jobs:
           if closure.count(test_anchor) != 1:
               raise SystemExit('Dashboard exact-head test invocation anchor moved')
           closure = closure.replace(test_anchor, replacement)
-          closure = closure.replace('test "$count" -ge 5', 'test "$count" -ge 7')
+          closure = closure.replace('test "$count" -ge 5', 'test "$count" -ge 8')
           closure_path.write_text(closure)
 
-      - name: Validate focused evidence source shape
+      - name: Validate product and evidence source shape
         shell: bash
         run: |
           set -euo pipefail
           git diff --check
+          grep -Fq 'private var accessibilityBatteryRangeInstrument: some View' "$DASHBOARD"
+          grep -Fq 'ViewThatFits(in: .horizontal)' "$DASHBOARD"
+          grep -Fq 'accessibilityIdentifier("dashboard.battery-range")' "$DASHBOARD"
           grep -Fq 'testLandscapeDashboardBatteryBodyTogglesRangeWithoutInventingEvidence' "$UI_TESTS"
           grep -Fq 'private func waitForLabel' "$UI_TESTS"
           grep -Fq 'waitForValue("92%", element: instrument)' "$UI_TESTS"
+          grep -Fq 'UICTContentSizeCategoryAccessibilityXXXL' "$UI_TESTS"
           grep -Fq 'Unavailable until a verified learned range model exists' "$UI_TESTS"
           grep -Fq 'Unavailable until battery evidence is display-authoritative' "$UI_TESTS"
           grep -Fq 'Dashboard Learned Range Unavailable Landscape' "$UI_TESTS"
           grep -Fq 'Dashboard Battery Unknown Landscape' "$UI_TESTS"
+          grep -Fq 'Dashboard Learned Range Accessibility XXXL Landscape' "$UI_TESTS"
           grep -Fq -- '-only-testing:NembraUITests/NembraUITests/testLandscapeDashboardBatteryBodyTogglesRangeWithoutInventingEvidence' "$CLOSURE"
-          grep -Fq 'test "$count" -ge 7' "$CLOSURE"
-          test "$(git status --porcelain=v1 | awk '{print $2}' | sort | tr '\n' ' ' | sed 's/ $//')" = '.github/workflows/dashboard-cockpit-product-closure.yml NembraUITests/NembraUITests.swift'
+          grep -Fq 'test "$count" -ge 8' "$CLOSURE"
+          test "$(git status --porcelain=v1 | awk '{print $2}' | sort | tr '\n' ' ' | sed 's/ $//')" = '.github/workflows/dashboard-cockpit-product-closure.yml NembraApp/Features/Dashboard/DashboardView.swift NembraUITests/NembraUITests.swift'
 
       - name: Publish exact focused evidence and retire hook
         shell: bash
@@ -162,9 +281,9 @@ jobs:
           remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
           test "$remote_head" = "$GITHUB_SHA"
           rm -f "$SELF"
-          git add -- "$UI_TESTS" "$CLOSURE" "$SELF"
+          git add -- "$DASHBOARD" "$UI_TESTS" "$CLOSURE" "$SELF"
           git diff --cached --check
           git config user.name 'github-actions[bot]'
-          git config user.email '41898233+github-actions[bot]@users.noreply.github.com'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'Dashboard: prove battery range truth in real UI'
           git push origin HEAD:"$TARGET_BRANCH"
