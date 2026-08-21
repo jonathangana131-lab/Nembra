@@ -1,0 +1,134 @@
+name: Capture V16 lifecycle oracle current-carrier materialize once
+
+on:
+  push:
+    branches:
+      - ci/capture-v16-lifecycle-oracle-current-gpt56sol-20260821
+    paths:
+      - .github/workflows/capture-v16-lifecycle-oracle-current-materialize-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-v16-lifecycle-oracle-current-materialize-once
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TARGET_BRANCH: ci/capture-v16-lifecycle-oracle-current-gpt56sol-20260821
+      EXACT_PARENT: 9aeba91c4bec69a1b05f7f6f57ef075ee1c21c6e
+      EXPECTED_TARGET_BLOB: 6dc545a21adef28417d47752b02b34c1cebd7352
+      TARGET_WORKFLOW: .github/workflows/capture-v16-standalone.yml
+      SELF_WORKFLOW: .github/workflows/capture-v16-lifecycle-oracle-current-materialize-once.yml
+      LIFECYCLE_ORACLE: scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
+    steps:
+      - name: Checkout exact authoring head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact current-carrier parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "${{ github.sha }}"
+          test "$(git rev-parse --verify HEAD^1)" = "$EXACT_PARENT"
+          test "$(git rev-parse HEAD:"$TARGET_WORKFLOW")" = "$EXPECTED_TARGET_BLOB"
+          test -f "$LIFECYCLE_ORACLE"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Materialize lifecycle oracle into V16 exact-head gate
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+
+          path = Path(os.environ["TARGET_WORKFLOW"])
+          source = path.read_text(encoding="utf-8")
+          oracle = os.environ["LIFECYCLE_ORACLE"]
+
+          trigger_anchor = "      - 'Packages/NembraCore/**'\n      - '.github/workflows/capture-v16-standalone.yml'\n"
+          trigger_replacement = (
+              "      - 'Packages/NembraCore/**'\n"
+              f"      - '{oracle}'\n"
+              "      - '.github/workflows/capture-v16-standalone.yml'\n"
+          )
+          if source.count(trigger_anchor) != 1:
+              raise SystemExit(
+                  f"V16 lifecycle trigger anchor count was {source.count(trigger_anchor)}; refusing"
+              )
+          source = source.replace(trigger_anchor, trigger_replacement, 1)
+
+          compile_anchor = (
+              "            scripts/ci/es80_retained_install_manifest.py \\\n"
+              "            scripts/ci/tests/test_es80_retained_install_manifest.py \\\n"
+              "            scripts/ci/tests/test_es80_retained_install_installer_chronology.py\n"
+          )
+          compile_replacement = (
+              "            scripts/ci/es80_retained_install_manifest.py \\\n"
+              "            scripts/ci/tests/test_es80_retained_install_manifest.py \\\n"
+              "            scripts/ci/tests/test_es80_retained_install_installer_chronology.py \\\n"
+              f"            {oracle}\n"
+          )
+          if source.count(compile_anchor) != 1:
+              raise SystemExit(
+                  f"V16 lifecycle py_compile anchor count was {source.count(compile_anchor)}; refusing"
+              )
+          source = source.replace(compile_anchor, compile_replacement, 1)
+
+          run_anchor = (
+              "          /usr/bin/python3 -I scripts/ci/tests/test_es80_retained_install_installer_chronology.py\n"
+              "          test ! -e LocalSecrets\n"
+          )
+          run_replacement = (
+              "          /usr/bin/python3 -I scripts/ci/tests/test_es80_retained_install_installer_chronology.py\n"
+              f"          /usr/bin/python3 -I {oracle} -v\n"
+              "          test ! -e LocalSecrets\n"
+          )
+          if source.count(run_anchor) != 1:
+              raise SystemExit(
+                  f"V16 lifecycle execution anchor count was {source.count(run_anchor)}; refusing"
+              )
+          source = source.replace(run_anchor, run_replacement, 1)
+
+          if source.count(oracle) != 3:
+              raise SystemExit(
+                  f"expected lifecycle oracle in trigger/compile/run exactly three times, got {source.count(oracle)}"
+              )
+          path.write_text(source, encoding="utf-8")
+
+      - name: Verify narrow fail-closed gate delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git diff --name-only)" = "$TARGET_WORKFLOW"
+          git diff --check
+          /usr/bin/python3 -m py_compile "$LIFECYCLE_ORACLE"
+          grep -Fq -- "- '$LIFECYCLE_ORACLE'" "$TARGET_WORKFLOW"
+          grep -Fq -- "/usr/bin/python3 -I $LIFECYCLE_ORACLE -v" "$TARGET_WORKFLOW"
+          test "$(grep -Fc -- "$LIFECYCLE_ORACLE" "$TARGET_WORKFLOW")" = 3
+          test "$(grep -Fc 'isAuthoritativeFieldBuild = true' NembraApp/App/NembraCaptureEntrypoint.swift)" = 0
+
+      - name: Publish exact gate and retire authoring workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
+          test "$remote_head" = "${{ github.sha }}"
+          rm "$SELF_WORKFLOW"
+          git add -- "$TARGET_WORKFLOW" "$SELF_WORKFLOW"
+          git diff --cached --check
+          actual="$(git diff --cached --name-status | LC_ALL=C sort)"
+          expected="$(printf 'D\t%s\nM\t%s\n' "$SELF_WORKFLOW" "$TARGET_WORKFLOW" | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'ci(capture): require lifecycle oracle in V16 current carrier'
+          git push origin HEAD:"$TARGET_BRANCH"
+          printf 'NEMBRA_CAPTURE_V16_LIFECYCLE_ORACLE materialized=%s parent=%s physicalAuthorityCreated=false\n' "$(git rev-parse HEAD)" "$EXACT_PARENT"
