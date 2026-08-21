@@ -2,48 +2,44 @@ import Foundation
 import Testing
 @testable import NembraBluetoothCapture
 
-@Suite("Capture field installer private install-log custody")
+@Suite("Capture pre-install retained-subject custody")
 struct TuyaFieldInstallerPrivateInstallLogCustodySourceTests {
-    @Test("raw devicectl diagnostics use a unique private file with guaranteed cleanup")
-    func installLogCannotPersistAsPredictableTemporaryState() throws {
+    @Test("retained subjects use no-follow stable-descriptor validation")
+    func retainedInputsRejectPathSubstitutionAndMutation() throws {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
 
-        #expect(installer.contains("mktemp \"${TMPDIR:-/tmp}/nembra-authenticated-capture-install.XXXXXX\""))
-        #expect(installer.contains("trap 'rm -f -- \"$INSTALL_LOG\"' EXIT"))
-        #expect(installer.contains("chmod 600 \"$INSTALL_LOG\""))
-        #expect(installer.contains("rm -f -- \"$INSTALL_LOG\""))
-        #expect(installer.contains("trap - EXIT"))
-        #expect(!installer.contains("nembra-authenticated-capture-install.log"))
+        #expect(installer.contains("O_NOFOLLOW"))
+        #expect(installer.contains("stat.S_ISREG(before.st_mode)"))
+        #expect(installer.contains("before.st_nlink != 1"))
+        #expect(installer.contains("before.st_uid != os.geteuid()"))
+        #expect(installer.contains("forbidden_mode = 0o077 if access_policy == \"private\" else 0o022"))
+        #expect(installer.contains("identity(after) != identity(before)"))
+        #expect(installer.contains("hmac.compare_digest(digest.hexdigest(), expected)"))
+        #expect(installer.contains("Self-test accepted a symlinked retained subject."))
     }
 
-    @Test("diagnostic replay redacts private and selector variants without putting either value in child argv")
-    func diagnosticReplayUsesStdinBoundRedaction() throws {
+    @Test("private retained subjects are supplied outside argv and remain private")
+    func privateSubjectsCannotBeSmuggledThroughCommandArguments() throws {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
 
-        #expect(installer.contains("printf '%s\\0%s' \"$DEVICE_UDID\" \"$COREDEVICE_ID\" | /usr/bin/python3 -I -c"))
-        #expect(installer.contains("payload = sys.stdin.buffer.read()"))
-        #expect(installer.contains("private_udid_raw, selector_raw = payload.split(b\"\\0\", 1)"))
-        #expect(installer.contains("secret.replace(\"-\", \"\")"))
-        #expect(installer.contains("flags=re.IGNORECASE"))
-        #expect(installer.contains("<redacted-device>"))
-        #expect(installer.contains("<redacted-device-selector>"))
-        #expect(!installer.contains("INSTALL_DIAGNOSTIC=\"${INSTALL_DIAGNOSTIC//$DEVICE_UDID/<redacted-device>}\""))
-        #expect(!installer.contains("INSTALL_DIAGNOSTIC=\"${INSTALL_DIAGNOSTIC//$COREDEVICE_ID/<redacted-device-selector>}\""))
+        #expect(installer.contains("Only --dry-run or --self-test is accepted; private values and hashes must not be placed on argv."))
+        #expect(installer.contains("NEMBRA_ACCEPTED_FINAL_GO_SUBJECT_PATH"))
+        #expect(installer.contains("NEMBRA_INTENDED_DEVICE_PSEUDONYMOUS_BINDING_PATH"))
+        #expect(installer.contains("validate_retained_input \"accepted Final-GO subject\""))
+        #expect(installer.contains("validate_retained_input \"intended-device pseudonymous binding\""))
+        #expect(installer.contains("private 1048576"))
     }
 
-    @Test("strong intended-device, built-artifact, and V14 baseline custody remain intact")
-    func hardeningDoesNotRegressCurrentFieldAuthority() throws {
+    @Test("pre-install utility has no device install launch or install-log surface")
+    func preinstallUtilityCannotContactDevice() throws {
         let installer = try readRepositoryFile("scripts/field/install_one_time_capture.command")
 
-        #expect(installer.contains("iPhone13,2"))
-        #expect(installer.contains("$DEVICE_OS_VERSION\" == 27.*"))
-        #expect(installer.contains("devicectl device install app --device \"$COREDEVICE_ID\""))
-        #expect(!installer.contains("devicectl device install app --device \"$DEVICE_UDID\""))
-        #expect(installer.contains("APP_INFO_PLIST=\"$APP/Info.plist\""))
-        #expect(installer.contains("$BUILT_BUILD_IDENTIFIER\" == \"$BUILD_LABEL"))
-        #expect(installer.contains("$BUILT_SOURCE_SHA\" == \"$SOURCE_SHA"))
-        #expect(installer.contains("$BUILT_BUNDLE_ID\" == \"$BUNDLE_ID"))
-        #expect(installer.contains("OFF1 -> ON1 -> OFF2 -> ON2"))
+        #expect(installer.contains("PREINSTALL_RETAINED_SUBJECTS_BOUND_NOT_INSTALL_AUTHORITY"))
+        #expect(installer.contains("No device was contacted and no app was installed."))
+        #expect(!installer.contains("devicectl device install app"))
+        #expect(!installer.contains("devicectl device process launch"))
+        #expect(!installer.contains("nembra-authenticated-capture-install"))
+        #expect(!installer.contains("INSTALL_LOG="))
     }
 
     private func readRepositoryFile(_ relativePath: String) throws -> String {
