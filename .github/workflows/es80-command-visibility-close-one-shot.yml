@@ -1,0 +1,127 @@
+name: ES80 command visibility close one-shot
+
+on:
+  push:
+    branches:
+      - parallel/es80-command-capabilities-fail-closed-gpt56
+    paths:
+      - .github/workflows/es80-command-visibility-close-one-shot.yml
+
+permissions:
+  contents: write
+
+jobs:
+  close-product-surface:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TARGET_BRANCH: parallel/es80-command-capabilities-fail-closed-gpt56
+      EXPECTED_PARENT: 92c7c9e1bf7865ba25f583917047d42e53e535eb
+      EXPECTED_HOME_BLOB: 05b35eb19baf8315fbbb24be6e52812fdd3e9854
+      EXPECTED_TEST_BLOB: 28fb94f29c3cd63e8d4d6582a50c4ccd76fbad10
+      HOME: NembraApp/Features/Home/HomeView.swift
+      TEST: Packages/NembraCore/Tests/NembraCoreTests/ES80CommandCapabilityAppVisibilitySourceTests.swift
+      SELF: .github/workflows/es80-command-visibility-close-one-shot.yml
+    steps:
+      - name: Checkout exact authoring checkpoint
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact reviewed parent and source blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          test "$(git rev-parse HEAD:"$HOME")" = "$EXPECTED_HOME_BLOB"
+          test "$(git rev-parse HEAD:"$TEST")" = "$EXPECTED_TEST_BLOB"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Gate the Home quick-controls shell by real capabilities
+        shell: python
+        run: |
+          from pathlib import Path
+
+          home_path = Path("NembraApp/Features/Home/HomeView.swift")
+          home = home_path.read_text(encoding="utf-8")
+
+          mount_old = """                machineHero
+                controlsSection
+
+                if !supportedModes.isEmpty {
+"""
+          mount_new = """                machineHero
+
+                if hasQuickControls {
+                    controlsSection
+                }
+
+                if !supportedModes.isEmpty {
+"""
+          if home.count(mount_old) != 1:
+              raise SystemExit(f"Home controls mount anchor drifted: {home.count(mount_old)}")
+          home = home.replace(mount_old, mount_new, 1)
+
+          section_old = """    // MARK: - Confirmed controls
+
+    private var controlsSection: some View {
+"""
+          section_new = """    // MARK: - Confirmed controls
+
+    private var hasQuickControls: Bool {
+        vehicle.profile.capabilities.supportsHeadlight ||
+            vehicle.profile.capabilities.supportsLock
+    }
+
+    private var controlsSection: some View {
+"""
+          if home.count(section_old) != 1:
+              raise SystemExit(f"Home controls section anchor drifted: {home.count(section_old)}")
+          home = home.replace(section_old, section_new, 1)
+          home_path.write_text(home, encoding="utf-8")
+
+          test_path = Path("Packages/NembraCore/Tests/NembraCoreTests/ES80CommandCapabilityAppVisibilitySourceTests.swift")
+          tests = test_path.read_text(encoding="utf-8")
+          expectations_old = """        #expect(source.contains(\"if vehicle.profile.capabilities.supportsHeadlight\"))
+        #expect(source.contains(\"if vehicle.profile.capabilities.supportsLock\"))
+"""
+          expectations_new = """        #expect(source.contains(\"if hasQuickControls {\\n                    controlsSection\\n                }\"))
+        #expect(source.contains(\"private var hasQuickControls: Bool\"))
+        #expect(source.contains(\"vehicle.profile.capabilities.supportsHeadlight ||\"))
+        #expect(source.contains(\"vehicle.profile.capabilities.supportsLock\"))
+        #expect(source.contains(\"if vehicle.profile.capabilities.supportsHeadlight\"))
+        #expect(source.contains(\"if vehicle.profile.capabilities.supportsLock\"))
+"""
+          if tests.count(expectations_old) != 1:
+              raise SystemExit(f"Home source-contract anchor drifted: {tests.count(expectations_old)}")
+          tests = tests.replace(expectations_old, expectations_new, 1)
+          test_path.write_text(tests, encoding="utf-8")
+
+      - name: Run focused truth contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          swift test --package-path Packages/NembraCore --filter ES80CommandCapabilityAppVisibilitySourceTests
+          swift test --package-path Packages/NembraCore --filter VehicleTargetTests
+          swift test --package-path Packages/NembraCore --filter SimulatedSpeedCurrentnessTests
+
+      - name: Publish tested source and retire authoring path
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
+          test "$remote_head" = "$GITHUB_SHA"
+          rm "$SELF"
+          git add -- "$HOME" "$TEST" "$SELF"
+          git diff --cached --check
+          test "$(git diff --cached --name-only | sort)" = "$(printf '%s\n%s\n%s\n' "$HOME" "$SELF" "$TEST" | sort)"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Truth: hide Home quick-controls shell without verified commands'
+          tested="$(git rev-parse HEAD)"
+          git push origin HEAD:"$TARGET_BRANCH"
+          printf 'NEMBRA_ES80_COMMAND_VISIBILITY tested=%s physicalCommandAuthorityCreated=false\n' "$tested"
