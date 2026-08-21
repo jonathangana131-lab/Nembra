@@ -224,9 +224,9 @@ RESULT_PATH="$ARTIFACTS_DIR/result.txt"
   printf 'outbound_sha256=%s\n' "$OUTBOUND_SHA256"
   printf 'exact_round_trip=true\n'
   printf 'raw_device_output_persisted=false\n'
-  printf 'captureAuthorized=false\n'
-  printf 'physicalAuthorityCreated=false\n'
-  printf 'protocolSemanticsCreated=false\n'
+  printf 'probe_created_capture_authority=false\n'
+  printf 'probe_created_physical_authority=false\n'
+  printf 'probe_created_protocol_semantics=false\n'
   printf 'probe_initiated_bluetooth=false\n'
   printf 'probe_initiated_tuya=false\n'
   printf 'probe_initiated_es80_contact=false\n'
@@ -236,5 +236,5 @@ RESULT_PATH="$ARTIFACTS_DIR/result.txt"
 
 printf '%s\n' "PROVEN: exact bytes copied to and from the $BUNDLE_ID appDataContainer on the explicitly selected physical iPhone; the read-only listing request for $FIELD_AUTHORIZATION_SUBDIRECTORY also succeeded."
 printf '%s\n' "PROVEN PROVENANCE: repository HEAD $REPOSITORY_HEAD with exact checked-in probe blob $PROBE_TRACKED_BLOB and transport-contract blob $CONTRACT_TRACKED_BLOB, executed with shell startup and executable-path injection disabled."
-printf '%s\n' 'NOT PROVEN: handoff-directory filesystem existence beyond devicectl listing success, exact installed Capture build identity, authorization payload transfer or acceptance, signing/install custody, trust-root correctness, whether another process or already-running app contacted Bluetooth/Tuya/ES80, ES80 identity, telemetry semantics, commands, or physical Capture GO.'
+printf '%s\n' 'NOT PROVEN: handoff-directory filesystem existence beyond devicectl listing success, exact installed Capture build identity, authorization payload transfer or acceptance, signing/install custody, trust-root correctness, pre-existing app or field authority, pre-existing protocol knowledge, whether another process or already-running app contacted Bluetooth/Tuya/ES80, ES80 identity, telemetry semantics, commands, or physical Capture GO.'
 printf 'Evidence directory: %s\n' "$ARTIFACTS_DIR"
