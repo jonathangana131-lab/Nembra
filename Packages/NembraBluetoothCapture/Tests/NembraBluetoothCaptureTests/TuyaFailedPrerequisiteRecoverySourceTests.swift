@@ -11,7 +11,8 @@ struct TuyaFailedPrerequisiteRecoverySourceTests {
         let body = String(surface)
 
         #expect(body.contains("case .failed:"))
-        #expect(body.contains("!test.fieldBuildIsAuthoritative || !test.privateConfig"))
+        #expect(body.contains("!test.fieldBuildMetadataComplete || !test.privateConfig"))
+        #expect(!body.contains("!test.fieldBuildIsAuthoritative || !test.privateConfig"))
         #expect(body.contains("failureRecoveryContextPanel"))
         #expect(body.contains("test.canRestartFromFreshOFF1 && (!sdkAccount.loggedIn || !test.sdkAccountLoggedIn)"))
         #expect(body.contains("sdkAuthorizationPanel"))
