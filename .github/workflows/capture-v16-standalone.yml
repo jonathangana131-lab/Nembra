@@ -13,6 +13,23 @@ on:
       - 'NembraApp/Resources/Localizable.strings'
       - 'Packages/NembraBluetoothCapture/**'
       - 'Packages/NembraCore/**'
+      - 'scripts/ci/es80_signed_field_artifact_private_runner.py'
+      - 'scripts/ci/es80_sign_field_authorization_from_rendezvous.py'
+      - 'scripts/ci/es80_field_authorization_rendezvous.py'
+      - 'scripts/ci/es80_field_authorization_envelope.py'
+      - 'scripts/ci/es80_signed_field_artifact_evidence.py'
+      - 'scripts/ci/es80_run_materialized_field_authorization_signer.py'
+      - 'scripts/ci/es80_materialize_field_authorization_signer_runtime.py'
+      - 'scripts/ci/es80_materialize_field_authorization_signer_bundle.py'
+      - 'scripts/ci/tests/test_es80_sign_field_authorization_from_rendezvous.py'
+      - 'scripts/ci/tests/test_es80_signed_field_artifact_path_custody.py'
+      - 'scripts/ci/tests/test_es80_sign_field_authorization_execution_custody.py'
+      - 'scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py'
+      - 'scripts/ci/tests/test_es80_materialized_field_authorization_signer_runtime.py'
+      - 'scripts/ci/tests/test_es80_materialized_field_authorization_signer_execution_snapshot.py'
+      - 'scripts/ci/tests/test_es80_field_authorization_private_key_path_custody.py'
+      - 'scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py'
+      - 'scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py'
       - '.github/workflows/capture-v16-standalone.yml'
   workflow_dispatch:
 
@@ -121,17 +138,46 @@ jobs:
             Scripts/capture_tuya_private_input_provenance.py \
             scripts/ci/es80_signed_field_artifact_private_runner.py \
             scripts/ci/es80_retained_install_manifest.py \
+            scripts/ci/es80_signed_field_artifact_evidence.py \
+            scripts/ci/es80_field_authorization_envelope.py \
+            scripts/ci/es80_field_authorization_rendezvous.py \
+            scripts/ci/es80_sign_field_authorization_from_rendezvous.py \
+            scripts/ci/es80_run_materialized_field_authorization_signer.py \
+            scripts/ci/es80_materialize_field_authorization_signer_runtime.py \
+            scripts/ci/es80_materialize_field_authorization_signer_bundle.py \
             scripts/ci/tests/test_es80_retained_install_manifest.py \
-            scripts/ci/tests/test_es80_retained_install_installer_chronology.py
+            scripts/ci/tests/test_es80_retained_install_installer_chronology.py \
+            scripts/ci/tests/test_es80_sign_field_authorization_from_rendezvous.py \
+            scripts/ci/tests/test_es80_signed_field_artifact_path_custody.py \
+            scripts/ci/tests/test_es80_sign_field_authorization_execution_custody.py \
+            scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py \
+            scripts/ci/tests/test_es80_materialized_field_authorization_signer_runtime.py \
+            scripts/ci/tests/test_es80_materialized_field_authorization_signer_execution_snapshot.py \
+            scripts/ci/tests/test_es80_field_authorization_private_key_path_custody.py \
+            scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py \
+            scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
           /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_private_runner.py --self-test
           /usr/bin/python3 -I scripts/ci/es80_retained_install_manifest.py --self-test
+          /usr/bin/python3 -I scripts/ci/es80_signed_field_artifact_evidence.py --self-test
+          test -d /private/tmp
+          TMPDIR=/private/tmp /usr/bin/python3 scripts/ci/es80_field_authorization_envelope.py --self-test
           /usr/bin/python3 -I scripts/ci/tests/test_capture_tuya_private_input_provenance.py
           /usr/bin/python3 -I scripts/ci/tests/test_es80_retained_install_manifest.py
           /usr/bin/python3 -I scripts/ci/tests/test_es80_retained_install_installer_chronology.py
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_sign_field_authorization_from_rendezvous.py
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_signed_field_artifact_path_custody.py
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_sign_field_authorization_execution_custody.py
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py
+          /usr/bin/python3 scripts/ci/tests/test_es80_materialized_field_authorization_signer_runtime.py
+          /usr/bin/python3 scripts/ci/tests/test_es80_materialized_field_authorization_signer_execution_snapshot.py
+          /usr/bin/python3 scripts/ci/tests/test_es80_field_authorization_signer_custody_source.py
+          /usr/bin/python3 scripts/ci/tests/test_es80_field_authorization_private_key_path_custody.py
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py -v
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
           test ! -e LocalSecrets
           test ! -e Pods
           test ! -e NembraCapture.xcworkspace
-          printf '%s\n' 'Validated public handoff code only; CI did not provision secrets, build a private workspace, install an app, or authorize a physical run.'
+          printf '%s\n' 'Validated public handoff, exact app lifecycle, and synthetic signer custody/runtime only; CI did not provision secrets, use a production private key, build a private workspace, install an app, or authorize a physical run.'
 
       - name: Build standalone Capture for Simulator
         run: |
