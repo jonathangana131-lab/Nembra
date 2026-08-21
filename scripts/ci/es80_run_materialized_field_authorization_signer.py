@@ -7,6 +7,11 @@ copy from inside that external private bundle. Before delegating any private-key
 code, this runner verifies its canonical bundle location, owner-only directory/file custody, the
 canonical manifest, every materialized source digest, and the caller-supplied exact commit/hash.
 
+After verification, the exact bytes already read from the bundle remain the sole execution
+authority. The runner never reopens wrapper, rendezvous-validator, signer, or evidence source
+pathnames. This closes the same-UID post-verification pathname-swap window without changing the
+signer's payload, key-custody, or cryptographic contracts.
+
 This runner does not establish physical ES80 identity, telemetry semantics, command safety, or a
 physical GO. Cryptographic payload construction and key opening remain owned by the frozen existing
 `es80_field_authorization_envelope.py` signer.
@@ -15,7 +20,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -52,6 +56,73 @@ MANIFEST_KEYS = {
     "privateKeyMaterialized", "physicalExperimentAuthority",
 }
 ENTRY_KEYS = {"path", "gitBlobSHA1", "sha256", "byteCount"}
+
+# This bootstrap is part of the already materialized/verified runner bytes. It accepts the verified
+# signer + evidence Python bytes through stdin, preloads the evidence module from those bytes, then
+# executes the verified signer bytes with their canonical logical __file__. No materialized source
+# pathname is opened by the child process.
+VERIFIED_SIGNER_BOOTSTRAP = r"""
+import os
+import sys
+import types
+
+_MAX_SOURCE_BYTES = 1048576
+
+
+def _read_exact(count):
+    chunks = []
+    remaining = count
+    while remaining:
+        chunk = sys.stdin.buffer.read(remaining)
+        if not chunk:
+            raise RuntimeError("verified signer source frame ended early")
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
+def _read_source():
+    size = int.from_bytes(_read_exact(8), "big")
+    if size <= 0 or size > _MAX_SOURCE_BYTES:
+        raise RuntimeError("verified signer source frame size is invalid")
+    return _read_exact(size)
+
+
+signer_source = _read_source()
+evidence_source = _read_source()
+if sys.stdin.buffer.read(1):
+    raise RuntimeError("verified signer source frame has trailing bytes")
+if len(sys.argv) < 2:
+    raise RuntimeError("verified signer logical path is unavailable")
+
+logical_signer = sys.argv[1]
+logical_evidence = os.path.join(
+    os.path.dirname(logical_signer),
+    "es80_signed_field_artifact_evidence.py",
+)
+
+evidence_module = types.ModuleType("es80_signed_field_artifact_evidence")
+evidence_module.__file__ = logical_evidence
+evidence_module.__package__ = ""
+sys.modules["es80_signed_field_artifact_evidence"] = evidence_module
+exec(
+    compile(evidence_source, logical_evidence, "exec"),
+    evidence_module.__dict__,
+    evidence_module.__dict__,
+)
+
+sys.argv = [logical_signer, *sys.argv[2:]]
+signer_globals = {
+    "__name__": "__main__",
+    "__file__": logical_signer,
+    "__package__": None,
+}
+exec(
+    compile(signer_source, logical_signer, "exec"),
+    signer_globals,
+    signer_globals,
+)
+"""
 
 
 class MaterializedSignerRunnerError(RuntimeError):
@@ -254,7 +325,7 @@ def verify_materialized_bundle(
     bundle_directory: Path,
     expected_source_commit: str,
     expected_manifest_sha256: str,
-) -> tuple[Path, dict[str, Any]]:
+) -> tuple[Path, dict[str, Any], dict[str, bytes]]:
     expected_commit, expected_manifest = _require_expected_subject(
         expected_source_commit, expected_manifest_sha256
     )
@@ -274,6 +345,7 @@ def verify_materialized_bundle(
         )
 
     root_descriptor = _open_bundle_root(bundle)
+    verified_sources: dict[str, bytes] = {}
     try:
         manifest_bytes = _read_relative_file(
             root_descriptor, Path(MANIFEST_NAME), MAX_MANIFEST_BYTES
@@ -301,18 +373,60 @@ def verify_materialized_bundle(
                 raise MaterializedSignerRunnerError(
                     f"materialized source Git blob mismatch: {entry['path']}"
                 )
+            verified_sources[entry["path"]] = data
     finally:
         os.close(root_descriptor)
-    return bundle, manifest
+
+    if tuple(verified_sources) != REQUIRED_EXECUTION_SOURCES:
+        raise MaterializedSignerRunnerError("verified source snapshot set is incomplete")
+    return bundle, manifest, verified_sources
 
 
-def _load_module(path: Path, name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(name, path)
-    if spec is None or spec.loader is None:
-        raise MaterializedSignerRunnerError("verified materialized Python module is unavailable")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+def _load_verified_module(source: bytes, logical_path: Path, name: str) -> ModuleType:
+    """Execute one already-verified source snapshot without reopening its materialized pathname."""
+    if not source or len(source) > MAX_SOURCE_BYTES:
+        raise MaterializedSignerRunnerError("verified Python source size is invalid")
+    module = ModuleType(name)
+    module.__file__ = os.fspath(logical_path)
+    module.__package__ = ""
+    previous = sys.modules.get(name)
+    sys.modules[name] = module
+    try:
+        exec(
+            compile(source, os.fspath(logical_path), "exec"),
+            module.__dict__,
+            module.__dict__,
+        )
+    except BaseException:
+        if previous is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = previous
+        raise
     return module
+
+
+def _frame_verified_signer_sources(signer: bytes, evidence: bytes) -> bytes:
+    for source in (signer, evidence):
+        if not source or len(source) > MAX_SOURCE_BYTES:
+            raise MaterializedSignerRunnerError("verified signer source size is invalid")
+    return (
+        len(signer).to_bytes(8, "big") + signer
+        + len(evidence).to_bytes(8, "big") + evidence
+    )
+
+
+def _require_private_key_outside_bundle(path: Path, bundle: Path) -> None:
+    """Preserve the signer's repository/key separation even though source executes from memory."""
+    requested = path.expanduser()
+    if not requested.is_absolute():
+        requested = bundle / requested
+    normalized = Path(os.path.abspath(os.fspath(requested)))
+    try:
+        normalized.relative_to(bundle)
+    except ValueError:
+        return
+    raise MaterializedSignerRunnerError("P-256 private key must remain outside the signer bundle")
 
 
 def parser() -> argparse.ArgumentParser:
@@ -335,16 +449,23 @@ def parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
-        bundle, _ = verify_materialized_bundle(
+        bundle, _, verified_sources = verify_materialized_bundle(
             args.bundle_directory,
             args.expected_source_commit,
             args.expected_manifest_sha256,
         )
-        wrapper = _load_module(
+        _require_private_key_outside_bundle(args.private_key, bundle)
+
+        wrapper = _load_verified_module(
+            verified_sources[os.fspath(WRAPPER_RELATIVE_PATH)],
             bundle / WRAPPER_RELATIVE_PATH,
             "nembra_verified_materialized_field_authorization_wrapper",
         )
-        helper = wrapper._load_rendezvous_helper(bundle / RENDEZVOUS_RELATIVE_PATH)
+        helper = _load_verified_module(
+            verified_sources[os.fspath(RENDEZVOUS_RELATIVE_PATH)],
+            bundle / RENDEZVOUS_RELATIVE_PATH,
+            "nembra_verified_materialized_field_authorization_rendezvous",
+        )
         rendezvous = helper.verify_rendezvous_bytes(helper._read_exact(args.rendezvous))
         wrapper.validate_signing_chronology(
             attempt_started_at=rendezvous["attemptStartedAtUnixMilliseconds"],
@@ -353,8 +474,26 @@ def main(argv: list[str] | None = None) -> int:
             not_before=wrapper.timestamp_unix_milliseconds(args.not_before, "not-before"),
             expires_at=wrapper.timestamp_unix_milliseconds(args.expires_at, "expires-at"),
         )
-        signer = bundle / SIGNER_RELATIVE_PATH
-        command = wrapper.build_signer_command(args, rendezvous, signer)
+
+        logical_signer = bundle / SIGNER_RELATIVE_PATH
+        frozen_command = wrapper.build_signer_command(args, rendezvous, logical_signer)
+        if len(frozen_command) < 3 \
+                or frozen_command[0] != str(wrapper.PYTHON) \
+                or Path(frozen_command[1]) != logical_signer:
+            raise MaterializedSignerRunnerError(
+                "verified wrapper produced an unexpected signer launch contract"
+            )
+        command = [
+            frozen_command[0],
+            "-I",
+            "-c", VERIFIED_SIGNER_BOOTSTRAP,
+            os.fspath(logical_signer),
+            *frozen_command[2:],
+        ]
+        signer_input = _frame_verified_signer_sources(
+            verified_sources[os.fspath(SIGNER_RELATIVE_PATH)],
+            verified_sources[os.fspath(EVIDENCE_RELATIVE_PATH)],
+        )
         environment = {
             "PATH": "/usr/bin:/bin",
             "HOME": "/tmp",
@@ -366,7 +505,7 @@ def main(argv: list[str] | None = None) -> int:
             command,
             cwd=bundle,
             env=environment,
-            stdin=subprocess.DEVNULL,
+            input=signer_input,
             check=False,
         )
     except (MaterializedSignerRunnerError, RuntimeError, ValueError, OSError) as error:
