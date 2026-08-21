@@ -31,7 +31,7 @@ struct TuyaPhysicalAppContainerTransportProbeSourceTests {
     func probeRequiresRoundTripAndFailsClosedOnAuthority() throws {
         let probe = try readRepositoryFile(relativePath)
 
-        #expect(probe.contains("/bin/bash \"$CONTRACT_EXEC\""))
+        #expect(probe.contains("/usr/bin/env -u BASH_ENV -u ENV -u CDPATH -u GLOBIGNORE /bin/bash -p \"$CONTRACT_EXEC\""))
         #expect(probe.contains("devicectl device copy to"))
         #expect(probe.contains("devicectl device copy from"))
         #expect(probe.contains("/bin/dd if=/dev/urandom"))
@@ -51,6 +51,19 @@ struct TuyaPhysicalAppContainerTransportProbeSourceTests {
         #expect(probe.contains("installed_build_identity_verified=false"))
         #expect(probe.contains("NOT PROVEN: handoff-directory filesystem existence beyond devicectl listing success"))
         #expect(probe.contains("whether another process or already-running app contacted Bluetooth/Tuya/ES80"))
+    }
+
+    @Test("exact-source execution blocks caller shell startup injection")
+    func probeBlocksShellStartupInjection() throws {
+        let probe = try readRepositoryFile(relativePath)
+
+        #expect(probe.hasPrefix("#!/bin/bash -p\n"))
+        #expect(probe.contains("unset BASH_ENV ENV CDPATH GLOBIGNORE || true"))
+        #expect(probe.contains("NEMBRA_CAPTURE_PROBE_SELF_TEST"))
+        #expect(probe.contains("BASH_ENV=\"$SELF_TEST_HOSTILE\" ENV=\"$SELF_TEST_HOSTILE\" /bin/bash -p -c 'true'"))
+        #expect(probe.contains("startup_injection_blocked=true device_contact=false"))
+        #expect(probe.contains("/usr/bin/env -u BASH_ENV -u ENV -u CDPATH -u GLOBIGNORE /bin/bash -p \"$CONTRACT_EXEC\""))
+        #expect(!probe.contains("/bin/bash \"$CONTRACT_EXEC\""))
     }
 
     @Test("probe cannot promote bundle transport into exact installed-build evidence")
@@ -135,6 +148,7 @@ struct TuyaPhysicalAppContainerTransportProbeSourceTests {
         #expect(probe.contains("transport_contract_sha256=%s"))
         #expect(probe.contains("xcode_identity=%s"))
         #expect(probe.contains("PROVEN PROVENANCE:"))
+        #expect(probe.contains("executed with shell startup injection disabled"))
     }
 
     private func readRepositoryFile(_ relativePath: String) throws -> String {

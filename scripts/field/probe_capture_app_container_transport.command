@@ -1,6 +1,32 @@
-#!/bin/bash
+#!/bin/bash -p
 set -euo pipefail
 umask 077
+
+# Privileged bash mode is part of the evidence contract: caller-controlled BASH_ENV/ENV startup
+# content, inherited shell functions, and shell-option path variables must not add code to this
+# reviewed probe or to the exact materialized transport contract it executes.
+unset BASH_ENV ENV CDPATH GLOBIGNORE || true
+
+# Source/runtime self-test used by the exact-head macOS gate. It performs no device contact.
+if [[ "${NEMBRA_CAPTURE_PROBE_SELF_TEST:-0}" == "1" ]]; then
+  unset NEMBRA_CAPTURE_PROBE_SELF_TEST
+  SELF_TEST_DIR="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/nembra-capture-probe-shell-self-test.XXXXXX")"
+  /bin/chmod 700 "$SELF_TEST_DIR"
+  SELF_TEST_HOSTILE="$SELF_TEST_DIR/hostile-bash-env.sh"
+  SELF_TEST_MARKER="$SELF_TEST_DIR/startup-injection-ran"
+  cleanup_self_test() {
+    /bin/rm -rf -- "$SELF_TEST_DIR"
+  }
+  trap cleanup_self_test EXIT
+  printf '%s\n' '[[ -n "${NEMBRA_PROBE_STARTUP_MARKER:-}" ]] && /usr/bin/touch "$NEMBRA_PROBE_STARTUP_MARKER"' > "$SELF_TEST_HOSTILE"
+  NEMBRA_PROBE_STARTUP_MARKER="$SELF_TEST_MARKER" BASH_ENV="$SELF_TEST_HOSTILE" ENV="$SELF_TEST_HOSTILE" /bin/bash -p -c 'true'
+  [[ ! -e "$SELF_TEST_MARKER" ]] || {
+    echo 'ERROR: privileged bash startup isolation failed.' >&2
+    exit 14
+  }
+  printf '%s\n' 'NEMBRA_CAPTURE_PROBE_SHELL_STARTUP_SELF_TEST startup_injection_blocked=true device_contact=false'
+  exit 0
+fi
 
 # This probe proves only bidirectional file transport to the already-installed Nembra Capture
 # appDataContainer selected by bundle ID on one explicitly selected iPhone. It never proves which
@@ -90,7 +116,8 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 # Execute the exact contract blob already bound above, not a pathname that could be replaced between
-# verification and execution. The contract performs help-only inspection and does not contact a device.
+# verification and execution. Privileged mode plus explicit environment deletion makes the executed
+# shell code equal to the reviewed blob rather than reviewed bytes plus caller-selected startup code.
 CONTRACT_EXEC="$PRIVATE_RUNTIME_DIR/devicectl-manifest-transport-contract.sh"
 /usr/bin/git -C "$REPOSITORY_ROOT" cat-file blob "$CONTRACT_TRACKED_BLOB" > "$CONTRACT_EXEC"
 /bin/chmod 500 "$CONTRACT_EXEC"
@@ -98,7 +125,7 @@ CONTRACT_EXEC="$PRIVATE_RUNTIME_DIR/devicectl-manifest-transport-contract.sh"
   echo 'ERROR: exact transport-contract materialization changed; refusing physical evidence.' >&2
   exit 11
 }
-/bin/bash "$CONTRACT_EXEC" > "$ARTIFACTS_DIR/devicectl-copy-contract.txt"
+/usr/bin/env -u BASH_ENV -u ENV -u CDPATH -u GLOBIGNORE /bin/bash -p "$CONTRACT_EXEC" > "$ARTIFACTS_DIR/devicectl-copy-contract.txt"
 
 # The separate file-listing surface is required only to exercise a read-only request against the
 # intended FieldAuthorization subdirectory before the scratch round trip. A zero exit proves that
@@ -201,6 +228,6 @@ RESULT_PATH="$ARTIFACTS_DIR/result.txt"
 /bin/mv -f -- "$RESULT_TMP" "$RESULT_PATH"
 
 printf '%s\n' "PROVEN: exact bytes copied to and from the $BUNDLE_ID appDataContainer on the explicitly selected physical iPhone; the read-only listing request for $FIELD_AUTHORIZATION_SUBDIRECTORY also succeeded."
-printf '%s\n' "PROVEN PROVENANCE: repository HEAD $REPOSITORY_HEAD with exact checked-in probe blob $PROBE_TRACKED_BLOB and transport-contract blob $CONTRACT_TRACKED_BLOB."
+printf '%s\n' "PROVEN PROVENANCE: repository HEAD $REPOSITORY_HEAD with exact checked-in probe blob $PROBE_TRACKED_BLOB and transport-contract blob $CONTRACT_TRACKED_BLOB, executed with shell startup injection disabled."
 printf '%s\n' 'NOT PROVEN: handoff-directory filesystem existence beyond devicectl listing success, exact installed Capture build identity, authorization payload transfer or acceptance, signing/install custody, trust-root correctness, whether another process or already-running app contacted Bluetooth/Tuya/ES80, ES80 identity, telemetry semantics, commands, or physical Capture GO.'
 printf 'Evidence directory: %s\n' "$ARTIFACTS_DIR"
