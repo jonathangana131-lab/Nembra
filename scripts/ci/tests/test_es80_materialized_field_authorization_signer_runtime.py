@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -114,6 +116,27 @@ class MaterializedFieldAuthorizationSignerRuntimeTests(unittest.TestCase):
             "authorization_id": "87654321-4321-4321-8321-cba987654321",
         }
 
+    def _runner_arguments(
+        self,
+        result: dict[str, object],
+        fixture: dict[str, object],
+        output: Path,
+    ) -> list[str]:
+        return [
+            "--bundle-directory", str(result["outputDirectory"]),
+            "--expected-source-commit", str(result["sourceCommitSHA"]),
+            "--expected-manifest-sha256", str(result["manifestSHA256"]),
+            "--rendezvous", str(fixture["rendezvous"]),
+            "--signed-evidence", str(fixture["evidence"]),
+            "--private-key", str(fixture["key"]),
+            "--openssl", str(fixture["openssl"]),
+            "--authorization-id", str(fixture["authorization_id"]),
+            "--issued-at", str(fixture["issued"]),
+            "--not-before", str(fixture["issued"]),
+            "--expires-at", str(fixture["expires"]),
+            "--output", str(output),
+        ]
+
     def test_runtime_bundle_materializes_runner_as_first_exact_git_object(self) -> None:
         with self._temporary_directory("nembra-materialized-runtime-") as raw:
             parent = Path(raw)
@@ -149,7 +172,11 @@ class MaterializedFieldAuthorizationSignerRuntimeTests(unittest.TestCase):
                 fake_manifest,
             )
         main = source[source.index("def main("):]
-        self.assertLess(main.index("verify_materialized_bundle("), main.index("_load_module("))
+        self.assertLess(
+            main.index("verify_materialized_bundle("),
+            main.index("_load_verified_module("),
+        )
+        self.assertNotIn("_load_module(", main)
 
     def test_wrong_manifest_hash_fails_before_signer_launch(self) -> None:
         with self._temporary_directory("nembra-materialized-hash-") as raw:
@@ -185,6 +212,55 @@ class MaterializedFieldAuthorizationSignerRuntimeTests(unittest.TestCase):
             self.assertNotIn("private key", completed.stderr.lower())
             self.assertFalse(output.exists())
 
+    def test_post_verification_source_swaps_cannot_change_executed_bytes(self) -> None:
+        with self._temporary_directory("nembra-materialized-postverify-swap-") as raw:
+            parent = Path(raw)
+            result = self._materialize(parent)
+            fixture = self._write_signing_fixture(parent)
+            output = parent / "authorization-envelope.json"
+            marker = parent / "MUTATED_SOURCE_EXECUTED"
+            bundle = Path(str(result["outputDirectory"]))
+            materialized_runner = load(
+                Path(str(result["runnerPath"])),
+                "materialized_runner_postverify_swap",
+            )
+            original_verify = materialized_runner.verify_materialized_bundle
+
+            def verify_then_swap(*args):
+                verified = original_verify(*args)
+                malicious = (
+                    "from pathlib import Path\n"
+                    f"Path({str(marker)!r}).write_text('executed', encoding='utf-8')\n"
+                    "raise RuntimeError('mutated materialized source executed')\n"
+                ).encode("utf-8")
+                for relative in (
+                    materialized_runner.WRAPPER_RELATIVE_PATH,
+                    materialized_runner.RENDEZVOUS_RELATIVE_PATH,
+                    materialized_runner.SIGNER_RELATIVE_PATH,
+                    materialized_runner.EVIDENCE_RELATIVE_PATH,
+                ):
+                    path = bundle / relative
+                    os.chmod(path, 0o600)
+                    path.write_bytes(malicious)
+                    os.chmod(path, 0o400)
+                return verified
+
+            materialized_runner.verify_materialized_bundle = verify_then_swap
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                returncode = materialized_runner.main(
+                    self._runner_arguments(result, fixture, output)
+                )
+
+            self.assertEqual(returncode, 0, stderr.getvalue())
+            self.assertIn(
+                "SIGNED_BY_VERIFIED_MATERIALIZED_BUNDLE_NOT_PHYSICAL_GO",
+                stdout.getvalue(),
+            )
+            self.assertTrue(output.is_file())
+            self.assertFalse(marker.exists())
+
     def test_ephemeral_key_end_to_end_uses_only_materialized_signing_stack(self) -> None:
         with self._temporary_directory("nembra-materialized-e2e-") as raw:
             parent = Path(raw)
@@ -193,18 +269,7 @@ class MaterializedFieldAuthorizationSignerRuntimeTests(unittest.TestCase):
             output = parent / "authorization-envelope.json"
             command = [
                 "/usr/bin/python3", str(result["runnerPath"]),
-                "--bundle-directory", str(result["outputDirectory"]),
-                "--expected-source-commit", str(result["sourceCommitSHA"]),
-                "--expected-manifest-sha256", str(result["manifestSHA256"]),
-                "--rendezvous", str(fixture["rendezvous"]),
-                "--signed-evidence", str(fixture["evidence"]),
-                "--private-key", str(fixture["key"]),
-                "--openssl", str(fixture["openssl"]),
-                "--authorization-id", str(fixture["authorization_id"]),
-                "--issued-at", str(fixture["issued"]),
-                "--not-before", str(fixture["issued"]),
-                "--expires-at", str(fixture["expires"]),
-                "--output", str(output),
+                *self._runner_arguments(result, fixture, output),
             ]
             completed = subprocess.run(
                 command,
