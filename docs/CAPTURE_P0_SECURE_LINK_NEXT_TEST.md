@@ -41,7 +41,7 @@ The stationary field attempt may be authorized only after the final composed sta
 4. Private AppKey/AppSecret are provisioned only through the reviewed ignored local `NembraTuyaPrivateConfig` path. They are not committed, passed in process arguments, placed in the `devicectl` launch environment, logged, screenshot, or exported.
 5. The official Tuya SDK itself has an authenticated session for the **same account method that owns the scooter**. For an Apple-backed Smart Life account, use Sign in with Apple through Tuya's documented Apple OAuth transport; for an email/phone account, the verification-code path remains available. Metadata QR approval alone is not SDK login authority, and a different Tuya account must never be substituted merely because it can log in.
 6. The exact expected scooter device ID is proven to belong to that same current SDK account/home (owned or shared membership). Login alone is insufficient, and the membership proof is leased to the exact current account UID.
-7. OFF1 discovery cannot begin until compiled field-build provenance and the same-current-account exact-device authority are current.
+7. Complete compiled build metadata may prepare only the protected one-time-authorization transport. OFF1 discovery cannot begin until the package-owned one-time signed authorization session is freshly `.armed` for this live app attempt and the same-current-account exact-device authority is current. `NembraCaptureBuildIdentity.isAuthoritativeFieldBuild` remains a non-authorizing fail-closed regression sentinel and is not an OFF1 gate.
 8. Current target authority comes only from the package-owned fresh `OFF1 → ON1 → OFF2 → ON2` result, followed by explicit operator confirmation. Historical UUID/name/RSSI/FD50/Tuya hints remain non-authoritative.
 9. The standalone app consumes the canonical authenticated-session authority (`NembraBluetoothCapture`) rather than maintaining an independent boolean/timer acceptance path.
 10. The canonical authority is generation-bound, rejects stale/late callbacks, freezes terminal chronology, retires hidden generations before retry, and cannot resurrect a failed attempt into accepted state.
@@ -50,6 +50,18 @@ The stationary field attempt may be authorized only after the final composed sta
 13. The privately provisioned workspace builds/signs/installs the exact accepted source on the intended iPhone 12 / iOS 27, with exact build identity visible in the app and retained in exported evidence. For an Apple-backed account, the signed app must also have a valid Sign in with Apple entitlement/provisioning path and the Tuya developer workspace must have the corresponding Apple third-party-login capability configured; otherwise **STOP** before Bluetooth correlation.
 
 Until all applicable software/private-device prerequisites are true and the repository explicitly records `GO`, the physical secure-link experiment is **NO-GO**.
+
+### One-time signed authorization handoff — required before OFF1
+
+Complete build metadata is provenance and transport eligibility only; it does not arm Capture. After the exact accepted signed app is installed and launched, the accepted field workflow must complete the protected app-container handoff for that same live app attempt:
+
+1. Place the exact accepted retained-install manifest into the app's protected `FieldAuthorization` transfer destination using only the reviewed app-container transport path.
+2. Allow the app to consume that manifest and publish the fresh process-local signer rendezvous/challenge. The root transport bootstrap itself must not consume a manifest, publish a challenge, accept an envelope, mint a capability, arm the session, admit OFF1, or touch Bluetooth/Tuya.
+3. On the independently controlled private signing surface, verify the accepted stable subjects and current rendezvous, then issue the challenge-bound authorization envelope without exposing the production private key to the app, repository, logs, screenshots, or chat.
+4. Return that exact envelope through the reviewed app-container handoff to the same live app attempt.
+5. Require the package-owned app authorization session to reach exactly `.armed` before the operator can begin OFF1. A manifest, copied file, signer stdout line, or envelope by itself is not OFF1 authority.
+
+Any subject, digest, challenge, build/procedure, replay-consumption, transport, or signature mismatch is **STOP / remain NO-GO**. Do not hand-edit the manifest, rendezvous, or envelope to get past a failure.
 
 ## Tuya SDK provisioning — non-physical prerequisite
 
@@ -67,12 +79,12 @@ This test is indoors and stationary. It does **not** repeat the old ride sequenc
 
 ### Preflight
 
-1. Connect/unlock the intended iPhone 12, install the exact accepted signed Capture build, verify the app shows authoritative compiled field-build provenance, and verify `Procedure` is exactly `ES80-AUTHENTICATED-STATIONARY-v1`.
+1. Connect/unlock the intended iPhone 12, install the exact accepted signed Capture build, verify the app shows complete exact build metadata for that installed candidate without treating the legacy authoritative-build Boolean as field authority, and verify `Procedure` is exactly `ES80-AUTHENTICATED-STATIONARY-v1`.
 2. Keep the scooter stationary and initially **OFF**, with its charger physically disconnected.
 3. For this current attempt, require the operator to freshly declare in Capture that the scooter is initially powered **OFF**, stationary, its charger is physically disconnected, and no riding will occur. These are operator-declared physical safety preconditions, not charger sensing, charger telemetry, or inferred power telemetry. A declaration from an earlier attempt is stale and cannot authorize this attempt. If any declaration is absent, stale, or no longer true, **STOP**. Keeping Capture in the foreground remains an enforced procedure instruction, not an operator truth claim.
 4. In Capture, use the same official Tuya SDK account method that owns the scooter. For this Apple-backed Smart Life account, use **Sign in with Apple**. Use email/phone verification code only when that is genuinely the owning account's login method. If the required account method is unavailable or the SDK does not enter the expected account, **STOP**; do not fall back to a different account.
 5. Require the app to freshly verify the exact expected scooter device ID in the current SDK account/home and retain the same-account UID lease.
-6. If build authority, SDK login, exact membership, account identity, or any operator-declared safety precondition changes at any point, **STOP**. Do not begin or continue Bluetooth correlation.
+6. If exact build metadata/runtime identity becomes incomplete or mismatched, the one-time signed authorization session is absent/revoked/invalid, SDK login changes, exact membership changes, account identity changes, or any operator-declared safety precondition changes at any point, **STOP**. Do not begin or continue Bluetooth correlation.
 
 ### Fresh four-window target correlation
 
@@ -97,7 +109,7 @@ This test is indoors and stationary. It does **not** repeat the old ride sequenc
 
 Stop the attempt and preserve only already-legitimate evidence if any of these occurs:
 
-- field-build provenance becomes non-authoritative;
+- exact build metadata/runtime identity becomes incomplete or mismatched, or the one-time signed authorization session is missing, revoked, or invalid;
 - SDK account logout/switch or exact-device membership/UID lease changes;
 - a current-attempt stationary, charger-disconnected, or no-riding operator declaration is absent, stale, withdrawn, or no longer true;
 - a four-window scan never proves liveness or cannot earn its minimum receipt-bounded duration;
