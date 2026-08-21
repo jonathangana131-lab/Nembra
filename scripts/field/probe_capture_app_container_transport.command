@@ -3,9 +3,10 @@ set -euo pipefail
 umask 077
 
 # This probe proves only bidirectional file transport to the already-installed Nembra Capture
-# appDataContainer selected by bundle ID on one explicitly selected iPhone. It never proves which
-# exact Capture build is installed, never transfers an authorization payload, never grants Capture
-# authority, and its own code path initiates no Bluetooth/Tuya/ES80 operation.
+# appDataContainer selected by bundle ID on one explicitly requested devicectl target. It never proves
+# which exact Capture build is installed, never resolves physical-device identity, never transfers an
+# authorization payload, never grants Capture authority, and its own code path initiates no
+# Bluetooth/Tuya/ES80 operation.
 
 [[ "$(/usr/bin/uname -s)" == "Darwin" ]] || {
   echo 'ERROR: this probe must run on the Xcode Mac.' >&2
@@ -78,7 +79,8 @@ export ARTIFACTS_DIR
 
 # Any output produced while contacting the physical iPhone is kept outside the durable evidence
 # directory and erased on exit. devicectl may render raw device identity in human-readable output;
-# only the one-way device pseudonym below is allowed into result.txt.
+# only the one-way hash of the operator's requested selector below is allowed into result.txt. It is
+# deliberately not described as resolved device identity.
 PRIVATE_RUNTIME_DIR="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/nembra-capture-transport-private.XXXXXX")"
 /bin/chmod 700 "$PRIVATE_RUNTIME_DIR"
 cleanup_private_runtime() {
@@ -118,9 +120,10 @@ if "appDataContainer" not in text:
     raise SystemExit("ERROR: devicectl device info files help does not enumerate appDataContainer")
 PY
 
-# Never publish the raw UDID into durable evidence. A one-way local pseudonym is sufficient to
-# correlate repeated operator evidence without making the raw device identifier part of the report.
-DEVICE_PSEUDONYM="$(printf '%s' "$DEVICE_UDID" | /usr/bin/shasum -a 256 | /usr/bin/awk '{print $1}')"
+# Never publish the caller's raw selector into durable evidence. This one-way hash correlates the
+# requested selector across attempts, but it is not a resolved CoreDevice identity and cannot satisfy
+# the later intended-device authorization binding by itself.
+REQUESTED_DEVICE_SELECTOR_SHA256="$(printf '%s' "$DEVICE_UDID" | /usr/bin/shasum -a 256 | /usr/bin/awk '{print $1}')"
 
 # Request a read-only listing at the intended handoff subdirectory. This does not transfer any
 # authority-bearing file and does not prove the exact accepted Capture build is the installed bundle.
@@ -181,7 +184,8 @@ RESULT_PATH="$ARTIFACTS_DIR/result.txt"
   printf 'transport_contract_sha256=%s\n' "$CONTRACT_SHA256"
   printf 'xcode_identity=%s\n' "$XCODE_IDENTITY"
   printf 'bundle_id=%s\n' "$BUNDLE_ID"
-  printf 'device_pseudonym_sha256=%s\n' "$DEVICE_PSEUDONYM"
+  printf 'requested_device_selector_sha256=%s\n' "$REQUESTED_DEVICE_SELECTOR_SHA256"
+  printf 'resolved_device_identity_verified=false\n'
   printf 'field_authorization_subdirectory_listing_succeeded=true\n'
   printf 'authorization_payload_file_transferred=false\n'
   printf 'installed_build_identity_verified=false\n'
@@ -200,7 +204,7 @@ RESULT_PATH="$ARTIFACTS_DIR/result.txt"
 /bin/chmod 600 "$RESULT_TMP"
 /bin/mv -f -- "$RESULT_TMP" "$RESULT_PATH"
 
-printf '%s\n' "PROVEN: exact bytes copied to and from the $BUNDLE_ID appDataContainer on the explicitly selected physical iPhone; the read-only listing request for $FIELD_AUTHORIZATION_SUBDIRECTORY also succeeded."
+printf '%s\n' "PROVEN: exact bytes copied to and from the $BUNDLE_ID appDataContainer selected by the operator's devicectl selector; the read-only listing request for $FIELD_AUTHORIZATION_SUBDIRECTORY also succeeded."
 printf '%s\n' "PROVEN PROVENANCE: repository HEAD $REPOSITORY_HEAD with exact checked-in probe blob $PROBE_TRACKED_BLOB and transport-contract blob $CONTRACT_TRACKED_BLOB."
-printf '%s\n' 'NOT PROVEN: handoff-directory filesystem existence beyond devicectl listing success, exact installed Capture build identity, authorization payload transfer or acceptance, signing/install custody, trust-root correctness, whether another process or already-running app contacted Bluetooth/Tuya/ES80, ES80 identity, telemetry semantics, commands, or physical Capture GO.'
+printf '%s\n' 'NOT PROVEN: resolved physical-device identity or intended-device binding, handoff-directory filesystem existence beyond devicectl listing success, exact installed Capture build identity, authorization payload transfer or acceptance, signing/install custody, trust-root correctness, whether another process or already-running app contacted Bluetooth/Tuya/ES80, ES80 identity, telemetry semantics, commands, or physical Capture GO.'
 printf 'Evidence directory: %s\n' "$ARTIFACTS_DIR"
