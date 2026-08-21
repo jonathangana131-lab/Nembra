@@ -13,6 +13,7 @@ on:
       - 'NembraApp/Resources/Localizable.strings'
       - 'Packages/NembraBluetoothCapture/**'
       - 'Packages/NembraCore/**'
+      - 'scripts/ci/es80_signed_field_artifact_private_runner.py'
       - 'scripts/ci/es80_sign_field_authorization_from_rendezvous.py'
       - 'scripts/ci/es80_field_authorization_rendezvous.py'
       - 'scripts/ci/es80_field_authorization_envelope.py'
@@ -20,6 +21,7 @@ on:
       - 'scripts/ci/es80_run_materialized_field_authorization_signer.py'
       - 'scripts/ci/es80_materialize_field_authorization_signer_runtime.py'
       - 'scripts/ci/es80_materialize_field_authorization_signer_bundle.py'
+      - 'scripts/ci/tests/test_es80_sign_field_authorization_from_rendezvous.py'
       - 'scripts/ci/tests/test_es80_signed_field_artifact_path_custody.py'
       - 'scripts/ci/tests/test_es80_sign_field_authorization_execution_custody.py'
       - 'scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py'
@@ -144,6 +146,7 @@ jobs:
             scripts/ci/es80_materialize_field_authorization_signer_bundle.py \
             scripts/ci/tests/test_es80_retained_install_manifest.py \
             scripts/ci/tests/test_es80_retained_install_installer_chronology.py \
+            scripts/ci/tests/test_es80_sign_field_authorization_from_rendezvous.py \
             scripts/ci/tests/test_es80_signed_field_artifact_path_custody.py \
             scripts/ci/tests/test_es80_sign_field_authorization_execution_custody.py \
             scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py \
@@ -159,6 +162,7 @@ jobs:
           /usr/bin/python3 -I scripts/ci/tests/test_capture_tuya_private_input_provenance.py
           /usr/bin/python3 -I scripts/ci/tests/test_es80_retained_install_manifest.py
           /usr/bin/python3 -I scripts/ci/tests/test_es80_retained_install_installer_chronology.py
+          /usr/bin/python3 -I scripts/ci/tests/test_es80_sign_field_authorization_from_rendezvous.py
           /usr/bin/python3 -I scripts/ci/tests/test_es80_signed_field_artifact_path_custody.py
           /usr/bin/python3 -I scripts/ci/tests/test_es80_sign_field_authorization_execution_custody.py
           /usr/bin/python3 -I scripts/ci/tests/test_es80_rendezvous_signer_private_custody_boundary.py
