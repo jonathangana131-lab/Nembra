@@ -74,16 +74,22 @@ class FieldAuthorizationContainerTransportSourceTests(unittest.TestCase):
             self.source.index('publish_fresh_local_file "$staged" "$NEMBRA_SIGNER_RENDEZVOUS_OUTPUT"'),
         )
 
-    def test_completion_record_is_exact_sha256_plus_lf(self) -> None:
+    def test_completion_record_is_exact_sha256_plus_lf_under_isolated_descriptor_custody(self) -> None:
         for token in (
             "make_commit_record()",
-            "/usr/bin/shasum -a 256",
-            "^[0-9a-f]{64}$",
-            "builtin printf '%s\\n' \"$digest\"",
-            "/usr/bin/stat -f '%z'",
+            '/usr/bin/python3 -I -B - "$source" "$destination"',
+            "import hashlib, os, stat, sys",
+            "os.O_RDONLY | no_follow",
+            "hashlib.sha256()",
+            "identity(before) != identity(after)",
+            "digest.hexdigest().encode('ascii') + b'\\n'",
+            "os.O_WRONLY | os.O_CREAT | os.O_EXCL | no_follow",
+            "os.fsync(out)",
             'make_commit_record "$staged" "$commit"',
         ):
             self.assertIn(token, self.source)
+        self.assertNotIn("/usr/bin/shasum -a 256", self.source)
+        self.assertNotIn("/usr/bin/awk", self.source)
 
     def test_device_and_local_subjects_do_not_travel_on_positional_argv(self) -> None:
         self.assertIn("NEMBRA_FIELD_DEVICE_ID", self.source)
