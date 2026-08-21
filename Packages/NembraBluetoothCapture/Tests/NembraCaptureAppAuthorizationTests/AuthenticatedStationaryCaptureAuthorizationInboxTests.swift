@@ -1,20 +1,26 @@
+import CryptoKit
 import Foundation
 import Testing
 @testable import NembraCaptureAppAuthorization
 
 @Suite("Authenticated stationary authorization inbox")
 struct AuthenticatedStationaryCaptureAuthorizationInboxTests {
-    @Test("descriptor-bound take returns exact bytes and retires the handoff")
+    @Test("digest-committed take returns exact bytes and retires incoming plus commit")
     func exactOneShotTake() throws {
         try withInboxDirectory { directory, inbox in
             let subject = Data("canonical retained install manifest bytes".utf8)
-            let url = directory.appendingPathComponent(
-                AuthenticatedStationaryCaptureAuthorizationInbox.installManifestFilename
+            let incoming = directory.appendingPathComponent(
+                AuthenticatedStationaryCaptureAuthorizationInbox.installManifestIncomingFilename
             )
-            try subject.write(to: url, options: .atomic)
+            let commit = directory.appendingPathComponent(
+                AuthenticatedStationaryCaptureAuthorizationInbox.installManifestCommitFilename
+            )
+            try subject.write(to: incoming)
+            try commitRecord(for: subject).write(to: commit)
 
             #expect(try inbox.takeInstallManifest() == subject)
-            #expect(!FileManager.default.fileExists(atPath: url.path))
+            #expect(!FileManager.default.fileExists(atPath: incoming.path))
+            #expect(!FileManager.default.fileExists(atPath: commit.path))
             #expect(throws: AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(
                 AuthenticatedStationaryCaptureAuthorizationInbox.installManifestFilename
             )) {
@@ -23,18 +29,75 @@ struct AuthenticatedStationaryCaptureAuthorizationInboxTests {
         }
     }
 
+    @Test("partial completion record is retryable and never consumes incoming bytes")
+    func partialCommitIsRetryable() throws {
+        try withInboxDirectory { directory, inbox in
+            let subject = Data("signed envelope bytes still arriving".utf8)
+            let incoming = directory.appendingPathComponent(
+                AuthenticatedStationaryCaptureAuthorizationInbox.authorizationEnvelopeIncomingFilename
+            )
+            let commit = directory.appendingPathComponent(
+                AuthenticatedStationaryCaptureAuthorizationInbox.authorizationEnvelopeCommitFilename
+            )
+            try subject.write(to: incoming)
+            try Data(String(repeating: "a", count: 20).utf8).write(to: commit)
+
+            #expect(throws: AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(
+                AuthenticatedStationaryCaptureAuthorizationInbox.authorizationEnvelopeFilename
+            )) {
+                _ = try inbox.takeAuthorizationEnvelope()
+            }
+            #expect(FileManager.default.fileExists(atPath: incoming.path))
+            #expect(FileManager.default.fileExists(atPath: commit.path))
+        }
+    }
+
+    @Test("stale digest is retryable until the later commit matches the stable incoming bytes")
+    func staleDigestIsRetryable() throws {
+        try withInboxDirectory { directory, inbox in
+            let subject = Data("new signed envelope bytes".utf8)
+            let incoming = directory.appendingPathComponent(
+                AuthenticatedStationaryCaptureAuthorizationInbox.authorizationEnvelopeIncomingFilename
+            )
+            let commit = directory.appendingPathComponent(
+                AuthenticatedStationaryCaptureAuthorizationInbox.authorizationEnvelopeCommitFilename
+            )
+            try subject.write(to: incoming)
+            try commitRecord(for: Data("old envelope".utf8)).write(to: commit)
+
+            #expect(throws: AuthenticatedStationaryCaptureAuthorizationInboxError.missingSubject(
+                AuthenticatedStationaryCaptureAuthorizationInbox.authorizationEnvelopeFilename
+            )) {
+                _ = try inbox.takeAuthorizationEnvelope()
+            }
+            #expect(FileManager.default.fileExists(atPath: incoming.path))
+            #expect(FileManager.default.fileExists(atPath: commit.path))
+
+            try FileManager.default.removeItem(at: commit)
+            try commitRecord(for: subject).write(to: commit)
+            #expect(try inbox.takeAuthorizationEnvelope() == subject)
+            #expect(!FileManager.default.fileExists(atPath: incoming.path))
+            #expect(!FileManager.default.fileExists(atPath: commit.path))
+        }
+    }
+
     @Test("symbolic-link substitution is rejected without consuming the target")
     func symbolicLinkRejected() throws {
         try withInboxDirectory { directory, inbox in
+            let subject = Data("signed envelope target".utf8)
             let target = directory.appendingPathComponent("target.json")
-            try Data("signed envelope target".utf8).write(to: target)
-            let handoff = directory.appendingPathComponent(
-                AuthenticatedStationaryCaptureAuthorizationInbox.authorizationEnvelopeFilename
+            try subject.write(to: target)
+            let incoming = directory.appendingPathComponent(
+                AuthenticatedStationaryCaptureAuthorizationInbox.authorizationEnvelopeIncomingFilename
             )
-            try FileManager.default.createSymbolicLink(at: handoff, withDestinationURL: target)
+            let commit = directory.appendingPathComponent(
+                AuthenticatedStationaryCaptureAuthorizationInbox.authorizationEnvelopeCommitFilename
+            )
+            try FileManager.default.createSymbolicLink(at: incoming, withDestinationURL: target)
+            try commitRecord(for: subject).write(to: commit)
 
             #expect(throws: AuthenticatedStationaryCaptureAuthorizationInboxError.symbolicLinkRejected(
-                AuthenticatedStationaryCaptureAuthorizationInbox.authorizationEnvelopeFilename
+                AuthenticatedStationaryCaptureAuthorizationInbox.authorizationEnvelopeIncomingFilename
             )) {
                 _ = try inbox.takeAuthorizationEnvelope()
             }
@@ -42,45 +105,55 @@ struct AuthenticatedStationaryCaptureAuthorizationInboxTests {
         }
     }
 
-    @Test("hard-linked subject is rejected instead of treating shared inode bytes as one-shot")
+    @Test("hard-linked incoming subject is rejected instead of treating shared bytes as one-shot")
     func hardLinkRejected() throws {
         try withInboxDirectory { directory, inbox in
+            let subject = Data("retained manifest target".utf8)
             let target = directory.appendingPathComponent("target.json")
-            try Data("retained manifest target".utf8).write(to: target)
-            let handoff = directory.appendingPathComponent(
-                AuthenticatedStationaryCaptureAuthorizationInbox.installManifestFilename
+            try subject.write(to: target)
+            let incoming = directory.appendingPathComponent(
+                AuthenticatedStationaryCaptureAuthorizationInbox.installManifestIncomingFilename
             )
-            try FileManager.default.linkItem(at: target, to: handoff)
+            let commit = directory.appendingPathComponent(
+                AuthenticatedStationaryCaptureAuthorizationInbox.installManifestCommitFilename
+            )
+            try FileManager.default.linkItem(at: target, to: incoming)
+            try commitRecord(for: subject).write(to: commit)
 
             #expect(throws: AuthenticatedStationaryCaptureAuthorizationInboxError.multipleLinksRejected(
-                AuthenticatedStationaryCaptureAuthorizationInbox.installManifestFilename
+                AuthenticatedStationaryCaptureAuthorizationInbox.installManifestIncomingFilename
             )) {
                 _ = try inbox.takeInstallManifest()
             }
             #expect(FileManager.default.fileExists(atPath: target.path))
-            #expect(FileManager.default.fileExists(atPath: handoff.path))
+            #expect(FileManager.default.fileExists(atPath: incoming.path))
         }
     }
 
-    @Test("subject beyond package byte limit fails before data promotion")
+    @Test("committed subject beyond package byte limit fails before data promotion")
     func oversizedSubjectRejected() throws {
         try withInboxDirectory { directory, inbox in
-            let url = directory.appendingPathComponent(
-                AuthenticatedStationaryCaptureAuthorizationInbox.installManifestFilename
+            let subject = Data(repeating: 0x41, count: 16_385)
+            let incoming = directory.appendingPathComponent(
+                AuthenticatedStationaryCaptureAuthorizationInbox.installManifestIncomingFilename
             )
-            let count = 16_385
-            try Data(repeating: 0x41, count: count).write(to: url)
+            let commit = directory.appendingPathComponent(
+                AuthenticatedStationaryCaptureAuthorizationInbox.installManifestCommitFilename
+            )
+            try subject.write(to: incoming)
+            try commitRecord(for: subject).write(to: commit)
 
             #expect(throws: AuthenticatedStationaryCaptureAuthorizationInboxError.byteLimitExceeded(
-                AuthenticatedStationaryCaptureAuthorizationInbox.installManifestFilename
+                AuthenticatedStationaryCaptureAuthorizationInbox.installManifestIncomingFilename
             )) {
                 _ = try inbox.takeInstallManifest()
             }
-            #expect(FileManager.default.fileExists(atPath: url.path))
+            #expect(FileManager.default.fileExists(atPath: incoming.path))
+            #expect(FileManager.default.fileExists(atPath: commit.path))
         }
     }
 
-    @Test("source reads and retires authority bytes through one no-follow descriptor")
+    @Test("source consumes only stable digest-committed bytes through no-follow descriptors")
     func sourceContract() throws {
         let sourceURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -91,17 +164,27 @@ struct AuthenticatedStationaryCaptureAuthorizationInboxTests {
             )
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
+        #expect(source.contains("import CryptoKit"))
+        #expect(source.contains("retained-install-manifest.incoming"))
+        #expect(source.contains("retained-install-manifest.commit"))
+        #expect(source.contains("authorization-envelope.incoming"))
+        #expect(source.contains("authorization-envelope.commit"))
+        #expect(source.contains("commitRecordByteCount = 65"))
+        #expect(source.contains("guard sha256Hex(data) == expectedSHA256"))
         #expect(source.contains("O_RDONLY | O_NOFOLLOW | O_CLOEXEC"))
-        #expect(source.contains("Darwin.fstat(descriptor, &before)"))
-        #expect(source.contains("Darwin.fstat(descriptor, &afterRead)"))
-        #expect(source.contains("before.st_nlink == 1"))
-        #expect(source.contains("sameSnapshot(before, afterRead)"))
-        #expect(source.contains("Darwin.unlinkat(directoryFD, filename, 0)"))
-        #expect(source.contains("afterUnlink.st_nlink == 0"))
-        #expect(source.contains("sameInode(before, afterUnlink)"))
-        #expect(!source.contains("sameSnapshotExceptLinkCount"))
+        #expect(source.contains("Darwin.unlinkat(directoryFD, incomingFilename, 0)"))
+        #expect(source.contains("Darwin.unlinkat(directoryFD, commitFilename, 0)"))
+        #expect(source.contains("incomingAfterUnlink.st_nlink == 0"))
+        #expect(source.contains("commitAfterUnlink.st_nlink == 0"))
         #expect(!source.contains("Data(contentsOf: fileURL"))
         #expect(!source.contains("resourceValues(forKeys:"))
+    }
+
+    private func commitRecord(for data: Data) -> Data {
+        let digest = SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        return Data((digest + "\n").utf8)
     }
 
     private func withInboxDirectory(
