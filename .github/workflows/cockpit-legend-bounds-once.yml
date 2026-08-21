@@ -19,7 +19,7 @@ jobs:
     env:
       TARGET_BRANCH: product/cockpit-energy-rail-mainline-20260820
       EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
-      EXPECTED_PARENT: 3415224a09ff3e2f8a918502cdd34386feb64229
+      EXPECTED_PARENT: f813c9559158d01b00104a657ebf5d10ee5ac471
       SELF_WORKFLOW: .github/workflows/cockpit-legend-bounds-once.yml
       INSTRUMENT_SOURCE: NembraApp/Features/Dashboard/SpeedInstrumentModel.swift
       APP_TESTS: NembraAppTests/NembraAppTests.swift
@@ -116,7 +116,7 @@ jobs:
                         .position(x: proxy.size.width * 0.78, y: proxy.size.height * 0.90)
                         .accessibilityHidden(true)
                 }
-          '''
+          '''.rstrip()
           new_labels = '''                if let zeroLabelY = DashboardEnergyRailLegendPolicy.centerY(
                       desiredY: geometry.start.y + 17,
                       railHeight: proxy.size.height,
@@ -158,7 +158,7 @@ jobs:
                           .position(x: proxy.size.width * 0.78, y: scaleLabelY)
                           .accessibilityHidden(true)
                   }
-          '''
+          '''.rstrip()
           instrument = replace_once(
               instrument,
               old_labels,
@@ -198,7 +198,7 @@ jobs:
               }
           }
 
-          '''
+          '''.rstrip() + "\n\n"
           tests = replace_once(tests, anchor, regression + anchor, "legend regression")
           tests_path.write_text(tests, encoding="utf-8")
 
