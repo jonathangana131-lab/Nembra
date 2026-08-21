@@ -257,6 +257,34 @@ final class NembraAppTests: XCTestCase {
         }
     }
 
+    func testEnergyRailPermanentLegendPolicyStaysInsideRailOrOmitsCompactLabels() throws {
+        for pointSize: CGFloat in [8, 13, 15] {
+            XCTAssertNil(
+                DashboardEnergyRailLegendPolicy.centerY(
+                    desiredY: 39.6,
+                    railHeight: 44,
+                    pointSize: pointSize
+                ),
+                "The 44pt accessibility rail must omit decorative legends rather than draw into stopped controls."
+            )
+        }
+
+        let railHeight: CGFloat = 82
+        let pointSize: CGFloat = 10
+        let frameHeight = DashboardEnergyRailLegendPolicy.frameHeight(for: pointSize)
+        for desiredY: CGFloat in [38, 73.8, 99] {
+            let centerY = try XCTUnwrap(
+                DashboardEnergyRailLegendPolicy.centerY(
+                    desiredY: desiredY,
+                    railHeight: railHeight,
+                    pointSize: pointSize
+                )
+            )
+            XCTAssertGreaterThanOrEqual(centerY - frameHeight / 2, 0)
+            XCTAssertLessThanOrEqual(centerY + frameHeight / 2, railHeight)
+        }
+    }
+
     func testPowerPeakLabelPolicyStaysInsideRailOrOmitsCompactLabel() throws {
         XCTAssertNil(
             DashboardPowerPeakLabelPolicy.centerY(

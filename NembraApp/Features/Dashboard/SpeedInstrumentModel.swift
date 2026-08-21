@@ -1050,6 +1050,37 @@ enum DashboardPowerPeakLabelPolicy {
     }
 }
 
+enum DashboardEnergyRailLegendPolicy {
+    static func frameHeight(for pointSize: CGFloat) -> CGFloat {
+        max(14, ceil(pointSize * 1.55))
+    }
+
+    static func centerY(
+        desiredY: CGFloat,
+        railHeight: CGFloat,
+        pointSize: CGFloat
+    ) -> CGFloat? {
+        guard desiredY.isFinite,
+              railHeight.isFinite,
+              pointSize.isFinite,
+              railHeight > 0,
+              pointSize > 0 else {
+            return nil
+        }
+
+        let labelHeight = frameHeight(for: pointSize)
+        // Permanent legends are decorative. At the 44pt accessibility rail floor,
+        // omit them instead of letting glyphs escape into stopped controls.
+        guard railHeight >= max(52, labelHeight * 2.75) else { return nil }
+
+        let inset = max(2, labelHeight * 0.15)
+        let minimumCenter = inset + labelHeight / 2
+        let maximumCenter = railHeight - inset - labelHeight / 2
+        guard maximumCenter >= minimumCenter else { return nil }
+        return min(max(desiredY, minimumCenter), maximumCenter)
+    }
+}
+
 private struct DashboardEnergyRailView: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
@@ -1100,27 +1131,47 @@ private struct DashboardEnergyRailView: View {
                         .position(x: proxy.size.width / 2, y: proxy.size.height * 0.30)
                 }
 
-                Text("0")
-                    .font(.system(size: smallLabelSize, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(NembraColor.secondaryText.opacity(0.88))
-                    .position(x: geometry.start.x, y: geometry.start.y + 17)
-                    .accessibilityHidden(true)
+                if let zeroLabelY = DashboardEnergyRailLegendPolicy.centerY(
+            desiredY: geometry.start.y + 17,
+            railHeight: proxy.size.height,
+            pointSize: smallLabelSize
+        ) {
+            Text("0")
+                .font(.system(size: smallLabelSize, weight: .semibold, design: .monospaced))
+                .foregroundStyle(NembraColor.secondaryText.opacity(0.88))
+                .frame(height: DashboardEnergyRailLegendPolicy.frameHeight(for: smallLabelSize))
+                .position(x: geometry.start.x, y: zeroLabelY)
+                .accessibilityHidden(true)
+        }
 
-                Text("PROPULSION  →")
-                    .font(.system(size: smallLabelSize, weight: .bold, design: .default))
-                    .tracking(1.5)
-                    .foregroundStyle(NembraColor.secondaryText.opacity(0.88))
-                    .position(x: proxy.size.width * 0.24, y: proxy.size.height * 0.90)
-                    .accessibilityHidden(true)
+        if let propulsionLabelY = DashboardEnergyRailLegendPolicy.centerY(
+            desiredY: proxy.size.height * 0.90,
+            railHeight: proxy.size.height,
+            pointSize: smallLabelSize
+        ) {
+            Text("PROPULSION  →")
+                .font(.system(size: smallLabelSize, weight: .bold, design: .default))
+                .tracking(1.5)
+                .foregroundStyle(NembraColor.secondaryText.opacity(0.88))
+                .frame(height: DashboardEnergyRailLegendPolicy.frameHeight(for: smallLabelSize))
+                .position(x: proxy.size.width * 0.24, y: propulsionLabelY)
+                .accessibilityHidden(true)
+        }
 
-                if let scaleText = semantics.scaleText {
-                    Text(scaleText)
-                        .font(.system(size: microLabelSize, weight: .semibold, design: .monospaced))
-                        .tracking(0.5)
-                        .foregroundStyle(NembraColor.secondaryText.opacity(0.88))
-                        .position(x: proxy.size.width * 0.78, y: proxy.size.height * 0.90)
-                        .accessibilityHidden(true)
-                }
+        if let scaleText = semantics.scaleText,
+           let scaleLabelY = DashboardEnergyRailLegendPolicy.centerY(
+               desiredY: proxy.size.height * 0.90,
+               railHeight: proxy.size.height,
+               pointSize: microLabelSize
+           ) {
+            Text(scaleText)
+                .font(.system(size: microLabelSize, weight: .semibold, design: .monospaced))
+                .tracking(0.5)
+                .foregroundStyle(NembraColor.secondaryText.opacity(0.88))
+                .frame(height: DashboardEnergyRailLegendPolicy.frameHeight(for: microLabelSize))
+                .position(x: proxy.size.width * 0.78, y: scaleLabelY)
+                .accessibilityHidden(true)
+        }
             }
         }
         .accessibilityElement(children: .ignore)
