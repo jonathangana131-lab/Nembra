@@ -42,11 +42,15 @@ struct TuyaPhysicalAppContainerTransportProbeSourceTests {
         #expect(probe.contains("captureAuthorized=false"))
         #expect(probe.contains("physicalAuthorityCreated=false"))
         #expect(probe.contains("protocolSemanticsCreated=false"))
-        #expect(probe.contains("bluetoothContacted=false"))
-        #expect(probe.contains("tuyaContacted=false"))
-        #expect(probe.contains("es80Contacted=false"))
+        #expect(probe.contains("probe_initiated_bluetooth=false"))
+        #expect(probe.contains("probe_initiated_tuya=false"))
+        #expect(probe.contains("probe_initiated_es80_contact=false"))
+        #expect(!probe.contains("bluetoothContacted=false"))
+        #expect(!probe.contains("tuyaContacted=false"))
+        #expect(!probe.contains("es80Contacted=false"))
         #expect(probe.contains("installed_build_identity_verified=false"))
         #expect(probe.contains("NOT PROVEN: handoff-directory filesystem existence beyond devicectl listing success"))
+        #expect(probe.contains("whether another process or already-running app contacted Bluetooth/Tuya/ES80"))
     }
 
     @Test("probe cannot promote bundle transport into exact installed-build evidence")
@@ -56,6 +60,18 @@ struct TuyaPhysicalAppContainerTransportProbeSourceTests {
         #expect(probe.contains("installed_build_identity_verified=false"))
         #expect(!probe.contains("installed_build_identity_verified=true"))
         #expect(probe.contains("does not prove the exact accepted Capture build is the installed bundle"))
+    }
+
+    @Test("probe takes device identity only from the environment and never positional argv")
+    func probeRejectsPositionalRawDeviceIdentity() throws {
+        let probe = try readRepositoryFile(relativePath)
+
+        #expect(probe.contains("[[ \"$#\" -eq 0 ]]"))
+        #expect(probe.contains("positional arguments are forbidden"))
+        #expect(probe.contains("DEVICE_UDID=\"${NEMBRA_CAPTURE_DEVICE_UDID:-}\""))
+        #expect(probe.contains("unset NEMBRA_CAPTURE_DEVICE_UDID"))
+        #expect(!probe.contains("${1:-}"))
+        #expect(!probe.contains("argument 1"))
     }
 
     @Test("probe keeps raw physical-device output ephemeral and publishes only a pseudonym")
