@@ -264,14 +264,17 @@ public struct VehicleProfile: Equatable, Sendable {
 
     /// Primary real hardware-validation target.
     ///
-    /// Public/user-observed app behavior corroborates lock, light, cruise,
-    /// start-mode/speed configuration, speed, mileage, and a user-facing battery
-    /// percentage. Their exact ES80 BLE/Tuya data points, scales, mode mapping,
-    /// limiter ranges, acknowledgement semantics, and whether the battery value
-    /// is direct or Tuya-derived remain hardware-validation work. Therefore this
-    /// profile advertises broad product capabilities but intentionally leaves
-    /// protocol-specific ride-mode/range mappings empty and does not claim
-    /// current/power telemetry despite some stock-app detail screens showing it.
+    /// Public/user-observed stock-app behavior is useful research evidence that the
+    /// ES80 product may expose lock, light, cruise, start-mode/speed configuration,
+    /// speed, mileage, and a user-facing battery percentage. It does not establish
+    /// the BLE/Tuya datapoints, write safety, acknowledgement semantics, or command
+    /// lifecycle required for Nembra to expose those writable controls.
+    ///
+    /// Keep command capabilities fail-closed until accepted physical/protocol evidence
+    /// proves their exact semantics and confirmation path. Read-only capability flags
+    /// remain broad research/product expectations only; downstream evidence gates still
+    /// decide whether an actual value is display-authoritative. Current/power telemetry,
+    /// ride-mode mappings, and speed-limit slot/range semantics remain unverified.
     public static let aovoproES80 = VehicleProfile(
         identity: VehicleIdentity(
             manufacturer: "AOVOPRO",
@@ -280,11 +283,11 @@ public struct VehicleProfile: Equatable, Sendable {
             protocolFamily: "Tuya / AOVOPRO (hardware validation pending)"
         ),
         capabilities: VehicleCapabilities(
-            supportsLock: true,
-            supportsHeadlight: true,
-            supportsCruise: true,
-            supportsStartMode: true,
-            supportsSpeedLimit: true,
+            supportsLock: false,
+            supportsHeadlight: false,
+            supportsCruise: false,
+            supportsStartMode: false,
+            supportsSpeedLimit: false,
             supportsOdometer: true,
             supportsLiveSpeed: true,
             supportsBatteryPercent: true,
