@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import subprocess
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -10,6 +11,21 @@ class FieldAuthorizationContainerTransportSourceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.source = SCRIPT.read_text(encoding="utf-8")
+
+    def test_direct_self_test_executes_before_device_or_platform_gate(self) -> None:
+        completed = subprocess.run(
+            [str(SCRIPT), "--self-test"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertIn(
+            "FIELD_AUTHORIZATION_TRANSPORT_SELF_TEST_OK_NOT_PHYSICAL_GO",
+            completed.stdout,
+        )
+        self.assertEqual(completed.stderr, "")
 
     def test_transport_is_fixed_to_capture_container_contract(self) -> None:
         for token in (
