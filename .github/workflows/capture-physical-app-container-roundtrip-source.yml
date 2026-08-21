@@ -13,6 +13,7 @@ on:
     branches:
       - product/capture-1-0-main-20260818
       - 'recovery/capture-physical-app-container-roundtrip-**'
+      - 'review/capture-probe-truth-scope-**'
     paths:
       - 'scripts/field/probe_capture_app_container_transport.command'
       - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaPhysicalAppContainerTransportProbeSourceTests.swift'
@@ -78,9 +79,12 @@ jobs:
           test "$(grep -Fc 'raw_device_output_persisted=false' "$PROBE")" = 1
           test "$(grep -Fc 'installed_build_identity_verified=false' "$PROBE")" = 1
           test "$(grep -Fc 'installed_build_identity_verified=true' "$PROBE" || true)" = 0
-          test "$(grep -Fc 'captureAuthorized=false' "$PROBE")" = 1
-          test "$(grep -Fc 'physicalAuthorityCreated=false' "$PROBE")" = 1
-          test "$(grep -Fc 'protocolSemanticsCreated=false' "$PROBE")" = 1
+          test "$(grep -Fc 'probe_created_capture_authority=false' "$PROBE")" = 1
+          test "$(grep -Fc 'probe_created_physical_authority=false' "$PROBE")" = 1
+          test "$(grep -Fc 'probe_created_protocol_semantics=false' "$PROBE")" = 1
+          test "$(grep -Fc 'captureAuthorized=false' "$PROBE" || true)" = 0
+          test "$(grep -Fc 'physicalAuthorityCreated=false' "$PROBE" || true)" = 0
+          test "$(grep -Fc 'protocolSemanticsCreated=false' "$PROBE" || true)" = 0
           test "$(grep -Fc 'probe_initiated_bluetooth=false' "$PROBE")" = 1
           test "$(grep -Fc 'probe_initiated_tuya=false' "$PROBE")" = 1
           test "$(grep -Fc 'probe_initiated_es80_contact=false' "$PROBE")" = 1
@@ -118,5 +122,5 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_HEAD_SHA"
-          printf '%s\n' 'PROVEN: the exact subject head parses on the Xcode 27 Mac and passes the focused non-authorizing bundle-level app-container probe source contract, including shell-startup/PATH injection isolation, unique-run/atomic-result stale-evidence rejection, environment-only operator device selection, and listing-success-only handoff semantics.'
-          printf '%s\n' 'NOT PROVEN: a physical iPhone round-trip, handoff-directory filesystem existence beyond a successful listing operation, exact installed Capture build identity, authorization payload transfer/acceptance, signing/install custody, whether any other process/app contacted Bluetooth/Tuya/ES80, telemetry semantics, commands, or physical Capture GO.'
+          printf '%s\n' 'PROVEN: the exact subject head parses on the Xcode 27 Mac and passes the focused non-authorizing bundle-level app-container probe source contract, including shell-startup/PATH injection isolation, unique-run/atomic-result stale-evidence rejection, environment-only operator device selection, probe-scoped negative authority/contact claims, and listing-success-only handoff semantics.'
+          printf '%s\n' 'NOT PROVEN: a physical iPhone round-trip, handoff-directory filesystem existence beyond a successful listing operation, exact installed Capture build identity, authorization payload transfer/acceptance, signing/install custody, any pre-existing app/field authority or protocol knowledge, whether any other process/app contacted Bluetooth/Tuya/ES80, telemetry semantics, commands, or physical Capture GO.'
