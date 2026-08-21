@@ -23,6 +23,7 @@ jobs:
       TARGET_BRANCH: recovery/capture-entrypoint-auth-current-carrier-20260820-sol2
       APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
       SELF_WORKFLOW: .github/workflows/capture-entrypoint-auth-current-carrier-recovery-sol2.yml
+      EXPECTED_CARRIER: 23b8e26abf1f6a860377daca9aa64a48568ea909
       EXPECTED_TRANSPLANT_BLOB: 9107ea5ef2bc023cd3b8c2e15a46297e733ba838
     steps:
       - name: Checkout exact recovery head
@@ -39,7 +40,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "${{ github.sha }}"
           test "$(git rev-parse HEAD:"$APP_SOURCE")" = "$EXPECTED_TRANSPLANT_BLOB"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
-          test "$(git merge-base HEAD 3db6e616aa88b4945896d0c433bbf48683a1ccd9)" = "3db6e616aa88b4945896d0c433bbf48683a1ccd9"
+          test "$(git merge-base HEAD "$EXPECTED_CARRIER")" = "$EXPECTED_CARRIER"
 
       - name: Apply reviewed race-safe lifecycle corrections
         shell: python
@@ -174,7 +175,7 @@ jobs:
           git rm -- "$SELF_WORKFLOW"
           git add -- "$APP_SOURCE"
           git diff --cached --check
-          test "$(git diff --cached --name-only 3db6e616aa88b4945896d0c433bbf48683a1ccd9 | sort | tr '\n' ' ' | sed 's/ $//')" = "$APP_SOURCE"
+          test "$(git diff --cached --name-only "$EXPECTED_CARRIER" | sort | tr '\n' ' ' | sed 's/ $//')" = "$APP_SOURCE"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'Capture: close race-safe field lifecycle on bootstrap carrier'
