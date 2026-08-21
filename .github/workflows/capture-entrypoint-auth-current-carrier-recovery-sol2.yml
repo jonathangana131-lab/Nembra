@@ -42,7 +42,7 @@ jobs:
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           test "$(git merge-base HEAD "$EXPECTED_CARRIER")" = "$EXPECTED_CARRIER"
 
-      - name: Apply reviewed race-safe lifecycle corrections
+      - name: Apply current-carrier signed-attempt composition
         shell: python
         run: |
           import os
@@ -69,30 +69,165 @@ jobs:
               section_text = section_text.replace(old, new, 1)
               source = source[:start_index] + section_text + source[end_index:]
 
-          # The app-container handoff is non-authorizing transport/verification work. Requiring the
-          # intentionally hard-false final field-build Boolean here creates a circular dependency.
+          root_start = "@MainActor\nprivate struct CaptureP0Root: View"
+          root_end = "@MainActor\nprivate final class SecureLinkController:"
+
+          # Root transport bootstrap is metadata-gated and non-authorizing. It must be reachable
+          # before Tuya SDK setup so the signed one-shot handoff can exist without circularly
+          # requiring the legacy final-build Boolean.
+          replace_once_in_section(
+              root_start,
+              root_end,
+              "    @State private var showEngineeringDetails = false\n    @Environment(\\.dynamicTypeSize) private var dynamicTypeSize\n",
+              "    @State private var showEngineeringDetails = false\n    @State private var authorizationTransportBootstrapError: String?\n    @Environment(\\.dynamicTypeSize) private var dynamicTypeSize\n",
+              "root transport bootstrap state",
+          )
+          replace_once_in_section(
+              root_start,
+              root_end,
+              "    private let buildIdentity = NembraCaptureBuildIdentity.current\n\n    private var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }\n",
+              "    private let buildIdentity = NembraCaptureBuildIdentity.current\n\n    private var fieldBuildCanPrepareAuthorization: Bool { buildIdentity.hasCompleteFieldBuildMetadata }\n    private var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }\n",
+              "root metadata preparation authority",
+          )
+          replace_once_in_section(
+              root_start,
+              root_end,
+              "                        if fieldBuildIsAuthoritative && sdkAccount.loggedIn {\n",
+              "                        if fieldBuildCanPrepareAuthorization && authorizationTransportBootstrapError == nil && sdkAccount.loggedIn {\n",
+              "root scooter chooser metadata gate",
+          )
+          replace_once_in_section(
+              root_start,
+              root_end,
+              "        .onAppear { synchronizeSDKSession() }\n",
+              """        .onAppear {
+            prepareAuthorizationTransport()
+            if authorizationTransportBootstrapError == nil {
+                synchronizeSDKSession()
+            }
+        }
+""",
+              "root bootstrap ordering",
+          )
+          replace_once_in_section(
+              root_start,
+              root_end,
+              "                if !fieldBuildIsAuthoritative {\n",
+              "                if !fieldBuildCanPrepareAuthorization {\n",
+              "root unstamped public gate",
+          )
+          replace_once_in_section(
+              root_start,
+              root_end,
+              """                } else if sdkAccount.loggedIn {
+""",
+              """                } else if let authorizationTransportBootstrapError {
+                    Label(authorizationTransportBootstrapError, systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityLabel("Authorization transfer storage unavailable")
+                        .accessibilityValue(authorizationTransportBootstrapError)
+                } else if sdkAccount.loggedIn {
+""",
+              "root transport blocker surface",
+          )
+          replace_once_in_section(
+              root_start,
+              root_end,
+              """    private func synchronizeSDKSession() {
+        guard fieldBuildIsAuthoritative else { return }
+        sdkAccount.bootstrap()
+""",
+              """    private func prepareAuthorizationTransport() {
+        guard fieldBuildCanPrepareAuthorization else { return }
+        do {
+            try NembraCaptureFieldAuthorizationController.prepareAuthorizationTransferDirectoryForFieldTransport()
+            authorizationTransportBootstrapError = nil
+        } catch {
+            authorizationTransportBootstrapError = "One-time authorization transfer storage could not be prepared. Bluetooth remains locked. \(error.localizedDescription)"
+        }
+    }
+
+    private func synchronizeSDKSession() {
+        guard fieldBuildCanPrepareAuthorization else { return }
+        sdkAccount.bootstrap()
+""",
+              "root transport bootstrap function",
+          )
+
+          # Move presentation authority into one coherent block: build metadata is provenance;
+          # the package-owned opaque session is the one-shot physical attempt authority.
+          replace_once(
+              "    var fieldAuthorizationReady: Bool { fieldAuthorization.stage == .armed }\n\n",
+              "",
+              "old field authorization readiness location",
+          )
+          replace_once(
+              """    var privateConfig: Bool { OfficialTuyaFactory.configured }
+    var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }
+""",
+              """    var privateConfig: Bool { OfficialTuyaFactory.configured }
+    var fieldBuildMetadataComplete: Bool { buildIdentity.hasCompleteFieldBuildMetadata }
+    var fieldBuildIsAuthoritative: Bool { buildIdentity.isAuthoritativeFieldBuild }
+    var fieldAuthorizationReady: Bool { fieldAuthorization.stage == .armed }
+    var fieldAuthorizationObservationAdmitted: Bool { fieldAuthorization.stage == .observationAdmitted }
+    var fieldAuthorizationLifecycleValid: Bool {
+        switch fieldAuthorization.stage {
+        case .armed, .off1Started, .authenticationAdmitted, .officialConnectionAdmitted, .observationAdmitted, .sealed:
+            return true
+        case .idle, .awaitingEnvelope, .revoked:
+            return false
+        }
+    }
+""",
+              "signed-attempt presentation authority block",
+          )
+
+          # Handoff is transport/verification only; the signed session itself later gates OFF1.
           replace_once(
               "        guard phase == .idle, buildIdentity.isAuthoritativeFieldBuild else { return }\n",
               "        guard phase == .idle, buildIdentity.hasCompleteFieldBuildMetadata else { return }\n",
               "non-authorizing handoff metadata gate",
           )
 
-          # OFF1 already consumes the package-owned armed session. The later baseline transition must
-          # not re-check the legacy final-build Boolean after that capability has advanced.
-          replace_once_in_section(
-              "    private func beginBaselineAfterCurrentOperatorAttestation() {\n",
-              "    private func beginCorrelationSeries() {\n",
-              """        guard buildIdentity.isAuthoritativeFieldBuild else {
+          # Once OFF1 consumes the signed session, no later stage re-checks the intentionally
+          # hard-false legacy build Boolean. The opaque package lifecycle is the attempt authority.
+          legacy_build_guard = """        guard buildIdentity.isAuthoritativeFieldBuild else {
             failLocally(buildIdentity.blocker ?? "Exact field-build provenance is unavailable.", "field_build_identity_unavailable")
             return
         }
-""",
+"""
+          replace_once_in_section(
+              "    private func beginBaselineAfterCurrentOperatorAttestation() {\n",
+              "    private func beginCorrelationSeries() {\n",
+              legacy_build_guard,
               "",
               "OFF1 legacy field-authority gate",
           )
+          replace_once_in_section(
+              "    func authenticate() {\n",
+              "    private func beginOfficialConnection(candidate: Candidate) {\n",
+              legacy_build_guard,
+              "",
+              "authentication legacy field-authority gate",
+          )
+          replace_once_in_section(
+              "    private func beginOfficialConnection(candidate: Candidate) {\n",
+              "    private func authenticated(token: TuyaReadOnlyConnectionToken) {\n",
+              "              buildIdentity.isAuthoritativeFieldBuild,\n",
+              "",
+              "official connection legacy field-authority gate",
+          )
 
-          # `.armed` legitimately becomes `.off1Started`; selected-state authentication must not
-          # keep requiring the pre-OFF1 readiness Boolean.
+          # Pre-OFF1 readiness is the signed armed session + current account/device authority.
+          replace_once_in_section(
+              "    private var authorityReady: Bool {\n",
+              "    private var currentStageIndex: Int {\n",
+              "        test.fieldBuildIsAuthoritative\n            && test.fieldAuthorizationReady\n",
+              "        test.fieldAuthorizationReady\n",
+              "preflight signed-attempt readiness",
+          )
           replace_once_in_section(
               "                if test.phase == .selected {\n",
               "                } else if test.phase == .authenticating {\n",
@@ -101,7 +236,90 @@ jobs:
               "selected authentication readiness",
           )
 
-          # Reuse the controller's canonical fail-closed cleanup path when artifact freeze/seal fails.
+          # Product presentation must name what is actually authoritative.
+          replace_once_in_section(
+              "    private var hero: some View {\n",
+              "    @ViewBuilder\n    private var stageRail: some View {\n",
+              """                Label(
+                    test.fieldBuildIsAuthoritative ? "Field build" : "Build blocked",
+                    systemImage: test.fieldBuildIsAuthoritative ? "checkmark.shield.fill" : "exclamationmark.shield"
+                )
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(test.fieldBuildIsAuthoritative ? Color.green : Color.orange)
+""",
+              """                Label(
+                    test.fieldAuthorizationLifecycleValid ? "Signed attempt" : "Authorization required",
+                    systemImage: test.fieldAuthorizationLifecycleValid ? "checkmark.shield.fill" : "exclamationmark.shield"
+                )
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(test.fieldAuthorizationLifecycleValid ? Color.green : Color.orange)
+""",
+              "hero signed-attempt authority",
+          )
+          replace_once_in_section(
+              "    private var primarySurface: some View {\n",
+              "    private var preflightPanel: some View {\n",
+              "            if !test.fieldBuildIsAuthoritative || !test.privateConfig {\n",
+              "            if !test.fieldBuildMetadataComplete || !test.privateConfig {\n",
+              "failed-state metadata provenance gate",
+          )
+          replace_once_in_section(
+              "    private var preflightPanel: some View {\n",
+              "    private var correlationDisplayedWindowOrdinal: Int {\n",
+              "                    requirementRow(\"Capture build\", ready: test.fieldBuildIsAuthoritative)\n",
+              "                    requirementRow(\"Capture build metadata\", ready: test.fieldBuildMetadataComplete)\n",
+              "preflight metadata row",
+          )
+          replace_once_in_section(
+              "    private var preflightPanel: some View {\n",
+              "    private var correlationDisplayedWindowOrdinal: Int {\n",
+              "                if test.fieldBuildIsAuthoritative && !test.fieldAuthorizationReady {\n",
+              "                if test.fieldBuildMetadataComplete && !test.fieldAuthorizationReady {\n",
+              "preflight authorization status gate",
+          )
+
+          # Acceptance retains build metadata and requires the already-admitted signed observation
+          # authority. Metadata never substitutes for the signed one-shot capability.
+          watchdog_start = "    private func startWatchdog(token: TuyaReadOnlyConnectionToken) {\n"
+          watchdog_end = "    private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken) {\n"
+          replace_once_in_section(
+              watchdog_start,
+              watchdog_end,
+              """                    guard self.buildIdentity.isAuthoritativeFieldBuild else {
+                        await self.invalidateSourceAuthority(
+                            token: token,
+                            message: self.buildIdentity.blocker ?? "Exact field-build provenance became unavailable before acceptance.",
+                            kind: "field_build_identity_rejected_at_seal"
+                        )
+                        return
+                    }
+""",
+              """                    guard self.buildIdentity.hasCompleteFieldBuildMetadata,
+                          self.fieldAuthorizationObservationAdmitted else {
+                        await self.invalidateSourceAuthority(
+                            token: token,
+                            message: "Field-build metadata or the signed observation authority became unavailable before acceptance.",
+                            kind: "field_authorization_or_metadata_rejected_at_seal"
+                        )
+                        return
+                    }
+""",
+              "pre-seal signed observation authority",
+          )
+          replace_once_in_section(
+              watchdog_start,
+              watchdog_end,
+              """                        guard self.buildIdentity.isAuthoritativeFieldBuild,
+                              self.accountIdentityLeaseIsAuthorized else {
+""",
+              """                        guard self.buildIdentity.hasCompleteFieldBuildMetadata,
+                              self.fieldAuthorizationObservationAdmitted,
+                              self.accountIdentityLeaseIsAuthorized else {
+""",
+              "post-package-seal signed observation authority",
+          )
+
+          # Reuse canonical fail-closed cleanup if immutable artifact preparation or capability seal fails.
           old = """                            self.phase = .failed
                             self.message = "The accepted evidence could not complete immutable artifact authorization sealing: \\(error.localizedDescription). Relaunch Capture before another attempt."
                             self.log("field_authorization_or_artifact_freeze_rejected", [
@@ -126,15 +344,18 @@ jobs:
           set -euo pipefail
           git diff --check
           test "$(git status --porcelain=v1 | awk '{print $2}' | sort | tr '\n' ' ' | sed 's/ $//')" = "$APP_SOURCE"
-          grep -Fq 'import NembraCaptureAppAuthorization' "$APP_SOURCE"
+          grep -Fq 'private var fieldBuildCanPrepareAuthorization: Bool { buildIdentity.hasCompleteFieldBuildMetadata }' "$APP_SOURCE"
           grep -Fq 'guard phase == .idle, buildIdentity.hasCompleteFieldBuildMetadata else { return }' "$APP_SOURCE"
+          grep -Fq 'var fieldBuildMetadataComplete: Bool { buildIdentity.hasCompleteFieldBuildMetadata }' "$APP_SOURCE"
+          grep -Fq 'var fieldAuthorizationReady: Bool { fieldAuthorization.stage == .armed }' "$APP_SOURCE"
+          grep -Fq 'var fieldAuthorizationObservationAdmitted: Bool { fieldAuthorization.stage == .observationAdmitted }' "$APP_SOURCE"
           grep -Fq 'try self.fieldAuthorization.admitOFF1Start()' "$APP_SOURCE"
           grep -Fq 'try self.fieldAuthorization.admitAuthenticationStart()' "$APP_SOURCE"
           grep -Fq 'try fieldAuthorization.admitOfficialConnectionStart()' "$APP_SOURCE"
           grep -Fq 'try self.fieldAuthorization.admitObservationStart()' "$APP_SOURCE"
           grep -Fq 'try self.freezeAcceptedArtifactForAuthorizationSeal()' "$APP_SOURCE"
           grep -Fq 'try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()' "$APP_SOURCE"
-          test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE")" = 0
+          test "$(grep -Fc 'isAuthoritativeFieldBuild = true' "$APP_SOURCE" || true)" = 0
 
       - name: Run lifecycle source contract
         shell: bash
@@ -142,7 +363,7 @@ jobs:
           set -euo pipefail
           /usr/bin/python3 -I scripts/ci/tests/test_es80_app_authorization_lifecycle_wiring.py
 
-      - name: Run focused authorization and bootstrap contracts
+      - name: Run focused authorization, presentation, bootstrap, and freeze contracts
         working-directory: Packages/NembraBluetoothCapture
         run: |
           set -euo pipefail
@@ -150,6 +371,8 @@ jobs:
           swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthorizationInboxAppAdapter
           swift test --filter CaptureSimulatorQAHarnessSourceTests_AuthenticatedFieldCapabilityAppWiring
           swift test --filter CaptureAuthorizationTransferBootstrapSourceTests
+          swift test --filter CaptureP0RootVisualAcceptanceTests
+          swift test --filter TuyaFieldBuildPresentationAuthoritySourceTests
           swift test --filter TuyaAuthenticatedFieldCapabilityArtifactFreezeSourceTests
 
       - name: Build standalone Capture on Xcode 27
@@ -178,5 +401,5 @@ jobs:
           test "$(git diff --cached --name-only "$EXPECTED_CARRIER" | sort | tr '\n' ' ' | sed 's/ $//')" = "$APP_SOURCE"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'Capture: close race-safe field lifecycle on bootstrap carrier'
+          git commit -m 'Capture: close signed field lifecycle on current carrier'
           git push origin HEAD:"$TARGET_BRANCH"
