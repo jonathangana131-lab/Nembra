@@ -1,0 +1,46 @@
+name: Capture incomplete horizon rearm
+
+on:
+  push:
+    branches:
+      - capture/current-main-strict-tuya-preflight-gpt56sol
+    paths:
+      - .github/workflows/capture-incomplete-horizon-rearm.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-incomplete-horizon-rearm
+  cancel-in-progress: false
+
+jobs:
+  rearm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Re-arm reviewed package materializer
+        shell: bash
+        env:
+          TARGET_BRANCH: capture/current-main-strict-tuya-preflight-gpt56sol
+          TARGET_WORKFLOW: .github/workflows/capture-current-main-incomplete-horizon-one-shot.yml
+          SELF: .github/workflows/capture-incomplete-horizon-rearm.yml
+        run: |
+          set -euo pipefail
+          trigger='${{ github.sha }}'
+          test "$(git rev-parse HEAD)" = "$trigger"
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
+          test "$remote_head" = "$trigger"
+          test -f "$TARGET_WORKFLOW"
+          printf '\n# exact-head rearm from %s\n' "$trigger" >> "$TARGET_WORKFLOW"
+          rm -f "$SELF"
+          git add -- "$TARGET_WORKFLOW" "$SELF"
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'ci(capture): re-arm current-main incomplete horizon materializer'
+          git push --force-with-lease="refs/heads/$TARGET_BRANCH:$trigger" origin "HEAD:refs/heads/$TARGET_BRANCH"
