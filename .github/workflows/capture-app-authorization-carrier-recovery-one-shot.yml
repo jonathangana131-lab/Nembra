@@ -2,6 +2,7 @@ name: Capture app authorization carrier recovery one-shot
 
 # Single carrier-native recovery writer. It reuses the already-reviewed full race-safe transform
 # instead of maintaining a second partial copy of authorization semantics.
+# Re-armed on the current carrier head after confirming no exact-head run was attached.
 on:
   push:
     branches:
