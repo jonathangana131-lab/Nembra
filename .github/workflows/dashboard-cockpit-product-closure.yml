@@ -165,7 +165,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          xcrun xcresulttool get test-results attachments \
+          xcrun xcresulttool export attachments \
             --path /tmp/NembraDashboard.xcresult \
             --output-path /tmp/NembraDashboardAttachments
           find /tmp/NembraDashboardAttachments -type f -print | tee /tmp/nembra-dashboard-attachments.txt
