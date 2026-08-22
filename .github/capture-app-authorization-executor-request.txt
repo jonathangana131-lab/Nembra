@@ -1,0 +1,3 @@
+NEMBRA_CAPTURE_AUTHORIZATION_EXECUTOR_V14=1
+base=d550481bd1ecdbdc080829a294ed367e08ade2dd
+physicalAuthorityCreated=false
