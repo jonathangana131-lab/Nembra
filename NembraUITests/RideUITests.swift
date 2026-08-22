@@ -8,6 +8,49 @@ final class RideUITests: XCTestCase {
     }
 
     @MainActor
+    func testEmptyRideJournalIsDesignedAndCapturable() throws {
+        XCUIDevice.shared.orientation = .portrait
+
+        let app = XCUIApplication()
+        app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = "connected-stopped"
+        app.launchEnvironment["NEMBRA_SIMULATION_STORAGE_NAMESPACE"] = UUID().uuidString
+        app.launch()
+
+        let ridesTab = app.tabBars.buttons["Rides"]
+        XCTAssertTrue(ridesTab.waitForExistence(timeout: 5))
+        ridesTab.tap()
+
+        let journalHeader = app.descendants(matching: .any)["rides.journal-header"]
+        XCTAssertTrue(
+            journalHeader.waitForExistence(timeout: 5),
+            "An empty history must still render the real Nembra journal hierarchy."
+        )
+        XCTAssertEqual(journalHeader.label, "Ride journal")
+        XCTAssertTrue(
+            (journalHeader.value as? String ?? "").localizedCaseInsensitiveContains("0 saved rides"),
+            "A fresh isolated journal must truthfully expose zero saved rides."
+        )
+
+        let emptyState = app.descendants(matching: .any)["rides.empty"]
+        XCTAssertTrue(
+            emptyState.waitForExistence(timeout: 5),
+            "The first-run Rides experience must own a designed empty state instead of falling back to stock unavailable UI."
+        )
+        XCTAssertFalse(app.descendants(matching: .any)["rides.completed-row"].exists)
+        keepScreenshot(named: "Empty Ride Journal")
+
+        try app.performAccessibilityAudit(
+            for: [
+                .sufficientElementDescription,
+                .hitRegion,
+                .textClipped,
+                .trait,
+                .dynamicType
+            ]
+        )
+    }
+
+    @MainActor
     func testAutomaticRideSurvivesProcessRelaunchWithSameDurableIdentity() {
         XCUIDevice.shared.orientation = .portrait
 
@@ -50,6 +93,17 @@ final class RideUITests: XCTestCase {
         XCTAssertTrue(ridesTab.waitForExistence(timeout: 5))
         ridesTab.tap()
 
+        let journalHeader = app.descendants(matching: .any)["rides.journal-header"]
+        XCTAssertTrue(
+            journalHeader.waitForExistence(timeout: 5),
+            "Rides must present the Nembra-owned journal hierarchy instead of falling back to a generic archive surface."
+        )
+        XCTAssertEqual(journalHeader.label, "Ride journal")
+        XCTAssertTrue(
+            (journalHeader.value as? String ?? "").localizedCaseInsensitiveContains("saved ride"),
+            "The journal header must expose its durable saved-ride count semantically."
+        )
+
         let row = app.descendants(matching: .any)["rides.completed-row"]
         XCTAssertTrue(
             row.waitForExistence(timeout: 8),
@@ -60,6 +114,14 @@ final class RideUITests: XCTestCase {
         XCTAssertTrue(
             row.label.localizedCaseInsensitiveContains("Ride on"),
             "A completed ride row must expose one concise Nembra-owned ride identity."
+        )
+        XCTAssertTrue(
+            rowValue.localizedCaseInsensitiveContains("scooter distance"),
+            "The journal row must preserve the accepted scooter odometer distance as its own evidence source."
+        )
+        XCTAssertTrue(
+            rowValue.localizedCaseInsensitiveContains("GPS recorded distance"),
+            "The journal row must preserve quality-screened GPS distance as a separate evidence source."
         )
         XCTAssertFalse(
             rowValue.localizedCaseInsensitiveContains("Completed ride"),
@@ -145,7 +207,6 @@ final class RideUITests: XCTestCase {
         app.launchEnvironment["NEMBRA_SIMULATION_SCENARIO"] = "riding"
         app.launchEnvironment["NEMBRA_SIMULATION_STORAGE_NAMESPACE"] = UUID().uuidString
         app.launchEnvironment["NEMBRA_SIMULATION_AUTOCOMPLETE_RIDE"] = "1"
-        app.launchEnvironment["NEMBRA_SIMULATION_APPEARANCE"] = "dark"
         app.launch()
 
         let ridesTab = app.tabBars.buttons["Rides"]
