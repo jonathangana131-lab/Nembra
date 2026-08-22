@@ -1,0 +1,220 @@
+name: Dashboard rolling power digits once
+
+on:
+  push:
+    branches:
+      - product/dashboard-power-rolling-digits-gpt56sol-20260821
+    paths:
+      - '.github/workflows/dashboard-power-rolling-digits-once.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dashboard-power-rolling-digits-once
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TARGET_BRANCH: product/dashboard-power-rolling-digits-gpt56sol-20260821
+      EXPECTED_PARENT: ed40bed8f8d0325642d55a68403f901fce959d7b
+      MODEL: NembraApp/Features/Dashboard/SpeedInstrumentModel.swift
+      EXPECTED_MODEL_BLOB: 9fa432682c34bbd23405815455b1ebf9e7780af6
+      TESTS: NembraAppTests/NembraAppTests.swift
+      EXPECTED_TESTS_BLOB: 5de2516fd59f2af385fa36b08014c288593aad93
+      SELF: .github/workflows/dashboard-power-rolling-digits-once.yml
+    steps:
+      - name: Checkout exact authoring subject
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Bind exact main parent and source blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          test "$(git rev-parse "$EXPECTED_PARENT:$MODEL")" = "$EXPECTED_MODEL_BLOB"
+          test "$(git rev-parse "$EXPECTED_PARENT:$TESTS")" = "$EXPECTED_TESTS_BLOB"
+          test "$(git diff --name-only HEAD^ HEAD)" = "$SELF"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Give Energy Rail watts fixed per-digit rolling geometry
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("NembraApp/Features/Dashboard/SpeedInstrumentModel.swift")
+          source = path.read_text(encoding="utf-8")
+          old = '''private struct DashboardRollingPowerValueView: View {
+    @Environment(\\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .headline) private var scaledPointSize: CGFloat = 18
+
+    let value: Double
+
+    var body: some View {
+        Text(validatedText)
+            .font(
+                .system(
+                    size: min(scaledPointSize, dynamicTypeSize.isAccessibilitySize ? 28 : 20),
+                    weight: .semibold,
+                    design: .default
+                )
+            )
+            .fontWidth(.expanded)
+            .monospacedDigit()
+            .contentTransition(reduceMotion ? .identity : .numericText(value: value))
+    }
+
+    private var validatedText: String {
+        guard value.isFinite, value >= 0, value <= 99_999 else { return "—" }
+        return String(Int(value.rounded(.toNearestOrAwayFromZero)))
+    }
+}
+'''
+          new = '''enum DashboardRollingPowerValuePolicy {
+    static let maximumDisplayWatts = DashboardEnergyRailVisualState.maximumDisplayWatts
+
+    private static let numberModel: RollingNumberModel? = {
+        guard let layout = try? RollingNumberLayout(integerDigits: 5) else {
+            return nil
+        }
+        return try? RollingNumberModel(layout: layout)
+    }()
+
+    static func snapshot(for value: Double) -> RollingNumberSnapshot? {
+        guard value.isFinite,
+              value >= 0,
+              value <= maximumDisplayWatts,
+              let numberModel else {
+            return nil
+        }
+        return try? numberModel.snapshot(for: value)
+    }
+}
+
+private struct DashboardRollingPowerValueView: View {
+    @Environment(\\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .headline) private var scaledPointSize: CGFloat = 18
+
+    let value: Double
+
+    var body: some View {
+        if let snapshot = DashboardRollingPowerValuePolicy.snapshot(for: value) {
+            let pointSize = min(scaledPointSize, dynamicTypeSize.isAccessibilitySize ? 28 : 20)
+            let transitionValue = Double(snapshot.scaledValue)
+            let visibleDigitKey = snapshot.digits.map { "\\($0.digit):\\($0.isVisible)" }
+
+            HStack(spacing: -1) {
+                ForEach(0..<snapshot.layout.integerDigits, id: \\.self) { index in
+                    let digit = snapshot.digits[index]
+                    Text(String(digit.digit))
+                        .font(.system(size: pointSize, weight: .semibold, design: .default))
+                        .fontWidth(.expanded)
+                        .opacity(digit.isVisible ? 1 : 0)
+                        .contentTransition(
+                            reduceMotion ? .identity : .numericText(value: transitionValue)
+                        )
+                        .clipped()
+                }
+            }
+            .monospacedDigit()
+            .animation(
+                reduceMotion ? nil : .smooth(duration: 0.14),
+                value: visibleDigitKey
+            )
+        } else {
+            Text("—")
+                .font(
+                    .system(
+                        size: min(scaledPointSize, dynamicTypeSize.isAccessibilitySize ? 28 : 20),
+                        weight: .semibold,
+                        design: .default
+                    )
+                )
+                .fontWidth(.expanded)
+        }
+    }
+}
+'''
+          if source.count(old) != 1:
+              raise SystemExit(f"rolling power view anchor count was {source.count(old)}")
+          path.write_text(source.replace(old, new, 1), encoding="utf-8")
+
+      - name: Pin power rolling capacity and hidden-slot geometry
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("NembraAppTests/NembraAppTests.swift")
+          source = path.read_text(encoding="utf-8")
+          anchor = '''    func testCockpitSpeedUnitsResolveFromPreferenceAndSystemPolicy() {
+'''
+          if source.count(anchor) != 1:
+              raise SystemExit(f"app test insertion anchor count was {source.count(anchor)}")
+          test = '''    func testCockpitRollingPowerUsesFixedSlotsAndFailsClosedBeyondDisplayCapacity() throws {
+        let zero = try XCTUnwrap(DashboardRollingPowerValuePolicy.snapshot(for: 0))
+        XCTAssertEqual(zero.layout.integerDigits, 5)
+        XCTAssertEqual(zero.layout.fractionDigits, 0)
+        XCTAssertEqual(zero.digits.count, 5)
+        XCTAssertEqual(zero.digits.filter(\\.isVisible).count, 1)
+        XCTAssertEqual(zero.scaledValue, 0)
+
+        let accepted = try XCTUnwrap(DashboardRollingPowerValuePolicy.snapshot(for: 356.4))
+        XCTAssertEqual(accepted.scaledValue, 356)
+        XCTAssertEqual(accepted.digits.filter(\\.isVisible).count, 3)
+        XCTAssertEqual(
+            DashboardRollingPowerValuePolicy.maximumDisplayWatts,
+            DashboardEnergyRailVisualState.maximumDisplayWatts
+        )
+
+        XCTAssertNotNil(DashboardRollingPowerValuePolicy.snapshot(for: 99_999))
+        XCTAssertNil(DashboardRollingPowerValuePolicy.snapshot(for: 99_999.1))
+        XCTAssertNil(DashboardRollingPowerValuePolicy.snapshot(for: -.leastNonzeroMagnitude))
+        XCTAssertNil(DashboardRollingPowerValuePolicy.snapshot(for: .infinity))
+        XCTAssertNil(DashboardRollingPowerValuePolicy.snapshot(for: .nan))
+    }
+
+'''
+          path.write_text(source.replace(anchor, test + anchor, 1), encoding="utf-8")
+
+      - name: Validate narrow presentation-only delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test "$(git status --porcelain=v1 | awk '{print $2}' | sort | tr '\n' ' ' | sed 's/ $//')" = 'NembraApp/Features/Dashboard/SpeedInstrumentModel.swift NembraAppTests/NembraAppTests.swift'
+          grep -Fq 'enum DashboardRollingPowerValuePolicy' "$MODEL"
+          grep -Fq 'RollingNumberLayout(integerDigits: 5)' "$MODEL"
+          grep -Fq 'ForEach(0..<snapshot.layout.integerDigits' "$MODEL"
+          grep -Fq 'reduceMotion ? .identity : .numericText(value: transitionValue)' "$MODEL"
+          grep -Fq 'testCockpitRollingPowerUsesFixedSlotsAndFailsClosedBeyondDisplayCapacity' "$TESTS"
+          test "$(grep -Fc 'DashboardRollingPowerValueView(value:' "$MODEL")" -ge 2
+          test "$(grep -Fc 'acceptedWatts:' "$MODEL")" -ge 1
+          test "$(grep -Fc 'simulatorPowerStoreProjection' "$MODEL")" -ge 1
+
+      - name: Publish focused product delta and retire hook
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_head="$(git ls-remote --heads origin "refs/heads/$TARGET_BRANCH" | awk '{print $1}')"
+          test "$remote_head" = "$GITHUB_SHA"
+          rm "$SELF"
+          git add -- "$MODEL" "$TESTS" "$SELF"
+          git diff --cached --check
+          actual="$(git diff --cached --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n%s\n%s\n' "$MODEL" "$TESTS" "$SELF" | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Dashboard: roll Energy Rail watts per digit'
+          git push origin HEAD:"$TARGET_BRANCH"
+          printf 'NEMBRA_DASHBOARD_POWER_ROLLING_DIGITS=%s telemetryAuthorityChanged=false physicalAuthorityCreated=false\n' "$(git rev-parse HEAD)"
