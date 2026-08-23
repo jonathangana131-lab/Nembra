@@ -6,6 +6,12 @@ on:
       - capture/current-main-entrypoint-authorization-gpt56
     paths:
       - .github/workflows/capture-current-main-entrypoint-auth-materialize-v2.yml
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - main
+    paths:
+      - .github/workflows/capture-current-main-entrypoint-auth-materialize-v2.yml
 
 permissions:
   contents: write
@@ -20,7 +26,7 @@ jobs:
     timeout-minutes: 45
     env:
       TARGET_BRANCH: capture/current-main-entrypoint-authorization-gpt56
-      TRIGGER_SHA: ${{ github.sha }}
+      TRIGGER_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
       SELF_WORKFLOW: .github/workflows/capture-current-main-entrypoint-auth-materialize-v2.yml
       STALE_WORKFLOW: .github/workflows/capture-current-main-entrypoint-auth-materialize-once.yml
@@ -35,7 +41,7 @@ jobs:
       - name: Checkout exact current-main convergence head
         uses: actions/checkout@v6
         with:
-          ref: ${{ env.TARGET_BRANCH }}
+          ref: ${{ env.TRIGGER_SHA }}
           fetch-depth: 0
           persist-credentials: true
 
@@ -43,7 +49,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git branch --show-current)" = "$TARGET_BRANCH"
           test "$(git rev-parse HEAD)" = "$TRIGGER_SHA"
           test "$(git rev-parse HEAD:"$APP_SOURCE")" = "$EXPECTED_APP_BLOB"
           git fetch origin "$DONOR_BRANCH"
@@ -98,7 +103,6 @@ jobs:
           donor_workflow = os.environ["DONOR_WORKFLOW"]
           workflow = subprocess.check_output(
               ["git", "show", f"FETCH_HEAD:{donor_workflow}"], text=True
-          )
           start_marker = "      - name: Keep exact-freeze helper outside watchdog source-oracle interval\n        shell: python\n        run: |\n"
           end_marker = "\n      - name: Enforce transformed authority shape"
           start = workflow.index(start_marker) + len(start_marker)
