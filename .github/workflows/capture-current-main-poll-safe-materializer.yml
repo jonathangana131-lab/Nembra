@@ -7,6 +7,7 @@ on:
     paths:
       - .github/workflows/capture-current-main-poll-safe-materializer.yml
   pull_request:
+    types: [ready_for_review]
     branches:
       - main
     paths:
@@ -30,7 +31,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_parent='5e157abce2d2d4a00e838d7405349a687f528c4d'
+          expected_parent='8ea82664a811d3709d4e77318858636e9cc80d69'
           expected_donor='310f15f1fa2d151f209b0f8fa9ef7b58dd82053b'
           expected_base='7d8dc3cf0f2580bc849f884b4e6a639fb4b80fd8'
           test "$(git rev-parse HEAD^)" = "$expected_parent"
