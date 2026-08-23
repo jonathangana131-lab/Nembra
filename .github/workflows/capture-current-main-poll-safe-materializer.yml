@@ -6,6 +6,11 @@ on:
       - capture/current-main-field-transport-gpt56sol
     paths:
       - .github/workflows/capture-current-main-poll-safe-materializer.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/capture-current-main-poll-safe-materializer.yml
 
 permissions:
   contents: write
@@ -25,7 +30,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_parent='a540862784abae27e19b8ccf7cc5f79782157b7a'
+          expected_parent='5e157abce2d2d4a00e838d7405349a687f528c4d'
           expected_donor='310f15f1fa2d151f209b0f8fa9ef7b58dd82053b'
           expected_base='7d8dc3cf0f2580bc849f884b4e6a639fb4b80fd8'
           test "$(git rev-parse HEAD^)" = "$expected_parent"
