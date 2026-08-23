@@ -10,6 +10,8 @@
 		A10000000000000000000004 /* NembraCaptureEntrypoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000004 /* NembraCaptureEntrypoint.swift */; };
 		A10000000000000000000005 /* TuyaAccountBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000005 /* TuyaAccountBridge.swift */; };
 		A10000000000000000000006 /* NembraBluetoothCapture in Frameworks */ = {isa = PBXBuildFile; productRef = 600100000000000000000001 /* NembraBluetoothCapture */; };
+		A1000000000000000000000C /* NembraCaptureAppAuthorization in Frameworks */ = {isa = PBXBuildFile; productRef = 600100000000000000000002 /* NembraCaptureAppAuthorization */; };
+		A1000000000000000000000D /* NembraCaptureFieldAuthorizationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000C /* NembraCaptureFieldAuthorizationController.swift */; };
 		A10000000000000000000007 /* NembraCaptureBuildIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000007 /* NembraCaptureBuildIdentity.swift */; };
 		A10000000000000000000008 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000008 /* Localizable.strings */; };
 /* End PBXBuildFile section */
@@ -20,6 +22,7 @@
 		B10000000000000000000004 /* NembraCaptureEntrypoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NembraCaptureEntrypoint.swift; path = NembraApp/App/NembraCaptureEntrypoint.swift; sourceTree = SOURCE_ROOT; };
 		B10000000000000000000005 /* TuyaAccountBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TuyaAccountBridge.swift; path = NembraApp/Features/Research/TuyaAccountBridge.swift; sourceTree = SOURCE_ROOT; };
 		B10000000000000000000007 /* NembraCaptureBuildIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NembraCaptureBuildIdentity.swift; path = NembraApp/App/NembraCaptureBuildIdentity.swift; sourceTree = SOURCE_ROOT; };
+		B1000000000000000000000C /* NembraCaptureFieldAuthorizationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NembraCaptureFieldAuthorizationController.swift; path = NembraApp/App/NembraCaptureFieldAuthorizationController.swift; sourceTree = SOURCE_ROOT; };
 		B10000000000000000000008 /* Localizable.strings */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = Localizable.strings; path = NembraApp/Resources/Localizable.strings; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
@@ -29,6 +32,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000006 /* NembraBluetoothCapture in Frameworks */,
+				A1000000000000000000000C /* NembraCaptureAppAuthorization in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -47,6 +51,7 @@
 			isa = PBXGroup;
 			children = (
 				B10000000000000000000004 /* NembraCaptureEntrypoint.swift */,
+				B1000000000000000000000C /* NembraCaptureFieldAuthorizationController.swift */,
 				B10000000000000000000007 /* NembraCaptureBuildIdentity.swift */,
 				B10000000000000000000005 /* TuyaAccountBridge.swift */,
 				B10000000000000000000002 /* ES80CaptureShellView.swift */,
@@ -79,6 +84,7 @@
 			name = "Nembra Capture";
 			packageProductDependencies = (
 				600100000000000000000001 /* NembraBluetoothCapture */,
+				600100000000000000000002 /* NembraCaptureAppAuthorization */,
 			);
 			productName = "Nembra Capture";
 			productReference = B10000000000000000000003 /* Nembra Capture.app */;
@@ -134,6 +140,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000004 /* NembraCaptureEntrypoint.swift in Sources */,
+				A1000000000000000000000D /* NembraCaptureFieldAuthorizationController.swift in Sources */,
 				A10000000000000000000007 /* NembraCaptureBuildIdentity.swift in Sources */,
 				A10000000000000000000005 /* TuyaAccountBridge.swift in Sources */,
 				A10000000000000000000002 /* ES80CaptureShellView.swift in Sources */,
@@ -274,6 +281,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 500100000000000000000001 /* XCLocalSwiftPackageReference "Packages/NembraBluetoothCapture" */;
 			productName = NembraBluetoothCapture;
+		};
+		600100000000000000000002 /* NembraCaptureAppAuthorization */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 500100000000000000000001 /* XCLocalSwiftPackageReference "Packages/NembraBluetoothCapture" */;
+			productName = NembraCaptureAppAuthorization;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
