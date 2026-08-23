@@ -1,0 +1,97 @@
+name: Capture current-main authorization anchor diagnostic
+
+on:
+  push:
+    branches:
+      - capture/current-main-entrypoint-authorization-gpt56
+    paths:
+      - .github/workflows/capture-current-main-auth-anchor-diagnostic.yml
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+    paths:
+      - .github/workflows/capture-current-main-auth-anchor-diagnostic.yml
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
+      DONOR_BRANCH: product/capture-1-0-main-20260818
+      DONOR_SOURCE_WORKFLOW: .github/workflows/capture-app-authorization-close-one-shot.yml
+      EXPECTED_DONOR_SOURCE_BLOB: 2cb91114a605be7f6808eb10b4201cd58bb419e0
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Inventory exact donor lifecycle anchors against current main
+        shell: python
+        run: |
+          import ast
+          import os
+          import subprocess
+          import textwrap
+          from pathlib import Path
+
+          subprocess.run(["git", "fetch", "origin", os.environ["DONOR_BRANCH"]], check=True)
+          actual = subprocess.check_output(
+              ["git", "rev-parse", f"FETCH_HEAD:{os.environ['DONOR_SOURCE_WORKFLOW']}"], text=True
+          ).strip()
+          if actual != os.environ["EXPECTED_DONOR_SOURCE_BLOB"]:
+              raise SystemExit(f"donor source blob changed: {actual}")
+
+          workflow = subprocess.check_output(
+              ["git", "show", f"FETCH_HEAD:{os.environ['DONOR_SOURCE_WORKFLOW']}"], text=True
+          )
+          marker = "      - name: Materialize field authorization into real SecureLink lifecycle\n"
+          section = workflow.index(marker)
+          run_marker = "        run: |\n"
+          start = workflow.index(run_marker, section) + len(run_marker)
+          end = workflow.index("\n      - name:", start)
+          program = textwrap.dedent(workflow[start:end])
+
+          # Apply the exact current-main import adaptation used by V2 so the
+          # inventory describes the transform that actually executes here.
+          old_source_literal = '"import Foundation\\nimport NembraBluetoothCapture\\nimport SwiftUI\\n"'
+          old_replacement_literal = '"import Foundation\\nimport NembraBluetoothCapture\\nimport NembraCaptureAppAuthorization\\nimport SwiftUI\\n"'
+          program = program.replace(old_source_literal, '"import NembraBluetoothCapture\\n"', 1)
+          program = program.replace(old_replacement_literal, '"import NembraBluetoothCapture\\nimport NembraCaptureAppAuthorization\\n"', 1)
+
+          tree = ast.parse(program)
+          source = Path(os.environ["APP_SOURCE"]).read_text(encoding="utf-8")
+          mismatches = []
+          total = 0
+          for node in ast.walk(tree):
+              if not isinstance(node, ast.Call):
+                  continue
+              if not isinstance(node.func, ast.Name) or node.func.id != "replace_once":
+                  continue
+              if len(node.args) < 3:
+                  continue
+              try:
+                  old = ast.literal_eval(node.args[0])
+                  label = ast.literal_eval(node.args[2])
+              except Exception:
+                  continue
+              if not isinstance(old, str) or not isinstance(label, str):
+                  continue
+              total += 1
+              count = source.count(old)
+              print(f"ANCHOR {label!r}: count={count}")
+              if count != 1:
+                  mismatches.append((label, count))
+
+          print(f"TOTAL replace_once anchors: {total}")
+          if mismatches:
+              print("MISMATCHES:")
+              for label, count in mismatches:
+                  print(f"  {label}: {count}")
+              raise SystemExit(f"{len(mismatches)} lifecycle anchor(s) are not exact-one on current main")
+          print("All donor lifecycle anchors are exact-one on current main.")
