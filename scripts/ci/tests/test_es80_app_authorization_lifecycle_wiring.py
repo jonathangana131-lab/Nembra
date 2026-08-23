@@ -44,7 +44,10 @@ class AppAuthorizationLifecycleWiringTests(unittest.TestCase):
         self.assertIn("fieldAuthorization.stage == .armed", self.app)
 
     def test_off1_requires_authorization_before_correlation(self) -> None:
-        section = self.section("private func beginBaselineAfterCurrentOperatorAttestation()", "private func beginCorrelationSeries()")
+        # Current main performs its fresh account/device verification directly in startBaseline().
+        # The one-time authorization admission must remain inside that same path immediately
+        # before the package-owned OFF1 correlation series begins.
+        section = self.section("func startBaseline()", "private func beginCorrelationSeries()")
         admission = section.index("admitOFF1Start()")
         self.assertLess(admission, section.index("beginCorrelationSeries()"))
         self.assert_fail_closed_near(section, "admitOFF1Start()")
