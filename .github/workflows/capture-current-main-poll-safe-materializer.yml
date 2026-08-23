@@ -1,0 +1,109 @@
+name: Capture Current-Main Poll-Safe Transport Materializer
+
+on:
+  push:
+    branches:
+      - capture/current-main-field-transport-gpt56sol
+    paths:
+      - .github/workflows/capture-current-main-poll-safe-materializer.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact carrier
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: capture/current-main-field-transport-gpt56sol
+
+      - name: Bind exact carrier parent and donor
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_parent='a540862784abae27e19b8ccf7cc5f79782157b7a'
+          expected_donor='310f15f1fa2d151f209b0f8fa9ef7b58dd82053b'
+          expected_base='7d8dc3cf0f2580bc849f884b4e6a639fb4b80fd8'
+          test "$(git rev-parse HEAD^)" = "$expected_parent"
+          mapfile -t changed < <(git diff --name-only HEAD^ HEAD)
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = '.github/workflows/capture-current-main-poll-safe-materializer.yml'
+          git fetch --no-tags origin 'refs/heads/capture/v14-field-authorization-poll-safe-gpt56sol:refs/remotes/origin/poll-safe-donor'
+          test "$(git rev-parse refs/remotes/origin/poll-safe-donor)" = "$expected_donor"
+          git cat-file -e "${expected_base}^{commit}"
+          mapfile -t donor_paths < <(git diff --name-only "$expected_base" "$expected_donor" | LC_ALL=C sort)
+          expected_paths=(
+            'Packages/NembraBluetoothCapture/Sources/NembraCaptureAppAuthorization/AuthenticatedStationaryCaptureAuthorizationInbox.swift'
+            'Packages/NembraBluetoothCapture/Tests/NembraCaptureAppAuthorizationTests/AuthenticatedStationaryCaptureAuthorizationInboxTests.swift'
+            'scripts/ci/tests/test_es80_field_authorization_container_transport.py'
+            'scripts/field/transfer_field_authorization.command'
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected_paths[@]}" | LC_ALL=C sort)
+          test "${donor_paths[*]}" = "${expected_sorted[*]}"
+
+      - name: Apply only reviewed poll-safe donor delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='7d8dc3cf0f2580bc849f884b4e6a639fb4b80fd8'
+          donor='310f15f1fa2d151f209b0f8fa9ef7b58dd82053b'
+          paths=(
+            'Packages/NembraBluetoothCapture/Sources/NembraCaptureAppAuthorization/AuthenticatedStationaryCaptureAuthorizationInbox.swift'
+            'Packages/NembraBluetoothCapture/Tests/NembraCaptureAppAuthorizationTests/AuthenticatedStationaryCaptureAuthorizationInboxTests.swift'
+            'scripts/ci/tests/test_es80_field_authorization_container_transport.py'
+            'scripts/field/transfer_field_authorization.command'
+          )
+          git diff --binary "$base" "$donor" -- "${paths[@]}" > /tmp/poll-safe.patch
+          test -s /tmp/poll-safe.patch
+          git apply --check /tmp/poll-safe.patch
+          git apply /tmp/poll-safe.patch
+          git diff --check
+
+      - name: Verify current-main exact-device binding survived
+        shell: bash
+        run: |
+          set -euo pipefail
+          script='scripts/field/transfer_field_authorization.command'
+          grep -F 'PRIVATE_DEVICE_READER_RELATIVE_PATH="scripts/ci/es80_signed_field_artifact_private_runner.py"' "$script"
+          grep -F 'NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE' "$script"
+          grep -F 'Caller-selected CoreDevice does not match the retained manifest' "$script"
+          grep -F 'retained-install-manifest.incoming' "$script"
+          grep -F 'retained-install-manifest.commit' "$script"
+          grep -F 'authorization-envelope.incoming' "$script"
+          grep -F 'authorization-envelope.commit' "$script"
+          grep -F 'make_commit_record' "$script"
+          ! grep -F 'MANIFEST_REMOTE="$FIELD_DIRECTORY/retained-install-manifest.json"' "$script"
+          ! grep -F 'ENVELOPE_REMOTE="$FIELD_DIRECTORY/authorization-envelope.json"' "$script"
+          ! grep -F 'publishDps' "$script"
+          ! grep -F 'writeValue(' "$script"
+
+      - name: Run focused transport and package acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I -B scripts/ci/tests/test_es80_field_authorization_container_transport.py
+          /bin/bash -p scripts/field/transfer_field_authorization.command --self-test
+          swift test --package-path Packages/NembraBluetoothCapture
+
+      - name: Publish clean self-retired successor
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-current-main-poll-safe-materializer.yml
+          git add \
+            Packages/NembraBluetoothCapture/Sources/NembraCaptureAppAuthorization/AuthenticatedStationaryCaptureAuthorizationInbox.swift \
+            Packages/NembraBluetoothCapture/Tests/NembraCaptureAppAuthorizationTests/AuthenticatedStationaryCaptureAuthorizationInboxTests.swift \
+            scripts/ci/tests/test_es80_field_authorization_container_transport.py \
+            scripts/field/transfer_field_authorization.command \
+            .github/workflows/capture-current-main-poll-safe-materializer.yml
+          git diff --cached --check
+          git config user.name 'nembra-capture-materializer'
+          git config user.email 'actions@users.noreply.github.com'
+          git commit -m 'Capture: make current-main authorization handoff poll-safe'
+          git push origin HEAD:capture/current-main-field-transport-gpt56sol
