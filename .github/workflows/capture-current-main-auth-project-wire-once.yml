@@ -1,0 +1,91 @@
+name: Capture current-main authorization project wire once
+
+on:
+  push:
+    branches:
+      - capture/current-main-entrypoint-authorization-gpt56
+    paths:
+      - .github/workflows/capture-current-main-auth-project-wire-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-current-main-auth-project-wire-once
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: capture/current-main-entrypoint-authorization-gpt56
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Wire controller and package product into standalone Capture target
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('NembraCapture.xcodeproj/project.pbxproj')
+          s = path.read_text()
+          def r(old, new, label):
+              global s
+              if s.count(old) != 1:
+                  raise SystemExit(f'{label}: expected one anchor, found {s.count(old)}')
+              s = s.replace(old, new, 1)
+          r(
+              '\t\tA10000000000000000000006 /* NembraBluetoothCapture in Frameworks */ = {isa = PBXBuildFile; productRef = 600100000000000000000001 /* NembraBluetoothCapture */; };\n',
+              '\t\tA10000000000000000000006 /* NembraBluetoothCapture in Frameworks */ = {isa = PBXBuildFile; productRef = 600100000000000000000001 /* NembraBluetoothCapture */; };\n\t\tA1000000000000000000000C /* NembraCaptureAppAuthorization in Frameworks */ = {isa = PBXBuildFile; productRef = 600100000000000000000002 /* NembraCaptureAppAuthorization */; };\n\t\tA1000000000000000000000D /* NembraCaptureFieldAuthorizationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000C /* NembraCaptureFieldAuthorizationController.swift */; };\n',
+              'build files')
+          r(
+              '\t\tB10000000000000000000007 /* NembraCaptureBuildIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NembraCaptureBuildIdentity.swift; path = NembraApp/App/NembraCaptureBuildIdentity.swift; sourceTree = SOURCE_ROOT; };\n',
+              '\t\tB10000000000000000000007 /* NembraCaptureBuildIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NembraCaptureBuildIdentity.swift; path = NembraApp/App/NembraCaptureBuildIdentity.swift; sourceTree = SOURCE_ROOT; };\n\t\tB1000000000000000000000C /* NembraCaptureFieldAuthorizationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NembraCaptureFieldAuthorizationController.swift; path = NembraApp/App/NembraCaptureFieldAuthorizationController.swift; sourceTree = SOURCE_ROOT; };\n',
+              'controller file reference')
+          r(
+              '\t\t\t\tA10000000000000000000006 /* NembraBluetoothCapture in Frameworks */,\n',
+              '\t\t\t\tA10000000000000000000006 /* NembraBluetoothCapture in Frameworks */,\n\t\t\t\tA1000000000000000000000C /* NembraCaptureAppAuthorization in Frameworks */,\n',
+              'framework phase')
+          r(
+              '\t\t\t\tB10000000000000000000004 /* NembraCaptureEntrypoint.swift */,\n',
+              '\t\t\t\tB10000000000000000000004 /* NembraCaptureEntrypoint.swift */,\n\t\t\t\tB1000000000000000000000C /* NembraCaptureFieldAuthorizationController.swift */,\n',
+              'capture group')
+          r(
+              '\t\t\t\t600100000000000000000001 /* NembraBluetoothCapture */,\n',
+              '\t\t\t\t600100000000000000000001 /* NembraBluetoothCapture */,\n\t\t\t\t600100000000000000000002 /* NembraCaptureAppAuthorization */,\n',
+              'target package product')
+          r(
+              '\t\t\t\tA10000000000000000000004 /* NembraCaptureEntrypoint.swift in Sources */,\n',
+              '\t\t\t\tA10000000000000000000004 /* NembraCaptureEntrypoint.swift in Sources */,\n\t\t\t\tA1000000000000000000000D /* NembraCaptureFieldAuthorizationController.swift in Sources */,\n',
+              'sources phase')
+          r(
+              '\t\t600100000000000000000001 /* NembraBluetoothCapture */ = {\n\t\t\tisa = XCSwiftPackageProductDependency;\n\t\t\tpackage = 500100000000000000000001 /* XCLocalSwiftPackageReference "Packages/NembraBluetoothCapture" */;\n\t\t\tproductName = NembraBluetoothCapture;\n\t\t};\n',
+              '\t\t600100000000000000000001 /* NembraBluetoothCapture */ = {\n\t\t\tisa = XCSwiftPackageProductDependency;\n\t\t\tpackage = 500100000000000000000001 /* XCLocalSwiftPackageReference "Packages/NembraBluetoothCapture" */;\n\t\t\tproductName = NembraBluetoothCapture;\n\t\t};\n\t\t600100000000000000000002 /* NembraCaptureAppAuthorization */ = {\n\t\t\tisa = XCSwiftPackageProductDependency;\n\t\t\tpackage = 500100000000000000000001 /* XCLocalSwiftPackageReference "Packages/NembraBluetoothCapture" */;\n\t\t\tproductName = NembraCaptureAppAuthorization;\n\t\t};\n',
+              'package product dependency object')
+          path.write_text(s)
+          PY
+          git diff --check
+          grep -Fq 'NembraCaptureFieldAuthorizationController.swift in Sources' NembraCapture.xcodeproj/project.pbxproj
+          grep -Fq 'NembraCaptureAppAuthorization in Frameworks' NembraCapture.xcodeproj/project.pbxproj
+
+      - name: Build standalone Capture on Xcode 27
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild -project NembraCapture.xcodeproj -scheme 'Nembra Capture' -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath "${RUNNER_TEMP}/NembraCaptureCurrentMainAuthProject" CODE_SIGNING_ALLOWED=NO build
+
+      - name: Publish tested project wiring and retire authoring workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-current-main-auth-project-wire-once.yml
+          git add NembraCapture.xcodeproj/project.pbxproj .github/workflows/capture-current-main-auth-project-wire-once.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Capture: compile current-main authorization controller'
+          git push origin HEAD:capture/current-main-entrypoint-authorization-gpt56
