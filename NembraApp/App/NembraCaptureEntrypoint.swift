@@ -2,6 +2,7 @@ import AuthenticationServices
 import CoreTransferable
 import Foundation
 import NembraBluetoothCapture
+import NembraCaptureAppAuthorization
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -550,7 +551,14 @@ private final class SecureLinkController: NSObject, ObservableObject {
     static let historicalCapturePeripheral = UUID(uuidString: "6815A5F5-4D1E-E004-BAE8-6DF924123907")!
     private static let maximumObservationPollGapNanoseconds = TuyaAuthenticatedReadOnlySessionLedger.maximumContinuousObservationGapNanoseconds
 
-    @Published private(set) var phase: Phase = .idle
+    @Published private(set) var phase: Phase = .idle {
+        didSet {
+            // Every failed app lifecycle is terminal for the one-time authorization attempt.
+            if phase == .failed {
+                fieldAuthorization.revoke()
+            }
+        }
+    }
     @Published private(set) var message = "Log in the official SDK account and verify the exact scooter before Bluetooth discovery."
     @Published private(set) var candidates: [Candidate] = []
     @Published private(set) var selectedID: UUID?
@@ -559,6 +567,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     @Published private(set) var sdkDeviceMembershipVerified = false
     @Published private(set) var membershipStatus = "Exact scooter membership has not been checked in the official SDK account yet."
     @Published private(set) var membershipBusy = false
+    @Published private(set) var fieldAuthorizationStatus = "Waiting for the retained field authorization manifest."
     @Published private(set) var ledgerSnapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
         authenticationState: .unavailable(reason: "No active Bluetooth connection."),
         connectionStartedAtUptimeNanoseconds: nil,
@@ -577,6 +586,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     let tuyaUUID: String
 
     private let buildIdentity = NembraCaptureBuildIdentity.current
+    private let fieldAuthorization = NembraCaptureFieldAuthorizationController()
     private var byID: [UUID: Candidate] = [:]
     private var correlationSession: PassiveBluetoothPowerCycleObservationSession?
     private var processCorrelationLease: UUID?
@@ -616,6 +626,38 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     deinit { watchdog?.cancel() }
 
+    var fieldAuthorizationReady: Bool { fieldAuthorization.stage == .armed }
+
+    func advanceFieldAuthorizationHandoffIfAvailable() {
+        guard phase == .idle, buildIdentity.isAuthoritativeFieldBuild else { return }
+        do {
+            let progress = try fieldAuthorization.advanceInboxHandoffIfAvailable()
+            switch progress {
+            case .waitingForManifest:
+                fieldAuthorizationStatus = "Waiting for the retained field authorization manifest."
+            case .waitingForEnvelope:
+                fieldAuthorizationStatus = "One-time challenge is ready. Waiting for the independently signed authorization envelope."
+            case .armed:
+                fieldAuthorizationStatus = "One-time field authorization verified for this live app attempt."
+            case .lifecycleInProgress:
+                fieldAuthorizationStatus = "One-time field authorization is in use by this Capture attempt."
+            case .sealed:
+                fieldAuthorizationStatus = "One-time field authorization sealed with the verified accepted artifact."
+            case .revoked:
+                fieldAuthorizationStatus = "One-time field authorization was revoked. Relaunch Capture before another attempt."
+                phase = .failed
+                message = fieldAuthorizationStatus
+                log("field_authorization_revoked_before_off1")
+            }
+        } catch {
+            fieldAuthorization.revoke()
+            fieldAuthorizationStatus = "Field authorization handoff failed closed. Relaunch Capture before another attempt."
+            phase = .failed
+            message = "Field authorization handoff failed closed: \(error.localizedDescription)"
+            log("field_authorization_handoff_failed", ["error": error.localizedDescription])
+        }
+    }
+
     func activateMembershipRequestsForView() {
         // A fast inactive -> active transition must not reset the duplicate-retirement fence
         // while an authenticated generation is terminalizing. Once the official Tuya driver has
@@ -628,6 +670,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func abandonCorrelationForViewExit() {
+        fieldAuthorization.revoke()
         // Close the screen-lifetime admission boundary before revoking every already-issued grant.
         // A later SwiftUI/account callback must not mint a replacement membership probe off-screen.
         acceptsViewScopedMembershipRequests = false
@@ -695,6 +738,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         // A sealed accepted artifact is immutable and already closed to new evidence. Backgrounding
         // after acceptance must not downgrade or rebuild that frozen result.
         guard phase != .accepted else { return }
+        fieldAuthorization.revoke()
         guard !foregroundIntegrityLossHandled else { return }
         foregroundIntegrityLossHandled = true
 
@@ -795,6 +839,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     var correlationCompletedWindowCount: Int { correlationProgress?.completedWindowCount ?? 0 }
     var failedAttemptCanRestartFromOFF1: Bool {
         phase == .failed
+            && fieldAuthorization.stage == .armed
             && currentConnectionToken == nil
             && localBLESettlementToken == nil
             && driver == nil
@@ -903,6 +948,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 self.failLocally("Exact scooter membership could not be proven for this same current SDK account. Bluetooth correlation remains disabled.", "sdk_device_membership_required_before_scan")
                 return
             }
+            do {
+                try self.fieldAuthorization.admitOFF1Start()
+            } catch {
+                self.failLocally(
+                    "The one-time field authorization did not admit OFF1: \(error.localizedDescription)",
+                    "field_authorization_rejected_off1"
+                )
+                return
+            }
+            self.fieldAuthorizationStatus = "One-time field authorization admitted OFF1 for this attempt."
             self.beginCorrelationSeries()
         }
     }
@@ -1161,6 +1216,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func invalidateSDKMembership() {
+        fieldAuthorization.revoke()
         let token = currentConnectionToken
         membershipRequestID = UUID()
         membershipBusy = false
@@ -1323,6 +1379,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 self.failLocally("Exact confirmed scooter/account authority could not be re-verified immediately before BLE authentication.", "sdk_device_membership_recheck_failed")
                 return
             }
+            do {
+                try self.fieldAuthorization.admitAuthenticationStart()
+            } catch {
+                self.failLocally(
+                    "The one-time field authorization did not admit authentication: \(error.localizedDescription)",
+                    "field_authorization_rejected_authentication"
+                )
+                return
+            }
+            self.fieldAuthorizationStatus = "One-time field authorization admitted authentication."
             self.beginOfficialConnection(candidate: candidate)
         }
     }
@@ -1339,6 +1405,16 @@ private final class SecureLinkController: NSObject, ObservableObject {
             failLocally("Confirmed build or Tuya account/device authority changed before connection start.", "sdk_authority_changed")
             return
         }
+        do {
+            try fieldAuthorization.admitOfficialConnectionStart()
+        } catch {
+            failLocally(
+                "The one-time field authorization did not admit the official Tuya connection: \(error.localizedDescription)",
+                "field_authorization_rejected_official_connection"
+            )
+            return
+        }
+        fieldAuthorizationStatus = "One-time field authorization admitted the official Tuya connection."
         guard let newDriver = OfficialTuyaFactory.make() else {
             failLocally("Official Tuya provider is unavailable.", "sdk_provider_unavailable")
             return
@@ -1552,6 +1628,17 @@ private final class SecureLinkController: NSObject, ObservableObject {
                         await recordObservedTransportLoss(token: token)
                         return
                     }
+                    do {
+                        try self.fieldAuthorization.admitObservationStart()
+                    } catch {
+                        await self.invalidateInternalLifecycle(
+                            token: token,
+                            message: "The one-time field authorization did not admit observation: \(error.localizedDescription)",
+                            kind: "field_authorization_rejected_observation"
+                        )
+                        return
+                    }
+                    self.fieldAuthorizationStatus = "One-time field authorization admitted read-only observation."
 
                     phase = .observing
                     message = "Authenticated generation \(token.diagnosticGeneration) is live. Waiting for a genuine application update and the canonical 45-second horizon…"
@@ -1971,15 +2058,35 @@ private final class SecureLinkController: NSObject, ObservableObject {
                             return
                         }
                         self.sealedAcceptedEventPrefix = acceptedEventPrefixAtCut
-                        self.currentConnectionToken = nil
                         self.sealedAcceptedExport = self.makeExport(
                             exportedAt: Date(),
                             phase: .accepted,
                             events: acceptedEventPrefixAtCut
                         )
                         self.exportData = nil
+                        do {
+                            try self.freezeAcceptedArtifactForAuthorizationSeal()
+                            try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()
+                        } catch {
+                            self.fieldAuthorization.revoke()
+                            self.sealedAcceptedExport = nil
+                            self.exportData = nil
+                            self.fieldAuthorizationStatus = "One-time field authorization was revoked before accepted-artifact promotion."
+                            self.currentConnectionToken = nil
+                            self.localBLESettlementToken = nil
+                            self.sdkLocalBLEOnline = false
+                            self.driver = nil
+                            self.phase = .failed
+                            self.message = "The accepted evidence could not complete immutable artifact authorization sealing: \(error.localizedDescription). Relaunch Capture before another attempt."
+                            self.log("field_authorization_or_artifact_freeze_rejected", [
+                                "generation": String(token.diagnosticGeneration),
+                                "error": error.localizedDescription
+                            ])
+                            return
+                        }
+                        self.fieldAuthorizationStatus = "One-time field authorization sealed with the verified accepted artifact."
+                        self.currentConnectionToken = nil
                         self.phase = .accepted
-                        self.prepareExport()
                         self.log("acceptance_sealed", [
                             "generation": String(token.diagnosticGeneration),
                             "applicationUpdates": String(self.applicationUpdateCount),
@@ -2054,6 +2161,27 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 try? await Task.sleep(for: .seconds(1))
             }
         }
+    }
+
+    private func freezeAcceptedArtifactForAuthorizationSeal() throws {
+        guard let sealedAcceptedExport else {
+            throw NSError(
+                domain: "NembraCapture.AcceptedArtifactAuthorization",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "immutable accepted export was unavailable before authorization seal"]
+            )
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        encoder.dateEncodingStrategy = .iso8601
+        let exactBytes = try encoder.encode(sealedAcceptedExport)
+        let artifactSeal = ExactByteArtifactSeal(sealing: exactBytes)
+        let verifiedBytes = try artifactSeal.verifiedBytes()
+        guard artifactSeal.verifies(verifiedBytes) else {
+            throw ExactByteArtifactSealError.sealedBytesIntegrityMismatch
+        }
+        self.exportData = verifiedBytes
+        self.exportName = "Nembra-Capture-\(deviceID.prefix(8)).json"
     }
 
     private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken) async {
@@ -3073,8 +3201,16 @@ private struct SecureLinkView: View {
             }
             sdkAccount.bootstrap()
             if scenePhase == .active, sdkAccount.loggedIn { test.verifySDKMembership() }
+            var fieldAuthorizationPollTick = 0
             while !Task.isCancelled {
                 test.consumeCorrelationAsyncInvalidation()
+                if scenePhase == .active {
+                    fieldAuthorizationPollTick += 1
+                    if fieldAuthorizationPollTick >= 4 {
+                        fieldAuthorizationPollTick = 0
+                        test.advanceFieldAuthorizationHandoffIfAvailable()
+                    }
+                }
                 try? await Task.sleep(nanoseconds: 250_000_000)
             }
         }
@@ -3270,9 +3406,19 @@ private struct SecureLinkView: View {
 
                 VStack(spacing: 12) {
                     requirementRow("Capture build", ready: test.fieldBuildIsAuthoritative)
+                    requirementRow("One-time field authorization", ready: test.fieldAuthorizationReady)
                     requirementRow("Tuya secure service", ready: test.privateConfig)
                     requirementRow("Tuya account", ready: test.sdkAccountLoggedIn)
                     requirementRow("This scooter in account", ready: test.sdkDeviceMembershipVerified && test.accountIdentityLeaseIsAuthorized)
+                }
+
+                if test.fieldBuildIsAuthoritative && !test.fieldAuthorizationReady {
+                    Text(test.fieldAuthorizationStatus)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityLabel("One-time field authorization")
+                        .accessibilityValue(test.fieldAuthorizationStatus)
                 }
 
                 if test.sdkAccountLoggedIn && (!test.sdkDeviceMembershipVerified || !test.accountIdentityLeaseIsAuthorized) {
@@ -3819,6 +3965,7 @@ private struct SecureLinkView: View {
 
     private var authorityReady: Bool {
         test.fieldBuildIsAuthoritative
+            && test.fieldAuthorizationReady
             && test.privateConfig
             && test.sdkAccountLoggedIn
             && test.sdkDeviceMembershipVerified
