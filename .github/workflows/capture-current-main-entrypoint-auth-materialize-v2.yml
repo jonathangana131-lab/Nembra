@@ -56,42 +56,52 @@ jobs:
           test "$(git rev-parse FETCH_HEAD:"$DONOR_SOURCE_WORKFLOW")" = "$EXPECTED_DONOR_SOURCE_BLOB"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-      - name: Execute reviewed pinned inner lifecycle transform
+      - name: Execute exact pinned lifecycle transform directly
         shell: python
         run: |
           import os
           import subprocess
           import textwrap
-          from pathlib import Path
 
-          donor_workflow = os.environ["DONOR_WORKFLOW"]
           donor_source_workflow = os.environ["DONOR_SOURCE_WORKFLOW"]
-          donor_commit = os.environ["DONOR_MATERIALIZER_COMMIT"]
-
-          workflow = subprocess.check_output(
-              ["git", "show", f"{donor_commit}:{donor_workflow}"], text=True
-          )
-          start_marker = "      - name: Materialize canonical lifecycle transform\n        shell: python\n        run: |\n"
-          end_marker = "\n      - name: Enforce transformed authority shape"
-          start = workflow.index(start_marker) + len(start_marker)
-          end = workflow.index(end_marker, start)
-          program = textwrap.dedent(workflow[start:end])
-
-          source_bytes = subprocess.check_output(
+          source_workflow = subprocess.check_output(
               ["git", "show", f"FETCH_HEAD:{donor_source_workflow}"], text=True
           )
-          source_path = Path(os.environ["RUNNER_TEMP"]) / "capture-app-authorization-close-one-shot.yml"
-          source_path.write_text(source_bytes, encoding="utf-8")
-          old_source = os.environ.get("SOURCE_WORKFLOW")
-          os.environ["SOURCE_WORKFLOW"] = str(source_path)
-          try:
-              ns = {"__name__": "__main__", "__file__": "<current-main-pinned-inner-authorization-transform>"}
-              exec(compile(program, ns["__file__"], "exec", dont_inherit=True), ns)
-          finally:
-              if old_source is None:
-                  os.environ.pop("SOURCE_WORKFLOW", None)
-              else:
-                  os.environ["SOURCE_WORKFLOW"] = old_source
+          marker = "      - name: Materialize field authorization into real SecureLink lifecycle\n"
+          section = source_workflow.index(marker)
+          run_marker = "        run: |\n"
+          start = source_workflow.index(run_marker, section) + len(run_marker)
+          end = source_workflow.index("\n      - name:", start)
+          program = textwrap.dedent(source_workflow[start:end])
+
+          required = [
+              "admitOFF1Start",
+              "admitAuthenticationStart",
+              "admitOfficialConnectionStart",
+              "admitObservationStart",
+              "freezeAcceptedArtifactForAuthorizationSeal",
+              "sealAfterAcceptedArtifactFreeze",
+              "path.write_text(source, encoding=\"utf-8\")",
+          ]
+          for token in required:
+              if token not in program:
+                  raise SystemExit(f"pinned lifecycle transform missing required token: {token}")
+          if "insert_after_once" in program:
+              raise SystemExit("pinned lifecycle transform unexpectedly contains historical insert_after_once helper")
+
+          # Preserve the donor transform exactly except for the already-reviewed import-prelude
+          # adaptation needed by current main. Every lifecycle replacement remains exact-one-anchor.
+          old_source_literal = '"import Foundation\\nimport NembraBluetoothCapture\\nimport SwiftUI\\n"'
+          old_replacement_literal = '"import Foundation\\nimport NembraBluetoothCapture\\nimport NembraCaptureAppAuthorization\\nimport SwiftUI\\n"'
+          current_source_literal = '"import NembraBluetoothCapture\\n"'
+          current_replacement_literal = '"import NembraBluetoothCapture\\nimport NembraCaptureAppAuthorization\\n"'
+          if program.count(old_source_literal) != 1 or program.count(old_replacement_literal) != 1:
+              raise SystemExit("pinned lifecycle import replacement changed; refusing to guess")
+          program = program.replace(old_source_literal, current_source_literal, 1)
+          program = program.replace(old_replacement_literal, current_replacement_literal, 1)
+
+          ns = {"__name__": "__main__", "__file__": "<current-main-exact-pinned-authorization-transform>"}
+          exec(compile(program, ns["__file__"], "exec", dont_inherit=True), ns)
 
       - name: Apply reviewed donor post-transform authority hardening
         shell: python
@@ -102,7 +112,8 @@ jobs:
 
           donor_workflow = os.environ["DONOR_WORKFLOW"]
           workflow = subprocess.check_output(
-              ["git", "show", f"FETCH_HEAD:{donor_workflow}"], text=True
+              ["git", "show", f"$DONOR_MATERIALIZER_COMMIT:{donor_workflow}"], text=True
+          )
           start_marker = "      - name: Keep exact-freeze helper outside watchdog source-oracle interval\n        shell: python\n        run: |\n"
           end_marker = "\n      - name: Enforce transformed authority shape"
           start = workflow.index(start_marker) + len(start_marker)
