@@ -73,17 +73,47 @@ class AppAuthorizationLifecycleWiringTests(unittest.TestCase):
     def test_capability_seals_only_after_exact_accepted_bytes_are_frozen_and_verified(self) -> None:
         section = self.section("private func startWatchdog(token: TuyaReadOnlyConnectionToken)", "private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken)")
         package_seal = section.index("sealAcceptedObservation(for: token)")
-        authority_seal = section.index("sealAfterAcceptedArtifactFreeze()")
+        freeze_call = section.index("try self.freezeAcceptedArtifactForAuthorizationSeal()")
+        authority_seal = section.index("try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()")
         accepted = section.index("self.phase = .accepted")
-        inline_freeze = section.find("ExactByteArtifactSeal(sealing:")
-        helper_call = section.find("freezeAcceptedArtifactForAuthorizationSeal(")
-        freeze_candidates = [i for i in (inline_freeze, helper_call) if i >= 0 and i < authority_seal]
-        self.assertTrue(freeze_candidates)
-        freeze = min(freeze_candidates)
-        self.assertLess(package_seal, freeze)
-        self.assertLess(freeze, authority_seal)
+        self.assertLess(package_seal, freeze_call)
+        self.assertLess(freeze_call, authority_seal)
         self.assertLess(authority_seal, accepted)
-        self.assert_fail_closed_near(section, "sealAfterAcceptedArtifactFreeze()")
+
+        # Do not use a proximity window here: the accepted-artifact error handling is deliberately
+        # verbose. Prove the exact operational do/catch block structurally instead.
+        do_start = section.rfind("do {", package_seal, freeze_call)
+        catch_start = section.index("} catch {", authority_seal)
+        success_status = section.index(
+            'self.fieldAuthorizationStatus = "One-time field authorization sealed with the verified accepted artifact."',
+            catch_start,
+        )
+        self.assertGreaterEqual(do_start, 0)
+        guarded = section[do_start:success_status]
+        for required in (
+            "do {",
+            "try self.freezeAcceptedArtifactForAuthorizationSeal()",
+            "try self.fieldAuthorization.sealAfterAcceptedArtifactFreeze()",
+            "} catch {",
+            "self.fieldAuthorization.revoke()",
+            "self.sealedAcceptedExport = nil",
+            "self.exportData = nil",
+            "self.phase = .failed",
+            "return",
+        ):
+            self.assertIn(required, guarded)
+
+        helper = self.section(
+            "private func freezeAcceptedArtifactForAuthorizationSeal() throws",
+            "private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken)",
+        )
+        for required in (
+            "ExactByteArtifactSeal(sealing: exactBytes)",
+            "try artifactSeal.verifiedBytes()",
+            "artifactSeal.verifies(verifiedBytes)",
+            "self.exportData = verifiedBytes",
+        ):
+            self.assertIn(required, helper)
 
     def test_authority_admissions_cannot_be_optional_noops(self) -> None:
         for forbidden in (
