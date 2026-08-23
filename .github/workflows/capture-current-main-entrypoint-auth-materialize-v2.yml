@@ -89,8 +89,6 @@ jobs:
           if "insert_after_once" in program:
               raise SystemExit("pinned lifecycle transform unexpectedly contains historical insert_after_once helper")
 
-          # Preserve the donor transform exactly except for the already-reviewed import-prelude
-          # adaptation needed by current main. Every lifecycle replacement remains exact-one-anchor.
           old_source_literal = '"import Foundation\\nimport NembraBluetoothCapture\\nimport SwiftUI\\n"'
           old_replacement_literal = '"import Foundation\\nimport NembraBluetoothCapture\\nimport NembraCaptureAppAuthorization\\nimport SwiftUI\\n"'
           current_source_literal = '"import NembraBluetoothCapture\\n"'
@@ -111,8 +109,9 @@ jobs:
           import textwrap
 
           donor_workflow = os.environ["DONOR_WORKFLOW"]
+          donor_commit = os.environ["DONOR_MATERIALIZER_COMMIT"]
           workflow = subprocess.check_output(
-              ["git", "show", f"$DONOR_MATERIALIZER_COMMIT:{donor_workflow}"], text=True
+              ["git", "show", f"{donor_commit}:{donor_workflow}"], text=True
           )
           start_marker = "      - name: Keep exact-freeze helper outside watchdog source-oracle interval\n        shell: python\n        run: |\n"
           end_marker = "\n      - name: Enforce transformed authority shape"
