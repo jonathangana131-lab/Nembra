@@ -54,6 +54,7 @@ jobs:
           import os
           import subprocess
           import textwrap
+          from pathlib import Path
 
           donor_branch = os.environ["DONOR_BRANCH"]
           donor_workflow = os.environ["DONOR_WORKFLOW"]
@@ -72,7 +73,23 @@ jobs:
               "__name__": "__main__",
               "__file__": "<current-main-reviewed-authorization-donor>",
           }
-          exec(compile(outer, namespace["__file__"], "exec", dont_inherit=True), namespace)
+          try:
+              exec(compile(outer, namespace["__file__"], "exec", dont_inherit=True), namespace)
+          except BaseException:
+              app = Path(os.environ["APP_SOURCE"])
+              if app.exists():
+                  source = app.read_text(encoding="utf-8")
+                  print("NEMBRA_AUTH_ROOT_BOOTSTRAP_DIAGNOSTIC begin")
+                  needles = (
+                      "prepareAuthorizationTransport",
+                      "prepareAuthorizationTransferDirectoryForFieldTransport",
+                      "authorizationTransportBootstrapError",
+                  )
+                  for lineno, line in enumerate(source.splitlines(), 1):
+                      if any(needle in line for needle in needles):
+                          print(f"{lineno}: {line}")
+                  print("NEMBRA_AUTH_ROOT_BOOTSTRAP_DIAGNOSTIC end")
+              raise
 
       - name: Apply donor post-transform authority hardening
         shell: python
