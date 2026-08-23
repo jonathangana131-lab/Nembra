@@ -6,6 +6,11 @@ on:
       - capture/current-main-entrypoint-authorization-gpt56
     paths:
       - .github/workflows/capture-current-main-entrypoint-auth-materialize-once.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/capture-current-main-entrypoint-auth-materialize-once.yml
 
 permissions:
   contents: write
@@ -20,6 +25,7 @@ jobs:
     timeout-minutes: 45
     env:
       TARGET_BRANCH: capture/current-main-entrypoint-authorization-gpt56
+      TRIGGER_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       APP_SOURCE: NembraApp/App/NembraCaptureEntrypoint.swift
       SELF_WORKFLOW: .github/workflows/capture-current-main-entrypoint-auth-materialize-once.yml
       DONOR_BRANCH: product/capture-1-0-main-20260818
@@ -29,7 +35,7 @@ jobs:
       - name: Checkout exact current-main convergence head
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ env.TARGET_BRANCH }}
           fetch-depth: 0
           persist-credentials: true
 
@@ -38,7 +44,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git branch --show-current)" = "$TARGET_BRANCH"
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$TRIGGER_SHA"
           test "$(git rev-parse HEAD:"$APP_SOURCE")" = "$EXPECTED_APP_BLOB"
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
@@ -62,7 +68,6 @@ jobs:
           end = workflow.index(end_marker, start)
           outer = textwrap.dedent(workflow[start:end])
 
-          # The donor wrapper itself extracts the reviewed canonical transform. Execute it unchanged.
           namespace = {
               "__name__": "__main__",
               "__file__": "<current-main-reviewed-authorization-donor>",
@@ -87,7 +92,6 @@ jobs:
           start = workflow.index(start_marker) + len(start_marker)
           end = workflow.index(end_marker, start)
           block = workflow[start:end]
-          # Execute the two reviewed Python hardening steps in sequence.
           chunks = block.split("\n      - name: Bind selected authentication to exact post-OFF1 authorization stage\n        shell: python\n        run: |\n")
           first = textwrap.dedent(chunks[0])
           second = textwrap.dedent(chunks[1])
@@ -140,7 +144,7 @@ jobs:
         run: |
           set -euo pipefail
           git fetch origin "$TARGET_BRANCH"
-          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse FETCH_HEAD)" = "$TRIGGER_SHA"
           rm "$SELF_WORKFLOW"
           git add -- "$APP_SOURCE" "$SELF_WORKFLOW"
           git diff --cached --check
@@ -148,6 +152,6 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'Capture: wire current-main field authorization lifecycle'
           git fetch origin "$TARGET_BRANCH"
-          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse FETCH_HEAD)" = "$TRIGGER_SHA"
           git push origin HEAD:"$TARGET_BRANCH"
           printf 'NEMBRA_CURRENT_MAIN_AUTH_LIFECYCLE physicalAuthorityCreated=false\n'
