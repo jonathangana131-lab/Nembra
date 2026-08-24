@@ -25,7 +25,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_parent='9a92d706836a711784f9d23da3c14af7363cbb99'
+          expected_parent='9efb05be5ef022f7ee46048798d2858f1c557d30'
           expected_donor='310f15f1fa2d151f209b0f8fa9ef7b58dd82053b'
           test "$(git rev-parse HEAD^)" = "$expected_parent"
           mapfile -t changed < <(git diff --name-only HEAD^ HEAD)
@@ -216,8 +216,10 @@ PY2
         shell: bash
         run: |
           set -euo pipefail
+          git checkout '2cfa3804f05c44da9055968111e2181f50ef036b' -- .github/workflows/capture-current-main-field-transport.yml
           rm .github/workflows/capture-current-main-poll-safe-materializer.yml
           git add \
+            .github/workflows/capture-current-main-field-transport.yml \
             scripts/ci/tests/test_es80_field_authorization_container_transport.py \
             scripts/field/transfer_field_authorization.command \
             .github/workflows/capture-current-main-poll-safe-materializer.yml
