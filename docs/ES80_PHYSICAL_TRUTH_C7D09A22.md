@@ -2,6 +2,8 @@
 
 Status: accepted physical transport evidence. Telemetry semantics remain unverified.
 
+This field artifact supersedes the stale physical NO-GO ceremony recorded in #833 for the transport rung it actually proves. It does **not** supersede the remaining telemetry/authentication NO-GO: no application payload has yet been observed and no ES80 DP semantics are physically accepted.
+
 ## Source artifact
 
 - Capture ID: `C7D09A22-96DA-4E46-9BEF-E36F670ADB0E`
@@ -42,7 +44,7 @@ Because the capture received zero application characteristic payloads, it does n
 - trip mileage
 - odometer
 
-GPS and scenario timing must never be transformed into Bluetooth semantics.
+GPS and scenario timing must never be transformed into Bluetooth semantics. Unknown telemetry remains `unavailable`; it must not be synthesized, guessed, backfilled from GPS, or promoted from simulator/generic Tuya assumptions.
 
 ## Odometer continuity boundary
 
@@ -53,25 +55,52 @@ The scooter owner supplied a separate historical continuity record after two dis
 - current Tuya display at reference time: `1070.0 mi`
 - user-reference lifetime continuity total: `2164.8 mi`
 
-This is **user-recorded history**, not Bluetooth evidence. Nembra must keep it separate from `VehicleState.odometerKilometers` and from any future device-reported odometer value. A later authenticated device value may be compared with this history, but it must not silently overwrite, validate, or relabel the user record.
+This is **user-recorded history**, not Bluetooth evidence. Nembra must keep it separate from `VehicleState.odometerKilometers` and from any future device-reported odometer value. A later authenticated device value may be physically reconciled against this history, but it must not silently overwrite, validate, or relabel the user record.
 
 ## Connection interpretation
 
-The physical connection ended repeatedly at a highly stable approximately-30-second cadence while notification subscription succeeded but no application payload arrived. This strongly indicates that the next experiment should focus on establishing a legitimate authenticated Tuya application session rather than repeating the entire outdoor calibration.
+The physical connection ended repeatedly at a highly stable approximately-30-second cadence while notification subscription succeeded but no application payload arrived. This makes a legitimate Tuya authenticated application session the narrow next experiment; repeating the full outdoor calibration before that would add movement evidence without unlocking application telemetry.
 
 Authentication success is not yet physical fact and must be demonstrated in a subsequent capture.
 
-## P0 next physical gate
+## P0 next physical gate — authenticated, read-only, credential-private
 
-The next test is deliberately smaller than another outdoor calibration:
+Capture may implement only the documented Tuya authentication/session establishment needed to receive device notifications. The experiment boundary is intentionally narrow:
 
-1. Establish a legitimate authenticated Tuya session without unbinding or resetting the scooter.
-2. Keep the capture observational; do not perform unknown scooter-control actions.
-3. Require at least one real, non-empty application notification payload.
-4. Require the connection to remain alive beyond the previous rejection window; target at least 45 seconds.
-5. Only after that gate passes, map stationary telemetry first: idle, battery reference, modes, light, brake, and optional charger transition.
-6. Repeat moving/GPS scenarios only after real device payloads exist to correlate.
+1. Use a legitimate, documented Tuya authenticated connection flow for the already-bound scooter.
+2. Treat every account/device credential, token, secret, local key, session key, or equivalent credential material as private. Do not commit it, print it into normal logs, attach it to fixtures/artifacts, or persist it outside the minimum private runtime storage required for the session.
+3. Keep the first authenticated experiment read-only at the product-semantic level. Writes are permitted only where the documented Tuya authentication/session protocol itself requires them to establish the authenticated notification channel.
+4. Do **not** send arbitrary DP/control writes. Do **not** unbind, re-pair by reset, factory-reset, change ownership, change settings, toggle controls, or attempt undocumented mutation commands.
+5. Subscribe to the real FD50 device-to-app notification characteristic and preserve received application bytes verbatim as evidence before interpreting them.
+
+The authenticated gate is accepted only when **both** conditions are demonstrated in the same real physical session:
+
+- at least one real, non-empty application notification payload is received from the selected scooter; and
+- the authenticated connection remains alive **beyond 30.0 seconds** (the observed unauthenticated rejection window).
+
+A longer observation window is encouraged, but the acceptance boundary is strictly `>30.0 s` plus real notify payload evidence. A connection that lasts longer without payloads, or payload-shaped simulator/test data without a surviving physical connection, does not close the gate.
+
+## After gate closure — stationary DP mapping first
+
+Once authenticated notify evidence closes the gate, move immediately into physical DP mapping using stationary scenarios before any repeat outdoor ride. Preserve raw frames and timestamps, change one observable condition at a time, and distinguish observed correlation from accepted semantics.
+
+Recommended stationary sequence:
+
+1. powered-on idle baseline;
+2. battery/charger reference while stationary, if safely available;
+3. mode changes only through known normal scooter/app controls;
+4. light state;
+5. brake lever state while stationary;
+6. other non-motion observations only after the earlier correlations are repeatable.
+
+No moving/GPS calibration should be repeated until stationary mapping has produced real device payload correlations worth testing under motion.
 
 ## Product truth rule
 
 `PhysicalCaptureTransportEvidence.c7d09a22` is the code-level transport ledger. `OdometerContinuityReference.physicalCaptureC7D09A22Reference(...)` is the separate user-history ledger. Neither type may mint physical telemetry without new authenticated payload evidence.
+
+For the real Nembra product, accepted navigation/product work should converge on the canonical spine:
+
+`Dashboard/Cockpit -> Battery/Range -> Rides/Records -> Navigation -> Home -> Vehicle/Controls`
+
+Reconciliation must preserve evidence authority: unavailable or physically unknown telemetry stays unavailable, and the `2164.8 mi` continuity figure remains reference-only until reconciled against authenticated device evidence.
