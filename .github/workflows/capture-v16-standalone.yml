@@ -79,6 +79,20 @@ jobs:
           swift test --filter TuyaAuthenticatedReadOnlyCommandFenceSourceTests
           swift test --filter CaptureFirstFoldCopySourceTests
 
+      - name: Run canonical stationary field-authority tests
+        working-directory: Packages/NembraBluetoothCapture
+        run: |
+          set -euo pipefail
+          swift test --filter ES80PhysicalNoGoConsistencyTests
+          swift test --filter TuyaPhysicalGateDocumentationSourceTests
+          swift test --filter TuyaStationaryRunbookCurrentAuthoritySourceTests
+          swift test --filter TuyaFieldProcedureRendezvousSourceTests
+          swift test --filter TuyaPhysicalProcedureTargetAuthoritySourceTests
+          swift test --filter TuyaAppleAccountLoginSourceTests
+          swift test --filter ES80PhysicalRunbookChargerPreflightAcceptanceTests
+          swift test --filter TuyaLegacyTodayExecutableAuthorityRetirementSourceTests
+          swift test --filter TuyaCaptureFailedDiagnosticsProductSourceTests
+
       - name: Preserve deferred field-contract boundary
         run: |
           set -euo pipefail
