@@ -72,6 +72,35 @@ struct ES80PhysicalNoGoConsistencyTests {
         #expect(runbook.contains("The app must seal the canonical ready prefix before presenting success."))
     }
 
+    @Test("C7D09A22 handoff cannot weaken shipping authenticated readiness")
+    func c7d09a22HandoffMatchesShippingPreflight() throws {
+        let physicalTruth = try repositoryFile("docs/ES80_PHYSICAL_TRUTH_C7D09A22.md")
+        let stationaryGate = try repositoryFile("docs/ES80_AUTHENTICATED_STATIONARY_GATE_V14.md")
+
+        #expect(TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount == 2)
+        #expect(
+            TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
+                == 30_000_000_000
+        )
+        #expect(
+            TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds
+                == 45_000_000_000
+        )
+
+        #expect(physicalTruth.contains("at least **two** real, non-empty application updates"))
+        #expect(physicalTruth.contains("at least **30 seconds after authentication**"))
+        #expect(physicalTruth.contains("at least **45 seconds** after authentication"))
+        #expect(physicalTruth.contains("One payload is insufficient."))
+        #expect(physicalTruth.contains("A 31–44 second authenticated connection is insufficient"))
+        #expect(!physicalTruth.contains("acceptance boundary is strictly `>30.0 s` plus real notify payload evidence"))
+
+        #expect(stationaryGate.contains("at least **two** admitted non-empty application updates"))
+        #expect(stationaryGate.contains("at least **30 seconds after authentication**"))
+        #expect(stationaryGate.contains("at least **45 seconds** of accepted authenticated observation continuity"))
+        #expect(stationaryGate.contains("Older one-payload / merely-`>30 s` wording is superseded"))
+        #expect(stationaryGate.contains("one application callback/state replay"))
+    }
+
     @Test("current physical procedure remains explicitly NO-GO")
     func currentSecureLinkProcedureRemainsNoGo() throws {
         let runbook = try repositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
