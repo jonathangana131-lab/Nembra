@@ -73,12 +73,15 @@ Capture may implement only the documented Tuya authentication/session establishm
 4. Do **not** send arbitrary DP/control writes. Do **not** unbind, re-pair by reset, factory-reset, change ownership, change settings, toggle controls, or attempt undocumented mutation commands.
 5. Subscribe to the real FD50 device-to-app notification characteristic and preserve received application bytes verbatim as evidence before interpreting them.
 
-The authenticated gate is accepted only when **both** conditions are demonstrated in the same real physical session:
+The authenticated gate is accepted only when **all** of the canonical application-evidence conditions are demonstrated in the same real physical SmartLife-authenticated generation:
 
-- at least one real, non-empty application notification payload is received from the selected scooter; and
-- the authenticated connection remains alive **beyond 30.0 seconds** (the observed unauthenticated rejection window).
+- at least **2** real, non-empty application notification payloads are admitted from the selected scooter;
+- the latest admitted application payload arrives **at least 30.0 seconds after authentication**, proving the application path itself survived beyond the historical rejection window; and
+- authenticated continuity reaches **at least 45.0 seconds**.
 
-A longer observation window is encouraged, but the acceptance boundary is strictly `>30.0 s` plus real notify payload evidence. A connection that lasts longer without payloads, or payload-shaped simulator/test data without a surviving physical connection, does not close the gate.
+These values are the same fail-closed contract implemented by `TuyaAuthenticatedReadOnlyPreflight`: `minimumAuthenticatedApplicationPayloadCount == 2`, `minimumPostAuthenticationPayloadSurvivalNanoseconds == 30_000_000_000`, and `minimumAuthenticatedConnectionNanoseconds == 45_000_000_000`.
+
+A single bootstrap/state-replay payload is not enough. A 31–44 second connection is not enough. Forty-five seconds of generic BLE liveness without repeated application evidence is not enough. Payload-shaped simulator/test data is not physical evidence. Only the same real authenticated generation satisfying all three conditions may unlock stationary mapping.
 
 ## After gate closure — stationary DP mapping first
 
