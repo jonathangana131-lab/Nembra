@@ -16,6 +16,16 @@ C7D09A22 physically verified the modern Tuya FD50 transport, but it received zer
 
 This document is a coordination/acceptance checkpoint only. It cannot authorize Bluetooth activity by itself. Only the final composed exact app build, with all required software/private-device gates accepted, may flip this gate to `GO`.
 
+## Canonical compiled acceptance contract
+
+This physical gate must remain no weaker than shipping `TuyaAuthenticatedReadOnlyPreflight`. The current canonical minimums are:
+
+- `minimumAuthenticatedApplicationPayloadCount = 2`;
+- `minimumPostAuthenticationPayloadSurvivalNanoseconds = 30_000_000_000` — the latest qualifying application payload must arrive at least 30.0 seconds after authentication;
+- `minimumAuthenticatedConnectionNanoseconds = 45_000_000_000` — accepted authenticated continuity must reach at least 45.0 seconds after authentication.
+
+A one-payload / merely-`>30 s` description is obsolete and cannot classify a physical PASS or unlock stationary mapping.
+
 ## Accepted predecessor truth
 
 From `docs/ES80_PHYSICAL_TRUTH_C7D09A22.md`:
@@ -105,24 +115,26 @@ After exact target confirmation:
 3. Observe only through the final accepted read-only/session evidence path.
 4. Do **not** send DP queries, unknown commands, random writes, light/lock/mode/speed-limit controls, or other traffic merely to solicit a response.
 5. Preserve every admitted application evidence item with exact current connection generation, source identity, callback/receipt order, monotonic timing, and build/procedure provenance. Where byte-exact FD50 notification evidence is accepted, preserve the raw bytes and exact notification characteristic identity.
-6. Keep the accepted authenticated session alive past the old approximately-30-second rejection region; the target gate is at least **45 seconds** of accepted authenticated continuity.
-7. Seal through the canonical evidence path and use the app's normal Share/export flow only after acceptance conditions are met.
+6. Require at least **two** genuine non-empty qualifying application payloads from the accepted application source; the latest qualifying payload must be at least **30.0 seconds after authentication**.
+7. Keep accepted authenticated continuity for at least **45.0 seconds after authentication**. The UI may show guidance, but only accepted monotonic evidence can satisfy this boundary.
+8. Seal through the canonical evidence path and use the app's normal Share/export flow only after acceptance conditions are met.
 
 ## Physical PASS conditions
 
-The original authenticated raw-evidence experiment may be classified `PASS` only if the sealed accepted artifact proves all of the following for the same current authenticated generation:
+The authenticated physical experiment may be classified `PASS` only if the sealed accepted artifact proves all of the following for the same current authenticated generation:
 
 - fresh target correlation completed and the operator explicitly confirmed the one accepted candidate;
 - the four-window target-correlation provenance and confirmation fact are preserved;
 - accepted Tuya authentication provenance exists for the intended already-bound device/account;
-- at least **one genuine non-empty application notification payload** is admitted from the accepted physical FD50 device-to-app notification source; byte-exact evidence is preserved where the final GO contract requires it;
-- the authenticated connection remained continuously accepted beyond the old rejection window, with a target of at least **45 seconds**;
+- at least **two genuine non-empty application payloads** are admitted from the accepted physical application source; byte-exact evidence is preserved where the final GO contract requires it;
+- the latest qualifying admitted application payload arrives at least **30.0 seconds after authentication**;
+- accepted authenticated continuity reaches at least **45.0 seconds after authentication**;
 - the evidence remained observational/read-only under the accepted gate policy;
 - admitted application/raw evidence and chronology/provenance were sealed/exported without secrets;
 - no opaque payload was promoted directly into telemetry semantics;
 - no stale generation, replayed callback, display interpolation, GPS/scenario timing, or caller-constructed authority was promoted into physical protocol truth.
 
-A transport callback, write completion, notification subscription success, timer UI, structured `dpsUpdate` string projection mislabeled as raw bytes, or 45 seconds without accepted genuine application evidence is **not** a physical PASS.
+A transport callback, write completion, notification subscription success, timer UI, one bootstrap callback, two callbacks that both occur before the 30-second survival boundary, structured `dpsUpdate` string projection mislabeled as raw bytes, or 45 seconds without accepted genuine application evidence is **not** a physical PASS.
 
 ## Stop / fail-closed conditions
 
@@ -135,8 +147,9 @@ Stop the attempt and preserve only legitimately admitted evidence if any of thes
 - exact build/source/account/device membership authority changes or becomes uncertain;
 - a stale/duplicate generation cannot be safely classified;
 - Bluetooth/local-BLE acquisition fails or the accepted monotonic clock becomes invalid and the exact generation cannot be safely retired;
-- the session disconnects before the accepted continuity target;
-- the required genuine application evidence is not received;
+- the session disconnects before 45.0 seconds of accepted authenticated continuity;
+- fewer than two qualifying genuine application payloads are received;
+- the latest qualifying application payload arrives before 30.0 seconds after authentication;
 - required byte-exact evidence is unavailable under the final accepted raw-evidence contract;
 - artifact integrity/seal/export cannot be established;
 - any unexpected command/control/write path becomes enabled;
