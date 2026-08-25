@@ -12,21 +12,22 @@ Do not restore #833's old “first artifact not yet collected” or retained-IPA
 
 ## Current flagship authority
 
-At this file's update, the live P0 software-acceptance subject is PR #2178:
+Fresh workers must inspect live GitHub before trusting any mutable head. At this revision, the active P0 convergence subject is **PR #3885**, branch `integration/v14-capture-auth-gate-closure-gpt56sol`, targeting `main`.
 
-- feature: Nembra Capture / authenticated stationary ES80 physical truth;
-- branch: `integration/v14-capture-final-stationary-convergence-sol`;
-- observed exact head: `df30de17a95c6df3e6bd2fda14b0de9ddb1d0d25`;
-- exact-head `Capture Field Build Provenance` run: `31366062131` — QUEUED at last observation;
-- exact-head `Xcode 27 PR Exact-Head QA` run: `31366062142` — QUEUED at last observation;
-- physical status: **NO-GO / DO NOT SCAN / DO NOT RUN / DO NOT REPEAT THE OLD 17-STEP RIDE**.
+PR #3885 composes the current-main authenticated-gate repairs after PR #3852 restored the strict C7D09A22 physical-truth boundary. Its head is intentionally **not pinned here** because any follow-up commit invalidates older exact-head acceptance. Read the live PR head and its workflows directly.
 
-**Always re-read live PR #2178 before acting.** If its head differs from the SHA above, this recorded SHA and every ancestor workflow result are stale for product acceptance. Queued/running/skipped/cancelled/ancestor results are non-evidence.
+Current physical status remains **NO-GO / DO NOT SCAN / DO NOT RUN / DO NOT REPEAT THE OLD 17-STEP RIDE**.
 
 The canonical current physical procedure is:
 `docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md`
 
-Supporting C7D09A22 documents are historical/supporting material. If they conflict with the canonical current procedure, the canonical current procedure wins.
+Supporting C7D09A22 and stationary-gate documents must not weaken executable `TuyaAuthenticatedReadOnlyPreflight` authority. One accepted SmartLife-authenticated generation requires:
+
+- at least 2 genuine non-empty application payloads;
+- latest qualifying application evidence at least 30 seconds after authentication; and
+- at least 45 seconds of accepted authenticated continuity.
+
+Queued, running, skipped, cancelled, ancestor-green, package-only, Simulator-only, or source-review-only results are not final product/physical acceptance.
 
 ## Current product direction
 
@@ -41,13 +42,13 @@ The current accepted direction is an authenticated, stationary, read-only path:
 7. Tuya SmartLife SDK becomes the sole authenticated BLE owner;
 8. require genuine same-generation structured application evidence plus canonical continuous authenticated observation;
 9. seal the package evidence and one complete immutable accepted export envelope before accepted UI/share;
-10. no arbitrary characteristic writes, no DP query/publish, no scooter control, no unbind/reset/OTA.
+10. no arbitrary characteristic writes, no Nembra DP query/publish, no scooter control, no unbind/reset/OTA.
 
 ## Current critical path
 
-Do not churn the flagship for non-blocking docs/tests/cleanup while an unchanged exact head is undergoing final acceptance. Move it only for a demonstrated product/truth/build blocker.
+PR #3885 must first reach terminal exact-head software acceptance on its **unchanged live head**. At minimum, treat the PR-triggered Capture standalone and Xcode 27 exact-head gates as evidence only when they are terminal green for that exact head. Any head movement makes earlier runs stale.
 
-After terminal exact-head software acceptance on the unchanged current flagship head, the next legal rung is the private field candidate on the intended iPhone 12 / iOS 27:
+After exact-head software acceptance, the next legal rung is the private field candidate on the intended iPhone 12 / iOS 27:
 
 1. invoke the private Capture installer against the **exact software-accepted 40-hex source SHA**;
 2. require a clean checkout whose HEAD exactly equals that SHA;
