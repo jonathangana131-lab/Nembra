@@ -73,12 +73,15 @@ Capture may implement only the documented Tuya authentication/session establishm
 4. Do **not** send arbitrary DP/control writes. Do **not** unbind, re-pair by reset, factory-reset, change ownership, change settings, toggle controls, or attempt undocumented mutation commands.
 5. Subscribe to the real FD50 device-to-app notification characteristic and preserve received application bytes verbatim as evidence before interpreting them.
 
-The authenticated gate is accepted only when **both** conditions are demonstrated in the same real physical session:
+The authenticated gate is accepted only when **all** canonical preflight conditions are demonstrated in the same real physical authenticated generation:
 
-- at least one real, non-empty application notification payload is received from the selected scooter; and
-- the authenticated connection remains alive **beyond 30.0 seconds** (the observed unauthenticated rejection window).
+- at least **two** real, non-empty application notification payloads are admitted from the selected scooter;
+- the latest accepted application payload arrives at least **30.0 seconds after authentication**, proving application evidence survived beyond the historical rejection window; and
+- the authenticated connection preserves at least **45.0 seconds of accepted authenticated continuity**.
 
-A longer observation window is encouraged, but the acceptance boundary is strictly `>30.0 s` plus real notify payload evidence. A connection that lasts longer without payloads, or payload-shaped simulator/test data without a surviving physical connection, does not close the gate.
+These are minimum acceptance requirements, not guidance. One bootstrap/application callback is insufficient even if the transport remains connected. A second payload arriving before the 30-second post-authentication boundary is also insufficient. A connection lasting beyond 45 seconds without the required repeated late application evidence does not close the gate. Payload-shaped simulator/test data cannot substitute for a surviving real physical authenticated generation.
+
+This transport-truth record does not independently authorize a run. `docs/ES80_AUTHENTICATED_STATIONARY_GATE_V14.md` and the final exact composed field build remain the operational GO authority.
 
 ## After gate closure — stationary DP mapping first
 
