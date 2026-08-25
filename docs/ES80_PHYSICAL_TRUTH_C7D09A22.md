@@ -73,12 +73,13 @@ Capture may implement only the documented Tuya authentication/session establishm
 4. Do **not** send arbitrary DP/control writes. Do **not** unbind, re-pair by reset, factory-reset, change ownership, change settings, toggle controls, or attempt undocumented mutation commands.
 5. Subscribe to the real FD50 device-to-app notification characteristic and preserve received application bytes verbatim as evidence before interpreting them.
 
-The authenticated gate is accepted only when **both** conditions are demonstrated in the same real physical session:
+The authenticated gate is accepted only when **all** of the following are demonstrated in the same real physical SmartLife App SDK-authenticated connection generation:
 
-- at least one real, non-empty application notification payload is received from the selected scooter; and
-- the authenticated connection remains alive **beyond 30.0 seconds** (the observed unauthenticated rejection window).
+- at least two real, non-empty application notification payloads are received from the selected scooter;
+- the latest accepted application notification payload arrives at least `30.0 s` after authentication, proving that the application/notify path itself survived the historical unauthenticated rejection window; and
+- authenticated continuity reaches at least `45.0 s` from authentication without invalid chronology, foreground/account/device-authority loss, or generation replacement.
 
-A longer observation window is encouraged, but the acceptance boundary is strictly `>30.0 s` plus real notify payload evidence. A connection that lasts longer without payloads, or payload-shaped simulator/test data without a surviving physical connection, does not close the gate.
+These are minimum predicates, not independent alternatives. One bootstrap/replayed application callback is insufficient even if the BLE transport stays connected. A `>30.0 s` connection without repeated application evidence is insufficient. Two early payloads followed only by generic BLE liveness are insufficient. Simulator/test payloads are not physical evidence. An authenticated generation that still has not earned canonical readiness at the package-owned `60.0 s` incomplete-observation horizon must retire fail-closed and restart rather than accumulating stale authority.
 
 ## After gate closure — stationary DP mapping first
 
