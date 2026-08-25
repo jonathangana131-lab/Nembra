@@ -65,24 +65,29 @@ Authentication success is not yet physical fact and must be demonstrated in a su
 
 ## P0 next physical gate — authenticated, read-only, credential-private
 
-Capture may implement only the documented Tuya authentication/session establishment needed to receive device notifications. The experiment boundary is intentionally narrow:
+Capture may implement only the documented Tuya authentication/session establishment needed to receive device application updates. The experiment boundary is intentionally narrow:
 
-1. Use a legitimate, documented Tuya authenticated connection flow for the already-bound scooter.
+1. Use the official SmartLife App SDK authentication path for the already-bound scooter and require current same-account scooter authority.
 2. Treat every account/device credential, token, secret, local key, session key, or equivalent credential material as private. Do not commit it, print it into normal logs, attach it to fixtures/artifacts, or persist it outside the minimum private runtime storage required for the session.
-3. Keep the first authenticated experiment read-only at the product-semantic level. Writes are permitted only where the documented Tuya authentication/session protocol itself requires them to establish the authenticated notification channel.
+3. Keep the first authenticated experiment read-only at the product-semantic level. Writes are permitted only where the documented Tuya authentication/session protocol itself requires them to establish the authenticated application channel.
 4. Do **not** send arbitrary DP/control writes. Do **not** unbind, re-pair by reset, factory-reset, change ownership, change settings, toggle controls, or attempt undocumented mutation commands.
-5. Subscribe to the real FD50 device-to-app notification characteristic and preserve received application bytes verbatim as evidence before interpreting them.
+5. Attribute application evidence only to the current authenticated connection generation and the freshly correlated/explicitly confirmed target. Historical C7D09A22 UUID/name/RSSI/FD50 hints must not authorize or break a tie.
+6. Preserve any raw notification bytes that the package legitimately owns as evidence before interpretation, but do not substitute raw-looking or simulator/test bytes for the package-owned SmartLife authenticated application-update gate.
 
-The authenticated gate is accepted only when **both** conditions are demonstrated in the same real physical session:
+The authenticated gate is accepted only when **all** of the following are demonstrated in the same real physical session and the package-owned continuity checks remain valid:
 
-- at least one real, non-empty application notification payload is received from the selected scooter; and
-- the authenticated connection remains alive **beyond 30.0 seconds** (the observed unauthenticated rejection window).
+- authentication provenance is the official SmartLife App SDK for the current BLE generation;
+- at least **2** genuine, non-empty application updates are received from that same authenticated generation, so one bootstrap replay cannot mint readiness;
+- the **latest** accepted application update arrives at least **30.0 seconds after authentication**, proving that the authenticated application path itself survived beyond the historical rejection window; and
+- authenticated continuity reaches at least **45.0 seconds after authentication**.
 
-A longer observation window is encouraged, but the acceptance boundary is strictly `>30.0 s` plus real notify payload evidence. A connection that lasts longer without payloads, or payload-shaped simulator/test data without a surviving physical connection, does not close the gate.
+A session that survives 45 seconds without qualifying application evidence, produces only one application callback, produces its latest qualifying callback before the 30-second post-auth boundary, loses canonical continuity, or uses payload-shaped simulator/test data does **not** close the gate. An authenticated generation that remains incomplete through the package-owned 60-second observation horizon must retire fail-closed rather than accumulate late evidence indefinitely.
+
+This physical gate is intentionally no weaker than shipping `TuyaAuthenticatedReadOnlyPreflight`; documentation must not authorize stationary mapping before the runtime itself can return `readyForStationaryMapping`.
 
 ## After gate closure — stationary DP mapping first
 
-Once authenticated notify evidence closes the gate, move immediately into physical DP mapping using stationary scenarios before any repeat outdoor ride. Preserve raw frames and timestamps, change one observable condition at a time, and distinguish observed correlation from accepted semantics.
+Once authenticated application evidence closes the gate, move immediately into physical DP mapping using stationary scenarios before any repeat outdoor ride. Preserve raw frames/timestamps when legitimately available, change one observable condition at a time, and distinguish observed correlation from accepted semantics.
 
 Recommended stationary sequence:
 
