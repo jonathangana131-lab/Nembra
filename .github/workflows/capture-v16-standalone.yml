@@ -77,6 +77,7 @@ jobs:
           swift test --filter CoreBluetoothCaptureMappingTests
           swift test --filter TuyaAuthenticatedReadOnlyPreflightTests
           swift test --filter TuyaAuthenticatedAcceptanceContractSourceTests
+          swift test --filter TuyaAuthenticatedTerminalHorizonTests
           swift test --filter TuyaAuthenticatedReadOnlyCommandFenceSourceTests
           swift test --filter CaptureFirstFoldCopySourceTests
 
