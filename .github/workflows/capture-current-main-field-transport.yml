@@ -1,0 +1,85 @@
+name: Capture Current-Main Field Authorization Transport
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/capture-current-main-field-transport.yml'
+      - 'scripts/ci/es80_signed_field_artifact_private_runner.py'
+      - 'scripts/ci/tests/test_es80_field_authorization_container_transport.py'
+      - 'scripts/ci/xcode27_devicectl_manifest_transport_contract.sh'
+      - 'scripts/field/transfer_field_authorization.command'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-current-main-field-transport-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  transport-contract:
+    name: Exact-device app-container transport contract
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Checkout immutable PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Bind immutable PR head
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$EXPECTED_HEAD"
+          git diff --check
+          test -z "$(git status --porcelain)"
+
+      - name: Verify source transport contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I -B scripts/ci/tests/test_es80_field_authorization_container_transport.py
+          /bin/bash -n scripts/field/transfer_field_authorization.command
+          /bin/bash scripts/field/transfer_field_authorization.command --self-test
+
+      - name: Prove exact Xcode devicectl app-container help contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          export ARTIFACTS_DIR="$RUNNER_TEMP/nembra-field-transport-help"
+          /bin/bash scripts/ci/xcode27_devicectl_manifest_transport_contract.sh
+
+      - name: Re-assert non-authorizing scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I -B - <<'PY'
+          from pathlib import Path
+          paths = [
+              Path('scripts/field/transfer_field_authorization.command'),
+              Path('scripts/ci/xcode27_devicectl_manifest_transport_contract.sh'),
+              Path('scripts/ci/es80_signed_field_artifact_private_runner.py'),
+          ]
+          text = '\n'.join(p.read_text(encoding='utf-8') for p in paths)
+          forbidden = (
+              'publishDps(', 'writeValue(', 'resetFactory', 'removeDevice',
+              'firmwareUpgrade', 'devicectl device install',
+              'devicectl device process launch',
+          )
+          found = [token for token in forbidden if token in text]
+          if found:
+              raise SystemExit('authorizing primitive present: ' + ', '.join(found))
+          print('FIELD_TRANSPORT_NON_AUTHORIZING_SCOPE_CONFIRMED')
+          PY
+
+      - name: Verify clean checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --porcelain)"
