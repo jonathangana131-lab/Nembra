@@ -87,7 +87,7 @@ jobs:
 
           if source.count("var applicationEvidenceSurvivedHistoricalWindow: Bool") != 1:
               raise SystemExit("survival helper did not materialize exactly once")
-          if "applicationUpdateCount > 0" in source[source.index("private var secureObservationPanel: some View"):source.index("private var failureRecoveryContextPanel: some View")]:
+          if 'requirementRow("Scooter data received", ready: test.applicationUpdateCount > 0)' in source:
               raise SystemExit("one-callback observation readiness survived materialization")
 
           path.write_text(source)
