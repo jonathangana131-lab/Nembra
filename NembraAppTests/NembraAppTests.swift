@@ -199,6 +199,29 @@ final class NembraAppTests: XCTestCase {
         )
     }
 
+    func testCockpitRollingPowerUsesFixedSlotsAndFailsClosedBeyondDisplayCapacity() throws {
+    let zero = try XCTUnwrap(DashboardRollingPowerValuePolicy.snapshot(for: 0))
+    XCTAssertEqual(zero.layout.integerDigits, 5)
+    XCTAssertEqual(zero.layout.fractionDigits, 0)
+    XCTAssertEqual(zero.digits.count, 5)
+    XCTAssertEqual(zero.digits.filter(\.isVisible).count, 1)
+    XCTAssertEqual(zero.scaledValue, 0)
+
+    let accepted = try XCTUnwrap(DashboardRollingPowerValuePolicy.snapshot(for: 356.4))
+    XCTAssertEqual(accepted.scaledValue, 356)
+    XCTAssertEqual(accepted.digits.filter(\.isVisible).count, 3)
+    XCTAssertEqual(
+        DashboardRollingPowerValuePolicy.maximumDisplayWatts,
+        DashboardEnergyRailVisualState.maximumDisplayWatts
+    )
+
+    XCTAssertNotNil(DashboardRollingPowerValuePolicy.snapshot(for: 99_999))
+    XCTAssertNil(DashboardRollingPowerValuePolicy.snapshot(for: 99_999.1))
+    XCTAssertNil(DashboardRollingPowerValuePolicy.snapshot(for: -.leastNonzeroMagnitude))
+    XCTAssertNil(DashboardRollingPowerValuePolicy.snapshot(for: .infinity))
+    XCTAssertNil(DashboardRollingPowerValuePolicy.snapshot(for: .nan))
+}
+
     func testCockpitSpeedUnitsResolveFromPreferenceAndSystemPolicy() {
         XCTAssertTrue(DashboardSpeedUnitPresentation.usesMetric(
             preferenceRawValue: NembraUnitsPreference.system.rawValue,
