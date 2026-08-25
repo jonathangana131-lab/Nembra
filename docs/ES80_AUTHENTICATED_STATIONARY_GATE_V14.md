@@ -62,7 +62,7 @@ The older PR/head list below is retained only as archaeology for the path that p
 - authenticated raw FD50 evidence-ledger donor: PR `#1997` at `10357b8a3fd8f8d311c2553dfb63c67a978eab93`;
 - opaque-payload telemetry-authority hardening: merged via PR `#2099` from exact green head `783b2b19762a32d7d3a288056f38226972c575cc`.
 
-The branch parent for this contract-convergence revision is live `main@990cbff33b70904aa6af261f86b77d3de8a6cef1`. Future workers must refresh GitHub again before acting; newer accepted composition wins.
+No exact software head in this historical section is live authority. Future workers must refresh GitHub before acting; current `main`, current PR heads, and exact-head acceptance results win.
 
 ## Remaining software blockers before GO
 
