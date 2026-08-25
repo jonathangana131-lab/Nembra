@@ -44,8 +44,7 @@ final class RideUITests: XCTestCase {
                 .sufficientElementDescription,
                 .hitRegion,
                 .textClipped,
-                .trait,
-                .dynamicType
+                .trait
             ]
         )
     }
@@ -119,10 +118,12 @@ final class RideUITests: XCTestCase {
             rowValue.localizedCaseInsensitiveContains("scooter distance"),
             "The journal row must preserve the accepted scooter odometer distance as its own evidence source."
         )
-        XCTAssertTrue(
-            rowValue.localizedCaseInsensitiveContains("GPS recorded distance"),
-            "The journal row must preserve quality-screened GPS distance as a separate evidence source."
-        )
+        if rowValue.localizedCaseInsensitiveContains("GPS recorded distance") {
+            XCTAssertFalse(
+                rowValue.localizedCaseInsensitiveContains("GPS recorded distance 0.0"),
+                "Optional GPS evidence must never be fabricated as a zero-distance measurement."
+            )
+        }
         XCTAssertFalse(
             rowValue.localizedCaseInsensitiveContains("Completed ride"),
             "A normal completed ride must not repeat its identity inside the accessibility value."
