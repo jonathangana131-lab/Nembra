@@ -71,18 +71,19 @@ Capture may implement only the documented Tuya authentication/session establishm
 2. Treat every account/device credential, token, secret, local key, session key, or equivalent credential material as private. Do not commit it, print it into normal logs, attach it to fixtures/artifacts, or persist it outside the minimum private runtime storage required for the session.
 3. Keep the first authenticated experiment read-only at the product-semantic level. Writes are permitted only where the documented Tuya authentication/session protocol itself requires them to establish the authenticated notification channel.
 4. Do **not** send arbitrary DP/control writes. Do **not** unbind, re-pair by reset, factory-reset, change ownership, change settings, toggle controls, or attempt undocumented mutation commands.
-5. Subscribe to the real FD50 device-to-app notification characteristic and preserve received application bytes verbatim as evidence before interpreting them.
+5. Subscribe to the real accepted application-notification source for the authenticated generation and preserve admitted application evidence verbatim under the final raw-vs-structured evidence contract before interpreting it.
 
-The authenticated gate is accepted only when **both** conditions are demonstrated in the same real physical session:
+The authenticated gate is accepted only when **all** of the following are demonstrated in the same real physical authenticated generation, matching `TuyaAuthenticatedReadOnlyPreflight`:
 
-- at least one real, non-empty application notification payload is received from the selected scooter; and
-- the authenticated connection remains alive **beyond 30.0 seconds** (the observed unauthenticated rejection window).
+- at least **two** genuine, non-empty application payloads are admitted from the accepted physical application source;
+- the latest admitted application payload arrives at least **30.0 seconds after authentication**, proving the application path itself survived beyond the historical unauthenticated rejection region; and
+- authenticated continuity reaches at least **45.0 seconds after authentication**.
 
-A longer observation window is encouraged, but the acceptance boundary is strictly `>30.0 s` plus real notify payload evidence. A connection that lasts longer without payloads, or payload-shaped simulator/test data without a surviving physical connection, does not close the gate.
+These are minimum acceptance boundaries, not presentation targets. One bootstrap callback, two early callbacks followed only by generic BLE liveness, a connection that survives 45 seconds without qualifying application evidence, or payload-shaped simulator/test data does not close the gate.
 
 ## After gate closure — stationary DP mapping first
 
-Once authenticated notify evidence closes the gate, move immediately into physical DP mapping using stationary scenarios before any repeat outdoor ride. Preserve raw frames and timestamps, change one observable condition at a time, and distinguish observed correlation from accepted semantics.
+Once authenticated application evidence closes the gate, move immediately into physical DP mapping using stationary scenarios before any repeat outdoor ride. Preserve raw frames/evidence and timestamps, change one observable condition at a time, and distinguish observed correlation from accepted semantics.
 
 Recommended stationary sequence:
 
