@@ -78,6 +78,8 @@ jobs:
           swift test --filter TuyaAuthenticatedReadOnlyPreflightTests
           swift test --filter TuyaAuthenticatedReadOnlyCommandFenceSourceTests
           swift test --filter CaptureFirstFoldCopySourceTests
+          swift test --filter ES80PhysicalNoGoConsistencyTests
+          swift test --filter TuyaPhysicalGateDocumentationSourceTests
 
       - name: Preserve deferred field-contract boundary
         run: |
