@@ -73,12 +73,13 @@ Capture may implement only the documented Tuya authentication/session establishm
 4. Do **not** send arbitrary DP/control writes. Do **not** unbind, re-pair by reset, factory-reset, change ownership, change settings, toggle controls, or attempt undocumented mutation commands.
 5. Subscribe to the real FD50 device-to-app notification characteristic and preserve received application bytes verbatim as evidence before interpreting them.
 
-The authenticated gate is accepted only when **both** conditions are demonstrated in the same real physical session:
+The authenticated gate is accepted only when **all** canonical conditions are demonstrated in the same real physical session:
 
-- at least one real, non-empty application notification payload is received from the selected scooter; and
-- the authenticated connection remains alive **beyond 30.0 seconds** (the observed unauthenticated rejection window).
+- at least **two** genuine, non-empty application notification payloads are admitted from the selected scooter;
+- the latest accepted application payload arrives at least **30 seconds after authentication**, proving the application/notify path itself survived beyond the historical rejection region; and
+- the authenticated connection remains continuously accepted for at least **45 seconds after authentication**.
 
-A longer observation window is encouraged, but the acceptance boundary is strictly `>30.0 s` plus real notify payload evidence. A connection that lasts longer without payloads, or payload-shaped simulator/test data without a surviving physical connection, does not close the gate.
+These are minimum acceptance boundaries, not guidance-only targets. A 45-second connection with zero/one application payload, two bootstrap-time payloads followed only by generic BLE liveness, or payload-shaped simulator/test data does not close the gate.
 
 ## After gate closure — stationary DP mapping first
 
