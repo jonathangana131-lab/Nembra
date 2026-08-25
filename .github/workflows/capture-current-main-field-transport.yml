@@ -21,7 +21,7 @@ concurrency:
 jobs:
   transport-contract:
     name: Exact-device app-container transport contract
-    runs-on: macos-15
+    runs-on: xcode-27
     timeout-minutes: 20
     steps:
       - name: Checkout immutable PR head
@@ -40,6 +40,22 @@ jobs:
           test "$actual" = "$EXPECTED_HEAD"
           git diff --check
           test -z "$(git status --porcelain)"
+
+      - name: Verify Xcode 27 toolchain authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          toolchain="$(xcodebuild -version)"
+          printf '%s\n' "$toolchain"
+          first_line="$(printf '%s\n' "$toolchain" | /usr/bin/head -n 1)"
+          case "$first_line" in
+            "Xcode 27"*) ;;
+            *)
+              printf 'ERROR: field transport requires the xcode-27 runner; observed %s\n' "$first_line" >&2
+              exit 1
+              ;;
+          esac
+          swift --version
 
       - name: Verify publisher and app inbox custody contract
         shell: bash
