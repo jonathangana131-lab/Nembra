@@ -36,6 +36,20 @@ struct TuyaAuthenticatedAcceptanceContractSourceTests {
         #expect(!physicalTruth.contains("acceptance boundary is strictly `>30.0 s` plus real notify payload evidence"))
     }
 
+    @Test("stationary runbook uses the same canonical PASS floor and removes stale donor archaeology")
+    func stationaryRunbookMatchesCanonicalFloor() throws {
+        let runbook = try readRepositoryFile("docs/ES80_AUTHENTICATED_STATIONARY_GATE_V14.md")
+
+        #expect(runbook.contains("At least **2** genuine, non-empty authenticated application updates"))
+        #expect(runbook.contains("**latest** accepted application update arrived at least **30 seconds after authentication**"))
+        #expect(runbook.contains("at least **45 seconds after authentication**"))
+        #expect(runbook.contains("A single bootstrap callback is insufficient."))
+        #expect(runbook.contains("Live GitHub wins over stale snapshots."))
+        #expect(!runbook.contains("at least **one genuine non-empty application notification payload**"))
+        #expect(!runbook.contains("with a target of at least **45 seconds**"))
+        #expect(!runbook.contains("obsolete app-authority parent"))
+    }
+
     @Test("canonical documentation explicitly rejects weaker historical prose")
     func canonicalDocumentationPinsPrecedence() throws {
         let contract = try readRepositoryFile("docs/ES80_AUTHENTICATED_ACCEPTANCE_CONTRACT_V14.md")
