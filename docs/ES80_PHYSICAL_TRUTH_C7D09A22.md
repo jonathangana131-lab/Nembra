@@ -73,12 +73,13 @@ Capture may implement only the documented Tuya authentication/session establishm
 4. Do **not** send arbitrary DP/control writes. Do **not** unbind, re-pair by reset, factory-reset, change ownership, change settings, toggle controls, or attempt undocumented mutation commands.
 5. Subscribe to the real FD50 device-to-app notification characteristic and preserve received application bytes verbatim as evidence before interpreting them.
 
-The authenticated gate is accepted only when **both** conditions are demonstrated in the same real physical session:
+The authenticated gate is accepted only when **all** of the canonical runtime conditions are demonstrated in the same real physical session and current authenticated generation:
 
-- at least one real, non-empty application notification payload is received from the selected scooter; and
-- the authenticated connection remains alive **beyond 30.0 seconds** (the observed unauthenticated rejection window).
+- at least **two** genuine, non-empty application notification payloads are admitted from the selected scooter so one bootstrap/state-replay callback cannot mint readiness;
+- the latest accepted application payload occurs at least **30 seconds after authentication**, proving that the application/notify path itself survived beyond the historical rejection region; and
+- the session proves at least **45 seconds** of authenticated continuity after authentication.
 
-A longer observation window is encouraged, but the acceptance boundary is strictly `>30.0 s` plus real notify payload evidence. A connection that lasts longer without payloads, or payload-shaped simulator/test data without a surviving physical connection, does not close the gate.
+These are minimum acceptance conditions, not an encouraged observation target. A connection that merely lasts beyond 30 seconds, a single early payload, 45 seconds without repeated accepted application evidence, or payload-shaped simulator/test data does not close the gate. The package-owned `TuyaAuthenticatedReadOnlyPreflight` remains authoritative if prose and implementation ever diverge.
 
 ## After gate closure — stationary DP mapping first
 

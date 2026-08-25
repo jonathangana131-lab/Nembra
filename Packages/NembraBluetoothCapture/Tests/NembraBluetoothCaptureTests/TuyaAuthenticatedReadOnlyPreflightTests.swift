@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import NembraBluetoothCapture
 
@@ -203,4 +204,35 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .readyForStationaryMapping)
         #expect(!TuyaAuthenticatedReadOnlyPreflight.shouldRetireIncompleteObservation(snapshot))
     }
+
+    @Test("physical gate docs cannot weaken canonical runtime thresholds")
+    func physicalGateDocsMatchRuntimeThresholds() throws {
+        #expect(TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount == 2)
+        #expect(TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds == 30_000_000_000)
+        #expect(TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds == 45_000_000_000)
+
+        var repositoryRoot = URL(fileURLWithPath: #filePath)
+        for _ in 0..<5 {
+            repositoryRoot.deleteLastPathComponent()
+        }
+
+        let physicalTruth = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("docs/ES80_PHYSICAL_TRUTH_C7D09A22.md"),
+            encoding: .utf8
+        )
+        let stationaryGate = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("docs/ES80_AUTHENTICATED_STATIONARY_GATE_V14.md"),
+            encoding: .utf8
+        )
+
+        for document in [physicalTruth, stationaryGate] {
+            #expect(document.contains("at least **two** genuine, non-empty application notification payloads"))
+            #expect(document.contains("at least **30 seconds after authentication**"))
+            #expect(document.contains("at least **45 seconds** of authenticated continuity"))
+        }
+
+        #expect(!physicalTruth.contains("acceptance boundary is strictly `>30.0 s` plus real notify payload evidence"))
+        #expect(!stationaryGate.contains("at least **one genuine non-empty application notification payload**"))
+    }
+
 }
