@@ -1,0 +1,113 @@
+name: Capture Auth Observation App Truth Fix Once
+
+on:
+  push:
+    branches:
+      - capture/auth-observation-app-truth-fix-gpt56sol-20260824
+    paths:
+      - '.github/workflows/capture-auth-observation-app-truth-fix-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-auth-observation-app-truth-fix-once
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact writer subject
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind intended current-main test parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 'cf38c49e1d31512111b08a1abf33dae5c7cd9a2e'
+          test -z "$(git status --porcelain)"
+
+      - name: Materialize canonical app-visible observation truth
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text(encoding='utf-8')
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one anchor, found {count}')
+              source = source.replace(old, new, 1)
+
+          observed_age = '''    var canonicalObservedAgeSeconds: Double? {
+              guard let start = ledgerSnapshot.authenticatedAtUptimeNanoseconds,
+                    let latest = ledgerSnapshot.latestObservedUptimeNanoseconds,
+                    latest >= start else { return nil }
+              return Double(latest - start) / 1_000_000_000
+          }
+
+          '''
+          observed_age_with_survival = observed_age + '''    var applicationEvidenceSurvivedHistoricalWindow: Bool {
+              guard let authenticatedAt = ledgerSnapshot.authenticatedAtUptimeNanoseconds,
+                    let latestPayload = ledgerSnapshot.latestApplicationPayloadUptimeNanoseconds,
+                    latestPayload >= authenticatedAt else { return false }
+              return latestPayload - authenticatedAt
+                  >= TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
+          }
+
+          '''
+          replace_once(
+              observed_age,
+              observed_age_with_survival,
+              'canonical survival presentation',
+          )
+
+          replace_once(
+              '                    message = "Authenticated generation \\(token.diagnosticGeneration) is live. Waiting for a genuine application update and the canonical 45-second horizon…"',
+              '                    message = "Authenticated generation \\(token.diagnosticGeneration) is live. Waiting for repeated same-generation scooter data, including data that stays live beyond the startup rejection window, plus the canonical 45-second observation horizon…"',
+              'authenticated observation copy',
+          )
+
+          replace_once(
+              '                        requirementRow("Scooter data received", ready: test.applicationUpdateCount > 0)',
+              '                        requirementRow("Repeated scooter data", ready: test.applicationUpdateCount >= TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount)\n                        requirementRow("Scooter data stayed live", ready: test.applicationEvidenceSurvivedHistoricalWindow)',
+              'observation checklist',
+          )
+
+          if 'test.applicationUpdateCount > 0' in source:
+              raise SystemExit('one-callback presentation readiness survived')
+          path.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Run focused app-presentation truth oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaAuthenticatedReadOnlyHorizonAppIntegrationTests
+
+      - name: Publish self-retired tested product patch
+        shell: bash
+        env:
+          BRANCH: capture/auth-observation-app-truth-fix-gpt56sol-20260824
+        run: |
+          set -euo pipefail
+          remote="$(git ls-remote origin "refs/heads/${BRANCH}" | awk '{print $1}')"
+          test "$remote" = "$GITHUB_SHA"
+          rm .github/workflows/capture-auth-observation-app-truth-fix-once.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift \
+                  .github/workflows/capture-auth-observation-app-truth-fix-once.yml
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Capture: make observation UI match canonical app evidence'
+          git push origin "HEAD:refs/heads/${BRANCH}"
