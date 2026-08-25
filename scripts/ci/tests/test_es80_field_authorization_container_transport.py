@@ -32,9 +32,11 @@ class FieldAuthorizationContainerTransportSourceTests(unittest.TestCase):
             'BUNDLE_ID="com.jonathangana131.nembra.capturelearn"',
             'DOMAIN_TYPE="appDataContainer"',
             'NembraCapture/FieldAuthorization',
-            'retained-install-manifest.json',
+            'retained-install-manifest.incoming',
+            'retained-install-manifest.commit',
             'signer-rendezvous.json',
-            'authorization-envelope.json',
+            'authorization-envelope.incoming',
+            'authorization-envelope.commit',
             'xcode27_devicectl_manifest_transport_contract.sh',
         ):
             self.assertIn(token, self.source)
@@ -45,6 +47,7 @@ class FieldAuthorizationContainerTransportSourceTests(unittest.TestCase):
         self.assertIn("MANIFEST_MAX_BYTES=16384", self.source)
         self.assertIn("RENDEZVOUS_MAX_BYTES=4096", self.source)
         self.assertIn("ENVELOPE_MAX_BYTES=32768", self.source)
+        self.assertIn("COMMIT_RECORD_BYTES=65", self.source)
         self.assertNotIn("ENVELOPE_MAX_BYTES=1048576", self.source)
 
     def test_only_three_non_authorizing_transfer_actions_exist(self) -> None:
@@ -55,15 +58,23 @@ class FieldAuthorizationContainerTransportSourceTests(unittest.TestCase):
         self.assertIn("FIELD_AUTHORIZATION_ENVELOPE_STAGED_NOT_AUTHORITY_NOT_PHYSICAL_GO", self.source)
 
     def test_direction_and_subject_order_are_explicit(self) -> None:
-        self.assertIn('copy_to_container "$manifest_binding_snapshot" "$MANIFEST_REMOTE"', self.source)
+        manifest_incoming = 'copy_to_container "$manifest_binding_snapshot" "$MANIFEST_INCOMING_REMOTE"'
+        manifest_commit = 'copy_to_container "$commit" "$MANIFEST_COMMIT_REMOTE"'
+        envelope_incoming = 'copy_to_container "$staged" "$ENVELOPE_INCOMING_REMOTE"'
+        envelope_commit = 'copy_to_container "$commit" "$ENVELOPE_COMMIT_REMOTE"'
+        for token in (manifest_incoming, manifest_commit, envelope_incoming, envelope_commit, 'make_commit_record'):
+            self.assertIn(token, self.source)
+        self.assertLess(self.source.index(manifest_incoming), self.source.index(manifest_commit))
+        self.assertLess(self.source.index(envelope_incoming), self.source.index(envelope_commit))
         self.assertIn('copy_from_container "$RENDEZVOUS_REMOTE" "$staged"', self.source)
-        self.assertIn('copy_to_container "$staged" "$ENVELOPE_REMOTE"', self.source)
         self.assertLess(
             self.source.index('copy_from_container "$RENDEZVOUS_REMOTE" "$staged"'),
             self.source.index(
                 'publish_fresh_local_file "$staged" "$NEMBRA_SIGNER_RENDEZVOUS_OUTPUT"'
             ),
         )
+        self.assertNotIn('MANIFEST_REMOTE="$FIELD_DIRECTORY/retained-install-manifest.json"', self.source)
+        self.assertNotIn('ENVELOPE_REMOTE="$FIELD_DIRECTORY/authorization-envelope.json"', self.source)
 
     def test_device_and_local_subjects_do_not_travel_on_positional_argv(self) -> None:
         self.assertIn("NEMBRA_FIELD_DEVICE_ID", self.source)
