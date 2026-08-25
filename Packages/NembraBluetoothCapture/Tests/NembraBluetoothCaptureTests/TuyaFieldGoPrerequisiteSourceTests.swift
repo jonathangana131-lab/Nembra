@@ -103,6 +103,26 @@ struct TuyaFieldGoPrerequisiteSourceTests {
         #expect(buildCheck.lowerBound < accepted.lowerBound)
     }
 
+    @Test("physical gate documents cannot weaken canonical authenticated preflight")
+    func physicalGateDocsMatchCanonicalPreflight() throws {
+        let physicalTruth = try readRepositoryFile("docs/ES80_PHYSICAL_TRUTH_C7D09A22.md")
+        let stationaryGate = try readRepositoryFile("docs/ES80_AUTHENTICATED_STATIONARY_GATE_V14.md")
+
+        #expect(TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount == 2)
+        #expect(TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds == 30_000_000_000)
+        #expect(TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds == 45_000_000_000)
+
+        #expect(physicalTruth.contains("at least **2** genuine, non-empty application updates"))
+        #expect(physicalTruth.contains("at least **30.0 seconds after authentication**"))
+        #expect(physicalTruth.contains("at least **45.0 seconds after authentication**"))
+        #expect(!physicalTruth.contains("acceptance boundary is strictly `>30.0 s` plus real notify payload evidence"))
+
+        #expect(stationaryGate.contains("at least **2 genuine non-empty application updates**"))
+        #expect(stationaryGate.contains("at least **30 seconds after authentication**"))
+        #expect(stationaryGate.contains("at least **45 seconds of accepted authenticated continuity**"))
+        #expect(!stationaryGate.contains("at least **one genuine non-empty application notification payload**"))
+    }
+
     private func readRepositoryFile(_ relativePath: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
