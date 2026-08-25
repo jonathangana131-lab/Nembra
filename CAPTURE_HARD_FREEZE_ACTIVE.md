@@ -12,9 +12,7 @@ Do not restore #833's old “first artifact not yet collected” or retained-IPA
 
 ## Current flagship authority
 
-Fresh workers must inspect live GitHub before trusting any mutable head. At this revision, the active P0 convergence subject is **PR #3885**, branch `integration/v14-capture-auth-gate-closure-gpt56sol`, targeting `main`.
-
-PR #3885 composes the current-main authenticated-gate repairs after PR #3852 restored the strict C7D09A22 physical-truth boundary. Its head is intentionally **not pinned here** because any follow-up commit invalidates older exact-head acceptance. Read the live PR head and its workflows directly.
+Fresh workers must inspect live GitHub before trusting any mutable branch, PR number, recorded head, or workflow result. The live P0 subject is the newest non-superseded Nembra Capture / authenticated stationary ES80 convergence lineage that is based on current `main` and preserves the contract below. Do not hard-code a transient PR as durable authority in this file.
 
 Current physical status remains **NO-GO / DO NOT SCAN / DO NOT RUN / DO NOT REPEAT THE OLD 17-STEP RIDE**.
 
@@ -27,7 +25,7 @@ Supporting C7D09A22 and stationary-gate documents must not weaken executable `Tu
 - latest qualifying application evidence at least 30 seconds after authentication; and
 - at least 45 seconds of accepted authenticated continuity.
 
-Queued, running, skipped, cancelled, ancestor-green, package-only, Simulator-only, or source-review-only results are not final product/physical acceptance.
+Queued, running, skipped, cancelled, ancestor-green, package-only, Simulator-only, source-review-only, closed-PR, or superseded-branch results are not final product/physical acceptance.
 
 ## Current product direction
 
@@ -46,7 +44,7 @@ The current accepted direction is an authenticated, stationary, read-only path:
 
 ## Current critical path
 
-PR #3885 must first reach terminal exact-head software acceptance on its **unchanged live head**. At minimum, treat the PR-triggered Capture standalone and Xcode 27 exact-head gates as evidence only when they are terminal green for that exact head. Any head movement makes earlier runs stale.
+Fresh-inspect current `main`, open Capture PRs, exact heads, and exact-head workflow results. Select the newest coherent non-superseded P0 convergence candidate rather than an older donor or child slice. That final composed candidate must reach terminal exact-head software acceptance on its **unchanged live head**. At minimum, treat the PR-triggered Capture standalone and Xcode 27 exact-head gates as evidence only when they are terminal green for that exact head. Any head movement invalidates older acceptance results.
 
 After exact-head software acceptance, the next legal rung is the private field candidate on the intended iPhone 12 / iOS 27:
 
@@ -59,7 +57,7 @@ After exact-head software acceptance, the next legal rung is the private field c
 7. complete the required runtime build/source/procedure rendezvous;
 8. only after the repository's explicit final GO boundary may the smallest stationary authenticated read-only ES80 session begin.
 
-Branch names, human-readable success messages, historical UUIDs, local names, RSSI, FD50/company hints, or old artifacts are not physical authority.
+Branch names, PR numbers, human-readable success messages, historical UUIDs, local names, RSSI, FD50/company hints, or old artifacts are not physical authority.
 
 ## Current truth boundary
 
