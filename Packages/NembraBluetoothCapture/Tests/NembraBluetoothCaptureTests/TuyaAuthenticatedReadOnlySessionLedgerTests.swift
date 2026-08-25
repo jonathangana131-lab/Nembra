@@ -62,7 +62,7 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
 
         let firstToken = try await firstLedger.beginConnection()
         let secondToken = try await secondLedger.beginConnection()
-        #expect(firstToken.diagnosticGeneration == secondToken.diagnosticGeneration + 0)
+        #expect(firstToken.diagnosticGeneration == secondToken.diagnosticGeneration)
         #expect(firstToken != secondToken)
 
         secondClock.advance(to: 15)
@@ -139,7 +139,8 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
 
         let payloadSurvivalTarget = 2_000 + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
         try await advanceLedgerContinuously(clock: clock, ledger: ledger, token: token, from: 3_000, through: payloadSurvivalTarget)
-        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: await ledger.currentPreflightSnapshot()) == .blocked(reason: "Authenticated session has not produced repeated application payload evidence yet."))
+        let singlePayloadSnapshot = await ledger.currentPreflightSnapshot()
+        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: singlePayloadSnapshot) == .blocked(reason: "Authenticated session has not produced repeated application payload evidence yet."))
         try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
 
         let stabilityTarget = 2_000 + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds
