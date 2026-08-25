@@ -1,0 +1,132 @@
+name: Capture Auth Observation App-Truth Materializer
+
+on:
+  pull_request:
+    types: [synchronize, reopened]
+    paths:
+      - '.github/workflows/capture-auth-observation-app-truth-materialize.yml'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlyHorizonAppIntegrationTests.swift'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-auth-observation-app-truth-materialize-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  materialize:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.ref == 'capture/auth-observation-app-truth-red-gpt56sol-20260824'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout exact same-repository head branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Guard exact authoring subject
+        env:
+          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EXPECTED_BASE_SHA: e8bdebe99ddfd8022b8e47265623df88e0853a04
+          EXPECTED_ENTRYPOINT_BLOB: 77c6b8b9ae17daa0d0607e62cccde8c575b3e754
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EVENT_HEAD_SHA"
+          test "$EVENT_BASE_SHA" = "$EXPECTED_BASE_SHA"
+          git merge-base --is-ancestor "$EXPECTED_BASE_SHA" HEAD
+          test "$(git rev-parse HEAD:NembraApp/App/NembraCaptureEntrypoint.swift)" = "$EXPECTED_ENTRYPOINT_BLOB"
+          test -f Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlyHorizonAppIntegrationTests.swift
+          test "$(git status --porcelain)" = ""
+
+      - name: Materialize bounded app-visible truth repair
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          source = path.read_text()
+
+          helper_anchor = '''    var preflightVerdict: TuyaAuthenticatedReadOnlyPreflight.Verdict {
+              TuyaAuthenticatedReadOnlyPreflight.verdict(for: ledgerSnapshot)
+          }
+          '''
+          helper_replacement = '''    var applicationEvidenceSurvivedHistoricalWindow: Bool {
+              guard let authenticatedAt = ledgerSnapshot.authenticatedAtUptimeNanoseconds,
+                    let latestPayload = ledgerSnapshot.latestApplicationPayloadUptimeNanoseconds,
+                    latestPayload >= authenticatedAt else { return false }
+              return latestPayload - authenticatedAt >= TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
+          }
+
+          ''' + helper_anchor
+
+          old_message = '''message = "Authenticated generation \\(token.diagnosticGeneration) is live. Waiting for a genuine application update and the canonical 45-second horizon…"'''
+          new_message = '''message = "Authenticated generation \\(token.diagnosticGeneration) is live. Waiting for repeated same-generation scooter data, including data that stays live beyond the startup rejection window, plus the canonical 45-second observation horizon…"'''
+
+          old_row = '''requirementRow("Scooter data received", ready: test.applicationUpdateCount > 0)'''
+          new_rows = '''requirementRow("Repeated scooter data", ready: test.applicationUpdateCount >= TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount)
+                                  requirementRow("Scooter data stayed live", ready: test.applicationEvidenceSurvivedHistoricalWindow)'''
+
+          replacements = [
+              (helper_anchor, helper_replacement, "preflight helper anchor"),
+              (old_message, new_message, "authentication-success copy"),
+              (old_row, new_rows, "observation checklist"),
+          ]
+          for old, new, label in replacements:
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one source anchor, found {count}")
+              source = source.replace(old, new, 1)
+
+          if source.count("var applicationEvidenceSurvivedHistoricalWindow: Bool") != 1:
+              raise SystemExit("survival helper did not materialize exactly once")
+          if "applicationUpdateCount > 0" in source[source.index("private var secureObservationPanel: some View"):source.index("private var failureRecoveryContextPanel: some View")]:
+              raise SystemExit("one-callback observation readiness survived materialization")
+
+          path.write_text(source)
+          PY
+
+      - name: Verify bounded source contract and diff
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          required = [
+              "test.applicationUpdateCount >= TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount",
+              "applicationEvidenceSurvivedHistoricalWindow",
+              "TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds",
+              "ledgerSnapshot.latestApplicationPayloadUptimeNanoseconds",
+              "ledgerSnapshot.authenticatedAtUptimeNanoseconds",
+              "repeated same-generation scooter data",
+              "startup rejection window",
+              "45-second observation horizon",
+          ]
+          for text in required:
+              if text not in s:
+                  raise SystemExit(f"missing app-truth anchor: {text}")
+          if 'requirementRow("Scooter data received", ready: test.applicationUpdateCount > 0)' in s:
+              raise SystemExit("stale one-callback product row remains")
+          PY
+          git diff --check
+          changed="$(git diff --name-only | sort)"
+          test "$changed" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
+
+      - name: Publish product bytes and self-retire authoring workflow
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          rm .github/workflows/capture-auth-observation-app-truth-materialize.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift .github/workflows/capture-auth-observation-app-truth-materialize.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Capture: make observation UI match strict authenticated gate'
+          git push origin "HEAD:$HEAD_BRANCH"
