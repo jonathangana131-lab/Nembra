@@ -10,7 +10,7 @@ This is the continuation after physical capture `C7D09A22`. **Do not repeat the 
 - Capture `C7D09A22` observed CoreBluetooth peripheral `6815A5F5-4D1E-E004-BAE8-6DF924123907` for that capture only.
 - FD50 write characteristic `00000001-0000-1001-8001-00805F9B07D0` and notify characteristic `00000002-0000-1001-8001-00805F9B07D0` were observed as transport facts.
 - GATT notification subscription was possible before authentication, but no application characteristic-value frames arrived.
-- The first run repeatedly disconnected around 30 seconds because the required Tuya application session was not established.
+- The first run repeatedly disconnected around 30 seconds while no application characteristic-value frames arrived; the capture does not establish the cause of that disconnect cadence.
 - No DP mapping, field semantics, telemetry, command acknowledgement, stable device identity, or control authority may be inferred from that capture.
 
 The historical CoreBluetooth UUID is **descriptive capture-local evidence only**. It must not authorize the current attempt and must not be used to break a correlation tie.
