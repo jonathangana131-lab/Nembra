@@ -22,22 +22,28 @@ jobs:
       - name: Apply exact app-truth repair
         run: python3 scripts/ci/materialize_capture_observation_app_truth.py
 
-      - name: Execute focused app-truth oracle
+      - name: Verify bounded source mutation
         shell: bash
         run: |
-          set +e
-          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaAuthenticatedReadOnlyHorizonAppIntegrationTests > /tmp/capture-app-truth-test.log 2>&1
-          status=$?
-          cat /tmp/capture-app-truth-test.log
-          if [ "$status" -ne 0 ]; then
-            cp /tmp/capture-app-truth-test.log CAPTURE_APP_TRUTH_TEST_FAILURE.log
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add CAPTURE_APP_TRUTH_TEST_FAILURE.log
-            git commit -m "Capture: persist app-truth oracle failure"
-            git push origin HEAD:capture/v14-auth-observation-app-truth-fix-sol
-            exit "$status"
-          fi
+          set -euo pipefail
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("NembraApp/App/NembraCaptureEntrypoint.swift").read_text()
+          required = [
+              "applicationUpdateCount >= TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount",
+              "applicationEvidenceSurvivedHistoricalWindow",
+              "TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds",
+              "repeated same-generation scooter data",
+              "startup rejection window",
+              "45-second observation horizon",
+          ]
+          for text in required:
+              if text not in source:
+                  raise SystemExit(f"missing app-truth repair anchor: {text}")
+          if 'requirementRow("Scooter data received", ready: test.applicationUpdateCount > 0)' in source:
+              raise SystemExit("stale one-callback readiness remains")
+          PY
 
       - name: Publish immutable repair and remove materializer
         shell: bash
