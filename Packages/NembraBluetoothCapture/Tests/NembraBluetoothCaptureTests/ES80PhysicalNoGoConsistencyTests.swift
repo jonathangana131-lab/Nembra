@@ -58,17 +58,29 @@ struct ES80PhysicalNoGoConsistencyTests {
         #expect(runbook.contains("There is no hint-based override."))
     }
 
-    @Test("current authenticated observation horizon is forty-five seconds")
-    func currentRunbookAndPreflightAgreeOnAuthenticatedDuration() throws {
+    @Test("current authenticated gate requires repeated application evidence beyond the rejection region")
+    func currentRunbookAndPreflightAgreeOnAuthenticatedGate() throws {
         let runbook = try repositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
+        let thirtySecondsInNanoseconds: UInt64 = 30_000_000_000
         let fortyFiveSecondsInNanoseconds: UInt64 = 45_000_000_000
 
+        #expect(TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount == 2)
+        #expect(
+            TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
+                == thirtySecondsInNanoseconds
+        )
         #expect(
             TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds
                 == fortyFiveSecondsInNanoseconds
         )
+        #expect(
+            runbook.contains(
+                "at least two genuine non-empty same-generation `ThingSmartDeviceDelegate.dpsUpdate` callbacks"
+            )
+        )
+        #expect(runbook.contains("latest application evidence occurs at least 30 seconds after SDK authentication"))
         #expect(runbook.contains("at least 45 seconds of canonical authenticated observation"))
-        #expect(runbook.contains("at least one genuine non-empty same-generation `ThingSmartDeviceDelegate.dpsUpdate`"))
+        #expect(runbook.contains("One bootstrap callback plus transport liveness is not sufficient."))
         #expect(runbook.contains("The app must seal the canonical ready prefix before presenting success."))
     }
 
