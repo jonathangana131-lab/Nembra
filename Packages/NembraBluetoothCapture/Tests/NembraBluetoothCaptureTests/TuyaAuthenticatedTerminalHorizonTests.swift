@@ -13,12 +13,33 @@ struct TuyaAuthenticatedTerminalHorizonTests {
         try await ledger.markAuthenticationStarted(for: token)
         clock.advance(to: 2_000)
         try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
+
         clock.advance(to: 3_000)
         try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
+
+        let secondPayloadTarget =
+            2_000 + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
+        try await advanceContinuously(
+            clock: clock,
+            ledger: ledger,
+            token: token,
+            from: 3_000,
+            through: secondPayloadTarget
+        )
+        try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
+
         let target = 2_000 + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds
-        try await advanceContinuously(clock: clock, ledger: ledger, token: token, from: 3_000, through: target)
+        try await advanceContinuously(
+            clock: clock,
+            ledger: ledger,
+            token: token,
+            from: secondPayloadTarget,
+            through: target
+        )
 
         let ready = await ledger.currentPreflightSnapshot()
+        #expect(ready.applicationPayloadCount == TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount)
+        #expect(ready.latestApplicationPayloadUptimeNanoseconds == secondPayloadTarget)
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: ready) == .readyForStationaryMapping)
         try await ledger.sealAcceptedObservation(for: token)
         let sealed = await ledger.currentPreflightSnapshot()
