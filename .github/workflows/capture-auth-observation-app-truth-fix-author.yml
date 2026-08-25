@@ -1,0 +1,141 @@
+name: Capture Auth Observation App Truth Repair Author
+
+on:
+  push:
+    branches:
+      - capture/auth-observation-app-truth-fix-gpt56sol
+    paths:
+      - '.github/workflows/capture-auth-observation-app-truth-fix-author.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-auth-observation-app-truth-fix-author
+  cancel-in-progress: false
+
+jobs:
+  author:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact authoring carrier
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind red-oracle parent exactly
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = '65a8bae7a571e5e001be3906b278e41fd0946e11'
+          test -z "$(git status --porcelain)"
+
+      - name: Restore reviewed canonical app-visible truth
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          source = path.read_text(encoding='utf-8')
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one anchor, found {count}')
+              source = source.replace(old, new, 1)
+
+          replace_once(
+              '''    var canonicalObservedAgeSeconds: Double? {
+                  guard let start = ledgerSnapshot.authenticatedAtUptimeNanoseconds,
+                        let latest = ledgerSnapshot.latestObservedUptimeNanoseconds,
+                        latest >= start else { return nil }
+                  return Double(latest - start) / 1_000_000_000
+              }
+
+              var preflightVerdict: TuyaAuthenticatedReadOnlyPreflight.Verdict {''',
+              '''    var canonicalObservedAgeSeconds: Double? {
+                  guard let start = ledgerSnapshot.authenticatedAtUptimeNanoseconds,
+                        let latest = ledgerSnapshot.latestObservedUptimeNanoseconds,
+                        latest >= start else { return nil }
+                  return Double(latest - start) / 1_000_000_000
+              }
+
+              var applicationEvidenceSurvivedHistoricalWindow: Bool {
+                  guard let authenticatedAt = ledgerSnapshot.authenticatedAtUptimeNanoseconds,
+                        let latestPayload = ledgerSnapshot.latestApplicationPayloadUptimeNanoseconds,
+                        latestPayload >= authenticatedAt else { return false }
+                  return latestPayload - authenticatedAt >= TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
+              }
+
+              var preflightVerdict: TuyaAuthenticatedReadOnlyPreflight.Verdict {''',
+              'application survival helper',
+          )
+
+          replace_once(
+              '                    message = "Authenticated generation \\(token.diagnosticGeneration) is live. Waiting for a genuine application update and the canonical 45-second horizon…"',
+              '                    message = "Authenticated generation \\(token.diagnosticGeneration) is live. Waiting for repeated same-generation scooter data, including data that stays live beyond the startup rejection window, plus the canonical 45-second observation horizon…"',
+              'authenticated observation copy',
+          )
+
+          replace_once(
+              '''                        requirementRow("Secure local link", ready: test.sdkLocalBLEOnline)
+                              requirementRow("Scooter data received", ready: test.applicationUpdateCount > 0)''',
+              '''                        requirementRow("Secure local link", ready: test.sdkLocalBLEOnline)
+                              requirementRow("Repeated scooter data", ready: test.applicationUpdateCount >= TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount)
+                              requirementRow("Scooter data stayed live", ready: test.applicationEvidenceSurvivedHistoricalWindow)''',
+              'observation requirement rows',
+          )
+
+          if 'test.applicationUpdateCount > 0' in source:
+              raise SystemExit('stale one-callback presentation survived')
+          path.write_text(source, encoding='utf-8')
+          PY
+          git diff --check
+
+      - name: Execute red oracle against repaired source
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture --filter TuyaAuthenticatedReadOnlyHorizonAppIntegrationTests
+
+      - name: Pin exact source truth and scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          source='NembraApp/App/NembraCaptureEntrypoint.swift'
+          grep -F 'var applicationEvidenceSurvivedHistoricalWindow: Bool' "$source"
+          grep -F 'TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds' "$source"
+          grep -F 'Waiting for repeated same-generation scooter data, including data that stays live beyond the startup rejection window, plus the canonical 45-second observation horizon' "$source"
+          grep -F 'requirementRow("Repeated scooter data", ready: test.applicationUpdateCount >= TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount)' "$source"
+          grep -F 'requirementRow("Scooter data stayed live", ready: test.applicationEvidenceSurvivedHistoricalWindow)' "$source"
+          ! grep -F 'test.applicationUpdateCount > 0' "$source"
+          git diff --check
+
+      - name: Publish permanent source repair and self-retire
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+          BRANCH: capture/auth-observation-app-truth-fix-gpt56sol
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BRANCH"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git rev-parse FETCH_HEAD)" = "$EXPECTED_HEAD"
+          rm .github/workflows/capture-auth-observation-app-truth-fix-author.yml
+          git add \
+            NembraApp/App/NembraCaptureEntrypoint.swift \
+            .github/workflows/capture-auth-observation-app-truth-fix-author.yml
+          git diff --cached --check
+          mapfile -t changed < <(git diff --cached --name-only)
+          test "${#changed[@]}" -eq 2
+          test "${changed[0]}" = '.github/workflows/capture-auth-observation-app-truth-fix-author.yml'
+          test "${changed[1]}" = 'NembraApp/App/NembraCaptureEntrypoint.swift'
+          git config user.name 'nembra-capture-app-truth'
+          git config user.email 'actions@users.noreply.github.com'
+          git commit -m 'Capture: keep observation checklist aligned with preflight'
+          git push origin HEAD:"$BRANCH"
