@@ -30,8 +30,6 @@ struct ES80PhysicalNoGoConsistencyTests {
         #expect(retired.contains("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md"))
         #expect(retired.contains("must not be edited from NO-GO to GO for the current Capture product"))
 
-        // The historical passive package gate is still deliberately unable to authorize a run.
-        // Its NO-GO state is not the current authenticated-stationary procedure contract.
         #expect(
             PassiveBluetoothExperimentOneFieldExecutionGate.status
                 == .noGo(.finalComposedBuildNotAuthorized)
@@ -58,18 +56,43 @@ struct ES80PhysicalNoGoConsistencyTests {
         #expect(runbook.contains("There is no hint-based override."))
     }
 
-    @Test("current authenticated observation horizon is forty-five seconds")
-    func currentRunbookAndPreflightAgreeOnAuthenticatedDuration() throws {
+    @Test("current authenticated gate requires repeated late application evidence and forty-five seconds")
+    func currentRunbookAndPreflightAgreeOnAuthenticatedGate() throws {
         let runbook = try repositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
+        let thirtySecondsInNanoseconds: UInt64 = 30_000_000_000
         let fortyFiveSecondsInNanoseconds: UInt64 = 45_000_000_000
 
+        #expect(TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount == 2)
+        #expect(
+            TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
+                == thirtySecondsInNanoseconds
+        )
         #expect(
             TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds
                 == fortyFiveSecondsInNanoseconds
         )
+        #expect(runbook.contains("at least two genuine non-empty same-generation `ThingSmartDeviceDelegate.dpsUpdate` callbacks"))
+        #expect(runbook.contains("latest application evidence occurs at least 30 seconds after SDK authentication"))
         #expect(runbook.contains("at least 45 seconds of canonical authenticated observation"))
-        #expect(runbook.contains("at least one genuine non-empty same-generation `ThingSmartDeviceDelegate.dpsUpdate`"))
         #expect(runbook.contains("The app must seal the canonical ready prefix before presenting success."))
+    }
+
+    @Test("supporting physical documents cannot weaken executable authenticated readiness")
+    func supportingPhysicalDocsMatchCanonicalGate() throws {
+        let physicalTruth = try repositoryFile("docs/ES80_PHYSICAL_TRUTH_C7D09A22.md")
+        let stationaryGate = try repositoryFile("docs/ES80_AUTHENTICATED_STATIONARY_GATE_V14.md")
+
+        #expect(physicalTruth.contains("at least **2** genuine, non-empty application updates"))
+        #expect(physicalTruth.contains("at least **30.0 seconds after authentication**"))
+        #expect(physicalTruth.contains("at least **45.0 seconds after authentication**"))
+        #expect(physicalTruth.contains("produces only one application callback"))
+        #expect(!physicalTruth.contains("acceptance boundary is strictly `>30.0 s` plus real notify payload evidence"))
+
+        #expect(stationaryGate.contains("at least **two** genuine, non-empty application payloads"))
+        #expect(stationaryGate.contains("at least **30 seconds after authentication**"))
+        #expect(stationaryGate.contains("at least **45 seconds of accepted authenticated continuity after authentication**"))
+        #expect(stationaryGate.contains("one/bootstrap-only application payload"))
+        #expect(!stationaryGate.contains("at least **one genuine non-empty application notification payload**"))
     }
 
     @Test("current physical procedure remains explicitly NO-GO")
