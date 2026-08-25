@@ -5,12 +5,17 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts/field/transfer_field_authorization.command"
+INBOX = (
+    ROOT
+    / "Packages/NembraBluetoothCapture/Sources/NembraCaptureAppAuthorization/AuthenticatedStationaryCaptureAuthorizationInbox.swift"
+)
 
 
 class FieldAuthorizationContainerTransportSourceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.source = SCRIPT.read_text(encoding="utf-8")
+        cls.inbox_source = INBOX.read_text(encoding="utf-8")
 
     def test_direct_self_test_executes_before_device_or_platform_gate(self) -> None:
         completed = subprocess.run(
@@ -42,6 +47,44 @@ class FieldAuthorizationContainerTransportSourceTests(unittest.TestCase):
             self.assertIn(token, self.source)
         self.assertNotIn("NEMBRA_FIELD_BUNDLE_ID", self.source)
         self.assertNotIn("NEMBRA_FIELD_DOMAIN_TYPE", self.source)
+
+    def test_publisher_and_app_inbox_share_one_poll_safe_filename_contract(self) -> None:
+        paired_names = (
+            ("retained-install-manifest.incoming", "installManifestIncomingFilename"),
+            ("retained-install-manifest.commit", "installManifestCommitFilename"),
+            ("authorization-envelope.incoming", "authorizationEnvelopeIncomingFilename"),
+            ("authorization-envelope.commit", "authorizationEnvelopeCommitFilename"),
+        )
+        for filename, swift_constant in paired_names:
+            self.assertIn(filename, self.source)
+            self.assertIn(
+                f'public static let {swift_constant} = "{filename}"',
+                self.inbox_source,
+            )
+
+        self.assertIn("COMMIT_RECORD_BYTES=65", self.source)
+        self.assertIn("private static let commitRecordByteCount = 65", self.inbox_source)
+        self.assertIn("hashlib.sha256()", self.source)
+        self.assertIn("SHA256.hash(data: data)", self.inbox_source)
+
+        # Semantic names remain error/subject labels in the app, but the field publisher must never
+        # publish authority-bearing bytes directly at a filename the polling inbox consumes.
+        self.assertIn(
+            'public static let installManifestFilename = "retained-install-manifest.json"',
+            self.inbox_source,
+        )
+        self.assertIn(
+            'public static let authorizationEnvelopeFilename = "authorization-envelope.json"',
+            self.inbox_source,
+        )
+        self.assertNotIn(
+            'MANIFEST_REMOTE="$FIELD_DIRECTORY/retained-install-manifest.json"',
+            self.source,
+        )
+        self.assertNotIn(
+            'ENVELOPE_REMOTE="$FIELD_DIRECTORY/authorization-envelope.json"',
+            self.source,
+        )
 
     def test_transport_byte_bounds_match_package_contracts(self) -> None:
         self.assertIn("MANIFEST_MAX_BYTES=16384", self.source)
