@@ -107,7 +107,7 @@ struct ES80PhysicalNoGoConsistencyTests {
         #expect(runbook.contains("**Do not repeat the completed 17-step ride capture.**"))
     }
 
-    @Test("NO-GO cannot be bypassed by simulator or stale physical evidence")
+    @Test("NO-GO cannot be bypassed by simulator, stale evidence, or causal inference")
     func currentRunbookPinsEvidenceBoundaries() throws {
         let retired = try repositoryFile("docs/ES80_PHYSICAL_CAPTURE_RUNBOOK.md")
         let runbook = try repositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
@@ -118,6 +118,8 @@ struct ES80PhysicalNoGoConsistencyTests {
             )
         )
         #expect(runbook.contains("The historical CoreBluetooth UUID is **descriptive capture-local evidence only**."))
+        #expect(runbook.contains("while no application characteristic-value frames were observed; C7D09A22 does not establish the cause of that disconnect cadence"))
+        #expect(!runbook.contains("disconnected around 30 seconds because the required Tuya application session was not established"))
         #expect(runbook.contains("Nembra sends no scooter DP query/control command"))
         #expect(runbook.contains("opens no second CoreBluetooth connection"))
         #expect(runbook.contains("rawFD50BytesCaptured=false"))
