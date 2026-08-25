@@ -6,6 +6,10 @@ on:
       - feature/rides-premium-journal-v14-sol-20260820
     paths:
       - '.github/workflows/rides-journal-acceptance-repair.yml'
+  pull_request:
+    types: [synchronize, reopened]
+    paths:
+      - '.github/workflows/rides-journal-acceptance-repair.yml'
 
 permissions:
   contents: write
@@ -16,6 +20,7 @@ concurrency:
 
 jobs:
   repair:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
