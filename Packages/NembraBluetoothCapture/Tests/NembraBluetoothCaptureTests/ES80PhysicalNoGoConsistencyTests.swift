@@ -19,15 +19,12 @@ struct ES80PhysicalNoGoConsistencyTests {
         )
     }
 
-    @Test("retired passive package gate cannot authorize the current physical experiment")
-    func retiredPassivePackageGateRemainsNoGo() throws {
+    @Test("historical passive package gate cannot authorize the current physical experiment")
+    func historicalPassivePackageGateRemainsNoGo() throws {
         let runbook = try repositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
 
         #expect(runbook.contains("PROCEDURE_ID: `ES80-AUTHENTICATED-STATIONARY-v1`"))
         #expect(runbook.contains("the physical secure-link experiment is **NO-GO**"))
-
-        // The historical passive package gate is still deliberately unable to authorize a run.
-        // Its NO-GO state is not the current authenticated-stationary procedure contract.
         #expect(
             PassiveBluetoothExperimentOneFieldExecutionGate.status
                 == .noGo(.finalComposedBuildNotAuthorized)
@@ -110,12 +107,25 @@ struct ES80PhysicalNoGoConsistencyTests {
         #expect(stationaryGate.contains("at least **30 seconds after authentication**"))
         #expect(stationaryGate.contains("at least **45 seconds** of accepted authenticated observation continuity"))
         #expect(stationaryGate.contains("Older one-payload / merely-`>30 s` wording is superseded"))
-        #expect(stationaryGate.contains("one application callback/state replay"))
+        #expect(stationaryGate.contains("One bootstrap/state replay"))
+    }
+
+    @Test("current stationary gate keeps structured SDK evidence separate from raw FD50")
+    func currentStationaryGateSeparatesStructuredAndRawEvidence() throws {
+        let stationaryGate = try repositoryFile("docs/ES80_AUTHENTICATED_STATIONARY_GATE_V14.md")
+
+        #expect(stationaryGate.contains("`ThingSmartDeviceDelegate.dpsUpdate`"))
+        #expect(stationaryGate.contains("structured SDK application evidence"))
+        #expect(stationaryGate.contains("does **not** establish raw FD50/ATT bytes"))
+        #expect(stationaryGate.contains("Raw byte-exact authenticated FD50 evidence remains a separate unresolved evidence rung"))
+        #expect(!stationaryGate.contains("The original authenticated raw-evidence experiment may be classified `PASS`"))
+        #expect(!stationaryGate.contains("authenticated raw FD50 evidence-ledger donor"))
     }
 
     @Test("current physical procedure remains explicitly NO-GO")
     func currentSecureLinkProcedureRemainsNoGo() throws {
         let runbook = try repositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
+        let stationaryGate = try repositoryFile("docs/ES80_AUTHENTICATED_STATIONARY_GATE_V14.md")
 
         #expect(runbook.contains("PROCEDURE_ID: `ES80-AUTHENTICATED-STATIONARY-v1`"))
         #expect(runbook.contains("Until all applicable software/private-device prerequisites are true"))
@@ -123,12 +133,14 @@ struct ES80PhysicalNoGoConsistencyTests {
         #expect(runbook.contains("the physical secure-link experiment is **NO-GO**"))
         #expect(runbook.contains("Smallest physical test — only after repository status explicitly flips to GO"))
         #expect(runbook.contains("**Do not repeat the completed 17-step ride capture.**"))
+        #expect(stationaryGate.contains("Status: **NO-GO — DO NOT RUN THE NEXT PHYSICAL SESSION YET.**"))
     }
 
     @Test("NO-GO cannot be bypassed by simulator, stale evidence, or causal inference")
     func currentRunbookPinsEvidenceBoundaries() throws {
         let pointer = try repositoryFile("CAPTURE_HARD_FREEZE_ACTIVE.md")
         let runbook = try repositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
+        let stationaryGate = try repositoryFile("docs/ES80_AUTHENTICATED_STATIONARY_GATE_V14.md")
 
         #expect(pointer.contains("Queued, running, skipped, cancelled, ancestor-green, package-only, Simulator-only, source-review-only"))
         #expect(pointer.contains("not final product/physical acceptance"))
@@ -140,5 +152,6 @@ struct ES80PhysicalNoGoConsistencyTests {
         #expect(runbook.contains("rawFD50BytesCaptured=false"))
         #expect(runbook.contains("dpQueriesSent=false"))
         #expect(runbook.contains("dpCommandsSent=false"))
+        #expect(stationaryGate.contains("Queued, running, skipped, ancestor-green, package-only, Simulator-only, source-review-only, or historical evidence cannot authorize the physical session."))
     }
 }
