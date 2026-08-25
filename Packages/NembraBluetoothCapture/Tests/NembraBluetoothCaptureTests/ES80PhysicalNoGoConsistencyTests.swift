@@ -58,6 +58,17 @@ struct ES80PhysicalNoGoConsistencyTests {
         #expect(runbook.contains("There is no hint-based override."))
     }
 
+    @Test("secure-link build provenance matches executable OFF1 admission")
+    func secureLinkBuildProvenanceMatchesOFF1Gate() throws {
+        let runbook = try repositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
+
+        #expect(runbook.contains("`NembraCaptureBuildIdentity.isAuthoritativeFieldBuild` is a mandatory fail-closed build-provenance prerequisite"))
+        #expect(runbook.contains("shipping `startBaseline()` rejects OFF1 before correlation when it is false"))
+        #expect(runbook.contains("It is necessary but not sufficient field authority."))
+        #expect(!runbook.contains("is not an OFF1 gate"))
+        #expect(!runbook.contains("without treating the legacy authoritative-build Boolean as field authority"))
+    }
+
     @Test("current authenticated procedure matches the canonical 2 / 30 / 45 gate")
     func currentRunbookAndPreflightAgreeOnAuthenticatedGate() throws {
         let runbook = try repositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
