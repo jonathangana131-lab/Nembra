@@ -84,6 +84,23 @@ struct ES80PhysicalNoGoConsistencyTests {
         #expect(runbook.contains("The app must seal the canonical ready prefix before presenting success."))
     }
 
+    @Test("supporting physical docs cannot weaken the executable authenticated gate")
+    func supportingPhysicalDocsAgreeWithExecutableGate() throws {
+        let physicalTruth = try repositoryFile("docs/ES80_PHYSICAL_TRUTH_C7D09A22.md")
+        let stationaryGate = try repositoryFile("docs/ES80_AUTHENTICATED_STATIONARY_GATE_V14.md")
+
+        #expect(physicalTruth.contains("at least **2** genuine, non-empty application updates"))
+        #expect(physicalTruth.contains("at least **30.0 seconds after authentication**"))
+        #expect(physicalTruth.contains("at least **45.0 seconds after authentication**"))
+        #expect(!physicalTruth.contains("strictly `>30.0 s` plus real notify payload evidence"))
+
+        #expect(stationaryGate.contains("at least **two genuine non-empty same-generation application payloads**"))
+        #expect(stationaryGate.contains("latest accepted application payload must occur at least 30 seconds after authentication"))
+        #expect(stationaryGate.contains("at least **45 seconds of canonical authenticated continuity measured from authentication**"))
+        #expect(stationaryGate.contains("One callback plus 45 seconds of generic connection liveness is **not** a physical PASS."))
+        #expect(!stationaryGate.contains("at least **one genuine non-empty application notification payload**"))
+    }
+
     @Test("current physical procedure remains explicitly NO-GO")
     func currentSecureLinkProcedureRemainsNoGo() throws {
         let runbook = try repositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
