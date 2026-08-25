@@ -105,8 +105,12 @@ After exact target confirmation:
 3. Observe only through the final accepted read-only/session evidence path.
 4. Do **not** send DP queries, unknown commands, random writes, light/lock/mode/speed-limit controls, or other traffic merely to solicit a response.
 5. Preserve every admitted application evidence item with exact current connection generation, source identity, callback/receipt order, monotonic timing, and build/procedure provenance. Where byte-exact FD50 notification evidence is accepted, preserve the raw bytes and exact notification characteristic identity.
-6. Keep the accepted authenticated session alive past the old approximately-30-second rejection region; the target gate is at least **45 seconds** of accepted authenticated continuity.
-7. Seal through the canonical evidence path and use the app's normal Share/export flow only after acceptance conditions are met.
+6. Require at least **2** genuine non-empty application evidence items in the same SmartLife-authenticated generation; one bootstrap/state-replay callback cannot close the gate.
+7. Require the latest admitted application evidence to arrive **at least 30.0 seconds after authentication**, so the application path itself—not merely generic BLE liveness—proves survival beyond the historical rejection region.
+8. Keep that same accepted authenticated generation continuously alive for **at least 45.0 seconds**.
+9. Seal through the canonical evidence path and use the app's normal Share/export flow only after all three acceptance thresholds are met.
+
+These thresholds are mechanically identical to `TuyaAuthenticatedReadOnlyPreflight`: payload count `>= 2`, latest payload survival `>= 30_000_000_000 ns` after authentication, and authenticated continuity `>= 45_000_000_000 ns`.
 
 ## Physical PASS conditions
 
@@ -115,14 +119,15 @@ The original authenticated raw-evidence experiment may be classified `PASS` only
 - fresh target correlation completed and the operator explicitly confirmed the one accepted candidate;
 - the four-window target-correlation provenance and confirmation fact are preserved;
 - accepted Tuya authentication provenance exists for the intended already-bound device/account;
-- at least **one genuine non-empty application notification payload** is admitted from the accepted physical FD50 device-to-app notification source; byte-exact evidence is preserved where the final GO contract requires it;
-- the authenticated connection remained continuously accepted beyond the old rejection window, with a target of at least **45 seconds**;
+- at least **2 genuine non-empty application evidence items** are admitted from the accepted physical authenticated application/notification source; byte-exact evidence is preserved where the final GO contract requires it;
+- the **latest** admitted application evidence arrived at least **30.0 seconds after authentication**;
+- the authenticated connection remained continuously accepted for at least **45.0 seconds**;
 - the evidence remained observational/read-only under the accepted gate policy;
 - admitted application/raw evidence and chronology/provenance were sealed/exported without secrets;
 - no opaque payload was promoted directly into telemetry semantics;
 - no stale generation, replayed callback, display interpolation, GPS/scenario timing, or caller-constructed authority was promoted into physical protocol truth.
 
-A transport callback, write completion, notification subscription success, timer UI, structured `dpsUpdate` string projection mislabeled as raw bytes, or 45 seconds without accepted genuine application evidence is **not** a physical PASS.
+A single bootstrap/state-replay payload, a 31–44 second authenticated connection, generic BLE liveness without repeated late application evidence, transport callback, write completion, notification subscription success, timer UI, structured `dpsUpdate` string projection mislabeled as raw bytes, or 45 seconds without accepted genuine application evidence is **not** a physical PASS.
 
 ## Stop / fail-closed conditions
 
