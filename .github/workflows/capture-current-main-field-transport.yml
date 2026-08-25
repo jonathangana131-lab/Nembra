@@ -47,7 +47,7 @@ jobs:
           set -euo pipefail
           /usr/bin/python3 -I -B scripts/ci/tests/test_es80_field_authorization_container_transport.py
           /bin/bash -n scripts/field/transfer_field_authorization.command
-          /bin/bash scripts/field/transfer_field_authorization.command --self-test
+          /bin/bash -p scripts/field/transfer_field_authorization.command --self-test
           swift test --package-path Packages/NembraBluetoothCapture --filter AuthenticatedStationaryCaptureAuthorizationInboxTests
 
       - name: Prove exact Xcode devicectl app-container help contract
