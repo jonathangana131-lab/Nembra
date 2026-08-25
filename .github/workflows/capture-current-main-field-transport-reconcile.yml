@@ -1,0 +1,231 @@
+name: Capture Current-Main Field Transport Reconcile
+
+on:
+  push:
+    branches:
+      - capture/current-main-field-transport-recovery-gpt56sol
+    paths:
+      - '.github/workflows/capture-current-main-field-transport-reconcile.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-current-main-field-transport-reconcile
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact authoring head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Bind exact recovery parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 'd698cf2f8240673da2e6536c49ec56cfdc282a04'
+          test -z "$(git status --porcelain)"
+
+      - name: Reconcile only the two known conflicting permanent files
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 - <<'PY'
+          from pathlib import Path
+
+          script_path = Path('scripts/field/transfer_field_authorization.command')
+          source = script_path.read_text(encoding='utf-8')
+
+          def replace_once(old: str, new: str) -> None:
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected one transport anchor, found {count}: {old[:100]!r}')
+              source = source.replace(old, new, 1)
+
+          replace_once(
+              'MANIFEST_REMOTE="$FIELD_DIRECTORY/retained-install-manifest.json"\nRENDEZVOUS_REMOTE="$FIELD_DIRECTORY/signer-rendezvous.json"\nENVELOPE_REMOTE="$FIELD_DIRECTORY/authorization-envelope.json"\nMANIFEST_MAX_BYTES=16384\nRENDEZVOUS_MAX_BYTES=4096\nENVELOPE_MAX_BYTES=32768',
+              'MANIFEST_INCOMING_REMOTE="$FIELD_DIRECTORY/retained-install-manifest.incoming"\nMANIFEST_COMMIT_REMOTE="$FIELD_DIRECTORY/retained-install-manifest.commit"\nRENDEZVOUS_REMOTE="$FIELD_DIRECTORY/signer-rendezvous.json"\nENVELOPE_INCOMING_REMOTE="$FIELD_DIRECTORY/authorization-envelope.incoming"\nENVELOPE_COMMIT_REMOTE="$FIELD_DIRECTORY/authorization-envelope.commit"\nMANIFEST_MAX_BYTES=16384\nRENDEZVOUS_MAX_BYTES=4096\nENVELOPE_MAX_BYTES=32768\nCOMMIT_RECORD_BYTES=65',
+          )
+          replace_once(
+              '  [[ "$MANIFEST_REMOTE" == */NembraCapture/FieldAuthorization/retained-install-manifest.json ]] || die "Manifest path drifted."\n  [[ "$RENDEZVOUS_REMOTE" == */NembraCapture/FieldAuthorization/signer-rendezvous.json ]] || die "Rendezvous path drifted."\n  [[ "$ENVELOPE_REMOTE" == */NembraCapture/FieldAuthorization/authorization-envelope.json ]] || die "Envelope path drifted."',
+              '  [[ "$MANIFEST_INCOMING_REMOTE" == */NembraCapture/FieldAuthorization/retained-install-manifest.incoming ]] || die "Manifest incoming path drifted."\n  [[ "$MANIFEST_COMMIT_REMOTE" == */NembraCapture/FieldAuthorization/retained-install-manifest.commit ]] || die "Manifest commit path drifted."\n  [[ "$RENDEZVOUS_REMOTE" == */NembraCapture/FieldAuthorization/signer-rendezvous.json ]] || die "Rendezvous path drifted."\n  [[ "$ENVELOPE_INCOMING_REMOTE" == */NembraCapture/FieldAuthorization/authorization-envelope.incoming ]] || die "Envelope incoming path drifted."\n  [[ "$ENVELOPE_COMMIT_REMOTE" == */NembraCapture/FieldAuthorization/authorization-envelope.commit ]] || die "Envelope commit path drifted."',
+          )
+          replace_once(
+              '  [[ "$ENVELOPE_MAX_BYTES" == 32768 ]] || die "Envelope byte bound drifted."',
+              '  [[ "$ENVELOPE_MAX_BYTES" == 32768 ]] || die "Envelope byte bound drifted."\n  [[ "$COMMIT_RECORD_BYTES" == 65 ]] || die "Commit record byte bound drifted."',
+          )
+          replace_once(
+              '  for path in "$MANIFEST_REMOTE" "$RENDEZVOUS_REMOTE" "$ENVELOPE_REMOTE"; do',
+              '  for path in "$MANIFEST_INCOMING_REMOTE" "$MANIFEST_COMMIT_REMOTE" "$RENDEZVOUS_REMOTE" "$ENVELOPE_INCOMING_REMOTE" "$ENVELOPE_COMMIT_REMOTE"; do',
+          )
+
+          marker = 'copy_to_container() {\n'
+          if source.count(marker) != 1:
+              raise SystemExit('copy_to_container anchor drifted')
+          make_commit = r'''make_commit_record() {
+            local source="$1"
+            local destination="$2"
+            /usr/bin/python3 -I -B - "$source" "$destination" <<'PY2'
+          import hashlib, os, stat, sys
+          source, destination = sys.argv[1:]
+          no_follow = getattr(os, 'O_NOFOLLOW', None)
+          if no_follow is None:
+              raise SystemExit('ERROR: publication commit custody unavailable')
+          fd = os.open(source, os.O_RDONLY | no_follow)
+          try:
+              before = os.fstat(fd)
+              if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_uid != os.geteuid() or before.st_size <= 0:
+                  raise SystemExit('ERROR: publication subject identity rejected')
+              digest = hashlib.sha256()
+              total = 0
+              while True:
+                  block = os.read(fd, 65536)
+                  if not block:
+                      break
+                  digest.update(block)
+                  total += len(block)
+              after = os.fstat(fd)
+              identity = lambda s: (s.st_dev,s.st_ino,s.st_mode,s.st_uid,s.st_nlink,s.st_size,s.st_mtime_ns,s.st_ctime_ns)
+              if identity(before) != identity(after) or total != before.st_size:
+                  raise SystemExit('ERROR: publication subject changed during digest')
+          finally:
+              os.close(fd)
+          record = digest.hexdigest().encode('ascii') + b'\n'
+          if len(record) != 65:
+              raise SystemExit('ERROR: publication commit record size drifted')
+          out = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL | no_follow, 0o600)
+          try:
+              offset = 0
+              while offset < len(record):
+                  count = os.write(out, record[offset:])
+                  if count <= 0:
+                      raise SystemExit('ERROR: publication commit record write failed')
+                  offset += count
+              os.fsync(out)
+          finally:
+              os.close(out)
+          PY2
+          }
+
+          '''
+          source = source.replace(marker, make_commit + marker, 1)
+
+          replace_once(
+              '  --stage-manifest)\n    copy_to_container "$manifest_binding_snapshot" "$MANIFEST_REMOTE"\n    say "Retained manifest copied into the fixed Nembra Capture inbox."',
+              '  --stage-manifest)\n    commit="$SCRATCH/retained-install-manifest.commit"\n    make_commit_record "$manifest_binding_snapshot" "$commit"\n    copy_to_container "$manifest_binding_snapshot" "$MANIFEST_INCOMING_REMOTE"\n    copy_to_container "$commit" "$MANIFEST_COMMIT_REMOTE"\n    say "Retained manifest staged and completion-bound in the fixed Nembra Capture inbox."',
+          )
+          replace_once(
+              '    snapshot_local_file "$NEMBRA_FIELD_AUTHORIZATION_ENVELOPE_PATH" "$staged" "$ENVELOPE_MAX_BYTES" "signed authorization envelope"\n    copy_to_container "$staged" "$ENVELOPE_REMOTE"\n    say "Signed envelope copied into the fixed Nembra Capture inbox; the app must still verify and consume it."',
+              '    commit="$SCRATCH/authorization-envelope.commit"\n    snapshot_local_file "$NEMBRA_FIELD_AUTHORIZATION_ENVELOPE_PATH" "$staged" "$ENVELOPE_MAX_BYTES" "signed authorization envelope"\n    make_commit_record "$staged" "$commit"\n    copy_to_container "$staged" "$ENVELOPE_INCOMING_REMOTE"\n    copy_to_container "$commit" "$ENVELOPE_COMMIT_REMOTE"\n    say "Signed envelope staged and completion-bound in the fixed Nembra Capture inbox; the app must still verify and consume it."',
+          )
+          if 'MANIFEST_REMOTE="$FIELD_DIRECTORY/retained-install-manifest.json"' in source:
+              raise SystemExit('direct manifest semantic filename survived')
+          if 'ENVELOPE_REMOTE="$FIELD_DIRECTORY/authorization-envelope.json"' in source:
+              raise SystemExit('direct envelope semantic filename survived')
+          script_path.write_text(source, encoding='utf-8')
+
+          test_path = Path('scripts/ci/tests/test_es80_field_authorization_container_transport.py')
+          tests = test_path.read_text(encoding='utf-8')
+
+          old_tokens = '''            'NembraCapture/FieldAuthorization',
+                      'retained-install-manifest.json',
+                      'signer-rendezvous.json',
+                      'authorization-envelope.json',
+                      'xcode27_devicectl_manifest_transport_contract.sh','''
+          new_tokens = '''            'NembraCapture/FieldAuthorization',
+                      'retained-install-manifest.incoming',
+                      'retained-install-manifest.commit',
+                      'signer-rendezvous.json',
+                      'authorization-envelope.incoming',
+                      'authorization-envelope.commit',
+                      'xcode27_devicectl_manifest_transport_contract.sh','''
+          if tests.count(old_tokens) != 1:
+              raise SystemExit('transport fixed-path test anchor drifted')
+          tests = tests.replace(old_tokens, new_tokens, 1)
+
+          old_bounds = '        self.assertIn("ENVELOPE_MAX_BYTES=32768", self.source)\n        self.assertNotIn("ENVELOPE_MAX_BYTES=1048576", self.source)'
+          new_bounds = '        self.assertIn("ENVELOPE_MAX_BYTES=32768", self.source)\n        self.assertIn("COMMIT_RECORD_BYTES=65", self.source)\n        self.assertNotIn("ENVELOPE_MAX_BYTES=1048576", self.source)'
+          if tests.count(old_bounds) != 1:
+              raise SystemExit('transport bounds test anchor drifted')
+          tests = tests.replace(old_bounds, new_bounds, 1)
+
+          old_order = '''        self.assertIn('copy_to_container "$manifest_binding_snapshot" "$MANIFEST_REMOTE"', self.source)
+                  self.assertIn('copy_from_container "$RENDEZVOUS_REMOTE" "$staged"', self.source)
+                  self.assertIn('copy_to_container "$staged" "$ENVELOPE_REMOTE"', self.source)
+                  self.assertLess(
+                      self.source.index('copy_from_container "$RENDEZVOUS_REMOTE" "$staged"'),
+                      self.source.index(
+                          'publish_fresh_local_file "$staged" "$NEMBRA_SIGNER_RENDEZVOUS_OUTPUT"'
+                      ),
+                  )'''
+          new_order = '''        manifest_incoming = 'copy_to_container "$manifest_binding_snapshot" "$MANIFEST_INCOMING_REMOTE"'
+                  manifest_commit = 'copy_to_container "$commit" "$MANIFEST_COMMIT_REMOTE"'
+                  envelope_incoming = 'copy_to_container "$staged" "$ENVELOPE_INCOMING_REMOTE"'
+                  envelope_commit = 'copy_to_container "$commit" "$ENVELOPE_COMMIT_REMOTE"'
+                  for token in (manifest_incoming, manifest_commit, envelope_incoming, envelope_commit, 'make_commit_record'):
+                      self.assertIn(token, self.source)
+                  self.assertLess(self.source.index(manifest_incoming), self.source.index(manifest_commit))
+                  self.assertLess(self.source.index(envelope_incoming), self.source.index(envelope_commit))
+                  self.assertIn('copy_from_container "$RENDEZVOUS_REMOTE" "$staged"', self.source)
+                  self.assertLess(
+                      self.source.index('copy_from_container "$RENDEZVOUS_REMOTE" "$staged"'),
+                      self.source.index(
+                          'publish_fresh_local_file "$staged" "$NEMBRA_SIGNER_RENDEZVOUS_OUTPUT"'
+                      ),
+                  )
+                  self.assertNotIn('MANIFEST_REMOTE="$FIELD_DIRECTORY/retained-install-manifest.json"', self.source)
+                  self.assertNotIn('ENVELOPE_REMOTE="$FIELD_DIRECTORY/authorization-envelope.json"', self.source)'''
+          if tests.count(old_order) != 1:
+              raise SystemExit('transport direction/order test anchor drifted')
+          tests = tests.replace(old_order, new_order, 1)
+          test_path.write_text(tests, encoding='utf-8')
+          PY
+
+      - name: Verify reconciled non-authorizing contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          script='scripts/field/transfer_field_authorization.command'
+          grep -F 'PRIVATE_DEVICE_READER_RELATIVE_PATH="scripts/ci/es80_signed_field_artifact_private_runner.py"' "$script"
+          grep -F 'NEMBRA_INTENDED_FIELD_DEVICE_UDID_FILE' "$script"
+          grep -F 'Caller-selected CoreDevice does not match the retained manifest' "$script"
+          grep -F 'retained-install-manifest.incoming' "$script"
+          grep -F 'retained-install-manifest.commit' "$script"
+          grep -F 'authorization-envelope.incoming' "$script"
+          grep -F 'authorization-envelope.commit' "$script"
+          grep -F 'make_commit_record' "$script"
+          ! grep -F 'MANIFEST_REMOTE="$FIELD_DIRECTORY/retained-install-manifest.json"' "$script"
+          ! grep -F 'ENVELOPE_REMOTE="$FIELD_DIRECTORY/authorization-envelope.json"' "$script"
+          ! grep -F 'publishDps' "$script"
+          ! grep -F 'writeValue(' "$script"
+          /usr/bin/python3 -I -B scripts/ci/tests/test_es80_field_authorization_container_transport.py
+          /bin/bash -p scripts/field/transfer_field_authorization.command --self-test
+
+      - name: Publish permanent two-file reconciliation and self-retire
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+          BRANCH: capture/current-main-field-transport-recovery-gpt56sol
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BRANCH"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git rev-parse FETCH_HEAD)" = "$EXPECTED_HEAD"
+          rm .github/workflows/capture-current-main-field-transport-reconcile.yml
+          git add \
+            scripts/field/transfer_field_authorization.command \
+            scripts/ci/tests/test_es80_field_authorization_container_transport.py \
+            .github/workflows/capture-current-main-field-transport-reconcile.yml
+          git diff --cached --check
+          git config user.name 'nembra-capture-recovery'
+          git config user.email 'actions@users.noreply.github.com'
+          git commit -m 'Capture: reconcile exact-device poll-safe handoff'
+          git push origin HEAD:"$BRANCH"
