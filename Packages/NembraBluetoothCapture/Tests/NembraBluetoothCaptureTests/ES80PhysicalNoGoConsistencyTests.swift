@@ -19,19 +19,12 @@ struct ES80PhysicalNoGoConsistencyTests {
         )
     }
 
-    @Test("retired passive runbook cannot authorize the current physical experiment")
-    func retiredPassiveRunbookRemainsATombstone() throws {
-        let retired = try repositoryFile("docs/ES80_PHYSICAL_CAPTURE_RUNBOOK.md")
-
-        #expect(retired.contains("RETIRED V14 LANE"))
-        #expect(retired.contains("Status: **RETIRED / NON-AUTHORITATIVE / PHYSICAL NO-GO.**"))
-        #expect(retired.contains("It is **not** the current physical-procedure gate"))
-        #expect(retired.contains("ES80-AUTHENTICATED-STATIONARY-v1"))
-        #expect(retired.contains("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md"))
-        #expect(retired.contains("must not be edited from NO-GO to GO for the current Capture product"))
-
-        // The historical passive package gate is still deliberately unable to authorize a run.
-        // Its NO-GO state is not the current authenticated-stationary procedure contract.
+    @Test("historical passive package gate cannot authorize the current physical experiment")
+    func historicalPassivePackageGateRemainsNoGo() {
+        // The old passive Experiment One package gate is deliberately incapable of
+        // authorizing the current authenticated-stationary procedure. The retired
+        // prose runbook itself has been deleted; do not recreate it as an authority
+        // surface merely to preserve archaeology.
         #expect(
             PassiveBluetoothExperimentOneFieldExecutionGate.status
                 == .noGo(.finalComposedBuildNotAuthorized)
@@ -131,14 +124,8 @@ struct ES80PhysicalNoGoConsistencyTests {
 
     @Test("NO-GO cannot be bypassed by simulator, stale evidence, or causal inference")
     func currentRunbookPinsEvidenceBoundaries() throws {
-        let retired = try repositoryFile("docs/ES80_PHYSICAL_CAPTURE_RUNBOOK.md")
         let runbook = try repositoryFile("docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md")
 
-        #expect(
-            retired.contains(
-                "Queued, running, skipped, ancestor-green, package-only, Simulator-only, source-review-only, self-described, or historical passive evidence cannot authorize that experiment."
-            )
-        )
         #expect(runbook.contains("The historical CoreBluetooth UUID is **descriptive capture-local evidence only**."))
         #expect(runbook.contains("while no application characteristic-value frames were observed; C7D09A22 does not establish the cause of that disconnect cadence"))
         #expect(!runbook.contains("disconnected around 30 seconds because the required Tuya application session was not established"))
