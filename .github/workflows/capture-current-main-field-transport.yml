@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - '.github/workflows/capture-current-main-field-transport.yml'
+      - 'Packages/NembraBluetoothCapture/Sources/NembraCaptureAppAuthorization/AuthenticatedStationaryCaptureAuthorizationInbox.swift'
+      - 'Packages/NembraBluetoothCapture/Tests/NembraCaptureAppAuthorizationTests/AuthenticatedStationaryCaptureAuthorizationInboxTests.swift'
       - 'scripts/ci/es80_signed_field_artifact_private_runner.py'
       - 'scripts/ci/tests/test_es80_field_authorization_container_transport.py'
       - 'scripts/ci/xcode27_devicectl_manifest_transport_contract.sh'
@@ -39,13 +41,14 @@ jobs:
           git diff --check
           test -z "$(git status --porcelain)"
 
-      - name: Verify source transport contract
+      - name: Verify publisher and app inbox custody contract
         shell: bash
         run: |
           set -euo pipefail
           /usr/bin/python3 -I -B scripts/ci/tests/test_es80_field_authorization_container_transport.py
           /bin/bash -n scripts/field/transfer_field_authorization.command
           /bin/bash scripts/field/transfer_field_authorization.command --self-test
+          swift test --package-path Packages/NembraBluetoothCapture --filter AuthenticatedStationaryCaptureAuthorizationInboxTests
 
       - name: Prove exact Xcode devicectl app-container help contract
         shell: bash
