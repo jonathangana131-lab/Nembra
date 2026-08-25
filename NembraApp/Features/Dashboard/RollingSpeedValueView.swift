@@ -50,7 +50,6 @@ struct RollingSpeedValueView: View {
             let resolvedIntegerPointSize = snapshot.layout.integerDigits == 3
                 ? integerPointSize * 0.80
                 : integerPointSize
-            let visibleDigitKey = snapshot.digits.map(\.digit)
             HStack(alignment: .lastTextBaseline, spacing: 1) {
                 HStack(spacing: -7) {
                     ForEach(0..<snapshot.layout.integerDigits, id: \.self) { index in
@@ -76,10 +75,6 @@ struct RollingSpeedValueView: View {
                 )
             }
             .monospacedDigit()
-            .animation(
-                reduceMotion ? nil : .smooth(duration: 0.16),
-                value: visibleDigitKey
-            )
         } else {
             Text("—")
                 .font(.system(size: integerPointSize * 0.70, weight: .ultraLight, design: .default))
@@ -89,6 +84,15 @@ struct RollingSpeedValueView: View {
         }
     }
 
+    /// Each fixed digit slot owns its own brief roll so an unchanged column does
+    /// not inherit animation work merely because another digit changed. The full
+    /// render value remains the transition-direction signal: across a carry such
+    /// as 19 -> 20, the ones column still rolls in the direction of the accepted
+    /// numeric transition rather than treating its local 9 -> 0 glyph as a drop.
+    ///
+    /// Visibility is animated independently so a leading slot appearing at a
+    /// digit boundary does not animate unrelated columns. Reduce Motion removes
+    /// both spatial animations while preserving the exact render value.
     private func rollingDigit(
         _ digit: RollingDigitSnapshot,
         transitionValue: Double,
@@ -101,6 +105,14 @@ struct RollingSpeedValueView: View {
             .opacity(digit.isVisible ? 1 : 0)
             .contentTransition(
                 reduceMotion ? .identity : .numericText(value: transitionValue)
+            )
+            .animation(
+                reduceMotion ? nil : .snappy(duration: 0.10),
+                value: digit.digit
+            )
+            .animation(
+                reduceMotion ? nil : .easeOut(duration: 0.08),
+                value: digit.isVisible
             )
             .clipped()
     }
