@@ -908,6 +908,27 @@ struct DashboardPropulsionGeometry {
     }
 }
 
+enum DashboardRollingPowerValuePolicy {
+    static let maximumDisplayWatts = DashboardEnergyRailVisualState.maximumDisplayWatts
+
+    private static let numberModel: RollingNumberModel? = {
+        guard let layout = try? RollingNumberLayout(integerDigits: 5) else {
+            return nil
+        }
+        return try? RollingNumberModel(layout: layout)
+    }()
+
+    static func snapshot(for value: Double) -> RollingNumberSnapshot? {
+        guard value.isFinite,
+              value >= 0,
+              value <= maximumDisplayWatts,
+              let numberModel else {
+            return nil
+        }
+        return try? numberModel.snapshot(for: value)
+    }
+}
+
 private struct DashboardRollingPowerValueView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -916,22 +937,40 @@ private struct DashboardRollingPowerValueView: View {
     let value: Double
 
     var body: some View {
-        Text(validatedText)
-            .font(
-                .system(
-                    size: min(scaledPointSize, dynamicTypeSize.isAccessibilitySize ? 28 : 20),
-                    weight: .semibold,
-                    design: .default
-                )
-            )
-            .fontWidth(.expanded)
-            .monospacedDigit()
-            .contentTransition(reduceMotion ? .identity : .numericText(value: value))
-    }
+        if let snapshot = DashboardRollingPowerValuePolicy.snapshot(for: value) {
+            let pointSize = min(scaledPointSize, dynamicTypeSize.isAccessibilitySize ? 28 : 20)
+            let transitionValue = Double(snapshot.scaledValue)
+            let visibleDigitKey = snapshot.digits.map { "\($0.digit):\($0.isVisible)" }
 
-    private var validatedText: String {
-        guard value.isFinite, value >= 0, value <= 99_999 else { return "—" }
-        return String(Int(value.rounded(.toNearestOrAwayFromZero)))
+            HStack(spacing: -1) {
+                ForEach(0..<snapshot.layout.integerDigits, id: \.self) { index in
+                    let digit = snapshot.digits[index]
+                    Text(String(digit.digit))
+                        .font(.system(size: pointSize, weight: .semibold, design: .default))
+                        .fontWidth(.expanded)
+                        .opacity(digit.isVisible ? 1 : 0)
+                        .contentTransition(
+                            reduceMotion ? .identity : .numericText(value: transitionValue)
+                        )
+                        .clipped()
+                }
+            }
+            .monospacedDigit()
+            .animation(
+                reduceMotion ? nil : .smooth(duration: 0.14),
+                value: visibleDigitKey
+            )
+        } else {
+            Text("—")
+                .font(
+                    .system(
+                        size: min(scaledPointSize, dynamicTypeSize.isAccessibilitySize ? 28 : 20),
+                        weight: .semibold,
+                        design: .default
+                    )
+                )
+                .fontWidth(.expanded)
+        }
     }
 }
 
