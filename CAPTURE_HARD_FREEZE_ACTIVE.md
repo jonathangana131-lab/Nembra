@@ -12,21 +12,20 @@ Do not restore #833's old “first artifact not yet collected” or retained-IPA
 
 ## Current flagship authority
 
-At this file's update, the live P0 software-acceptance subject is PR #2178:
+Fresh workers must inspect live GitHub before trusting any mutable branch, PR number, recorded head, or workflow result. The live P0 subject is the newest non-superseded Nembra Capture / authenticated stationary ES80 convergence lineage that is based on current `main` and preserves the contract below. Do not hard-code a transient PR as durable authority in this file.
 
-- feature: Nembra Capture / authenticated stationary ES80 physical truth;
-- branch: `integration/v14-capture-final-stationary-convergence-sol`;
-- observed exact head: `df30de17a95c6df3e6bd2fda14b0de9ddb1d0d25`;
-- exact-head `Capture Field Build Provenance` run: `31366062131` — QUEUED at last observation;
-- exact-head `Xcode 27 PR Exact-Head QA` run: `31366062142` — QUEUED at last observation;
-- physical status: **NO-GO / DO NOT SCAN / DO NOT RUN / DO NOT REPEAT THE OLD 17-STEP RIDE**.
-
-**Always re-read live PR #2178 before acting.** If its head differs from the SHA above, this recorded SHA and every ancestor workflow result are stale for product acceptance. Queued/running/skipped/cancelled/ancestor results are non-evidence.
+Current physical status remains **NO-GO / DO NOT SCAN / DO NOT RUN / DO NOT REPEAT THE OLD 17-STEP RIDE**.
 
 The canonical current physical procedure is:
 `docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md`
 
-Supporting C7D09A22 documents are historical/supporting material. If they conflict with the canonical current procedure, the canonical current procedure wins.
+Supporting C7D09A22 and stationary-gate documents must not weaken executable `TuyaAuthenticatedReadOnlyPreflight` authority. One accepted SmartLife-authenticated generation requires:
+
+- at least 2 genuine non-empty application payloads;
+- latest qualifying application evidence at least 30 seconds after authentication; and
+- at least 45 seconds of accepted authenticated continuity.
+
+Queued, running, skipped, cancelled, ancestor-green, package-only, Simulator-only, source-review-only, closed-PR, or superseded-branch results are not final product/physical acceptance.
 
 ## Current product direction
 
@@ -41,13 +40,13 @@ The current accepted direction is an authenticated, stationary, read-only path:
 7. Tuya SmartLife SDK becomes the sole authenticated BLE owner;
 8. require genuine same-generation structured application evidence plus canonical continuous authenticated observation;
 9. seal the package evidence and one complete immutable accepted export envelope before accepted UI/share;
-10. no arbitrary characteristic writes, no DP query/publish, no scooter control, no unbind/reset/OTA.
+10. no arbitrary characteristic writes, no Nembra DP query/publish, no scooter control, no unbind/reset/OTA.
 
 ## Current critical path
 
-Do not churn the flagship for non-blocking docs/tests/cleanup while an unchanged exact head is undergoing final acceptance. Move it only for a demonstrated product/truth/build blocker.
+Fresh-inspect current `main`, open Capture PRs, exact heads, and exact-head workflow results. Select the newest coherent non-superseded P0 convergence candidate rather than an older donor or child slice. That final composed candidate must reach terminal exact-head software acceptance on its **unchanged live head**. At minimum, treat the PR-triggered Capture standalone and Xcode 27 exact-head gates as evidence only when they are terminal green for that exact head. Any head movement invalidates older acceptance results.
 
-After terminal exact-head software acceptance on the unchanged current flagship head, the next legal rung is the private field candidate on the intended iPhone 12 / iOS 27:
+After exact-head software acceptance, the next legal rung is the private field candidate on the intended iPhone 12 / iOS 27:
 
 1. invoke the private Capture installer against the **exact software-accepted 40-hex source SHA**;
 2. require a clean checkout whose HEAD exactly equals that SHA;
@@ -58,7 +57,7 @@ After terminal exact-head software acceptance on the unchanged current flagship 
 7. complete the required runtime build/source/procedure rendezvous;
 8. only after the repository's explicit final GO boundary may the smallest stationary authenticated read-only ES80 session begin.
 
-Branch names, human-readable success messages, historical UUIDs, local names, RSSI, FD50/company hints, or old artifacts are not physical authority.
+Branch names, PR numbers, human-readable success messages, historical UUIDs, local names, RSSI, FD50/company hints, or old artifacts are not physical authority.
 
 ## Current truth boundary
 

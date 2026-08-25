@@ -125,7 +125,7 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
         }
     }
 
-    @Test("official provenance plus continuous application observation earns canonical gate")
+    @Test("official provenance plus repeated surviving application evidence earns canonical gate")
     func acceptedGateUsesContinuousChronology() async throws {
         let clock = TestUptimeClock(1_000)
         let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
@@ -136,13 +136,20 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
         try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
         clock.advance(to: 3_000)
         try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
-        let target = 2_000 + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds
-        try await advanceLedgerContinuously(clock: clock, ledger: ledger, token: token, from: 3_000, through: target)
+
+        let payloadSurvivalTarget = 2_000 + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
+        try await advanceLedgerContinuously(clock: clock, ledger: ledger, token: token, from: 3_000, through: payloadSurvivalTarget)
+        let singlePayloadSnapshot = await ledger.currentPreflightSnapshot()
+        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: singlePayloadSnapshot) == .blocked(reason: "Authenticated session has not produced repeated application payload evidence yet."))
+        try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
+
+        let stabilityTarget = 2_000 + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds
+        try await advanceLedgerContinuously(clock: clock, ledger: ledger, token: token, from: payloadSurvivalTarget, through: stabilityTarget)
 
         let snapshot = await ledger.currentPreflightSnapshot()
         #expect(snapshot.authenticationMethod == .smartLifeAppSDK)
-        #expect(snapshot.applicationPayloadCount == 1)
-        #expect(snapshot.latestApplicationPayloadUptimeNanoseconds == 3_000)
+        #expect(snapshot.applicationPayloadCount == 2)
+        #expect(snapshot.latestApplicationPayloadUptimeNanoseconds == payloadSurvivalTarget)
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .readyForStationaryMapping)
     }
 
@@ -157,8 +164,13 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
         try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
         clock.advance(to: 3_000)
         try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
-        let target = 2_000 + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds
-        try await advanceLedgerContinuously(clock: clock, ledger: ledger, token: token, from: 3_000, through: target)
+
+        let payloadSurvivalTarget = 2_000 + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
+        try await advanceLedgerContinuously(clock: clock, ledger: ledger, token: token, from: 3_000, through: payloadSurvivalTarget)
+        try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
+
+        let stabilityTarget = 2_000 + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds
+        try await advanceLedgerContinuously(clock: clock, ledger: ledger, token: token, from: payloadSurvivalTarget, through: stabilityTarget)
         try await ledger.sealAcceptedObservation(for: token)
         let sealed = await ledger.currentPreflightSnapshot()
 
@@ -170,6 +182,8 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
             try await ledger.observeCurrentConnection(for: token)
         }
         #expect(await ledger.currentPreflightSnapshot() == sealed)
+        #expect(sealed.applicationPayloadCount == 2)
+        #expect(sealed.latestApplicationPayloadUptimeNanoseconds == payloadSurvivalTarget)
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: sealed) == .readyForStationaryMapping)
     }
 
