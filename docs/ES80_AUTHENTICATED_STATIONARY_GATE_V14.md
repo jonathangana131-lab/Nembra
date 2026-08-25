@@ -42,9 +42,8 @@ That prior runbook remains historical evidence for the first fingerprint field p
 
 ## Current software convergence snapshot
 
-At this document revision:
+Live refresh for this revision starts from `main@e8bdebe99ddfd8022b8e47265623df88e0853a04`, which restored the strict C7D09A22 physical-gate wording via merged PR `#3852`. The historical donor list below is coordination context only; current-main composition and exact-head acceptance win over it.
 
-- `main`: `f0d1a7696a0b62d2cb5fa42e7811f973db39d3bb`;
 - obsolete app-authority parent: PR `#2094` at `9931f9e3d54f563bd37c5f983b49e27b6f13b5b4` — exact-head Xcode run failed and its historical-UUID target authority is superseded;
 - fresh-target app successor: PR `#2109` at `fab6bb700b5670be2e964d7a987a4fefb079296a`;
 - transport-success lifecycle repair donor: PR `#2102` at `c96dd8429d71b59cd0baa3eab9dad4b4152bf9b9`;
@@ -69,9 +68,9 @@ The final composed candidate must close all applicable items on one exact head:
 8. **No-resample chronology terminal.** A regressed/invalid monotonic clock or authentication-promotion chronology rejection must be able to retire the exact current generation **without taking another authorizing clock sample**. Do not hide a failing ordinary terminal with `try?` and then clear only controller state while package callback authority remains alive. Genuine account/membership drift remains source-authority invalidation; real transport loss remains transport loss.
 9. **Transport-success lifecycle closure.** Current-generation phase/source/driver drift may not silently return and strand an authenticating ledger generation. Enforce one bounded local-BLE settlement owner per current generation; duplicate/stale transport-success callbacks are idempotently classified; authentication-promotion rejection terminally retires the current generation; settlement ownership clears on every terminal/reset path.
 10. **One BLE owner.** Fresh CoreBluetooth correlation must retire before supported Tuya authenticated BLE ownership begins. Do not create a second competing CoreBluetooth connection merely to observe bytes while the official Tuya/SmartLife session owns the scooter.
-11. **Genuine authenticated application evidence.** The physical artifact must not relabel a structured SDK `dpsUpdate` string projection as byte-exact FD50 notification data. If final physical acceptance requires raw FD50 notification bytes, the composed build must prove an accepted legitimate raw-byte source under the one-owner rule and feed it through an admission ledger equivalent to the #1997 contract: exact physical notify characteristic, current authenticated generation, non-empty payload, monotonic receipt chronology, immutable receipt order, and credential-free raw-byte preservation such as base64/hex. Structured SDK application updates may be retained as additional application-level evidence but must be labeled as such.
+11. **Genuine authenticated application evidence.** The physical artifact must not relabel a structured SDK `dpsUpdate` string projection as byte-exact FD50 notification data. If final physical acceptance requires raw FD50 notification bytes, the composed build must prove an accepted legitimate raw-byte source under the one-owner rule and feed it through an admission ledger equivalent to the #1997 contract: exact physical notify characteristic, current authenticated generation, non-empty payload, monotonic receipt chronology, immutable receipt order, and credential-free raw-byte preservation such as base64/hex. Structured SDK application updates may be retained as additional application-level evidence but must be labeled as such. Canonical readiness requires at least **2** accepted application updates in the same current authenticated generation, with the latest arriving at least **30 seconds after authentication**.
 12. **No silent weakening of the raw-evidence gate.** If investigation proves the supported official SDK surface cannot lawfully expose byte-exact notifications without violating the one-owner/session contract, the swarm must stop and make that limitation explicit. A reviewed successor may deliberately define a different smallest physical evidence gate, but no implementation may silently call `String(describing:)` DP values “raw payloads” to claim the original gate passed.
-13. **Opaque payloads do not mint telemetry semantics.** Even one real non-empty application payload proves only application-layer receipt. Transport evidence remains unable to authorize speed, battery, voltage, current, power, mode, odometer, command acknowledgement, or any other field meaning until a separately accepted repeatable decoding/correlation contract exists. This boundary is now merged foundation truth via #2099.
+13. **Opaque payloads do not mint telemetry semantics.** Real non-empty application updates prove only application-layer receipt. Transport evidence remains unable to authorize speed, battery, voltage, current, power, mode, odometer, command acknowledgement, or any other field meaning until a separately accepted repeatable decoding/correlation contract exists. This boundary is now merged foundation truth via #2099.
 14. **Canonical evidence seal/export.** Accepted notification/application evidence and target-correlation provenance must be admitted through the accepted chronology/provenance model, frozen immutably, and exported without credentials/secrets. Delayed callbacks after seal cannot mutate the accepted prefix.
 15. **No semantic query or control expansion.** This gate must not add DP queries, unknown scooter commands, random characteristic writes, control toggles, or telemetry interpretation merely to provoke traffic.
 16. **Exact-head app acceptance.** The final composed head must receive the required focused/source tests and exact-head Xcode 27 app/Capture runtime acceptance. Red, queued, cancelled, skipped, ancestor, child-only, or package-only results are not acceptance.
@@ -104,25 +103,26 @@ After exact target confirmation:
 2. Establish the accepted legitimate Tuya authenticated application session for the already-bound scooter without unbinding, factory reset, or speculative control activity.
 3. Observe only through the final accepted read-only/session evidence path.
 4. Do **not** send DP queries, unknown commands, random writes, light/lock/mode/speed-limit controls, or other traffic merely to solicit a response.
-5. Preserve every admitted application evidence item with exact current connection generation, source identity, callback/receipt order, monotonic timing, and build/procedure provenance. Where byte-exact FD50 notification evidence is accepted, preserve the raw bytes and exact notification characteristic identity.
-6. Keep the accepted authenticated session alive past the old approximately-30-second rejection region; the target gate is at least **45 seconds** of accepted authenticated continuity.
+5. Preserve every admitted application evidence item with exact current connection generation, source identity, callback/receipt order, monotonic timing, and build/procedure provenance. Where byte-exact FD50 notification evidence is accepted, preserve the raw bytes and exact notification characteristic identity. Continue until at least **2 genuine non-empty application updates** have been admitted in the same current authenticated generation and the latest accepted update is at least **30 seconds after authentication**.
+6. Keep the accepted authenticated session alive for at least **45 seconds of accepted authenticated continuity**. Transport liveness without the repeated late application-evidence requirement is insufficient.
 7. Seal through the canonical evidence path and use the app's normal Share/export flow only after acceptance conditions are met.
 
 ## Physical PASS conditions
 
-The original authenticated raw-evidence experiment may be classified `PASS` only if the sealed accepted artifact proves all of the following for the same current authenticated generation:
+The authenticated stationary experiment may be classified `PASS` only if the sealed accepted artifact proves all of the following for the same current authenticated generation:
 
 - fresh target correlation completed and the operator explicitly confirmed the one accepted candidate;
 - the four-window target-correlation provenance and confirmation fact are preserved;
-- accepted Tuya authentication provenance exists for the intended already-bound device/account;
-- at least **one genuine non-empty application notification payload** is admitted from the accepted physical FD50 device-to-app notification source; byte-exact evidence is preserved where the final GO contract requires it;
-- the authenticated connection remained continuously accepted beyond the old rejection window, with a target of at least **45 seconds**;
+- accepted SmartLife App SDK authentication provenance exists for the intended already-bound device/account;
+- at least **2 genuine non-empty application updates** are admitted from the same accepted authenticated generation; byte-exact evidence is preserved where the final GO contract requires it;
+- the latest accepted application update arrived at least **30 seconds after authentication**, so an initial/bootstrap callback cannot by itself prove survival beyond the historical rejection window;
+- the authenticated connection preserved at least **45 seconds of accepted authenticated continuity**;
 - the evidence remained observational/read-only under the accepted gate policy;
 - admitted application/raw evidence and chronology/provenance were sealed/exported without secrets;
 - no opaque payload was promoted directly into telemetry semantics;
 - no stale generation, replayed callback, display interpolation, GPS/scenario timing, or caller-constructed authority was promoted into physical protocol truth.
 
-A transport callback, write completion, notification subscription success, timer UI, structured `dpsUpdate` string projection mislabeled as raw bytes, or 45 seconds without accepted genuine application evidence is **not** a physical PASS.
+A transport callback, write completion, notification subscription success, timer UI, structured `dpsUpdate` string projection mislabeled as raw bytes, one bootstrap update, two updates both arriving before the 30-second post-authentication boundary, or 45 seconds of connection without the required repeated late application evidence is **not** a physical PASS.
 
 ## Stop / fail-closed conditions
 
@@ -135,9 +135,9 @@ Stop the attempt and preserve only legitimately admitted evidence if any of thes
 - exact build/source/account/device membership authority changes or becomes uncertain;
 - a stale/duplicate generation cannot be safely classified;
 - Bluetooth/local-BLE acquisition fails or the accepted monotonic clock becomes invalid and the exact generation cannot be safely retired;
-- the session disconnects before the accepted continuity target;
-- the required genuine application evidence is not received;
-- required byte-exact evidence is unavailable under the final accepted raw-evidence contract;
+- the session disconnects before 45 seconds of accepted authenticated continuity;
+- fewer than 2 genuine application updates are admitted, or the latest accepted update never reaches the 30-second post-authentication survival boundary;
+- required byte-exact evidence is unavailable under the final accepted raw-evidence contract where that evidence is required;
 - artifact integrity/seal/export cannot be established;
 - any unexpected command/control/write path becomes enabled;
 - the exact installed build cannot prove the final accepted build/procedure identity.
