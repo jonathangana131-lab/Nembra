@@ -36,7 +36,7 @@ jobs:
               "TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds",
               "repeated same-generation scooter data",
               "startup rejection window",
-              "45-second observation horizon",
+              "45-second stability horizon",
           ]
           for text in required:
               if text not in source:
