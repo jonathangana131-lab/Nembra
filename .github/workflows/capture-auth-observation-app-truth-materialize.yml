@@ -57,8 +57,7 @@ jobs:
           git add -A NembraApp/App/NembraCaptureEntrypoint.swift \
                     Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/TuyaAuthenticatedReadOnlyHorizonAppIntegrationTests.swift \
                     .github/workflows/capture-auth-observation-app-truth-materialize.yml \
-                    scripts/ci/materialize_capture_observation_app_truth.py \
-                    CAPTURE_APP_TRUTH_TEST_FAILURE.log
+                    scripts/ci/materialize_capture_observation_app_truth.py
           git diff --cached --check
           git commit -m "Capture: make observation UI match canonical gate"
           git push origin HEAD:capture/v14-auth-observation-app-truth-fix-sol
