@@ -136,13 +136,32 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
         try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
         clock.advance(to: 3_000)
         try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
+
+        let postWindowPayload = 2_000
+            + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
+            + 1
+        try await advanceLedgerContinuously(
+            clock: clock,
+            ledger: ledger,
+            token: token,
+            from: 3_000,
+            through: postWindowPayload
+        )
+        try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
+
         let target = 2_000 + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds
-        try await advanceLedgerContinuously(clock: clock, ledger: ledger, token: token, from: 3_000, through: target)
+        try await advanceLedgerContinuously(
+            clock: clock,
+            ledger: ledger,
+            token: token,
+            from: postWindowPayload,
+            through: target
+        )
 
         let snapshot = await ledger.currentPreflightSnapshot()
         #expect(snapshot.authenticationMethod == .smartLifeAppSDK)
-        #expect(snapshot.applicationPayloadCount == 1)
-        #expect(snapshot.latestApplicationPayloadUptimeNanoseconds == 3_000)
+        #expect(snapshot.applicationPayloadCount == 2)
+        #expect(snapshot.latestApplicationPayloadUptimeNanoseconds == postWindowPayload)
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .readyForStationaryMapping)
     }
 
@@ -157,8 +176,27 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
         try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
         clock.advance(to: 3_000)
         try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
+
+        let postWindowPayload = 2_000
+            + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
+            + 1
+        try await advanceLedgerContinuously(
+            clock: clock,
+            ledger: ledger,
+            token: token,
+            from: 3_000,
+            through: postWindowPayload
+        )
+        try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
+
         let target = 2_000 + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds
-        try await advanceLedgerContinuously(clock: clock, ledger: ledger, token: token, from: 3_000, through: target)
+        try await advanceLedgerContinuously(
+            clock: clock,
+            ledger: ledger,
+            token: token,
+            from: postWindowPayload,
+            through: target
+        )
         try await ledger.sealAcceptedObservation(for: token)
         let sealed = await ledger.currentPreflightSnapshot()
 
