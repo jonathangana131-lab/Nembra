@@ -908,6 +908,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
         return Double(latest - start) / 1_000_000_000
     }
 
+    var applicationEvidenceSurvivedHistoricalWindow: Bool {
+        guard let authenticatedAt = ledgerSnapshot.authenticatedAtUptimeNanoseconds,
+              let latestPayload = ledgerSnapshot.latestApplicationPayloadUptimeNanoseconds,
+              latestPayload >= authenticatedAt else { return false }
+        return latestPayload - authenticatedAt >= TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
+    }
+
     var preflightVerdict: TuyaAuthenticatedReadOnlyPreflight.Verdict {
         TuyaAuthenticatedReadOnlyPreflight.verdict(for: ledgerSnapshot)
     }
@@ -1641,7 +1648,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     self.fieldAuthorizationStatus = "One-time field authorization admitted read-only observation."
 
                     phase = .observing
-                    message = "Authenticated generation \(token.diagnosticGeneration) is live. Waiting for a genuine application update and the canonical 45-second horizon…"
+                    message = "Authenticated generation \(token.diagnosticGeneration) is live. Waiting for repeated same-generation scooter data to survive the startup rejection window and the canonical 45-second stability horizon…"
                     log("sdk_local_ble_authenticated", [
                         "generation": String(token.diagnosticGeneration),
                         "localBLEOnline": "true"
@@ -3624,7 +3631,8 @@ private struct SecureLinkView: View {
                             .accessibilityLabel("Read-only observation progress")
                             .accessibilityValue("\(Int(min(age, 45))) of 45 seconds")
                         requirementRow("Secure local link", ready: test.sdkLocalBLEOnline)
-                        requirementRow("Scooter data received", ready: test.applicationUpdateCount > 0)
+                        requirementRow("Repeated scooter data", ready: test.applicationUpdateCount >= TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedApplicationPayloadCount)
+                        requirementRow("Startup window survived", ready: test.applicationEvidenceSurvivedHistoricalWindow)
                     }
                 }
             }
