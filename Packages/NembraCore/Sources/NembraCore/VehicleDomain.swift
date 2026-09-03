@@ -267,14 +267,13 @@ public struct VehicleProfile: Equatable, Sendable {
     /// Public/user-observed stock-app behavior is useful research evidence that the
     /// ES80 product may expose lock, light, cruise, start-mode/speed configuration,
     /// speed, mileage, and a user-facing battery percentage. It does not establish
-    /// the BLE/Tuya datapoints, write safety, acknowledgement semantics, or command
-    /// lifecycle required for Nembra to expose those writable controls.
+    /// Nembra's BLE/Tuya datapoints, read semantics, write safety, acknowledgements,
+    /// or command lifecycle for any of those values.
     ///
-    /// Keep command capabilities fail-closed until accepted physical/protocol evidence
-    /// proves their exact semantics and confirmation path. Read-only capability flags
-    /// remain broad research/product expectations only; downstream evidence gates still
-    /// decide whether an actual value is display-authoritative. Current/power telemetry,
-    /// ride-mode mappings, and speed-limit slot/range semantics remain unverified.
+    /// Keep every ES80 capability fail-closed until accepted authenticated physical
+    /// payload evidence proves the corresponding transport and semantic mapping.
+    /// Current/power telemetry, ride-mode mappings, and speed-limit slot/range
+    /// semantics likewise remain unverified.
     public static let aovoproES80 = VehicleProfile(
         identity: VehicleIdentity(
             manufacturer: "AOVOPRO",
@@ -288,9 +287,9 @@ public struct VehicleProfile: Equatable, Sendable {
             supportsCruise: false,
             supportsStartMode: false,
             supportsSpeedLimit: false,
-            supportsOdometer: true,
-            supportsLiveSpeed: true,
-            supportsBatteryPercent: true,
+            supportsOdometer: false,
+            supportsLiveSpeed: false,
+            supportsBatteryPercent: false,
             supportsPowerWatts: false,
             supportsCurrentAmps: false,
             supportedRideModes: [],
