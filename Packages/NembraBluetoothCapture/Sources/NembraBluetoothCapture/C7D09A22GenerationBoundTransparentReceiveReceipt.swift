@@ -15,16 +15,28 @@ public struct C7D09A22GenerationBoundTransparentReceiveReceipt: Equatable, Senda
     public let receivedAtUptimeNanoseconds: UInt64
 
     /// Capture this synchronously inside `bleReceiveTransparentData(_:devId:)`.
-    /// A callback with no package-owned active token is intentionally discarded.
+    /// A callback with no package-owned active token, no application bytes, an empty
+    /// callback device identity, or an invalid generation is intentionally discarded
+    /// before any actor hop. This keeps process-global Tuya manager noise out of the
+    /// authenticated diagnostic custody path instead of relying on later admission to
+    /// clean it up.
     public static func capture(
         payload: Data,
         callbackDeviceID: String,
         activeConnectionToken: TuyaReadOnlyConnectionToken?
     ) -> Self? {
-        guard let activeConnectionToken else { return nil }
+        guard let activeConnectionToken,
+              !payload.isEmpty,
+              activeConnectionToken.diagnosticGeneration > 0 else {
+            return nil
+        }
+
+        let normalizedDeviceID = callbackDeviceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedDeviceID.isEmpty else { return nil }
+
         return Self(
             payload: payload,
-            callbackDeviceID: callbackDeviceID,
+            callbackDeviceID: normalizedDeviceID,
             capturedConnectionGeneration: activeConnectionToken.diagnosticGeneration,
             receivedAtUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
         )
