@@ -73,6 +73,44 @@ struct C7D09A22DocumentedTransparentLivePreflightTests {
 
     @Test
     @MainActor
+    func objectiveCCallbackShapeRejectsNilEmptyAndWrongDeviceBeforeRecording() async throws {
+        let context = try await authenticatedContext()
+        let preflight = C7D09A22DocumentedTransparentLivePreflight(
+            preflightSnapshotProvider: { await context.ledger.currentPreflightSnapshot() }
+        )
+        #expect(await preflight.arm(
+            connectionToken: context.token,
+            expectedDeviceID: "demo",
+            authenticatedPreflightSnapshot: context.snapshot
+        ))
+
+        preflight.receiveDocumentedSmartLifeCallback(payload: nil, deviceID: "demo")
+        preflight.receiveDocumentedSmartLifeCallback(payload: Data(), deviceID: "demo")
+        preflight.receiveDocumentedSmartLifeCallback(payload: Data([0xaa]), deviceID: nil)
+        preflight.receiveDocumentedSmartLifeCallback(payload: Data([0xbb]), deviceID: "   ")
+        preflight.receiveDocumentedSmartLifeCallback(payload: Data([0xcc]), deviceID: "other-device")
+        await Task.yield()
+
+        let empty = try #require(await preflight.evidenceArtifact())
+        #expect(empty.payloadCount == 0)
+        #expect(empty.totalByteCount == 0)
+        #expect(empty.retainedPayloads.isEmpty)
+
+        preflight.receiveDocumentedSmartLifeCallback(payload: Data([0xaa, 0x55]), deviceID: " demo ")
+        await Task.yield()
+        let admitted = try #require(await preflight.evidenceArtifact())
+        #expect(admitted.payloadCount == 1)
+        #expect(admitted.totalByteCount == 2)
+        #expect(admitted.retainedPayloads.map(\.hex) == ["aa55"])
+        #expect(!admitted.authorizesRawFD50CharacteristicCustody)
+        #expect(!admitted.authorizesPhysicalFirstAcceptance)
+        #expect(!admitted.authorizesTelemetrySemantics)
+        #expect(!admitted.authorizesControlWrites)
+        #expect(!admitted.authorizesPairingResetOrUnbind)
+    }
+
+    @Test
+    @MainActor
     func staleTerminalCannotRetireNewerAuthenticatedGeneration() async throws {
         let ledger = TuyaAuthenticatedReadOnlySessionLedger()
         let first = try await ledger.beginConnection()
