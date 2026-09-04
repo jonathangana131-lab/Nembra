@@ -56,6 +56,22 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
         handoff.receive(payload: payload, callbackDeviceID: callbackDeviceID)
     }
 
+    /// Objective-C callback shaped ingress for the live Smart Life BLE-manager delegate.
+    ///
+    /// Tuya delegate values can cross into Swift as optionals depending on SDK annotations. Keep
+    /// nil/empty callback handling inside the package-owned read-only boundary so the app adapter
+    /// does not invent fallback identities, synthesize bytes, or retry against a later generation.
+    /// The underlying handoff still performs exact-device and generation admission synchronously.
+    public func receiveDocumentedSmartLifeCallback(payload: Data?, deviceID: String?) {
+        guard let payload, !payload.isEmpty,
+              let deviceID else {
+            return
+        }
+        let normalizedDeviceID = deviceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedDeviceID.isEmpty else { return }
+        handoff.receive(payload: payload, callbackDeviceID: normalizedDeviceID)
+    }
+
     /// Returns the current documented authenticated transport milestone only.
     /// This never upgrades the evidence into raw FD50 characteristic or DP semantic authority.
     public func transportMilestone() async -> C7D09A22DocumentedTransparentTransportMilestone.Verdict {
