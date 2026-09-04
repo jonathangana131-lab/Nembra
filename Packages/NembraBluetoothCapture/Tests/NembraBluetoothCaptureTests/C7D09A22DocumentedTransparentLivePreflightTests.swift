@@ -24,6 +24,7 @@ struct C7D09A22DocumentedTransparentLivePreflightTests {
         )
 
         #expect(await preflight.transportMilestone() == .blockedUnauthenticated)
+        #expect(await preflight.evidenceArtifact() == nil)
         #expect(await preflight.arm(
             connectionToken: context.token,
             expectedDeviceID: " demo ",
@@ -32,9 +33,27 @@ struct C7D09A22DocumentedTransparentLivePreflightTests {
         #expect(preflight.hasActiveAuthenticatedGeneration)
         #expect(await preflight.transportMilestone() == .waitingForFirstPayload)
 
+        let emptyArtifact = try #require(await preflight.evidenceArtifact())
+        #expect(emptyArtifact.tuyaDeviceID == "demo")
+        #expect(emptyArtifact.payloadCount == 0)
+        #expect(emptyArtifact.retainedPayloads.isEmpty)
+        #expect(!emptyArtifact.authorizesPhysicalFirstAcceptance)
+
         preflight.receive(payload: Data([0x01, 0x02]), callbackDeviceID: "demo")
         await Task.yield()
         #expect(await preflight.transportMilestone() == .waitingForHistoricalRejectionWindow)
+
+        let artifact = try #require(await preflight.evidenceArtifact())
+        #expect(artifact.tuyaDeviceID == "demo")
+        #expect(artifact.payloadCount == 1)
+        #expect(artifact.totalByteCount == 2)
+        #expect(artifact.retainedPayloads.map(\.hex) == ["0102"])
+        #expect(!artifact.authorizesRawFD50CharacteristicCustody)
+        #expect(!artifact.authorizesPhysicalFirstAcceptance)
+        #expect(!artifact.authorizesStationaryMapping)
+        #expect(!artifact.authorizesTelemetrySemantics)
+        #expect(!artifact.authorizesControlWrites)
+        #expect(!artifact.authorizesPairingResetOrUnbind)
 
         #expect(!preflight.authorizesRawFD50CharacteristicCustody)
         #expect(!preflight.authorizesPhysicalFirstAcceptance)
@@ -46,6 +65,7 @@ struct C7D09A22DocumentedTransparentLivePreflightTests {
         await preflight.retire()
         #expect(!preflight.hasActiveAuthenticatedGeneration)
         #expect(await preflight.diagnosticSnapshot() == nil)
+        #expect(await preflight.evidenceArtifact() == nil)
         #expect(await preflight.transportMilestone() == .blockedUnauthenticated)
     }
 
@@ -65,6 +85,7 @@ struct C7D09A22DocumentedTransparentLivePreflightTests {
             authenticatedPreflightSnapshot: snapshot
         )))
         #expect(!preflight.hasActiveAuthenticatedGeneration)
+        #expect(await preflight.evidenceArtifact() == nil)
         #expect(await preflight.transportMilestone() == .blockedUnauthenticated)
     }
 }
