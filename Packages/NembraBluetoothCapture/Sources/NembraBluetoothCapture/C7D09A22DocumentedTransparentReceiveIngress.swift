@@ -24,18 +24,26 @@ public final class C7D09A22DocumentedTransparentReceiveIngress {
 
     public init() {}
 
-    /// Arms ingress for exactly one package-issued authenticated BLE generation and exact
-    /// Tuya device ID. A second begin always retires the previous generation first.
+    /// Arms ingress only for a package-issued generation that is already authenticated by
+    /// the official Smart Life SDK for this same generation. A connection token by itself
+    /// is not authentication authority. A second begin always retires the previous
+    /// generation and device identity first.
     @discardableResult
     public func begin(
         connectionToken: TuyaReadOnlyConnectionToken,
         expectedDeviceID: String,
-        sdkConnectionStartedAtUptimeNanoseconds: UInt64
+        sdkConnectionStartedAtUptimeNanoseconds: UInt64,
+        authenticatedPreflightSnapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot
     ) async -> Bool {
         await retire()
 
         let normalizedExpectedDeviceID = expectedDeviceID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedExpectedDeviceID.isEmpty,
+              authenticatedPreflightSnapshot.connectionGeneration == connectionToken.diagnosticGeneration,
+              authenticatedPreflightSnapshot.authenticationState == .authenticated,
+              authenticatedPreflightSnapshot.authenticationMethod == .smartLifeAppSDK,
+              let authenticatedAt = authenticatedPreflightSnapshot.authenticatedAtUptimeNanoseconds,
+              authenticatedAt >= sdkConnectionStartedAtUptimeNanoseconds,
               let nextSession = C7D09A22AuthenticatedTransparentReceiveSession(
                 connectionToken: connectionToken,
                 expectedDeviceID: normalizedExpectedDeviceID,

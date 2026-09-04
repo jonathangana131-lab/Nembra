@@ -3,6 +3,18 @@ import Testing
 @testable import NembraBluetoothCapture
 
 struct C7D09A22DocumentedTransparentReceiveIngressTests {
+    private func authenticatedContext() async throws -> (
+        ledger: TuyaAuthenticatedReadOnlySessionLedger,
+        token: TuyaReadOnlyConnectionToken,
+        snapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot
+    ) {
+        let ledger = TuyaAuthenticatedReadOnlySessionLedger()
+        let token = try await ledger.beginConnection()
+        try await ledger.markAuthenticationStarted(for: token)
+        try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
+        return (ledger, token, await ledger.currentPreflightSnapshot())
+    }
+
     @Test
     @MainActor
     func lifecycleFailsClosedBeforeBeginAndAfterRetirement() async throws {
@@ -12,12 +24,12 @@ struct C7D09A22DocumentedTransparentReceiveIngressTests {
         #expect(ingress.capture(payload: payload, callbackDeviceID: "demo") == nil)
         #expect(!ingress.hasActiveGeneration)
 
-        let ledger = TuyaAuthenticatedReadOnlySessionLedger()
-        let token = try await ledger.beginConnection()
+        let context = try await authenticatedContext()
         let began = await ingress.begin(
-            connectionToken: token,
+            connectionToken: context.token,
             expectedDeviceID: " demo ",
-            sdkConnectionStartedAtUptimeNanoseconds: 1
+            sdkConnectionStartedAtUptimeNanoseconds: 1,
+            authenticatedPreflightSnapshot: context.snapshot
         )
 
         #expect(began)
@@ -27,7 +39,7 @@ struct C7D09A22DocumentedTransparentReceiveIngressTests {
         #expect(receipt != nil)
         #expect(receipt?.payload == payload)
         #expect(receipt?.callbackDeviceID == "demo")
-        #expect(receipt?.capturedConnectionGeneration == token.diagnosticGeneration)
+        #expect(receipt?.capturedConnectionGeneration == context.token.diagnosticGeneration)
 
         await ingress.retire()
         #expect(!ingress.hasActiveGeneration)
@@ -36,15 +48,33 @@ struct C7D09A22DocumentedTransparentReceiveIngressTests {
 
     @Test
     @MainActor
-    func rejectsWrongDeviceBeforeGenerationStamping() async throws {
+    func unauthenticatedGenerationCannotArmIngress() async throws {
         let ingress = C7D09A22DocumentedTransparentReceiveIngress()
         let ledger = TuyaAuthenticatedReadOnlySessionLedger()
         let token = try await ledger.beginConnection()
+        let snapshot = await ledger.currentPreflightSnapshot()
 
-        #expect(await ingress.begin(
+        #expect(!(await ingress.begin(
             connectionToken: token,
             expectedDeviceID: "demo",
-            sdkConnectionStartedAtUptimeNanoseconds: 1
+            sdkConnectionStartedAtUptimeNanoseconds: 1,
+            authenticatedPreflightSnapshot: snapshot
+        )))
+        #expect(!ingress.hasActiveGeneration)
+        #expect(ingress.capture(payload: Data([0xAB]), callbackDeviceID: "demo") == nil)
+    }
+
+    @Test
+    @MainActor
+    func rejectsWrongDeviceBeforeGenerationStamping() async throws {
+        let ingress = C7D09A22DocumentedTransparentReceiveIngress()
+        let context = try await authenticatedContext()
+
+        #expect(await ingress.begin(
+            connectionToken: context.token,
+            expectedDeviceID: "demo",
+            sdkConnectionStartedAtUptimeNanoseconds: 1,
+            authenticatedPreflightSnapshot: context.snapshot
         ))
 
         #expect(ingress.capture(payload: Data([0xAA]), callbackDeviceID: "other-device") == nil)
@@ -55,13 +85,13 @@ struct C7D09A22DocumentedTransparentReceiveIngressTests {
     @MainActor
     func emptyExpectedDeviceIDCannotArmIngress() async throws {
         let ingress = C7D09A22DocumentedTransparentReceiveIngress()
-        let ledger = TuyaAuthenticatedReadOnlySessionLedger()
-        let token = try await ledger.beginConnection()
+        let context = try await authenticatedContext()
 
         #expect(!(await ingress.begin(
-            connectionToken: token,
+            connectionToken: context.token,
             expectedDeviceID: "   ",
-            sdkConnectionStartedAtUptimeNanoseconds: 1
+            sdkConnectionStartedAtUptimeNanoseconds: 1,
+            authenticatedPreflightSnapshot: context.snapshot
         )))
         #expect(!ingress.hasActiveGeneration)
         #expect(ingress.capture(payload: Data([0xCC]), callbackDeviceID: "demo") == nil)
@@ -71,25 +101,32 @@ struct C7D09A22DocumentedTransparentReceiveIngressTests {
     @MainActor
     func newBeginRetiresOldGenerationAndDeviceBeforeAdmittingCallbacks() async throws {
         let ingress = C7D09A22DocumentedTransparentReceiveIngress()
-        let ledger = TuyaAuthenticatedReadOnlySessionLedger()
+        let first = try await authenticatedContext()
 
-        let firstToken = try await ledger.beginConnection()
         #expect(await ingress.begin(
-            connectionToken: firstToken,
+            connectionToken: first.token,
             expectedDeviceID: "demo-one",
-            sdkConnectionStartedAtUptimeNanoseconds: 1
+            sdkConnectionStartedAtUptimeNanoseconds: 1,
+            authenticatedPreflightSnapshot: first.snapshot
         ))
         let firstReceipt = ingress.capture(
             payload: Data([0xAA]),
             callbackDeviceID: "demo-one"
         )
-        #expect(firstReceipt?.capturedConnectionGeneration == firstToken.diagnosticGeneration)
+        #expect(firstReceipt?.capturedConnectionGeneration == first.token.diagnosticGeneration)
 
-        let secondToken = try await ledger.beginConnection()
+        let secondLedger = TuyaAuthenticatedReadOnlySessionLedger()
+        _ = try await secondLedger.beginConnection()
+        let secondToken = try await secondLedger.beginConnection()
+        try await secondLedger.markAuthenticationStarted(for: secondToken)
+        try await secondLedger.markAuthenticated(for: secondToken, method: .smartLifeAppSDK)
+        let secondSnapshot = await secondLedger.currentPreflightSnapshot()
+
         #expect(await ingress.begin(
             connectionToken: secondToken,
             expectedDeviceID: "demo-two",
-            sdkConnectionStartedAtUptimeNanoseconds: 2
+            sdkConnectionStartedAtUptimeNanoseconds: 2,
+            authenticatedPreflightSnapshot: secondSnapshot
         ))
 
         #expect(ingress.capture(payload: Data([0xBA]), callbackDeviceID: "demo-one") == nil)
