@@ -70,6 +70,20 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
         await handoff.diagnosticSnapshot()
     }
 
+    /// Portable exact-byte evidence for the currently armed authenticated generation.
+    ///
+    /// The artifact is derived only from the package-owned diagnostic snapshot, so the app never
+    /// reconstructs callback bytes or chronology from mutable presentation state. It remains
+    /// documented Smart Life transport evidence only: the callback does not expose the underlying
+    /// GATT service/characteristic tuple required for raw FD50 physical first acceptance.
+    public func evidenceArtifact() async -> C7D09A22DocumentedTransparentEvidenceArtifact? {
+        guard authenticatedSnapshot != nil,
+              let snapshot = await handoff.diagnosticSnapshot() else {
+            return nil
+        }
+        return C7D09A22DocumentedTransparentEvidenceArtifact(snapshot: snapshot)
+    }
+
     /// Terminally retires callback custody before forgetting the authenticated snapshot.
     public func retire() async {
         await handoff.retire()
