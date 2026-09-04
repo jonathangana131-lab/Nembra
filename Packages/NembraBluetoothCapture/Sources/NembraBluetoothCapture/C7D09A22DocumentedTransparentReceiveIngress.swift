@@ -4,9 +4,10 @@ import Foundation
 /// `ThingSmartBLEManagerDelegate.bleReceiveTransparentData(_:devId:)` callback.
 ///
 /// The app adapter owns one instance for the exact official Smart Life BLE attempt.
-/// `capture(...)` is intentionally synchronous so the package connection generation is
-/// sealed at the SDK delegate boundary before any actor hop. `record(...)` then admits
-/// that immutable receipt through the actor-owned authenticated session.
+/// `capture(...)` is intentionally synchronous so the package connection generation and
+/// expected Tuya device identity are sealed at the SDK delegate boundary before any actor
+/// hop. `record(...)` then admits that immutable receipt through the actor-owned
+/// authenticated session.
 ///
 /// This bridge is read-only. It has no API for publishing DPs, transparent writes,
 /// pairing, reset, removal, or unbind. Recorded SDK-transparent bytes remain diagnostic
@@ -18,12 +19,13 @@ public final class C7D09A22DocumentedTransparentReceiveIngress {
     public typealias RecordResult = C7D09A22AuthenticatedTransparentReceiveSession.RecordResult
 
     private var activeConnectionToken: TuyaReadOnlyConnectionToken?
+    private var expectedDeviceID: String?
     private var session: C7D09A22AuthenticatedTransparentReceiveSession?
 
     public init() {}
 
-    /// Arms ingress for exactly one package-issued authenticated BLE generation.
-    /// A second begin always retires the previous generation first.
+    /// Arms ingress for exactly one package-issued authenticated BLE generation and exact
+    /// Tuya device ID. A second begin always retires the previous generation first.
     @discardableResult
     public func begin(
         connectionToken: TuyaReadOnlyConnectionToken,
@@ -32,25 +34,36 @@ public final class C7D09A22DocumentedTransparentReceiveIngress {
     ) async -> Bool {
         await retire()
 
-        guard let nextSession = C7D09A22AuthenticatedTransparentReceiveSession(
-            connectionToken: connectionToken,
-            expectedDeviceID: expectedDeviceID,
-            sdkConnectionStartedAtUptimeNanoseconds: sdkConnectionStartedAtUptimeNanoseconds
-        ) else {
+        let normalizedExpectedDeviceID = expectedDeviceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedExpectedDeviceID.isEmpty,
+              let nextSession = C7D09A22AuthenticatedTransparentReceiveSession(
+                connectionToken: connectionToken,
+                expectedDeviceID: normalizedExpectedDeviceID,
+                sdkConnectionStartedAtUptimeNanoseconds: sdkConnectionStartedAtUptimeNanoseconds
+              ) else {
             return false
         }
 
         activeConnectionToken = connectionToken
+        self.expectedDeviceID = normalizedExpectedDeviceID
         session = nextSession
         return true
     }
 
     /// Call synchronously inside Tuya's documented BLE-manager delegate callback.
-    /// Invalid, empty, unowned, or post-retirement callbacks are discarded here.
+    /// Invalid, empty, unowned, wrong-device, or post-retirement callbacks are discarded
+    /// before an actor hop. This prevents process-global manager callbacks from another
+    /// Tuya device being stamped with the scooter's active package generation.
     public func capture(payload: Data, callbackDeviceID: String) -> Receipt? {
-        C7D09A22GenerationBoundTransparentReceiveReceipt.capture(
+        let normalizedCallbackDeviceID = callbackDeviceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let expectedDeviceID,
+              normalizedCallbackDeviceID == expectedDeviceID else {
+            return nil
+        }
+
+        return C7D09A22GenerationBoundTransparentReceiveReceipt.capture(
             payload: payload,
-            callbackDeviceID: callbackDeviceID,
+            callbackDeviceID: normalizedCallbackDeviceID,
             activeConnectionToken: activeConnectionToken
         )
     }
@@ -70,18 +83,20 @@ public final class C7D09A22DocumentedTransparentReceiveIngress {
         )
     }
 
-    /// Permanently retires the active generation before releasing its token.
-    /// Delayed process-global Tuya callbacks therefore cannot be borrowed by a later attempt.
+    /// Permanently retires the active generation and device identity before releasing its
+    /// token. Delayed process-global Tuya callbacks therefore cannot be borrowed by a later
+    /// attempt or a different selected device.
     public func retire() async {
         if let session {
             await session.retire()
         }
         session = nil
+        expectedDeviceID = nil
         activeConnectionToken = nil
     }
 
     public var hasActiveGeneration: Bool {
-        activeConnectionToken != nil && session != nil
+        activeConnectionToken != nil && expectedDeviceID != nil && session != nil
     }
 
     // SDK-transparent callback custody is diagnostic-only and cannot mint protocol truth.
