@@ -17,6 +17,7 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
 
     private let handoff: C7D09A22DocumentedTransparentDelegateHandoff
     private var authenticatedSnapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot?
+    private var activeGeneration: UInt64?
 
     public init(
         preflightSnapshotProvider: @escaping SnapshotProvider,
@@ -37,6 +38,7 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
         authenticatedPreflightSnapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot
     ) async -> Bool {
         authenticatedSnapshot = nil
+        activeGeneration = nil
         let armed = await handoff.begin(
             connectionToken: connectionToken,
             expectedDeviceID: expectedDeviceID,
@@ -44,6 +46,7 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
         )
         guard armed else { return false }
         self.authenticatedSnapshot = authenticatedPreflightSnapshot
+        self.activeGeneration = connectionToken.diagnosticGeneration
         return true
     }
 
@@ -84,15 +87,33 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
         return C7D09A22DocumentedTransparentEvidenceArtifact(snapshot: snapshot)
     }
 
-    /// Terminally retires callback custody before forgetting the authenticated snapshot.
+    /// Retires only when the caller still owns the exact armed package generation.
+    ///
+    /// This is the preferred live-app terminal path. An asynchronous failure/disconnect callback
+    /// from generation N must never be able to retire a subsequently armed generation N+1.
+    /// Returns `true` only when this call actually retired the active generation.
+    @discardableResult
+    public func retire(connectionToken: TuyaReadOnlyConnectionToken) async -> Bool {
+        guard activeGeneration == connectionToken.diagnosticGeneration else { return false }
+        await handoff.retire()
+        authenticatedSnapshot = nil
+        activeGeneration = nil
+        return true
+    }
+
+    /// Unconditional owner teardown for view/process destruction where no newer generation can
+    /// exist. Live asynchronous lifecycle callbacks should use `retire(connectionToken:)` instead.
     public func retire() async {
         await handoff.retire()
         authenticatedSnapshot = nil
+        activeGeneration = nil
     }
 
     public var hasActiveAuthenticatedGeneration: Bool {
-        authenticatedSnapshot != nil && handoff.hasActiveGeneration
+        authenticatedSnapshot != nil && activeGeneration != nil && handoff.hasActiveGeneration
     }
+
+    public var activeDiagnosticGeneration: UInt64? { activeGeneration }
 
     // Transport evidence cannot authorize protocol meaning or scooter mutation.
     public var authorizesRawFD50CharacteristicCustody: Bool { false }
