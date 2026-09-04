@@ -5,8 +5,13 @@ import Foundation
 /// Smart Life SDK authentication and SDK-level DPS/transparent callbacks are useful
 /// transport evidence, but they are not raw application-characteristic custody. This
 /// gate therefore requires independently observed, non-empty subscribed-notify bytes
-/// on the same authenticated physical transport before any stationary mapping or
-/// telemetry semantics can become eligible.
+/// on the same authenticated physical transport before stationary semantic-mapping
+/// work becomes eligible.
+///
+/// Physical first acceptance is deliberately not telemetry-semantic acceptance. Real
+/// authenticated FD50 bytes prove that there is application payload evidence worth
+/// mapping; they do not prove that any field/DP means speed, battery, mode, light,
+/// brake, power, or another product semantic.
 public enum C7D09A22PhysicalFirstAcceptanceGate {
     public struct Evidence: Equatable, Sendable {
         public let authenticatedPreflight: TuyaAuthenticatedReadOnlyPreflightSnapshot
@@ -54,8 +59,18 @@ public enum C7D09A22PhysicalFirstAcceptanceGate {
         return .accepted
     }
 
-    public static func authorizesTelemetrySemantics(for evidence: Evidence) -> Bool {
+    /// Physical acceptance authorizes only the next read-only evidence phase: bounded,
+    /// stationary semantic mapping against real authenticated payloads.
+    public static func authorizesStationarySemanticMapping(for evidence: Evidence) -> Bool {
         verdict(for: evidence) == .accepted
+    }
+
+    /// A payload existing on the authenticated physical transport does not identify
+    /// the meaning of any field/DP. Semantic authority must be earned independently by
+    /// the mapping/evidence layer after physical first acceptance.
+    public static func authorizesTelemetrySemantics(for evidence: Evidence) -> Bool {
+        _ = evidence
+        return false
     }
 
     public static func authorizesControlWrites(for evidence: Evidence) -> Bool {
