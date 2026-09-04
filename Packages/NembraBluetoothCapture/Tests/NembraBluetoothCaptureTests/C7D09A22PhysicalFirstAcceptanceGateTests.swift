@@ -26,6 +26,7 @@ struct C7D09A22PhysicalFirstAcceptanceGateTests {
         )
 
         #expect(C7D09A22PhysicalFirstAcceptanceGate.verdict(for: evidence) != .accepted)
+        #expect(!C7D09A22PhysicalFirstAcceptanceGate.authorizesStationarySemanticMapping(for: evidence))
         #expect(!C7D09A22PhysicalFirstAcceptanceGate.authorizesTelemetrySemantics(for: evidence))
         #expect(!C7D09A22PhysicalFirstAcceptanceGate.authorizesControlWrites(for: evidence))
         #expect(!C7D09A22PhysicalFirstAcceptanceGate.authorizesPairingResetOrUnbind(for: evidence))
@@ -41,6 +42,7 @@ struct C7D09A22PhysicalFirstAcceptanceGateTests {
             sameAuthenticatedTransportCustodyProven: false
         )
         #expect(C7D09A22PhysicalFirstAcceptanceGate.verdict(for: incomplete) != .accepted)
+        #expect(!C7D09A22PhysicalFirstAcceptanceGate.authorizesStationarySemanticMapping(for: incomplete))
 
         let complete = C7D09A22PhysicalFirstAcceptanceGate.Evidence(
             authenticatedPreflight: readyPreflight(),
@@ -50,7 +52,8 @@ struct C7D09A22PhysicalFirstAcceptanceGateTests {
             sameAuthenticatedTransportCustodyProven: true
         )
         #expect(C7D09A22PhysicalFirstAcceptanceGate.verdict(for: complete) == .accepted)
-        #expect(C7D09A22PhysicalFirstAcceptanceGate.authorizesTelemetrySemantics(for: complete))
+        #expect(C7D09A22PhysicalFirstAcceptanceGate.authorizesStationarySemanticMapping(for: complete))
+        #expect(!C7D09A22PhysicalFirstAcceptanceGate.authorizesTelemetrySemantics(for: complete))
         #expect(!C7D09A22PhysicalFirstAcceptanceGate.authorizesControlWrites(for: complete))
         #expect(!C7D09A22PhysicalFirstAcceptanceGate.authorizesPairingResetOrUnbind(for: complete))
     }
