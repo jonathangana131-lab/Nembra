@@ -27,7 +27,7 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
 
         public var satisfiesDocumentedAuthenticatedTransportAcceptance: Bool {
             milestone == .satisfied &&
-                artifact?.payloadCount ?? 0 > 0 &&
+                (artifact?.payloadCount ?? 0) > 0 &&
                 artifact?.hasPayloadStrictlyBeyondHistoricalRejectionHorizon == true
         }
 
