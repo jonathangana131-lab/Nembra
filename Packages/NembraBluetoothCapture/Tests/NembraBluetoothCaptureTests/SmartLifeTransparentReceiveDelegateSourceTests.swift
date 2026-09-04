@@ -39,6 +39,33 @@ struct SmartLifeTransparentReceiveDelegateSourceTests {
         #expect(source.contains("C7D09A22DocumentedTransparentLivePreflight"))
     }
 
+    @Test("lease uses the actual package live-preflight API and exact token fence")
+    func leaseMatchesLivePreflightAPI() throws {
+        let source = try readRepositoryFile("NembraApp/App/SmartLifeTransparentReceiveDelegate.swift")
+
+        #expect(source.contains("typealias Generation = TuyaReadOnlyConnectionToken"))
+        #expect(source.contains("await preflight.arm("))
+        #expect(source.contains("expectedDeviceID: expectedDeviceID"))
+        #expect(source.contains("authenticatedPreflightSnapshot: authenticatedPreflightSnapshot"))
+        #expect(source.contains("await preflight.retire(connectionToken: connectionToken)"))
+        #expect(source.contains("generation?.diagnosticGeneration == connectionToken.diagnosticGeneration"))
+
+        // These names belonged to an earlier design sketch and are not package APIs.
+        #expect(!source.contains("AuthenticatedConnectionGeneration"))
+        #expect(!source.contains("armAfterSmartLifeAuthentication"))
+        #expect(!source.contains("terminalLifecycleDidOccur(for: armedGeneration)"))
+    }
+
+    @Test("lease never steals or stale-clears the process-global manager delegate")
+    func leaseOwnsDelegateSlotFailClosed() throws {
+        let source = try readRepositoryFile("NembraApp/App/SmartLifeTransparentReceiveDelegate.swift")
+
+        #expect(source.contains("manager.delegate == nil || ownsManagerDelegateSlot"))
+        #expect(source.contains("if ownsManagerDelegateSlot"))
+        #expect(source.contains("manager.delegate = nil"))
+        #expect(source.contains("(installedDelegate as AnyObject) === receiveDelegate"))
+    }
+
     private func readRepositoryFile(_ relativePath: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
