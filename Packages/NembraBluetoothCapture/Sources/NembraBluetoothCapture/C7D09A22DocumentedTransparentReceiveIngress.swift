@@ -25,6 +25,28 @@ public final class C7D09A22DocumentedTransparentReceiveIngress {
 
     public init() {}
 
+    /// Preferred app-adapter entrypoint. Chronology is derived from the immutable package
+    /// authentication snapshot rather than from a second app-owned clock sample. This prevents
+    /// the live SDK adapter from accidentally inventing or drifting the connection-start time
+    /// while wiring Tuya's process-global transparent receive delegate after authentication.
+    @discardableResult
+    public func begin(
+        connectionToken: TuyaReadOnlyConnectionToken,
+        expectedDeviceID: String,
+        authenticatedPreflightSnapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot
+    ) async -> Bool {
+        guard let connectionStartedAt = authenticatedPreflightSnapshot.connectionStartedAtUptimeNanoseconds else {
+            await retire()
+            return false
+        }
+        return await begin(
+            connectionToken: connectionToken,
+            expectedDeviceID: expectedDeviceID,
+            sdkConnectionStartedAtUptimeNanoseconds: connectionStartedAt,
+            authenticatedPreflightSnapshot: authenticatedPreflightSnapshot
+        )
+    }
+
     /// Arms ingress only for a package-issued generation that is already authenticated by
     /// the official Smart Life SDK for this same generation. A connection token by itself
     /// is not authentication authority. A second begin always retires the previous
