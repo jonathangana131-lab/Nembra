@@ -15,6 +15,30 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
     public typealias SnapshotProvider = C7D09A22DocumentedTransparentDelegateHandoff.PreflightSnapshotProvider
     public typealias RecordObserver = C7D09A22DocumentedTransparentDelegateHandoff.RecordObserver
 
+    /// One coherent diagnostic cut for the live field attempt.
+    ///
+    /// `milestone` and `artifact` are derived from the same package-owned transparent-receive
+    /// snapshot so UI/export code cannot accidentally combine a newer milestone with older bytes
+    /// (or vice versa) across actor suspension points. This remains documented SDK transport
+    /// evidence only and never upgrades to raw-FD50 characteristic or scooter-semantic authority.
+    public struct FieldAttemptEvidence: Equatable, Sendable {
+        public let milestone: C7D09A22DocumentedTransparentTransportMilestone.Verdict
+        public let artifact: C7D09A22DocumentedTransparentEvidenceArtifact?
+
+        public var satisfiesDocumentedAuthenticatedTransportAcceptance: Bool {
+            milestone == .satisfied &&
+                artifact?.payloadCount ?? 0 > 0 &&
+                artifact?.hasPayloadStrictlyBeyondHistoricalRejectionHorizon == true
+        }
+
+        public var authorizesRawFD50CharacteristicCustody: Bool { false }
+        public var authorizesPhysicalFirstAcceptance: Bool { false }
+        public var authorizesStationaryMapping: Bool { false }
+        public var authorizesTelemetrySemantics: Bool { false }
+        public var authorizesControlWrites: Bool { false }
+        public var authorizesPairingResetOrUnbind: Bool { false }
+    }
+
     private let handoff: C7D09A22DocumentedTransparentDelegateHandoff
     private var authenticatedSnapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot?
     private var activeGeneration: UInt64?
@@ -82,6 +106,25 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
             authenticatedPreflight: authenticatedSnapshot,
             transparent: await handoff.diagnosticSnapshot()
         )
+    }
+
+    /// Returns one coherent package-owned cut of the live field-attempt milestone plus exact bytes.
+    ///
+    /// Callers should prefer this when rendering/exporting the P0 physical lane because it samples
+    /// the transparent ledger only once. A satisfied value means documented authenticated Tuya
+    /// transport delivered real bytes beyond the historical rejection horizon; it still does not
+    /// claim the underlying FD50 GATT characteristic or any DP meaning.
+    public func fieldAttemptEvidence() async -> FieldAttemptEvidence {
+        guard let authenticatedSnapshot else {
+            return FieldAttemptEvidence(milestone: .blockedUnauthenticated, artifact: nil)
+        }
+        let transparent = await handoff.diagnosticSnapshot()
+        let milestone = C7D09A22DocumentedTransparentTransportMilestone.verdict(
+            authenticatedPreflight: authenticatedSnapshot,
+            transparent: transparent
+        )
+        let artifact = transparent.map(C7D09A22DocumentedTransparentEvidenceArtifact.init(snapshot:))
+        return FieldAttemptEvidence(milestone: milestone, artifact: artifact)
     }
 
     /// Non-secret diagnostics for the exact active generation, if any.
