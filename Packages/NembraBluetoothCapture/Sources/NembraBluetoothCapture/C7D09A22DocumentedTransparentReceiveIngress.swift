@@ -17,6 +17,7 @@ import Foundation
 public final class C7D09A22DocumentedTransparentReceiveIngress {
     public typealias Receipt = C7D09A22GenerationBoundTransparentReceiveReceipt
     public typealias RecordResult = C7D09A22AuthenticatedTransparentReceiveSession.RecordResult
+    public typealias DiagnosticSnapshot = TuyaSmartLifeTransparentReceiveObservationLedger.Snapshot
 
     private var activeConnectionToken: TuyaReadOnlyConnectionToken?
     private var expectedDeviceID: String?
@@ -89,6 +90,18 @@ public final class C7D09A22DocumentedTransparentReceiveIngress {
             preflightSnapshot: preflightSnapshot,
             activeConnectionToken: activeConnectionToken
         )
+    }
+
+    /// Returns only non-secret, read-only transport diagnostics for the currently armed
+    /// authenticated generation. This is the package boundary the app can use to show and
+    /// export whether documented Tuya device-to-app bytes actually arrived and whether a
+    /// payload arrived strictly beyond C7D09A22's historical ~30-second rejection horizon.
+    ///
+    /// A positive snapshot still does not establish the raw FD50 GATT characteristic tuple,
+    /// so it cannot authorize physical first acceptance or any DP/telemetry semantics.
+    public func diagnosticSnapshot() async -> DiagnosticSnapshot? {
+        guard let session else { return nil }
+        return await session.snapshot
     }
 
     /// Permanently retires the active generation and device identity before releasing its
