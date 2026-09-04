@@ -12,6 +12,24 @@ import Foundation
 public struct TuyaSmartLifeTransparentReceiveObservationLedger: Sendable {
     public static let c7d09a22HistoricalRejectionNanoseconds: UInt64 = 30_000_000_000
 
+    /// Keep the diagnostic byte dump bounded. Payloads are retained only whole; Nembra never
+    /// truncates an admitted callback and then presents the truncated bytes as the callback.
+    public static let maximumRetainedPayloadCount = 64
+    public static let maximumRetainedPayloadBytes = 65_536
+
+    public struct RetainedPayload: Equatable, Sendable {
+        public let payload: Data
+        public let receivedAtUptimeNanoseconds: UInt64
+
+        public var byteCount: Int { payload.count }
+        public var hex: String { payload.map { String(format: "%02x", $0) }.joined() }
+
+        public var authorizesRawFD50CharacteristicCustody: Bool { false }
+        public var authorizesPhysicalFirstAcceptance: Bool { false }
+        public var authorizesTelemetrySemantics: Bool { false }
+        public var authorizesControlWrites: Bool { false }
+    }
+
     public struct Snapshot: Equatable, Sendable {
         public let tuyaDeviceID: String
         public let sdkConnectionStartedAtUptimeNanoseconds: UInt64
@@ -19,6 +37,10 @@ public struct TuyaSmartLifeTransparentReceiveObservationLedger: Sendable {
         public let totalByteCount: Int
         public let latestPayloadAtUptimeNanoseconds: UInt64?
         public let hasPayloadStrictlyBeyondHistoricalRejectionHorizon: Bool
+        /// Exact, whole callback bytes retained under the package's bounded diagnostic budget.
+        public let retainedPayloads: [RetainedPayload]
+        public let retainedPayloadByteCount: Int
+        public let omittedPayloadCount: Int
 
         public var authorizesRawFD50CharacteristicCustody: Bool { false }
         public var authorizesPhysicalFirstAcceptance: Bool { false }
@@ -34,6 +56,9 @@ public struct TuyaSmartLifeTransparentReceiveObservationLedger: Sendable {
     private var totalByteCount = 0
     private var latestPayloadAtUptimeNanoseconds: UInt64?
     private var hasPostHorizonPayload = false
+    private var retainedPayloads: [RetainedPayload] = []
+    private var retainedPayloadByteCount = 0
+    private var omittedPayloadCount = 0
 
     public init?(expectedDeviceID: String, sdkConnectionStartedAtUptimeNanoseconds: UInt64) {
         let normalized = expectedDeviceID.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -63,6 +88,17 @@ public struct TuyaSmartLifeTransparentReceiveObservationLedger: Sendable {
         totalByteCount += receipt.byteCount
         latestPayloadAtUptimeNanoseconds = receipt.receivedAtUptimeNanoseconds
 
+        if retainedPayloads.count < Self.maximumRetainedPayloadCount,
+           receipt.byteCount <= Self.maximumRetainedPayloadBytes - retainedPayloadByteCount {
+            retainedPayloads.append(RetainedPayload(
+                payload: receipt.payload,
+                receivedAtUptimeNanoseconds: receipt.receivedAtUptimeNanoseconds
+            ))
+            retainedPayloadByteCount += receipt.byteCount
+        } else {
+            omittedPayloadCount += 1
+        }
+
         let elapsed = receipt.receivedAtUptimeNanoseconds - sdkConnectionStartedAtUptimeNanoseconds
         if elapsed > Self.c7d09a22HistoricalRejectionNanoseconds {
             hasPostHorizonPayload = true
@@ -77,7 +113,10 @@ public struct TuyaSmartLifeTransparentReceiveObservationLedger: Sendable {
             payloadCount: payloadCount,
             totalByteCount: totalByteCount,
             latestPayloadAtUptimeNanoseconds: latestPayloadAtUptimeNanoseconds,
-            hasPayloadStrictlyBeyondHistoricalRejectionHorizon: hasPostHorizonPayload
+            hasPayloadStrictlyBeyondHistoricalRejectionHorizon: hasPostHorizonPayload,
+            retainedPayloads: retainedPayloads,
+            retainedPayloadByteCount: retainedPayloadByteCount,
+            omittedPayloadCount: omittedPayloadCount
         )
     }
 }
