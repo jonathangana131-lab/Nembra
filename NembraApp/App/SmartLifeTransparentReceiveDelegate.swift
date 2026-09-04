@@ -38,8 +38,7 @@ final class SmartLifeTransparentReceiveDelegate: NSObject, ThingSmartBLEManagerD
 /// is not sufficient authority to install the receive path.
 @MainActor
 final class SmartLifeTransparentReceiveLease {
-    typealias Generation =
-        C7D09A22DocumentedTransparentLivePreflight.AuthenticatedConnectionGeneration
+    typealias Generation = TuyaReadOnlyConnectionToken
 
     private let preflight: C7D09A22DocumentedTransparentLivePreflight
     private let manager: ThingSmartBLEManager
@@ -60,43 +59,62 @@ final class SmartLifeTransparentReceiveLease {
     /// callback only if the process-global delegate slot is empty or already ours.
     /// A foreign delegate is never displaced.
     @discardableResult
-    func armAndInstallAfterSmartLifeAuthentication() async -> Generation? {
+    func armAndInstallAfterSmartLifeAuthentication(
+        connectionToken: Generation,
+        expectedDeviceID: String,
+        authenticatedPreflightSnapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot
+    ) async -> Generation? {
         if let generation {
-            return generation
+            return generation.diagnosticGeneration == connectionToken.diagnosticGeneration ? generation : nil
         }
 
-        guard let armedGeneration = await preflight.armAfterSmartLifeAuthentication() else {
+        guard await preflight.arm(
+            connectionToken: connectionToken,
+            expectedDeviceID: expectedDeviceID,
+            authenticatedPreflightSnapshot: authenticatedPreflightSnapshot
+        ) else {
             return nil
         }
 
         guard manager.delegate == nil || ownsManagerDelegateSlot else {
-            preflight.terminalLifecycleDidOccur(for: armedGeneration)
+            _ = await preflight.retire(connectionToken: connectionToken)
             return nil
         }
 
         manager.delegate = receiveDelegate
 
         guard ownsManagerDelegateSlot else {
-            preflight.terminalLifecycleDidOccur(for: armedGeneration)
+            _ = await preflight.retire(connectionToken: connectionToken)
             return nil
         }
 
-        generation = armedGeneration
-        return armedGeneration
+        generation = connectionToken
+        return connectionToken
     }
 
-    /// Terminal teardown is generation-fenced inside the package. The global manager
-    /// slot is cleared only when it still points at this lease's adapter, so a later
-    /// owner cannot be accidentally disconnected by a stale lifecycle callback.
-    func terminalLifecycleDidOccur() {
-        let retiringGeneration = generation
+    /// Terminal teardown is fenced to the exact token that armed this lease. An old
+    /// async callback from generation N cannot clear the manager slot for generation N+1.
+    func terminalLifecycleDidOccur(for connectionToken: Generation) async {
+        guard generation?.diagnosticGeneration == connectionToken.diagnosticGeneration else {
+            return
+        }
 
         if ownsManagerDelegateSlot {
             manager.delegate = nil
         }
 
         generation = nil
-        preflight.terminalLifecycleDidOccur(for: retiringGeneration)
+        _ = await preflight.retire(connectionToken: connectionToken)
+    }
+
+    /// Owner/view teardown may unconditionally retire its own receive path because no
+    /// later generation can be retained by this lease after owner destruction.
+    func terminalOwnerTeardown() async {
+        if ownsManagerDelegateSlot {
+            manager.delegate = nil
+        }
+        generation = nil
+        await preflight.retire()
     }
 
     private var ownsManagerDelegateSlot: Bool {
