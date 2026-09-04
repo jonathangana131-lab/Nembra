@@ -31,6 +31,7 @@ struct C7D09A22DocumentedTransparentLivePreflightTests {
             authenticatedPreflightSnapshot: context.snapshot
         ))
         #expect(preflight.hasActiveAuthenticatedGeneration)
+        #expect(preflight.activeDiagnosticGeneration == context.token.diagnosticGeneration)
         #expect(await preflight.transportMilestone() == .waitingForFirstPayload)
 
         let emptyArtifact = try #require(await preflight.evidenceArtifact())
@@ -62,11 +63,51 @@ struct C7D09A22DocumentedTransparentLivePreflightTests {
         #expect(!preflight.authorizesControlWrites)
         #expect(!preflight.authorizesPairingResetOrUnbind)
 
-        await preflight.retire()
+        #expect(await preflight.retire(connectionToken: context.token))
         #expect(!preflight.hasActiveAuthenticatedGeneration)
+        #expect(preflight.activeDiagnosticGeneration == nil)
         #expect(await preflight.diagnosticSnapshot() == nil)
         #expect(await preflight.evidenceArtifact() == nil)
         #expect(await preflight.transportMilestone() == .blockedUnauthenticated)
+    }
+
+    @Test
+    @MainActor
+    func staleTerminalCannotRetireNewerAuthenticatedGeneration() async throws {
+        let ledger = TuyaAuthenticatedReadOnlySessionLedger()
+        let first = try await ledger.beginConnection()
+        try await ledger.markAuthenticationStarted(for: first)
+        try await ledger.markAuthenticated(for: first, method: .smartLifeAppSDK)
+        let firstSnapshot = await ledger.currentPreflightSnapshot()
+
+        let preflight = C7D09A22DocumentedTransparentLivePreflight(
+            preflightSnapshotProvider: { await ledger.currentPreflightSnapshot() }
+        )
+        #expect(await preflight.arm(
+            connectionToken: first,
+            expectedDeviceID: "demo",
+            authenticatedPreflightSnapshot: firstSnapshot
+        ))
+
+        try await ledger.endConnection(for: first)
+        let second = try await ledger.beginConnection()
+        try await ledger.markAuthenticationStarted(for: second)
+        try await ledger.markAuthenticated(for: second, method: .smartLifeAppSDK)
+        let secondSnapshot = await ledger.currentPreflightSnapshot()
+        #expect(second.diagnosticGeneration > first.diagnosticGeneration)
+        #expect(await preflight.arm(
+            connectionToken: second,
+            expectedDeviceID: "demo",
+            authenticatedPreflightSnapshot: secondSnapshot
+        ))
+
+        #expect(!(await preflight.retire(connectionToken: first)))
+        #expect(preflight.hasActiveAuthenticatedGeneration)
+        #expect(preflight.activeDiagnosticGeneration == second.diagnosticGeneration)
+        #expect(await preflight.transportMilestone() == .waitingForFirstPayload)
+
+        #expect(await preflight.retire(connectionToken: second))
+        #expect(!preflight.hasActiveAuthenticatedGeneration)
     }
 
     @Test
@@ -85,6 +126,7 @@ struct C7D09A22DocumentedTransparentLivePreflightTests {
             authenticatedPreflightSnapshot: snapshot
         )))
         #expect(!preflight.hasActiveAuthenticatedGeneration)
+        #expect(preflight.activeDiagnosticGeneration == nil)
         #expect(await preflight.evidenceArtifact() == nil)
         #expect(await preflight.transportMilestone() == .blockedUnauthenticated)
     }
