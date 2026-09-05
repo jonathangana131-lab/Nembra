@@ -39,6 +39,7 @@ final class SmartLifeTransparentReceiveDelegate: NSObject, ThingSmartBLEManagerD
 @MainActor
 final class SmartLifeTransparentReceiveLease {
     typealias Generation = TuyaReadOnlyConnectionToken
+    typealias FieldAttemptEvidence = C7D09A22DocumentedTransparentLivePreflight.FieldAttemptEvidence
 
     private let preflight: C7D09A22DocumentedTransparentLivePreflight
     private let manager: ThingSmartBLEManager
@@ -90,6 +91,32 @@ final class SmartLifeTransparentReceiveLease {
 
         generation = connectionToken
         return connectionToken
+    }
+
+    /// Returns one coherent package-owned cut of the live documented transport evidence.
+    ///
+    /// This is intentionally exposed through the exact-generation lease rather than by
+    /// letting UI/export code separately sample milestone and payload state. It can establish
+    /// only documented authenticated Tuya transport acceptance; raw FD50 characteristic custody,
+    /// scooter DP semantics, and all control authority remain false in the package evidence.
+    func fieldAttemptEvidence(for connectionToken: Generation) async -> FieldAttemptEvidence? {
+        guard generation?.diagnosticGeneration == connectionToken.diagnosticGeneration,
+              ownsManagerDelegateSlot else {
+            return nil
+        }
+        return await preflight.fieldAttemptEvidence()
+    }
+
+    /// Non-secret receive diagnostics are available only to the currently leased generation.
+    /// Stale generations cannot inspect a later connection's payload custody.
+    func diagnosticSnapshot(
+        for connectionToken: Generation
+    ) async -> C7D09A22DocumentedTransparentReceiveIngress.DiagnosticSnapshot? {
+        guard generation?.diagnosticGeneration == connectionToken.diagnosticGeneration,
+              ownsManagerDelegateSlot else {
+            return nil
+        }
+        return await preflight.diagnosticSnapshot()
     }
 
     /// Terminal teardown is fenced to the exact token that armed this lease. An old
