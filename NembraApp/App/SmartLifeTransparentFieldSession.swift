@@ -16,6 +16,22 @@ final class SmartLifeTransparentFieldSession {
     typealias Generation = TuyaReadOnlyConnectionToken
     typealias FieldAttemptEvidence = C7D09A22DocumentedTransparentLivePreflight.FieldAttemptEvidence
 
+    /// App-local admission diagnostics for installing the documented receive-only callback.
+    ///
+    /// These verdicts deliberately describe only why the manager delegate lease was or was not
+    /// installed. They never promote transparent callback bytes into raw FD50 characteristic
+    /// custody, scooter DP meaning, or mutation authority.
+    enum ArmVerdict: Equatable {
+        case installed
+        case blockedMissingDeviceID
+        case blockedUnauthenticated
+        case blockedWrongAuthenticationMethod
+        case blockedStaleGeneration
+        case blockedDelegateLease
+
+        var installedReceiveOnlyDelegate: Bool { self == .installed }
+    }
+
     private let preflight: C7D09A22DocumentedTransparentLivePreflight
     private let lease: SmartLifeTransparentReceiveLease
 
@@ -39,25 +55,47 @@ final class SmartLifeTransparentFieldSession {
     /// process-global Tuya manager delegate can be leased. A stale or merely transport-successful
     /// snapshot therefore cannot install receive custody even if a caller reaches this method by
     /// mistake. The package-owned preflight remains the final authority.
+    ///
+    /// The explicit verdict is intended for live field diagnostics so a failed installation is
+    /// observable without weakening any admission gate or guessing a recovery write.
+    func armVerdictAfterAuthenticatedLocalBLE(
+        connectionToken: Generation,
+        expectedDeviceID: String,
+        authenticatedPreflightSnapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot
+    ) async -> ArmVerdict {
+        let normalizedDeviceID = expectedDeviceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedDeviceID.isEmpty else {
+            return .blockedMissingDeviceID
+        }
+        guard authenticatedPreflightSnapshot.authenticationState == .authenticated else {
+            return .blockedUnauthenticated
+        }
+        guard authenticatedPreflightSnapshot.authenticationMethod == .smartLifeAppSDK else {
+            return .blockedWrongAuthenticationMethod
+        }
+        guard authenticatedPreflightSnapshot.connectionGeneration == connectionToken.diagnosticGeneration else {
+            return .blockedStaleGeneration
+        }
+
+        let installed = await lease.armAndInstallAfterSmartLifeAuthentication(
+            connectionToken: connectionToken,
+            expectedDeviceID: normalizedDeviceID,
+            authenticatedPreflightSnapshot: authenticatedPreflightSnapshot
+        ) != nil
+        return installed ? .installed : .blockedDelegateLease
+    }
+
     @discardableResult
     func armAfterAuthenticatedLocalBLE(
         connectionToken: Generation,
         expectedDeviceID: String,
         authenticatedPreflightSnapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot
     ) async -> Bool {
-        let normalizedDeviceID = expectedDeviceID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedDeviceID.isEmpty,
-              authenticatedPreflightSnapshot.authenticationState == .authenticated,
-              authenticatedPreflightSnapshot.authenticationMethod == .smartLifeAppSDK,
-              authenticatedPreflightSnapshot.connectionGeneration == connectionToken.diagnosticGeneration else {
-            return false
-        }
-
-        return await lease.armAndInstallAfterSmartLifeAuthentication(
+        await armVerdictAfterAuthenticatedLocalBLE(
             connectionToken: connectionToken,
-            expectedDeviceID: normalizedDeviceID,
+            expectedDeviceID: expectedDeviceID,
             authenticatedPreflightSnapshot: authenticatedPreflightSnapshot
-        ) != nil
+        ).installedReceiveOnlyDelegate
     }
 
     /// Returns one exact-generation coherent cut of the received documented transport
