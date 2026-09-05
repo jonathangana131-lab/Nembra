@@ -11,6 +11,10 @@ struct SmartLifeTransparentFieldSessionSourceTests {
         #expect(source.contains("connectionToken: Generation"))
         #expect(source.contains("expectedDeviceID: String"))
         #expect(source.contains("authenticatedPreflightSnapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot"))
+        #expect(source.contains("authenticatedPreflightSnapshot.authenticationState == .authenticated"))
+        #expect(source.contains("authenticatedPreflightSnapshot.authenticationMethod == .smartLifeAppSDK"))
+        #expect(source.contains("authenticatedPreflightSnapshot.connectionGeneration == connectionToken.diagnosticGeneration"))
+        #expect(source.contains("trimmingCharacters(in: .whitespacesAndNewlines)"))
         #expect(source.contains("armAndInstallAfterSmartLifeAuthentication"))
     }
 
