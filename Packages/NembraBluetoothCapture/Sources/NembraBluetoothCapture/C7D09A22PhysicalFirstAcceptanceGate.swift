@@ -19,19 +19,28 @@ public enum C7D09A22PhysicalFirstAcceptanceGate {
         public let rawNotifyObservedAfterAuthentication: Bool
         public let canonicalFD50CharacteristicTupleProven: Bool
         public let sameAuthenticatedTransportCustodyProven: Bool
+        /// Exact connection generation on which the raw subscribed-notify bytes were observed.
+        ///
+        /// A caller-owned Boolean is not sufficient provenance for physical first acceptance:
+        /// stale callbacks from a retired BLE generation must not be able to satisfy the gate.
+        /// `nil` deliberately fails closed so existing SDK-only/legacy evidence cannot be
+        /// promoted accidentally.
+        public let rawNotifyConnectionGeneration: UInt64?
 
         public init(
             authenticatedPreflight: TuyaAuthenticatedReadOnlyPreflightSnapshot,
             rawNotifyPayloadCount: Int,
             rawNotifyObservedAfterAuthentication: Bool,
             canonicalFD50CharacteristicTupleProven: Bool,
-            sameAuthenticatedTransportCustodyProven: Bool
+            sameAuthenticatedTransportCustodyProven: Bool,
+            rawNotifyConnectionGeneration: UInt64? = nil
         ) {
             self.authenticatedPreflight = authenticatedPreflight
             self.rawNotifyPayloadCount = max(0, rawNotifyPayloadCount)
             self.rawNotifyObservedAfterAuthentication = rawNotifyObservedAfterAuthentication
             self.canonicalFD50CharacteristicTupleProven = canonicalFD50CharacteristicTupleProven
             self.sameAuthenticatedTransportCustodyProven = sameAuthenticatedTransportCustodyProven
+            self.rawNotifyConnectionGeneration = rawNotifyConnectionGeneration
         }
     }
 
@@ -55,6 +64,12 @@ public enum C7D09A22PhysicalFirstAcceptanceGate {
         }
         guard evidence.sameAuthenticatedTransportCustodyProven else {
             return .blocked(reason: "Raw notification evidence is not proven to belong to the same authenticated physical transport.")
+        }
+        guard let rawNotifyConnectionGeneration = evidence.rawNotifyConnectionGeneration else {
+            return .blocked(reason: "Raw notification evidence is missing exact authenticated-generation provenance.")
+        }
+        guard rawNotifyConnectionGeneration == evidence.authenticatedPreflight.connectionGeneration else {
+            return .blocked(reason: "Raw notification evidence belongs to a different or stale connection generation.")
         }
         return .accepted
     }
