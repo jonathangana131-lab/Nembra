@@ -7,7 +7,10 @@ import NembraBluetoothCapture
 /// identify the underlying FD50 GATT characteristic and cannot assign scooter DP semantics.
 struct SmartLifeTransparentFieldEvidenceProjection: Codable, Equatable, Sendable {
     struct Payload: Codable, Equatable, Sendable {
+        let sequence: Int
         let receivedAtUptimeNanoseconds: UInt64
+        let elapsedSinceSDKConnectionNanoseconds: UInt64
+        let byteCount: Int
         let hex: String
     }
 
@@ -15,6 +18,8 @@ struct SmartLifeTransparentFieldEvidenceProjection: Codable, Equatable, Sendable
     let tuyaDeviceID: String
     let payloads: [Payload]
     let payloadCount: Int
+    let totalByteCount: Int
+    let omittedPayloadCount: Int
     let hasPayloadStrictlyBeyondHistoricalRejectionHorizon: Bool
     let satisfiesDocumentedAuthenticatedTransportAcceptance: Bool
 
@@ -35,13 +40,18 @@ struct SmartLifeTransparentFieldEvidenceProjection: Codable, Equatable, Sendable
 
         connectionGeneration = generation
         tuyaDeviceID = artifact.tuyaDeviceID
-        payloads = artifact.payloads.map {
+        payloads = artifact.retainedPayloads.map {
             Payload(
+                sequence: $0.sequence,
                 receivedAtUptimeNanoseconds: $0.receivedAtUptimeNanoseconds,
+                elapsedSinceSDKConnectionNanoseconds: $0.elapsedSinceSDKConnectionNanoseconds,
+                byteCount: $0.byteCount,
                 hex: $0.hex
             )
         }
         payloadCount = artifact.payloadCount
+        totalByteCount = artifact.totalByteCount
+        omittedPayloadCount = artifact.omittedPayloadCount
         hasPayloadStrictlyBeyondHistoricalRejectionHorizon = artifact.hasPayloadStrictlyBeyondHistoricalRejectionHorizon
         satisfiesDocumentedAuthenticatedTransportAcceptance = evidence.satisfiesDocumentedAuthenticatedTransportAcceptance
     }
