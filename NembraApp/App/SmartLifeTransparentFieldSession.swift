@@ -101,8 +101,56 @@ final class SmartLifeTransparentFieldSession {
     /// Returns one exact-generation coherent cut of the received documented transport
     /// bytes and milestone. A positive result is transport evidence only; it is not raw
     /// FD50 characteristic custody and cannot assign any scooter DP meaning.
+    ///
+    /// Every coherent cut is also best-effort persisted as an app-local JSON sidecar. This
+    /// closes the field-artifact gap where the live watchdog could observe authenticated Tuya
+    /// callback bytes while the primary capture JSON only retained the milestone event. The
+    /// sidecar is keyed by the exact authenticated generation, replaced atomically as evidence
+    /// grows, and contains the projection's explicit false authority flags. Persistence failure
+    /// never changes transport acceptance or triggers a scooter-side recovery action.
     func fieldAttemptEvidence(for connectionToken: Generation) async -> FieldAttemptEvidence? {
-        await lease.fieldAttemptEvidence(for: connectionToken)
+        guard let evidence = await lease.fieldAttemptEvidence(for: connectionToken) else {
+            return nil
+        }
+        persistEvidenceSidecarBestEffort(
+            SmartLifeTransparentFieldEvidenceProjection.from(evidence)
+        )
+        return evidence
+    }
+
+    private func persistEvidenceSidecarBestEffort(
+        _ projection: SmartLifeTransparentFieldEvidenceProjection
+    ) {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+
+        guard let data = try? encoder.encode(projection),
+              let applicationSupport = try? FileManager.default.url(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: true
+              ) else {
+            return
+        }
+
+        let directory = applicationSupport
+            .appendingPathComponent("Nembra", isDirectory: true)
+            .appendingPathComponent("PhysicalTruth", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+            let url = directory.appendingPathComponent(
+                "authenticated-transparent-generation-\(projection.connectionGeneration).json",
+                isDirectory: false
+            )
+            try data.write(to: url, options: .atomic)
+        } catch {
+            // Local evidence persistence is deliberately non-authoritative. A filesystem
+            // failure must never alter the authenticated read-only transport lifecycle.
+        }
     }
 
     func diagnosticSnapshot(
