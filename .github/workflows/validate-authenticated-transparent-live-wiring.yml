@@ -107,8 +107,8 @@ jobs:
         env:
           PACKAGE_TEST_OUTCOME: ${{ steps.package_tests.outcome }}
           PHYSICAL_IOS_COMPILE_OUTCOME: ${{ steps.physical_ios_compile.outcome }}
+          VALIDATED_HEAD_SHA: ${{ steps.source.outputs.sha }}
         run: |
-          set -euo pipefail
           derived="${RUNNER_TEMP}/NembraAuthenticatedTransparentLive"
           app_bundle="$(find "$derived/Build/Products" -maxdepth 3 -type d -name '*.app' -print -quit 2>/dev/null || true)"
           app_bundle_present=false
@@ -116,14 +116,25 @@ jobs:
             app_bundle_present=true
           fi
 
-          printf 'AUTHENTICATED_TRANSPARENT_LIVE_VALIDATION head=%s packageTests=%s physicalIOSCompile=%s appBundlePresent=%s physicalHardwareEvidence=false dpSemanticsAssigned=false scooterWritesAuthorized=false resetOrUnbindAuthorized=false\n' \
-            "${{ steps.source.outputs.sha }}" "$PACKAGE_TEST_OUTCOME" "$PHYSICAL_IOS_COMPILE_OUTCOME" "$app_bundle_present" | tee -a "$GITHUB_STEP_SUMMARY"
-
-          if [[ "$PACKAGE_TEST_OUTCOME" != "success" || "$PHYSICAL_IOS_COMPILE_OUTCOME" != "success" ]]; then
-            printf 'Validation failed: packageTests=%s physicalIOSCompile=%s\n' "$PACKAGE_TEST_OUTCOME" "$PHYSICAL_IOS_COMPILE_OUTCOME" >&2
-            exit 1
+          line="AUTHENTICATED_TRANSPARENT_LIVE_VALIDATION head=${VALIDATED_HEAD_SHA} packageTests=${PACKAGE_TEST_OUTCOME} physicalIOSCompile=${PHYSICAL_IOS_COMPILE_OUTCOME} appBundlePresent=${app_bundle_present} physicalHardwareEvidence=false dpSemanticsAssigned=false scooterWritesAuthorized=false resetOrUnbindAuthorized=false"
+          printf '%s\n' "$line"
+          if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+            printf '%s\n' "$line" >> "$GITHUB_STEP_SUMMARY" || true
           fi
 
-          if [[ "$app_bundle_present" != "true" ]]; then
-            printf 'Warning: xcodebuild succeeded but no .app bundle was found under the configured DerivedData products directory. Treat compile outcome as authoritative and keep physicalHardwareEvidence=false.\n' >&2
+          if [[ "$app_bundle_present" != "true" && "$PHYSICAL_IOS_COMPILE_OUTCOME" == "success" ]]; then
+            printf '%s\n' 'Warning: xcodebuild succeeded but no .app bundle was found under the configured DerivedData products directory. Compile outcome remains authoritative; physicalHardwareEvidence remains false.' >&2
           fi
+          exit 0
+
+      - name: Enforce engineering validation gate
+        if: always()
+        shell: bash
+        env:
+          PACKAGE_TEST_OUTCOME: ${{ steps.package_tests.outcome }}
+          PHYSICAL_IOS_COMPILE_OUTCOME: ${{ steps.physical_ios_compile.outcome }}
+        run: |
+          set -euo pipefail
+          printf 'Engineering gate: packageTests=%s physicalIOSCompile=%s\n' "$PACKAGE_TEST_OUTCOME" "$PHYSICAL_IOS_COMPILE_OUTCOME"
+          test "$PACKAGE_TEST_OUTCOME" = "success"
+          test "$PHYSICAL_IOS_COMPILE_OUTCOME" = "success"
