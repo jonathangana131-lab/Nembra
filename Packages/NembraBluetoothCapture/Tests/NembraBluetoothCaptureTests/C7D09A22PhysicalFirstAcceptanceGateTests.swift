@@ -33,23 +33,45 @@ struct C7D09A22PhysicalFirstAcceptanceGateTests {
     }
 
     @Test
-    func rawNotifyMustBePostAuthCanonicalAndSameTransport() {
-        let incomplete = C7D09A22PhysicalFirstAcceptanceGate.Evidence(
+    func rawNotifyMustBePostAuthCanonicalSameTransportAndSameGeneration() {
+        let missingTransportCustody = C7D09A22PhysicalFirstAcceptanceGate.Evidence(
             authenticatedPreflight: readyPreflight(),
             rawNotifyPayloadCount: 1,
             rawNotifyObservedAfterAuthentication: true,
             canonicalFD50CharacteristicTupleProven: true,
-            sameAuthenticatedTransportCustodyProven: false
+            sameAuthenticatedTransportCustodyProven: false,
+            rawNotifyConnectionGeneration: 1
         )
-        #expect(C7D09A22PhysicalFirstAcceptanceGate.verdict(for: incomplete) != .accepted)
-        #expect(!C7D09A22PhysicalFirstAcceptanceGate.authorizesStationarySemanticMapping(for: incomplete))
+        #expect(C7D09A22PhysicalFirstAcceptanceGate.verdict(for: missingTransportCustody) != .accepted)
+        #expect(!C7D09A22PhysicalFirstAcceptanceGate.authorizesStationarySemanticMapping(for: missingTransportCustody))
+
+        let missingGeneration = C7D09A22PhysicalFirstAcceptanceGate.Evidence(
+            authenticatedPreflight: readyPreflight(),
+            rawNotifyPayloadCount: 1,
+            rawNotifyObservedAfterAuthentication: true,
+            canonicalFD50CharacteristicTupleProven: true,
+            sameAuthenticatedTransportCustodyProven: true
+        )
+        #expect(C7D09A22PhysicalFirstAcceptanceGate.verdict(for: missingGeneration) != .accepted)
+
+        let staleGeneration = C7D09A22PhysicalFirstAcceptanceGate.Evidence(
+            authenticatedPreflight: readyPreflight(),
+            rawNotifyPayloadCount: 1,
+            rawNotifyObservedAfterAuthentication: true,
+            canonicalFD50CharacteristicTupleProven: true,
+            sameAuthenticatedTransportCustodyProven: true,
+            rawNotifyConnectionGeneration: 2
+        )
+        #expect(C7D09A22PhysicalFirstAcceptanceGate.verdict(for: staleGeneration) != .accepted)
+        #expect(!C7D09A22PhysicalFirstAcceptanceGate.authorizesStationarySemanticMapping(for: staleGeneration))
 
         let complete = C7D09A22PhysicalFirstAcceptanceGate.Evidence(
             authenticatedPreflight: readyPreflight(),
             rawNotifyPayloadCount: 1,
             rawNotifyObservedAfterAuthentication: true,
             canonicalFD50CharacteristicTupleProven: true,
-            sameAuthenticatedTransportCustodyProven: true
+            sameAuthenticatedTransportCustodyProven: true,
+            rawNotifyConnectionGeneration: 1
         )
         #expect(C7D09A22PhysicalFirstAcceptanceGate.verdict(for: complete) == .accepted)
         #expect(C7D09A22PhysicalFirstAcceptanceGate.authorizesStationarySemanticMapping(for: complete))
