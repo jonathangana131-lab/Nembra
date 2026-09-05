@@ -6,25 +6,103 @@ on:
       - capture/one-time-ble-dump-gpt56
     paths:
       - 'Packages/NembraBluetoothCapture/**'
+      - 'Packages/NembraCore/**'
       - 'Nembra/**'
+      - 'NembraApp/**'
       - 'NembraCapture/**'
       - 'NembraCaptureTests/**'
+      - 'NembraAppTests/**'
+      - 'Nembra.xcodeproj/**'
       - '.github/workflows/validate-authenticated-transparent-live-wiring.yml'
   pull_request:
     paths:
       - 'Packages/NembraBluetoothCapture/**'
+      - 'Packages/NembraCore/**'
       - 'Nembra/**'
+      - 'NembraApp/**'
       - 'NembraCapture/**'
       - 'NembraCaptureTests/**'
+      - 'NembraAppTests/**'
+      - 'Nembra.xcodeproj/**'
       - '.github/workflows/validate-authenticated-transparent-live-wiring.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: authenticated-transparent-live-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  package-tests:
-    runs-on: macos-latest
+  validate-live-wiring:
+    name: Package tests + physical iOS compile
+    runs-on: xcode-27
+    timeout-minutes: 25
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Resolve immutable source head
+        id: source
+        shell: bash
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            test -n "$PR_HEAD_SHA"
+            printf 'sha=%s\n' "$PR_HEAD_SHA" >> "$GITHUB_OUTPUT"
+          else
+            printf 'sha=%s\n' "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout immutable exact head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify exact checkout and trusted toolchain
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse --verify HEAD^{commit})"
+          printf 'Expected exact head: %s\nActual checkout: %s\n' "$EXPECTED_HEAD_SHA" "$actual"
+          test "$actual" = "$EXPECTED_HEAD_SHA"
+          xcodebuild -version
+          swift --version
+          plutil -lint Nembra.xcodeproj/project.pbxproj
+          scripts/validate_pbxproj_references.py
+
       - name: Run Bluetooth capture package tests
-        run: swift test --package-path Packages/NembraBluetoothCapture
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path Packages/NembraBluetoothCapture
+
+      - name: Compile authenticated live wiring for physical iOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          derived="${RUNNER_TEMP}/NembraAuthenticatedTransparentLive"
+          rm -rf "$derived"
+          xcodebuild \
+            -project Nembra.xcodeproj \
+            -scheme Nembra \
+            -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$derived" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Record semantics-free validation boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          product="${RUNNER_TEMP}/NembraAuthenticatedTransparentLive/Build/Products/Debug-iphoneos/Nembra.app"
+          test -d "$product"
+          test -f "$product/Info.plist"
+          printf 'AUTHENTICATED_TRANSPARENT_LIVE_VALIDATED head=%s product=%s physicalHardwareEvidence=false dpSemanticsAssigned=false scooterWritesAuthorized=false resetOrUnbindAuthorized=false\n' \
+            "${{ steps.source.outputs.sha }}" "$product" | tee -a "$GITHUB_STEP_SUMMARY"
