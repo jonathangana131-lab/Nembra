@@ -30,6 +30,37 @@ final class SmartLifeTransparentFieldSession {
         case blockedDelegateLease
 
         var installedReceiveOnlyDelegate: Bool { self == .installed }
+
+        fileprivate var diagnosticCode: String {
+            switch self {
+            case .installed: "installed"
+            case .blockedMissingDeviceID: "blocked_missing_device_id"
+            case .blockedUnauthenticated: "blocked_unauthenticated"
+            case .blockedWrongAuthenticationMethod: "blocked_wrong_authentication_method"
+            case .blockedStaleGeneration: "blocked_stale_generation"
+            case .blockedDelegateLease: "blocked_delegate_lease"
+            }
+        }
+    }
+
+    /// Credential-free, app-local trace of the exact-generation receive-only admission decision.
+    /// This is deliberately diagnostic only: it contains no Tuya secrets, DP values, inferred
+    /// scooter semantics, or mutation authority.
+    private struct ArmDiagnosticProjection: Codable {
+        let schemaVersion: Int
+        let recordedAt: Date
+        let requestedConnectionGeneration: String
+        let snapshotConnectionGeneration: String
+        let authenticationState: String
+        let authenticationMethod: String
+        let hasExpectedDeviceID: Bool
+        let verdict: String
+        let installedReceiveOnlyDelegate: Bool
+        let authorizesRawFD50CharacteristicCustody: Bool
+        let authorizesPhysicalFirstAcceptance: Bool
+        let authorizesTelemetrySemantics: Bool
+        let authorizesControlWrites: Bool
+        let authorizesPairingResetOrUnbind: Bool
     }
 
     private let preflight: C7D09A22DocumentedTransparentLivePreflight
@@ -56,25 +87,38 @@ final class SmartLifeTransparentFieldSession {
     /// snapshot therefore cannot install receive custody even if a caller reaches this method by
     /// mistake. The package-owned preflight remains the final authority.
     ///
-    /// The explicit verdict is intended for live field diagnostics so a failed installation is
-    /// observable without weakening any admission gate or guessing a recovery write.
+    /// Every decision is best-effort persisted as a credential-free exact-generation diagnostic
+    /// so a physical run that never reaches notify bytes still records whether the receive-only
+    /// delegate was actually admitted and, if not, why. Persistence failure is non-authoritative
+    /// and never triggers a scooter-side recovery action.
     func armVerdictAfterAuthenticatedLocalBLE(
         connectionToken: Generation,
         expectedDeviceID: String,
         authenticatedPreflightSnapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot
     ) async -> ArmVerdict {
         let normalizedDeviceID = expectedDeviceID.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        func finish(_ verdict: ArmVerdict) -> ArmVerdict {
+            persistArmDiagnosticBestEffort(
+                verdict: verdict,
+                connectionToken: connectionToken,
+                hasExpectedDeviceID: !normalizedDeviceID.isEmpty,
+                snapshot: authenticatedPreflightSnapshot
+            )
+            return verdict
+        }
+
         guard !normalizedDeviceID.isEmpty else {
-            return .blockedMissingDeviceID
+            return finish(.blockedMissingDeviceID)
         }
         guard authenticatedPreflightSnapshot.authenticationState == .authenticated else {
-            return .blockedUnauthenticated
+            return finish(.blockedUnauthenticated)
         }
         guard authenticatedPreflightSnapshot.authenticationMethod == .smartLifeAppSDK else {
-            return .blockedWrongAuthenticationMethod
+            return finish(.blockedWrongAuthenticationMethod)
         }
         guard authenticatedPreflightSnapshot.connectionGeneration == connectionToken.diagnosticGeneration else {
-            return .blockedStaleGeneration
+            return finish(.blockedStaleGeneration)
         }
 
         let installed = await lease.armAndInstallAfterSmartLifeAuthentication(
@@ -82,7 +126,7 @@ final class SmartLifeTransparentFieldSession {
             expectedDeviceID: normalizedDeviceID,
             authenticatedPreflightSnapshot: authenticatedPreflightSnapshot
         ) != nil
-        return installed ? .installed : .blockedDelegateLease
+        return finish(installed ? .installed : .blockedDelegateLease)
     }
 
     @discardableResult
@@ -118,30 +162,73 @@ final class SmartLifeTransparentFieldSession {
         return evidence
     }
 
+    private func physicalTruthDirectory() throws -> URL {
+        let applicationSupport = try FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        let directory = applicationSupport
+            .appendingPathComponent("Nembra", isDirectory: true)
+            .appendingPathComponent("PhysicalTruth", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        return directory
+    }
+
+    private func persistArmDiagnosticBestEffort(
+        verdict: ArmVerdict,
+        connectionToken: Generation,
+        hasExpectedDeviceID: Bool,
+        snapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot
+    ) {
+        let projection = ArmDiagnosticProjection(
+            schemaVersion: 1,
+            recordedAt: Date(),
+            requestedConnectionGeneration: connectionToken.diagnosticGeneration,
+            snapshotConnectionGeneration: snapshot.connectionGeneration,
+            authenticationState: String(describing: snapshot.authenticationState),
+            authenticationMethod: String(describing: snapshot.authenticationMethod),
+            hasExpectedDeviceID: hasExpectedDeviceID,
+            verdict: verdict.diagnosticCode,
+            installedReceiveOnlyDelegate: verdict.installedReceiveOnlyDelegate,
+            authorizesRawFD50CharacteristicCustody: false,
+            authorizesPhysicalFirstAcceptance: false,
+            authorizesTelemetrySemantics: false,
+            authorizesControlWrites: false,
+            authorizesPairingResetOrUnbind: false
+        )
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+
+        do {
+            let data = try encoder.encode(projection)
+            let directory = try physicalTruthDirectory()
+            let url = directory.appendingPathComponent(
+                "authenticated-transparent-arm-generation-\(connectionToken.diagnosticGeneration).json",
+                isDirectory: false
+            )
+            try data.write(to: url, options: .atomic)
+        } catch {
+            // This trace is observational only. Filesystem/encoding failure must never alter
+            // authentication, transport admission, or scooter state.
+        }
+    }
+
     private func persistEvidenceSidecarBestEffort(
         _ projection: SmartLifeTransparentFieldEvidenceProjection
     ) {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
 
-        guard let data = try? encoder.encode(projection),
-              let applicationSupport = try? FileManager.default.url(
-                for: .applicationSupportDirectory,
-                in: .userDomainMask,
-                appropriateFor: nil,
-                create: true
-              ) else {
-            return
-        }
-
-        let directory = applicationSupport
-            .appendingPathComponent("Nembra", isDirectory: true)
-            .appendingPathComponent("PhysicalTruth", isDirectory: true)
         do {
-            try FileManager.default.createDirectory(
-                at: directory,
-                withIntermediateDirectories: true
-            )
+            let data = try encoder.encode(projection)
+            let directory = try physicalTruthDirectory()
             let url = directory.appendingPathComponent(
                 "authenticated-transparent-generation-\(projection.connectionGeneration).json",
                 isDirectory: false
