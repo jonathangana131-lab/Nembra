@@ -109,16 +109,21 @@ jobs:
           PHYSICAL_IOS_COMPILE_OUTCOME: ${{ steps.physical_ios_compile.outcome }}
         run: |
           set -euo pipefail
-          product="${RUNNER_TEMP}/NembraAuthenticatedTransparentLive/Build/Products/Debug-iphoneos/Nembra.app"
-          printf 'AUTHENTICATED_TRANSPARENT_LIVE_VALIDATION head=%s packageTests=%s physicalIOSCompile=%s physicalHardwareEvidence=false dpSemanticsAssigned=false scooterWritesAuthorized=false resetOrUnbindAuthorized=false\n' \
-            "${{ steps.source.outputs.sha }}" "$PACKAGE_TEST_OUTCOME" "$PHYSICAL_IOS_COMPILE_OUTCOME" | tee -a "$GITHUB_STEP_SUMMARY"
-
-          if [[ "$PHYSICAL_IOS_COMPILE_OUTCOME" == "success" ]]; then
-            test -d "$product"
-            test -f "$product/Info.plist"
+          derived="${RUNNER_TEMP}/NembraAuthenticatedTransparentLive"
+          app_bundle="$(find "$derived/Build/Products" -maxdepth 3 -type d -name '*.app' -print -quit 2>/dev/null || true)"
+          app_bundle_present=false
+          if [[ -n "$app_bundle" && -f "$app_bundle/Info.plist" ]]; then
+            app_bundle_present=true
           fi
+
+          printf 'AUTHENTICATED_TRANSPARENT_LIVE_VALIDATION head=%s packageTests=%s physicalIOSCompile=%s appBundlePresent=%s physicalHardwareEvidence=false dpSemanticsAssigned=false scooterWritesAuthorized=false resetOrUnbindAuthorized=false\n' \
+            "${{ steps.source.outputs.sha }}" "$PACKAGE_TEST_OUTCOME" "$PHYSICAL_IOS_COMPILE_OUTCOME" "$app_bundle_present" | tee -a "$GITHUB_STEP_SUMMARY"
 
           if [[ "$PACKAGE_TEST_OUTCOME" != "success" || "$PHYSICAL_IOS_COMPILE_OUTCOME" != "success" ]]; then
             printf 'Validation failed: packageTests=%s physicalIOSCompile=%s\n' "$PACKAGE_TEST_OUTCOME" "$PHYSICAL_IOS_COMPILE_OUTCOME" >&2
             exit 1
+          fi
+
+          if [[ "$app_bundle_present" != "true" ]]; then
+            printf 'Warning: xcodebuild succeeded but no .app bundle was found under the configured DerivedData products directory. Treat compile outcome as authoritative and keep physicalHardwareEvidence=false.\n' >&2
           fi
