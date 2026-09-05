@@ -1,0 +1,21 @@
+name: Validate authenticated transparent live wiring
+
+on:
+  push:
+    branches:
+      - capture/one-time-ble-dump-gpt56
+    paths:
+      - .github/workflows/validate-authenticated-transparent-live-wiring.yml
+
+permissions:
+  contents: read
+
+jobs:
+  package-tests:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: capture/one-time-ble-dump-gpt56
+      - name: Run Bluetooth capture package tests
+        run: swift test --package-path Packages/NembraBluetoothCapture
