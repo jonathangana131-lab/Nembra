@@ -14,6 +14,18 @@ struct SmartLifeTransparentFieldEvidenceProjection: Codable, Equatable, Sendable
         let hex: String
     }
 
+    /// Read-only status for the first physical transport acceptance gate.
+    ///
+    /// `acceptedSameAuthenticatedGeneration` means only that documented Tuya device->app bytes
+    /// were retained for this exact authenticated generation and that payload evidence crossed
+    /// the historical rejection horizon. It does not establish raw FD50 characteristic custody,
+    /// DP semantics, stationary mapping, or any control/write authority.
+    enum DocumentedTransportAcceptanceState: String, Codable, Equatable, Sendable {
+        case waitingForFirstAuthenticatedPayload
+        case waitingForPayloadBeyondHistoricalRejectionHorizon
+        case acceptedSameAuthenticatedGeneration
+    }
+
     let connectionGeneration: UInt64
     let tuyaDeviceID: String
     let payloads: [Payload]
@@ -22,6 +34,7 @@ struct SmartLifeTransparentFieldEvidenceProjection: Codable, Equatable, Sendable
     let omittedPayloadCount: Int
     let hasPayloadStrictlyBeyondHistoricalRejectionHorizon: Bool
     let satisfiesDocumentedAuthenticatedTransportAcceptance: Bool
+    let documentedTransportAcceptanceState: DocumentedTransportAcceptanceState
 
     let authorizesRawFD50CharacteristicCustody = false
     let authorizesPhysicalFirstAcceptance = false
@@ -54,6 +67,15 @@ struct SmartLifeTransparentFieldEvidenceProjection: Codable, Equatable, Sendable
         omittedPayloadCount = artifact.omittedPayloadCount
         hasPayloadStrictlyBeyondHistoricalRejectionHorizon = artifact.hasPayloadStrictlyBeyondHistoricalRejectionHorizon
         satisfiesDocumentedAuthenticatedTransportAcceptance = evidence.satisfiesDocumentedAuthenticatedTransportAcceptance
+
+        if artifact.payloadCount == 0 {
+            documentedTransportAcceptanceState = .waitingForFirstAuthenticatedPayload
+        } else if artifact.hasPayloadStrictlyBeyondHistoricalRejectionHorizon,
+                  evidence.satisfiesDocumentedAuthenticatedTransportAcceptance {
+            documentedTransportAcceptanceState = .acceptedSameAuthenticatedGeneration
+        } else {
+            documentedTransportAcceptanceState = .waitingForPayloadBeyondHistoricalRejectionHorizon
+        }
     }
 }
 
