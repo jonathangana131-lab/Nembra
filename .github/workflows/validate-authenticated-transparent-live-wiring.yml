@@ -77,23 +77,17 @@ jobs:
           scripts/validate_pbxproj_references.py
 
       - name: Run Bluetooth capture package tests
-        id: package_tests
         shell: bash
         run: |
           set +e
           set -o pipefail
           swift test --package-path Packages/NembraBluetoothCapture 2>&1 | tee "${RUNNER_TEMP}/nembra-bluetooth-capture-tests.log"
           rc=${PIPESTATUS[0]}
-          if [[ "$rc" -eq 0 ]]; then
-            printf 'result=success\n' >> "$GITHUB_OUTPUT"
-          else
-            printf 'result=failure\n' >> "$GITHUB_OUTPUT"
-          fi
-          printf 'exit_code=%s\n' "$rc" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$rc" > "${RUNNER_TEMP}/nembra-package-tests.exit"
           exit 0
 
       - name: Compile authenticated live wiring for physical iOS
-        id: physical_ios_compile
+        if: always()
         shell: bash
         run: |
           set +e
@@ -109,24 +103,22 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build 2>&1 | tee "${RUNNER_TEMP}/nembra-authenticated-transparent-live-build.log"
           rc=${PIPESTATUS[0]}
-          if [[ "$rc" -eq 0 ]]; then
-            printf 'result=success\n' >> "$GITHUB_OUTPUT"
-          else
-            printf 'result=failure\n' >> "$GITHUB_OUTPUT"
-          fi
-          printf 'exit_code=%s\n' "$rc" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$rc" > "${RUNNER_TEMP}/nembra-physical-ios-compile.exit"
           exit 0
 
       - name: Record semantics-free validation boundary
         if: always()
         shell: bash
         env:
-          PACKAGE_TEST_RESULT: ${{ steps.package_tests.outputs.result }}
-          PACKAGE_TEST_EXIT_CODE: ${{ steps.package_tests.outputs.exit_code }}
-          PHYSICAL_IOS_COMPILE_RESULT: ${{ steps.physical_ios_compile.outputs.result }}
-          PHYSICAL_IOS_COMPILE_EXIT_CODE: ${{ steps.physical_ios_compile.outputs.exit_code }}
           VALIDATED_HEAD_SHA: ${{ steps.source.outputs.sha }}
         run: |
+          package_rc="$(cat "${RUNNER_TEMP}/nembra-package-tests.exit" 2>/dev/null || printf 'missing')"
+          compile_rc="$(cat "${RUNNER_TEMP}/nembra-physical-ios-compile.exit" 2>/dev/null || printf 'missing')"
+          package_result=failure
+          compile_result=failure
+          [[ "$package_rc" == "0" ]] && package_result=success
+          [[ "$compile_rc" == "0" ]] && compile_result=success
+
           derived="${RUNNER_TEMP}/NembraAuthenticatedTransparentLive"
           app_bundle="$(find "$derived/Build/Products" -maxdepth 3 -type d -name '*.app' -print -quit 2>/dev/null || true)"
           app_bundle_present=false
@@ -134,25 +126,20 @@ jobs:
             app_bundle_present=true
           fi
 
-          line="AUTHENTICATED_TRANSPARENT_LIVE_VALIDATION head=${VALIDATED_HEAD_SHA} packageTests=${PACKAGE_TEST_RESULT:-not-run} packageExit=${PACKAGE_TEST_EXIT_CODE:-unknown} physicalIOSCompile=${PHYSICAL_IOS_COMPILE_RESULT:-not-run} physicalIOSExit=${PHYSICAL_IOS_COMPILE_EXIT_CODE:-unknown} appBundlePresent=${app_bundle_present} physicalHardwareEvidence=false dpSemanticsAssigned=false scooterWritesAuthorized=false resetOrUnbindAuthorized=false"
+          line="AUTHENTICATED_TRANSPARENT_LIVE_VALIDATION head=${VALIDATED_HEAD_SHA} packageTests=${package_result} packageExit=${package_rc} physicalIOSCompile=${compile_result} physicalIOSExit=${compile_rc} appBundlePresent=${app_bundle_present} physicalHardwareEvidence=false dpSemanticsAssigned=false scooterWritesAuthorized=false resetOrUnbindAuthorized=false"
           printf '%s\n' "$line"
           if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
             printf '%s\n' "$line" >> "$GITHUB_STEP_SUMMARY" || true
-          fi
-
-          if [[ "$app_bundle_present" != "true" && "${PHYSICAL_IOS_COMPILE_RESULT:-}" == "success" ]]; then
-            printf '%s\n' 'Warning: xcodebuild succeeded but no .app bundle was found under the configured DerivedData products directory. Compile result remains authoritative; physicalHardwareEvidence remains false.' >&2
           fi
           exit 0
 
       - name: Enforce engineering validation gate
         if: always()
         shell: bash
-        env:
-          PACKAGE_TEST_RESULT: ${{ steps.package_tests.outputs.result }}
-          PHYSICAL_IOS_COMPILE_RESULT: ${{ steps.physical_ios_compile.outputs.result }}
         run: |
           set -euo pipefail
-          printf 'Engineering gate: packageTests=%s physicalIOSCompile=%s\n' "${PACKAGE_TEST_RESULT:-not-run}" "${PHYSICAL_IOS_COMPILE_RESULT:-not-run}"
-          test "${PACKAGE_TEST_RESULT:-}" = "success"
-          test "${PHYSICAL_IOS_COMPILE_RESULT:-}" = "success"
+          package_rc="$(cat "${RUNNER_TEMP}/nembra-package-tests.exit" 2>/dev/null || printf 'missing')"
+          compile_rc="$(cat "${RUNNER_TEMP}/nembra-physical-ios-compile.exit" 2>/dev/null || printf 'missing')"
+          printf 'Engineering gate: packageExit=%s physicalIOSExit=%s\n' "$package_rc" "$compile_rc"
+          test "$package_rc" = "0"
+          test "$compile_rc" = "0"
