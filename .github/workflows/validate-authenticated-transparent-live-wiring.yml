@@ -77,15 +77,19 @@ jobs:
           scripts/validate_pbxproj_references.py
 
       - name: Run Bluetooth capture package tests
+        id: package_tests
+        continue-on-error: true
         shell: bash
         run: |
-          set -euo pipefail
-          swift test --package-path Packages/NembraBluetoothCapture
+          set -o pipefail
+          swift test --package-path Packages/NembraBluetoothCapture 2>&1 | tee "${RUNNER_TEMP}/nembra-bluetooth-capture-tests.log"
 
       - name: Compile authenticated live wiring for physical iOS
+        id: physical_ios_compile
+        continue-on-error: true
         shell: bash
         run: |
-          set -euo pipefail
+          set -o pipefail
           derived="${RUNNER_TEMP}/NembraAuthenticatedTransparentLive"
           rm -rf "$derived"
           xcodebuild \
@@ -95,14 +99,26 @@ jobs:
             -destination 'generic/platform=iOS' \
             -derivedDataPath "$derived" \
             CODE_SIGNING_ALLOWED=NO \
-            build
+            build 2>&1 | tee "${RUNNER_TEMP}/nembra-authenticated-transparent-live-build.log"
 
       - name: Record semantics-free validation boundary
+        if: always()
         shell: bash
+        env:
+          PACKAGE_TEST_OUTCOME: ${{ steps.package_tests.outcome }}
+          PHYSICAL_IOS_COMPILE_OUTCOME: ${{ steps.physical_ios_compile.outcome }}
         run: |
           set -euo pipefail
           product="${RUNNER_TEMP}/NembraAuthenticatedTransparentLive/Build/Products/Debug-iphoneos/Nembra.app"
-          test -d "$product"
-          test -f "$product/Info.plist"
-          printf 'AUTHENTICATED_TRANSPARENT_LIVE_VALIDATED head=%s product=%s physicalHardwareEvidence=false dpSemanticsAssigned=false scooterWritesAuthorized=false resetOrUnbindAuthorized=false\n' \
-            "${{ steps.source.outputs.sha }}" "$product" | tee -a "$GITHUB_STEP_SUMMARY"
+          printf 'AUTHENTICATED_TRANSPARENT_LIVE_VALIDATION head=%s packageTests=%s physicalIOSCompile=%s physicalHardwareEvidence=false dpSemanticsAssigned=false scooterWritesAuthorized=false resetOrUnbindAuthorized=false\n' \
+            "${{ steps.source.outputs.sha }}" "$PACKAGE_TEST_OUTCOME" "$PHYSICAL_IOS_COMPILE_OUTCOME" | tee -a "$GITHUB_STEP_SUMMARY"
+
+          if [[ "$PHYSICAL_IOS_COMPILE_OUTCOME" == "success" ]]; then
+            test -d "$product"
+            test -f "$product/Info.plist"
+          fi
+
+          if [[ "$PACKAGE_TEST_OUTCOME" != "success" || "$PHYSICAL_IOS_COMPILE_OUTCOME" != "success" ]]; then
+            printf 'Validation failed: packageTests=%s physicalIOSCompile=%s\n' "$PACKAGE_TEST_OUTCOME" "$PHYSICAL_IOS_COMPILE_OUTCOME" >&2
+            exit 1
+          fi
