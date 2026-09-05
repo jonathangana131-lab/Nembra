@@ -18,7 +18,8 @@ struct C7D09A22TransparentExactPayloadEvidenceTests {
             receivedAtUptimeNanoseconds: startedAt + 10
         ))
 
-        #expect(ledger.record(receipt))
+        let recorded = ledger.record(receipt)
+        #expect(recorded)
         let snapshot = ledger.snapshot
         #expect(snapshot.retainedPayloads.count == 1)
         #expect(snapshot.retainedPayloads[0].payload == payload)
@@ -53,7 +54,8 @@ struct C7D09A22TransparentExactPayloadEvidenceTests {
             receivedAtUptimeNanoseconds: startedAt + 1
         ))
 
-        #expect(ledger.record(receipt))
+        let recorded = ledger.record(receipt)
+        #expect(recorded)
         let snapshot = ledger.snapshot
         #expect(snapshot.payloadCount == 1)
         #expect(snapshot.totalByteCount == oversized.count)
@@ -78,7 +80,8 @@ struct C7D09A22TransparentExactPayloadEvidenceTests {
                 expectedDeviceID: "demo",
                 receivedAtUptimeNanoseconds: startedAt + UInt64(index + 1)
             ))
-            #expect(ledger.record(receipt))
+            let recorded = ledger.record(receipt)
+            #expect(recorded)
         }
 
         let snapshot = ledger.snapshot
