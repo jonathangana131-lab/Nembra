@@ -614,6 +614,15 @@ private final class SecureLinkController: NSObject, ObservableObject {
     private var acceptsViewScopedMembershipRequests = false
     private var foregroundIntegrityLossHandled = false
     private var officialConnectionRequestID = UUID()
+#if canImport(ThingSmartHomeKit)
+    private lazy var transparentFieldSession = SmartLifeTransparentFieldSession(
+        preflightSnapshotProvider: { [weak self] in
+            guard let self else { return nil }
+            return await self.sessionLedger.currentPreflightSnapshot()
+        }
+    )
+    private var transparentTransportAcceptanceLoggedGeneration: UInt64?
+#endif
 
     init(device: TuyaAccountBridge.LinkedDevice) {
         deviceID = device.id
@@ -1635,6 +1644,25 @@ private final class SecureLinkController: NSObject, ObservableObject {
                         await recordObservedTransportLoss(token: token)
                         return
                     }
+#if canImport(ThingSmartHomeKit)
+                    let transparentArmVerdict = await transparentFieldSession.armVerdictAfterAuthenticatedLocalBLE(
+                        connectionToken: token,
+                        expectedDeviceID: deviceID,
+                        authenticatedPreflightSnapshot: ledgerSnapshot
+                    )
+                    guard transparentArmVerdict.installedReceiveOnlyDelegate else {
+                        await invalidateInternalLifecycle(
+                            token: token,
+                            message: "Authenticated Tuya local BLE was live, but the documented receive-only transparent delegate could not be leased for this exact generation. No write/reset/unbind fallback was attempted.",
+                            kind: "authenticated_transparent_receive_delegate_not_installed"
+                        )
+                        return
+                    }
+                    log("authenticated_transparent_receive_delegate_installed", [
+                        "generation": String(token.diagnosticGeneration),
+                        "authority": "documented-tuya-device-to-app-receive-only"
+                    ])
+#endif
                     do {
                         try self.fieldAuthorization.admitObservationStart()
                     } catch {
@@ -1746,6 +1774,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 return
             }
         }
+#if canImport(ThingSmartHomeKit)
+        await transparentFieldSession.terminalLifecycleDidOccur(for: token)
+        if transparentTransportAcceptanceLoggedGeneration == token.diagnosticGeneration {
+            transparentTransportAcceptanceLoggedGeneration = nil
+        }
+#endif
         currentConnectionToken = nil
         localBLESettlementToken = nil
         sdkLocalBLEOnline = false
@@ -1980,6 +2014,22 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     return
                 }
 
+#if canImport(ThingSmartHomeKit)
+                if self.transparentTransportAcceptanceLoggedGeneration != token.diagnosticGeneration,
+                   let transparentEvidence = await self.transparentFieldSession.fieldAttemptEvidence(for: token),
+                   transparentEvidence.satisfiesDocumentedAuthenticatedTransportAcceptance,
+                   transparentEvidence.connectionGeneration == token.diagnosticGeneration {
+                    self.transparentTransportAcceptanceLoggedGeneration = token.diagnosticGeneration
+                    self.log("authenticated_transparent_transport_acceptance", [
+                        "generation": String(token.diagnosticGeneration),
+                        "payloadCount": String(transparentEvidence.artifact?.payloadCount ?? 0),
+                        "survivedHistoricalRejectionHorizon": "true",
+                        "authority": "documented-tuya-transport-only"
+                    ])
+                    self.message = "Authenticated Tuya receive bytes survived beyond the historical rejection window for generation \(token.diagnosticGeneration). Physical transport acceptance is proven; raw FD50 characteristic custody and scooter DP semantics remain unassigned."
+                }
+#endif
+
                 switch TuyaAuthenticatedReadOnlyPreflight.verdict(for: self.ledgerSnapshot) {
                 case .readyForStationaryMapping:
                     guard self.buildIdentity.isAuthoritativeFieldBuild else {
@@ -2128,7 +2178,11 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
                 if self.applicationUpdateAdmissionsInFlight == 0,
                    (self.canonicalObservedAgeSeconds ?? 0) > 60,
-                   self.applicationUpdateCount == 0 {
+                   self.applicationUpdateCount == 0
+#if canImport(ThingSmartHomeKit)
+                   && self.transparentTransportAcceptanceLoggedGeneration != token.diagnosticGeneration
+#endif
+                {
                     do {
                         try await sessionLedger.markApplicationObservationTimedOut(for: token)
                     guard self.currentConnectionToken == token,
@@ -2214,6 +2268,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 return
             }
         }
+#if canImport(ThingSmartHomeKit)
+        await transparentFieldSession.terminalLifecycleDidOccur(for: token)
+        if transparentTransportAcceptanceLoggedGeneration == token.diagnosticGeneration {
+            transparentTransportAcceptanceLoggedGeneration = nil
+        }
+#endif
         currentConnectionToken = nil
         localBLESettlementToken = nil
         sdkLocalBLEOnline = false
@@ -2251,6 +2311,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 return
             }
         }
+#if canImport(ThingSmartHomeKit)
+        await transparentFieldSession.terminalLifecycleDidOccur(for: token)
+        if transparentTransportAcceptanceLoggedGeneration == token.diagnosticGeneration {
+            transparentTransportAcceptanceLoggedGeneration = nil
+        }
+#endif
         currentConnectionToken = nil
         localBLESettlementToken = nil
         sdkLocalBLEOnline = false
@@ -2274,6 +2340,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
         guard currentConnectionToken == token else { return }
         watchdog?.cancel()
         watchdog = nil
+#if canImport(ThingSmartHomeKit)
+        await transparentFieldSession.terminalLifecycleDidOccur(for: token)
+        if transparentTransportAcceptanceLoggedGeneration == token.diagnosticGeneration {
+            transparentTransportAcceptanceLoggedGeneration = nil
+        }
+#endif
         currentConnectionToken = nil
         localBLESettlementToken = nil
         sdkLocalBLEOnline = false
@@ -2311,6 +2383,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 return
             }
         }
+#if canImport(ThingSmartHomeKit)
+        await transparentFieldSession.terminalLifecycleDidOccur(for: token)
+        if transparentTransportAcceptanceLoggedGeneration == token.diagnosticGeneration {
+            transparentTransportAcceptanceLoggedGeneration = nil
+        }
+#endif
         currentConnectionToken = nil
         localBLESettlementToken = nil
         sdkLocalBLEOnline = false
@@ -2341,6 +2419,12 @@ private final class SecureLinkController: NSObject, ObservableObject {
             ])
             return
         }
+#if canImport(ThingSmartHomeKit)
+        await transparentFieldSession.terminalLifecycleDidOccur(for: token)
+        if transparentTransportAcceptanceLoggedGeneration == token.diagnosticGeneration {
+            transparentTransportAcceptanceLoggedGeneration = nil
+        }
+#endif
         currentConnectionToken = nil
         localBLESettlementToken = nil
         sdkLocalBLEOnline = false
