@@ -78,17 +78,25 @@ jobs:
 
       - name: Run Bluetooth capture package tests
         id: package_tests
-        continue-on-error: true
         shell: bash
         run: |
+          set +e
           set -o pipefail
           swift test --package-path Packages/NembraBluetoothCapture 2>&1 | tee "${RUNNER_TEMP}/nembra-bluetooth-capture-tests.log"
+          rc=${PIPESTATUS[0]}
+          if [[ "$rc" -eq 0 ]]; then
+            printf 'result=success\n' >> "$GITHUB_OUTPUT"
+          else
+            printf 'result=failure\n' >> "$GITHUB_OUTPUT"
+          fi
+          printf 'exit_code=%s\n' "$rc" >> "$GITHUB_OUTPUT"
+          exit 0
 
       - name: Compile authenticated live wiring for physical iOS
         id: physical_ios_compile
-        continue-on-error: true
         shell: bash
         run: |
+          set +e
           set -o pipefail
           derived="${RUNNER_TEMP}/NembraAuthenticatedTransparentLive"
           rm -rf "$derived"
@@ -100,13 +108,23 @@ jobs:
             -derivedDataPath "$derived" \
             CODE_SIGNING_ALLOWED=NO \
             build 2>&1 | tee "${RUNNER_TEMP}/nembra-authenticated-transparent-live-build.log"
+          rc=${PIPESTATUS[0]}
+          if [[ "$rc" -eq 0 ]]; then
+            printf 'result=success\n' >> "$GITHUB_OUTPUT"
+          else
+            printf 'result=failure\n' >> "$GITHUB_OUTPUT"
+          fi
+          printf 'exit_code=%s\n' "$rc" >> "$GITHUB_OUTPUT"
+          exit 0
 
       - name: Record semantics-free validation boundary
         if: always()
         shell: bash
         env:
-          PACKAGE_TEST_OUTCOME: ${{ steps.package_tests.outcome }}
-          PHYSICAL_IOS_COMPILE_OUTCOME: ${{ steps.physical_ios_compile.outcome }}
+          PACKAGE_TEST_RESULT: ${{ steps.package_tests.outputs.result }}
+          PACKAGE_TEST_EXIT_CODE: ${{ steps.package_tests.outputs.exit_code }}
+          PHYSICAL_IOS_COMPILE_RESULT: ${{ steps.physical_ios_compile.outputs.result }}
+          PHYSICAL_IOS_COMPILE_EXIT_CODE: ${{ steps.physical_ios_compile.outputs.exit_code }}
           VALIDATED_HEAD_SHA: ${{ steps.source.outputs.sha }}
         run: |
           derived="${RUNNER_TEMP}/NembraAuthenticatedTransparentLive"
@@ -116,14 +134,14 @@ jobs:
             app_bundle_present=true
           fi
 
-          line="AUTHENTICATED_TRANSPARENT_LIVE_VALIDATION head=${VALIDATED_HEAD_SHA} packageTests=${PACKAGE_TEST_OUTCOME} physicalIOSCompile=${PHYSICAL_IOS_COMPILE_OUTCOME} appBundlePresent=${app_bundle_present} physicalHardwareEvidence=false dpSemanticsAssigned=false scooterWritesAuthorized=false resetOrUnbindAuthorized=false"
+          line="AUTHENTICATED_TRANSPARENT_LIVE_VALIDATION head=${VALIDATED_HEAD_SHA} packageTests=${PACKAGE_TEST_RESULT:-not-run} packageExit=${PACKAGE_TEST_EXIT_CODE:-unknown} physicalIOSCompile=${PHYSICAL_IOS_COMPILE_RESULT:-not-run} physicalIOSExit=${PHYSICAL_IOS_COMPILE_EXIT_CODE:-unknown} appBundlePresent=${app_bundle_present} physicalHardwareEvidence=false dpSemanticsAssigned=false scooterWritesAuthorized=false resetOrUnbindAuthorized=false"
           printf '%s\n' "$line"
           if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
             printf '%s\n' "$line" >> "$GITHUB_STEP_SUMMARY" || true
           fi
 
-          if [[ "$app_bundle_present" != "true" && "$PHYSICAL_IOS_COMPILE_OUTCOME" == "success" ]]; then
-            printf '%s\n' 'Warning: xcodebuild succeeded but no .app bundle was found under the configured DerivedData products directory. Compile outcome remains authoritative; physicalHardwareEvidence remains false.' >&2
+          if [[ "$app_bundle_present" != "true" && "${PHYSICAL_IOS_COMPILE_RESULT:-}" == "success" ]]; then
+            printf '%s\n' 'Warning: xcodebuild succeeded but no .app bundle was found under the configured DerivedData products directory. Compile result remains authoritative; physicalHardwareEvidence remains false.' >&2
           fi
           exit 0
 
@@ -131,10 +149,10 @@ jobs:
         if: always()
         shell: bash
         env:
-          PACKAGE_TEST_OUTCOME: ${{ steps.package_tests.outcome }}
-          PHYSICAL_IOS_COMPILE_OUTCOME: ${{ steps.physical_ios_compile.outcome }}
+          PACKAGE_TEST_RESULT: ${{ steps.package_tests.outputs.result }}
+          PHYSICAL_IOS_COMPILE_RESULT: ${{ steps.physical_ios_compile.outputs.result }}
         run: |
           set -euo pipefail
-          printf 'Engineering gate: packageTests=%s physicalIOSCompile=%s\n' "$PACKAGE_TEST_OUTCOME" "$PHYSICAL_IOS_COMPILE_OUTCOME"
-          test "$PACKAGE_TEST_OUTCOME" = "success"
-          test "$PHYSICAL_IOS_COMPILE_OUTCOME" = "success"
+          printf 'Engineering gate: packageTests=%s physicalIOSCompile=%s\n' "${PACKAGE_TEST_RESULT:-not-run}" "${PHYSICAL_IOS_COMPILE_RESULT:-not-run}"
+          test "${PACKAGE_TEST_RESULT:-}" = "success"
+          test "${PHYSICAL_IOS_COMPILE_RESULT:-}" = "success"
