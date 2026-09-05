@@ -1,0 +1,218 @@
+name: Wire authenticated transparent field session
+
+on:
+  push:
+    branches:
+      - capture/one-time-ble-dump-gpt56
+    paths:
+      - .github/workflows/wire-authenticated-transparent-field-session.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-live-controller:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: capture/one-time-ble-dump-gpt56
+          fetch-depth: 0
+
+      - name: Wire exact-generation receive-only field session
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          s = path.read_text()
+
+          def replace_once(old: str, new: str, label: str):
+              global s
+              count = s.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one match, found {count}")
+              s = s.replace(old, new, 1)
+
+          replace_once(
+              "    private var officialConnectionRequestID = UUID()\n",
+              """    private var officialConnectionRequestID = UUID()
+#if canImport(ThingSmartHomeKit)
+    private lazy var transparentFieldSession = SmartLifeTransparentFieldSession(
+        preflightSnapshotProvider: { [weak self] in
+            guard let self else { return nil }
+            return await self.sessionLedger.currentPreflightSnapshot()
+        }
+    )
+    private var transparentTransportAcceptanceLoggedGeneration: UInt64?
+#endif
+""",
+              "field session ownership"
+          )
+
+          replace_once(
+              """                    let promotionLocalBLEOnline = promotionDriver.isLocallyConnected(uuid: tuyaUUID)
+                    sdkLocalBLEOnline = promotionLocalBLEOnline
+                    guard promotionLocalBLEOnline else {
+                        await recordObservedTransportLoss(token: token)
+                        return
+                    }
+                    do {
+                        try self.fieldAuthorization.admitObservationStart()
+""",
+              """                    let promotionLocalBLEOnline = promotionDriver.isLocallyConnected(uuid: tuyaUUID)
+                    sdkLocalBLEOnline = promotionLocalBLEOnline
+                    guard promotionLocalBLEOnline else {
+                        await recordObservedTransportLoss(token: token)
+                        return
+                    }
+#if canImport(ThingSmartHomeKit)
+                    let transparentArmVerdict = await transparentFieldSession.armVerdictAfterAuthenticatedLocalBLE(
+                        connectionToken: token,
+                        expectedDeviceID: deviceID,
+                        authenticatedPreflightSnapshot: ledgerSnapshot
+                    )
+                    guard transparentArmVerdict.installedReceiveOnlyDelegate else {
+                        await invalidateInternalLifecycle(
+                            token: token,
+                            message: "Authenticated Tuya local BLE was live, but the documented receive-only transparent delegate could not be leased for this exact generation. No write/reset/unbind fallback was attempted.",
+                            kind: "authenticated_transparent_receive_delegate_not_installed"
+                        )
+                        return
+                    }
+                    log("authenticated_transparent_receive_delegate_installed", [
+                        "generation": String(token.diagnosticGeneration),
+                        "authority": "documented-tuya-device-to-app-receive-only"
+                    ])
+#endif
+                    do {
+                        try self.fieldAuthorization.admitObservationStart()
+""",
+              "authenticated arm seam"
+          )
+
+          replace_once(
+              """                switch TuyaAuthenticatedReadOnlyPreflight.verdict(for: self.ledgerSnapshot) {
+""",
+              """#if canImport(ThingSmartHomeKit)
+                if self.transparentTransportAcceptanceLoggedGeneration != token.diagnosticGeneration,
+                   let transparentEvidence = await self.transparentFieldSession.fieldAttemptEvidence(for: token),
+                   transparentEvidence.satisfiesDocumentedAuthenticatedTransportAcceptance,
+                   transparentEvidence.connectionGeneration == token.diagnosticGeneration {
+                    self.transparentTransportAcceptanceLoggedGeneration = token.diagnosticGeneration
+                    self.log("authenticated_transparent_transport_acceptance", [
+                        "generation": String(token.diagnosticGeneration),
+                        "payloadCount": String(transparentEvidence.artifact?.payloadCount ?? 0),
+                        "survivedHistoricalRejectionHorizon": "true",
+                        "authority": "documented-tuya-transport-only"
+                    ])
+                    self.message = "Authenticated Tuya receive bytes survived beyond the historical rejection window for generation \\(token.diagnosticGeneration). Physical transport acceptance is proven; raw FD50 characteristic custody and scooter DP semantics remain unassigned."
+                }
+#endif
+
+                switch TuyaAuthenticatedReadOnlyPreflight.verdict(for: self.ledgerSnapshot) {
+""",
+              "watchdog transparent milestone"
+          )
+
+          replace_once(
+              """                if self.applicationUpdateAdmissionsInFlight == 0,
+                   (self.canonicalObservedAgeSeconds ?? 0) > 60,
+                   self.applicationUpdateCount == 0 {
+""",
+              """                if self.applicationUpdateAdmissionsInFlight == 0,
+                   (self.canonicalObservedAgeSeconds ?? 0) > 60,
+                   self.applicationUpdateCount == 0
+#if canImport(ThingSmartHomeKit)
+                   && self.transparentTransportAcceptanceLoggedGeneration != token.diagnosticGeneration
+#endif
+                {
+""",
+              "application timeout physical acceptance fence"
+          )
+
+          # Retire receive-only delegate in the common terminal paths after package terminal
+          # mutation has succeeded, before app ownership is cleared.
+          terminal_old = """        currentConnectionToken = nil
+        localBLESettlementToken = nil
+        sdkLocalBLEOnline = false
+        driver = nil
+        await refreshLedgerSnapshot()
+"""
+          terminal_new = """#if canImport(ThingSmartHomeKit)
+        await transparentFieldSession.terminalLifecycleDidOccur(for: token)
+        if transparentTransportAcceptanceLoggedGeneration == token.diagnosticGeneration {
+            transparentTransportAcceptanceLoggedGeneration = nil
+        }
+#endif
+        currentConnectionToken = nil
+        localBLESettlementToken = nil
+        sdkLocalBLEOnline = false
+        driver = nil
+        await refreshLedgerSnapshot()
+"""
+          count = s.count(terminal_old)
+          if count < 4:
+              raise SystemExit(f"terminal retirement seams: expected at least 4 matches, found {count}")
+          s = s.replace(terminal_old, terminal_new)
+
+          path.write_text(s)
+
+      - name: Add live-wiring source contract
+        shell: python
+        run: |
+          from pathlib import Path
+          test = Path("Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/SmartLifeTransparentLiveControllerWiringSourceTests.swift")
+          test.write_text(r'''import Foundation
+import Testing
+
+@Suite("Smart Life transparent live controller wiring source contract")
+struct SmartLifeTransparentLiveControllerWiringSourceTests {
+    private func source() throws -> String {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let repo = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(contentsOf: repo.appendingPathComponent("NembraApp/App/NembraCaptureEntrypoint.swift"), encoding: .utf8)
+    }
+
+    @Test("controller arms receive-only delegate only after authenticated local BLE promotion")
+    func authenticatedArmIsGenerationFenced() throws {
+        let s = try source()
+        #expect(s.contains("markAuthenticated(for: token, method: .smartLifeAppSDK)"))
+        #expect(s.contains("armVerdictAfterAuthenticatedLocalBLE("))
+        #expect(s.contains("authenticatedPreflightSnapshot: ledgerSnapshot"))
+        #expect(s.contains("authenticated_transparent_receive_delegate_installed"))
+    }
+
+    @Test("transport milestone stays semantics-free and prevents false application timeout")
+    func physicalTransportMilestoneIsReadOnly() throws {
+        let s = try source()
+        #expect(s.contains("satisfiesDocumentedAuthenticatedTransportAcceptance"))
+        #expect(s.contains("transparentTransportAcceptanceLoggedGeneration != token.diagnosticGeneration"))
+        #expect(s.contains("raw FD50 characteristic custody and scooter DP semantics remain unassigned"))
+        #expect(!s.contains("publishDps"))
+        #expect(!s.contains("publishDPS"))
+        #expect(!s.contains("removeDevice"))
+        #expect(!s.contains("unbind"))
+    }
+
+    @Test("terminal lifecycle retires exact transparent generation")
+    func terminalLifecycleRetiresReceiveLease() throws {
+        let s = try source()
+        #expect(s.contains("transparentFieldSession.terminalLifecycleDidOccur(for: token)"))
+    }
+}
+''')
+
+      - name: Commit live wiring
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add NembraApp/App/NembraCaptureEntrypoint.swift Packages/NembraBluetoothCapture/Tests/NembraBluetoothCaptureTests/SmartLifeTransparentLiveControllerWiringSourceTests.swift
+          git diff --cached --check
+          git commit -m "Capture: wire authenticated transparent field session live"
+          git push origin HEAD:capture/one-time-ble-dump-gpt56
