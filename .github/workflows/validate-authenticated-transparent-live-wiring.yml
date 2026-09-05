@@ -76,22 +76,17 @@ jobs:
           plutil -lint Nembra.xcodeproj/project.pbxproj
           scripts/validate_pbxproj_references.py
 
-      - name: Run Bluetooth capture package tests
+      - name: Validate package and live physical-iOS wiring
         shell: bash
+        env:
+          VALIDATED_HEAD_SHA: ${{ steps.source.outputs.sha }}
         run: |
           set +e
           set -o pipefail
-          swift test --package-path Packages/NembraBluetoothCapture 2>&1 | tee "${RUNNER_TEMP}/nembra-bluetooth-capture-tests.log"
-          rc=${PIPESTATUS[0]}
-          printf '%s\n' "$rc" > "${RUNNER_TEMP}/nembra-package-tests.exit"
-          exit 0
 
-      - name: Compile authenticated live wiring for physical iOS
-        if: always()
-        shell: bash
-        run: |
-          set +e
-          set -o pipefail
+          swift test --package-path Packages/NembraBluetoothCapture 2>&1 | tee "${RUNNER_TEMP}/nembra-bluetooth-capture-tests.log"
+          package_rc=${PIPESTATUS[0]}
+
           derived="${RUNNER_TEMP}/NembraAuthenticatedTransparentLive"
           rm -rf "$derived"
           xcodebuild \
@@ -102,24 +97,13 @@ jobs:
             -derivedDataPath "$derived" \
             CODE_SIGNING_ALLOWED=NO \
             build 2>&1 | tee "${RUNNER_TEMP}/nembra-authenticated-transparent-live-build.log"
-          rc=${PIPESTATUS[0]}
-          printf '%s\n' "$rc" > "${RUNNER_TEMP}/nembra-physical-ios-compile.exit"
-          exit 0
+          compile_rc=${PIPESTATUS[0]}
 
-      - name: Record semantics-free validation boundary
-        if: always()
-        shell: bash
-        env:
-          VALIDATED_HEAD_SHA: ${{ steps.source.outputs.sha }}
-        run: |
-          package_rc="$(cat "${RUNNER_TEMP}/nembra-package-tests.exit" 2>/dev/null || printf 'missing')"
-          compile_rc="$(cat "${RUNNER_TEMP}/nembra-physical-ios-compile.exit" 2>/dev/null || printf 'missing')"
           package_result=failure
           compile_result=failure
           [[ "$package_rc" == "0" ]] && package_result=success
           [[ "$compile_rc" == "0" ]] && compile_result=success
 
-          derived="${RUNNER_TEMP}/NembraAuthenticatedTransparentLive"
           app_bundle="$(find "$derived/Build/Products" -maxdepth 3 -type d -name '*.app' -print -quit 2>/dev/null || true)"
           app_bundle_present=false
           if [[ -n "$app_bundle" && -f "$app_bundle/Info.plist" ]]; then
@@ -131,15 +115,10 @@ jobs:
           if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
             printf '%s\n' "$line" >> "$GITHUB_STEP_SUMMARY" || true
           fi
-          exit 0
 
-      - name: Enforce engineering validation gate
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          package_rc="$(cat "${RUNNER_TEMP}/nembra-package-tests.exit" 2>/dev/null || printf 'missing')"
-          compile_rc="$(cat "${RUNNER_TEMP}/nembra-physical-ios-compile.exit" 2>/dev/null || printf 'missing')"
-          printf 'Engineering gate: packageExit=%s physicalIOSExit=%s\n' "$package_rc" "$compile_rc"
-          test "$package_rc" = "0"
-          test "$compile_rc" = "0"
+          if [[ "$package_rc" != "0" || "$compile_rc" != "0" ]]; then
+            printf 'Engineering validation failed: packageExit=%s physicalIOSExit=%s\n' "$package_rc" "$compile_rc" >&2
+            exit 1
+          fi
+
+          printf 'Engineering validation passed: packageExit=0 physicalIOSExit=0\n'
