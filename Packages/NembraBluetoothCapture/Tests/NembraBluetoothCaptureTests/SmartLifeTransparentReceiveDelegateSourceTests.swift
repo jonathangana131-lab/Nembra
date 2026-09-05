@@ -66,6 +66,43 @@ struct SmartLifeTransparentReceiveDelegateSourceTests {
         #expect(source.contains("(installedDelegate as AnyObject) === receiveDelegate"))
     }
 
+    @Test("live evidence reads are fenced to the exact leased generation and owned delegate slot")
+    func liveEvidenceReadsAreGenerationFenced() throws {
+        let source = try readRepositoryFile("NembraApp/App/SmartLifeTransparentReceiveDelegate.swift")
+
+        #expect(source.contains("func fieldAttemptEvidence(for connectionToken: Generation) async -> FieldAttemptEvidence?"))
+        #expect(source.contains("func diagnosticSnapshot("))
+        #expect(source.contains("generation?.diagnosticGeneration == connectionToken.diagnosticGeneration"))
+        #expect(source.contains("ownsManagerDelegateSlot else"))
+        #expect(source.contains("return await preflight.fieldAttemptEvidence()"))
+        #expect(source.contains("return await preflight.diagnosticSnapshot()"))
+    }
+
+    @Test("live evidence surface cannot upgrade documented transport into scooter meaning or control")
+    func liveEvidenceDoesNotMintSemanticAuthority() throws {
+        let source = try readRepositoryFile("NembraApp/App/SmartLifeTransparentReceiveDelegate.swift")
+
+        #expect(source.contains("FieldAttemptEvidence"))
+        #expect(source.contains("raw FD50 characteristic custody"))
+        #expect(source.contains("scooter DP semantics"))
+
+        for forbidden in [
+            "publishDps",
+            "sendTransparentData",
+            "resetFactory",
+            "removeDevice",
+            "unbind",
+            "speedDP",
+            "batteryDP",
+            "modeDP",
+            "lightDP",
+            "brakeDP",
+            "powerDP",
+        ] {
+            #expect(!source.contains(forbidden))
+        }
+    }
+
     private func readRepositoryFile(_ relativePath: String) throws -> String {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
