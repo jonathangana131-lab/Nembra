@@ -34,15 +34,28 @@ final class SmartLifeTransparentFieldSession {
 
     /// Installs the documented receive callback only after the caller supplies the exact
     /// package-authenticated generation and its authenticated snapshot.
+    ///
+    /// This app-side boundary deliberately repeats the minimum provenance checks before the
+    /// process-global Tuya manager delegate can be leased. A stale or merely transport-successful
+    /// snapshot therefore cannot install receive custody even if a caller reaches this method by
+    /// mistake. The package-owned preflight remains the final authority.
     @discardableResult
     func armAfterAuthenticatedLocalBLE(
         connectionToken: Generation,
         expectedDeviceID: String,
         authenticatedPreflightSnapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot
     ) async -> Bool {
-        await lease.armAndInstallAfterSmartLifeAuthentication(
+        let normalizedDeviceID = expectedDeviceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedDeviceID.isEmpty,
+              authenticatedPreflightSnapshot.authenticationState == .authenticated,
+              authenticatedPreflightSnapshot.authenticationMethod == .smartLifeAppSDK,
+              authenticatedPreflightSnapshot.connectionGeneration == connectionToken.diagnosticGeneration else {
+            return false
+        }
+
+        return await lease.armAndInstallAfterSmartLifeAuthentication(
             connectionToken: connectionToken,
-            expectedDeviceID: expectedDeviceID,
+            expectedDeviceID: normalizedDeviceID,
             authenticatedPreflightSnapshot: authenticatedPreflightSnapshot
         ) != nil
     }
