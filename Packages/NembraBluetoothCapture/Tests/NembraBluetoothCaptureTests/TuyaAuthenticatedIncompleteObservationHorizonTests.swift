@@ -22,7 +22,7 @@ struct TuyaAuthenticatedIncompleteObservationHorizonTests {
             ledger: ledger,
             token: token,
             authenticatedAt: authenticatedAt,
-            throughOffset: 55_000_000_000
+            throughOffset: 56_000_000_000
         )
         clock.set(authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.maximumIncompleteObservationNanoseconds)
         await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached) {
@@ -51,7 +51,7 @@ struct TuyaAuthenticatedIncompleteObservationHorizonTests {
             ledger: ledger,
             token: token,
             authenticatedAt: authenticatedAt,
-            throughOffset: 55_000_000_000
+            throughOffset: 56_000_000_000
         )
 
         let before = await ledger.currentPreflightSnapshot()
