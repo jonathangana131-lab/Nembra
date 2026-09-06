@@ -107,6 +107,22 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Authenticated application payloads have not survived beyond the historical rejection window yet."))
     }
 
+    @Test("payload exactly at the historical boundary still fails closed")
+    func payloadExactlyAtHistoricalBoundaryBlocks() {
+        let authenticatedAt: UInt64 = 10
+        let snapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
+            authenticationState: .authenticated,
+            authenticationMethod: .smartLifeAppSDK,
+            connectionStartedAtUptimeNanoseconds: 1,
+            authenticatedAtUptimeNanoseconds: authenticatedAt,
+            latestObservedUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds,
+            applicationPayloadCount: 2,
+            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds,
+            connectionGeneration: 1
+        )
+        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Authenticated application payloads have not survived beyond the historical rejection window yet."))
+    }
+
     @Test("authenticated payloads still require full physical stability window")
     func durationRequired() {
         let authenticatedAt: UInt64 = 10
@@ -117,7 +133,7 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
             authenticatedAtUptimeNanoseconds: authenticatedAt,
             latestObservedUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds - 1,
             applicationPayloadCount: 2,
-            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds,
+            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds + 1,
             connectionGeneration: 1
         )
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Authenticated connection has not survived the physical stability window yet."))
@@ -133,7 +149,7 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
             authenticatedAtUptimeNanoseconds: authenticatedAt,
             latestObservedUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds,
             applicationPayloadCount: 2,
-            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds,
+            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds + 1,
             connectionGeneration: 2
         )
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .readyForStationaryMapping)
@@ -149,7 +165,7 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
             authenticatedAtUptimeNanoseconds: authenticatedAt,
             latestObservedUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds,
             applicationPayloadCount: 2,
-            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds,
+            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds + 1,
             connectionGeneration: 3
         )
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Tuya Device Sharing proves account/device authority, not authentication of the current BLE connection generation."))
@@ -197,7 +213,7 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
             authenticatedAtUptimeNanoseconds: authenticatedAt,
             latestObservedUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.maximumIncompleteObservationNanoseconds,
             applicationPayloadCount: 2,
-            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds,
+            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds + 1,
             connectionGeneration: 6
         )
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .readyForStationaryMapping)
