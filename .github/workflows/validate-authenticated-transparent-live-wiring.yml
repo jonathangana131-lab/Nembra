@@ -122,3 +122,14 @@ jobs:
           fi
 
           printf 'Engineering validation passed: packageExit=0 physicalIOSExit=0\n'
+
+      - name: Preserve validation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: authenticated-transparent-live-logs-${{ steps.source.outputs.sha }}
+          path: |
+            ${{ runner.temp }}/nembra-bluetooth-capture-tests.log
+            ${{ runner.temp }}/nembra-authenticated-transparent-live-build.log
+          if-no-files-found: warn
+          retention-days: 7
