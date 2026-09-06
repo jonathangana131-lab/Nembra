@@ -118,6 +118,14 @@ jobs:
 
           if [[ "$package_rc" != "0" || "$compile_rc" != "0" ]]; then
             printf 'Engineering validation failed: packageExit=%s physicalIOSExit=%s\n' "$package_rc" "$compile_rc" >&2
+            if [[ "$package_rc" != "0" ]]; then
+              printf '\n===== PACKAGE FAILURE TAIL =====\n' >&2
+              tail -n 120 "${RUNNER_TEMP}/nembra-bluetooth-capture-tests.log" >&2 || true
+            fi
+            if [[ "$compile_rc" != "0" ]]; then
+              printf '\n===== PHYSICAL IOS FAILURE DIAGNOSTICS =====\n' >&2
+              grep -E -n '(^|[[:space:]])(error:|fatal error:|warning:)|BUILD FAILED|The following build commands failed' "${RUNNER_TEMP}/nembra-authenticated-transparent-live-build.log" | tail -n 160 >&2 || true
+            fi
             exit 1
           fi
 
