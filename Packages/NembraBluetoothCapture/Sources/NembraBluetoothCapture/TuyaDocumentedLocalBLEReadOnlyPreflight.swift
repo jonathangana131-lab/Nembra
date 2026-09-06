@@ -17,6 +17,8 @@ import Foundation
 /// - `TuyaSmartBLEManager.deviceStatue(withUUID:)` -> `sdkReportsLocalBLEOnline`
 /// - `TuyaSmartBLEManager.connectBLE(withUUID:productKey:success:failure:)` may be used only to
 ///   establish the already-activated device's BLE connection when the status above is false.
+/// - `productKey` must come from that same linked account device record. Merely knowing or guessing
+///   a product key from advertising, public metadata, or another device never satisfies admission.
 ///
 /// Pairing/activation, DP publishing, transparent writes, OTA, reset, removal and unbind are not
 /// part of this contract and cannot be authorized by a successful verdict.
@@ -28,6 +30,7 @@ public struct TuyaDocumentedLocalBLEReadOnlySnapshot: Equatable, Sendable {
     public let authenticationMethod: TuyaReadOnlyAuthenticationMethod
     public let accountSessionAuthenticated: Bool
     public let sdkAdapterProvesSelectedPeripheralBinding: Bool
+    public let sdkAdapterProvesProductKeyBelongsToAccountDevice: Bool
     public let sdkReportsLocalBLEOnline: Bool
 
     public init(
@@ -38,6 +41,7 @@ public struct TuyaDocumentedLocalBLEReadOnlySnapshot: Equatable, Sendable {
         authenticationMethod: TuyaReadOnlyAuthenticationMethod,
         accountSessionAuthenticated: Bool,
         sdkAdapterProvesSelectedPeripheralBinding: Bool,
+        sdkAdapterProvesProductKeyBelongsToAccountDevice: Bool,
         sdkReportsLocalBLEOnline: Bool
     ) {
         self.selectedPeripheralIdentifier = selectedPeripheralIdentifier
@@ -47,6 +51,7 @@ public struct TuyaDocumentedLocalBLEReadOnlySnapshot: Equatable, Sendable {
         self.authenticationMethod = authenticationMethod
         self.accountSessionAuthenticated = accountSessionAuthenticated
         self.sdkAdapterProvesSelectedPeripheralBinding = sdkAdapterProvesSelectedPeripheralBinding
+        self.sdkAdapterProvesProductKeyBelongsToAccountDevice = sdkAdapterProvesProductKeyBelongsToAccountDevice
         self.sdkReportsLocalBLEOnline = sdkReportsLocalBLEOnline
     }
 }
@@ -85,6 +90,9 @@ public enum TuyaDocumentedLocalBLEReadOnlyPreflight {
         }
         guard snapshot.sdkAdapterProvesSelectedPeripheralBinding else {
             return .blocked(reason: "The Smart Life adapter has not proven that the selected CoreBluetooth peripheral is the linked account device.")
+        }
+        guard snapshot.sdkAdapterProvesProductKeyBelongsToAccountDevice else {
+            return .blocked(reason: "The Smart Life adapter has not proven that the product key came from the same linked account device.")
         }
         guard snapshot.sdkReportsLocalBLEOnline else {
             return .blocked(reason: "Smart Life SDK does not report the linked device locally connected over BLE.")
