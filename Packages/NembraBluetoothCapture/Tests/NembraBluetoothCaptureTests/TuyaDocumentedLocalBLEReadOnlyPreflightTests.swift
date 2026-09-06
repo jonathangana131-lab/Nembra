@@ -9,7 +9,7 @@ struct TuyaDocumentedLocalBLEReadOnlyPreflightTests {
         accountDeviceUUID: String? = nil,
         productKey: String = "account-backed-product-key",
         generation: UInt64 = 9,
-        method: TuyaAuthenticationProvenance = .smartLifeAppSDK,
+        method: TuyaReadOnlyAuthenticationMethod = .smartLifeAppSDK,
         accountAuthenticated: Bool = true,
         adapterBindingProven: Bool = true,
         localBLEOnline: Bool = true
