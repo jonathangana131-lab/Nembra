@@ -84,7 +84,7 @@ struct TuyaAuthenticatedIncompleteObservationHorizonTests {
             authenticatedAt: authenticatedAt,
             throughOffset: 26_000_000_000
         )
-        clock.set(authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds)
+        clock.set(authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds + 1)
         try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
         try await pollContinuously(
             clock: clock,
