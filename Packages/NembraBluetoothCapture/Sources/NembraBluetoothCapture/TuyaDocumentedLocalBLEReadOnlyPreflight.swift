@@ -25,7 +25,7 @@ public struct TuyaDocumentedLocalBLEReadOnlySnapshot: Equatable, Sendable {
     public let accountDeviceUUID: String
     public let productKey: String
     public let connectionGeneration: UInt64
-    public let authenticationMethod: TuyaAuthenticationProvenance
+    public let authenticationMethod: TuyaReadOnlyAuthenticationMethod
     public let accountSessionAuthenticated: Bool
     public let sdkAdapterProvesSelectedPeripheralBinding: Bool
     public let sdkReportsLocalBLEOnline: Bool
@@ -35,7 +35,7 @@ public struct TuyaDocumentedLocalBLEReadOnlySnapshot: Equatable, Sendable {
         accountDeviceUUID: String,
         productKey: String,
         connectionGeneration: UInt64,
-        authenticationMethod: TuyaAuthenticationProvenance,
+        authenticationMethod: TuyaReadOnlyAuthenticationMethod,
         accountSessionAuthenticated: Bool,
         sdkAdapterProvesSelectedPeripheralBinding: Bool,
         sdkReportsLocalBLEOnline: Bool
