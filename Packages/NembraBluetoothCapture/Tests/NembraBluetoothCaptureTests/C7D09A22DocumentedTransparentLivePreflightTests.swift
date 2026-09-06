@@ -15,6 +15,21 @@ struct C7D09A22DocumentedTransparentLivePreflightTests {
         return (ledger, token, await ledger.currentPreflightSnapshot())
     }
 
+    @MainActor
+    private func waitForPayloadCount(
+        _ expectedCount: Int,
+        in preflight: C7D09A22DocumentedTransparentLivePreflight
+    ) async throws -> C7D09A22DocumentedTransparentEvidenceArtifact {
+        for _ in 0..<100 {
+            if let artifact = await preflight.evidenceArtifact(),
+               artifact.payloadCount == expectedCount {
+                return artifact
+            }
+            await Task.yield()
+        }
+        return try #require(await preflight.evidenceArtifact())
+    }
+
     @Test
     @MainActor
     func livePreflightArmsOnlyAuthenticatedGenerationAndRetiresFailClosed() async throws {
@@ -41,10 +56,9 @@ struct C7D09A22DocumentedTransparentLivePreflightTests {
         #expect(!emptyArtifact.authorizesPhysicalFirstAcceptance)
 
         preflight.receive(payload: Data([0x01, 0x02]), callbackDeviceID: "demo")
-        await Task.yield()
+        let artifact = try await waitForPayloadCount(1, in: preflight)
         #expect(await preflight.transportMilestone() == .waitingForHistoricalRejectionWindow)
 
-        let artifact = try #require(await preflight.evidenceArtifact())
         #expect(artifact.tuyaDeviceID == "demo")
         #expect(artifact.payloadCount == 1)
         #expect(artifact.totalByteCount == 2)
@@ -97,8 +111,7 @@ struct C7D09A22DocumentedTransparentLivePreflightTests {
         #expect(empty.retainedPayloads.isEmpty)
 
         preflight.receiveDocumentedSmartLifeCallback(payload: Data([0xaa, 0x55]), deviceID: " demo ")
-        await Task.yield()
-        let admitted = try #require(await preflight.evidenceArtifact())
+        let admitted = try await waitForPayloadCount(1, in: preflight)
         #expect(admitted.payloadCount == 1)
         #expect(admitted.totalByteCount == 2)
         #expect(admitted.retainedPayloads.map(\.hex) == ["aa55"])
