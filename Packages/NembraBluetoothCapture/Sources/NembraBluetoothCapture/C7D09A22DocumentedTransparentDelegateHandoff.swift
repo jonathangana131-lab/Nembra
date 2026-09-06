@@ -26,6 +26,7 @@ public final class C7D09A22DocumentedTransparentDelegateHandoff {
     private let preflightSnapshotProvider: PreflightSnapshotProvider
     private let recordObserver: RecordObserver?
     private var isRetired = true
+    private var pendingRecordTail: Task<Void, Never>?
 
     public init(
         ingress: C7D09A22DocumentedTransparentReceiveIngress = .init(),
@@ -59,13 +60,18 @@ public final class C7D09A22DocumentedTransparentDelegateHandoff {
     ///
     /// Generation/device custody is captured before the asynchronous task is created. Empty,
     /// wrong-device, unowned, or retired callbacks therefore never reach the snapshot provider.
+    /// Accepted receipts are serialized into one package-owned tail so a later diagnostic read can
+    /// deterministically observe every callback accepted before that read without scheduler sleeps
+    /// or retries. The tail never retries rejected data and never changes generation ownership.
     public func receive(payload: Data, callbackDeviceID: String) {
         guard !isRetired,
               let receipt = ingress.capture(payload: payload, callbackDeviceID: callbackDeviceID) else {
             return
         }
 
-        Task { @MainActor [weak self] in
+        let previousRecord = pendingRecordTail
+        let recordTask = Task { @MainActor [weak self] in
+            await previousRecord?.value
             guard let self, !self.isRetired,
                   let snapshot = await self.preflightSnapshotProvider() else {
                 return
@@ -73,11 +79,22 @@ public final class C7D09A22DocumentedTransparentDelegateHandoff {
             let result = await self.ingress.record(receipt, preflightSnapshot: snapshot)
             self.recordObserver?(result)
         }
+        pendingRecordTail = recordTask
+    }
+
+    /// Waits for callbacks already admitted synchronously by this handoff to finish their
+    /// package-owned authenticated record step. This is a diagnostic/evidence ordering barrier,
+    /// not a transport retry, write, or authority escalation.
+    private func drainAcceptedRecords() async {
+        let tail = pendingRecordTail
+        await tail?.value
     }
 
     /// Non-secret transport diagnostics only. A positive result still does not prove a raw FD50
     /// GATT service/characteristic tuple and therefore cannot satisfy physical first acceptance.
     public func diagnosticSnapshot() async -> C7D09A22DocumentedTransparentReceiveIngress.DiagnosticSnapshot? {
+        guard !isRetired else { return nil }
+        await drainAcceptedRecords()
         guard !isRetired else { return nil }
         return await ingress.diagnosticSnapshot()
     }
@@ -86,6 +103,9 @@ public final class C7D09A22DocumentedTransparentDelegateHandoff {
     /// is discarded by the local retirement check and by the ingress/session generation checks.
     public func retire() async {
         isRetired = true
+        let tail = pendingRecordTail
+        pendingRecordTail = nil
+        await tail?.value
         await ingress.retire()
     }
 
