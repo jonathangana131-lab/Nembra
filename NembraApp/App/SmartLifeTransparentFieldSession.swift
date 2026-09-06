@@ -246,9 +246,15 @@ final class SmartLifeTransparentFieldSession {
         await lease.diagnosticSnapshot(for: connectionToken)
     }
 
-    /// Exact-generation terminal retirement. Stale callbacks cannot retire a later field
-    /// generation because the underlying lease is generation-fenced.
+    /// Exact-generation terminal retirement. Before releasing the receive lease, persist one
+    /// final coherent evidence cut for this exact authenticated generation. That makes a field
+    /// attempt diagnostically useful even when it terminates with zero application payloads or
+    /// before a UI/watchdog performs another evidence read. The snapshot remains observational:
+    /// it cannot promote transport evidence into physical acceptance or authorize any command.
+    /// Stale callbacks still cannot retire a later field generation because the underlying lease
+    /// remains generation-fenced.
     func terminalLifecycleDidOccur(for connectionToken: Generation) async {
+        _ = await fieldAttemptEvidence(for: connectionToken)
         await lease.terminalLifecycleDidOccur(for: connectionToken)
     }
 
