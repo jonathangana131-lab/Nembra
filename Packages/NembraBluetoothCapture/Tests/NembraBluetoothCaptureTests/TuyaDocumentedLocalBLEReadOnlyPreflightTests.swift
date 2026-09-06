@@ -12,6 +12,7 @@ struct TuyaDocumentedLocalBLEReadOnlyPreflightTests {
         method: TuyaReadOnlyAuthenticationMethod = .smartLifeAppSDK,
         accountAuthenticated: Bool = true,
         adapterBindingProven: Bool = true,
+        accountProductKeyProven: Bool = true,
         localBLEOnline: Bool = true
     ) -> TuyaDocumentedLocalBLEReadOnlySnapshot {
         TuyaDocumentedLocalBLEReadOnlySnapshot(
@@ -22,6 +23,7 @@ struct TuyaDocumentedLocalBLEReadOnlyPreflightTests {
             authenticationMethod: method,
             accountSessionAuthenticated: accountAuthenticated,
             sdkAdapterProvesSelectedPeripheralBinding: adapterBindingProven,
+            sdkAdapterProvesProductKeyBelongsToAccountDevice: accountProductKeyProven,
             sdkReportsLocalBLEOnline: localBLEOnline
         )
     }
@@ -55,6 +57,14 @@ struct TuyaDocumentedLocalBLEReadOnlyPreflightTests {
     func unprovenPeripheralToAccountDeviceBindingFailsClosed() {
         let verdict = TuyaDocumentedLocalBLEReadOnlyPreflight.verdict(
             for: snapshot(adapterBindingProven: false)
+        )
+        #expect(verdict != .readyForAuthenticatedReceiveObservation)
+    }
+
+    @Test
+    func productKeyMustBeProvenFromSameLinkedAccountDevice() {
+        let verdict = TuyaDocumentedLocalBLEReadOnlyPreflight.verdict(
+            for: snapshot(accountProductKeyProven: false)
         )
         #expect(verdict != .readyForAuthenticatedReceiveObservation)
     }
