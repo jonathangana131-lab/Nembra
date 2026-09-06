@@ -61,11 +61,10 @@ public enum TuyaAuthenticatedReadOnlyPreflight {
     /// Physical acceptance is intentionally stricter than the observed ~29.93 s rejection.
     public static let minimumAuthenticatedConnectionNanoseconds: UInt64 = 45_000_000_000
 
-    /// Require real application evidence strictly after the historical unauthenticated rejection
-    /// window, not merely at its boundary and not merely an initial SDK state replay followed by
-    /// generic BLE liveness. This proves that the authenticated application/notify path itself
-    /// survived beyond the ~30 s failure mode.
-    public static let minimumPostAuthenticationPayloadSurvivalNanoseconds: UInt64 = 30_000_000_000
+    /// First acceptable application-evidence age after authentication. Encoding the historical
+    /// 30-second boundary as 30 s + 1 ns lets every caller use one inclusive threshold while still
+    /// preserving the physical rule that evidence at exactly 30.000 s is insufficient.
+    public static let minimumPostAuthenticationPayloadSurvivalNanoseconds: UInt64 = 30_000_000_001
 
     /// A single post-auth callback can be an initial state replay. Require repeated application
     /// evidence before physical mapping can unlock so transport liveness alone cannot turn one
@@ -116,7 +115,7 @@ public enum TuyaAuthenticatedReadOnlyPreflight {
               latest >= latestPayload else {
             return .blocked(reason: "Authenticated connection chronology is unavailable or invalid.")
         }
-        guard latestPayload - authenticatedAt > minimumPostAuthenticationPayloadSurvivalNanoseconds else {
+        guard latestPayload - authenticatedAt >= minimumPostAuthenticationPayloadSurvivalNanoseconds else {
             return .blocked(reason: "Authenticated application payloads have not survived beyond the historical rejection window yet.")
         }
         guard latest - authenticatedAt >= minimumAuthenticatedConnectionNanoseconds else {
