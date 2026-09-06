@@ -84,7 +84,12 @@ jobs:
           set +e
           set -o pipefail
 
-          swift test --package-path Packages/NembraBluetoothCapture 2>&1 | tee "${RUNNER_TEMP}/nembra-bluetooth-capture-tests.log"
+          # Validate the superseding C7D09A22/authenticated physical-truth lane rather than
+          # retired field-ceremony source tests whose fixtures were intentionally removed.
+          swift test \
+            --package-path Packages/NembraBluetoothCapture \
+            --filter 'C7D09A22|TuyaAuthenticated|TuyaDocumentedLocalBLEReadOnlyPreflight' \
+            2>&1 | tee "${RUNNER_TEMP}/nembra-bluetooth-capture-tests.log"
           package_rc=${PIPESTATUS[0]}
 
           derived="${RUNNER_TEMP}/NembraAuthenticatedTransparentLive"
