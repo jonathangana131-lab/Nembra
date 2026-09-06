@@ -18,7 +18,7 @@ struct TuyaAuthenticatedTerminalHorizonTests {
         try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
 
         let secondPayloadTarget =
-            2_000 + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
+            2_000 + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds + 1
         try await advanceContinuously(
             clock: clock,
             ledger: ledger,
