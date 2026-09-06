@@ -416,9 +416,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
         var evidence: [String]
 
         var title: String { name?.isEmpty == false ? name! : "Correlated Bluetooth target" }
-        // Current target authority is earned only by the package-owned repeated
-        // OFF1→ON1→OFF2→ON2 correlation series. A historical capture UUID may
-        // remain descriptive evidence but never mints current-session authority.
         var likely: Bool { freshlyCorrelated }
     }
 
@@ -468,9 +465,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
         let details: [String: String]
     }
 
-    /// Sanitized, replayable projection of the exact package-issued four-window
-    /// target-correlation result. This preserves why a full UUID was correlated;
-    /// it does not promote that UUID into permanent scooter identity.
     struct CorrelationProvenance: Codable, Equatable {
         struct Window: Codable, Equatable {
             let phase: String
@@ -553,7 +547,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     @Published private(set) var phase: Phase = .idle {
         didSet {
-            // Every failed app lifecycle is terminal for the one-time authorization attempt.
             if phase == .failed {
                 fieldAuthorization.revoke()
             }
@@ -668,10 +661,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func activateMembershipRequestsForView() {
-        // A fast inactive -> active transition must not reset the duplicate-retirement fence
-        // while an authenticated generation is terminalizing. Once the official Tuya driver has
-        // been handed out, package correlation is permanently retired for this process and the
-        // foreground-loss recovery contract is relaunch rather than silently reopening authority.
         guard currentConnectionToken == nil,
               OfficialTuyaFactory.packageCorrelationMayStart else { return }
         foregroundIntegrityLossHandled = false
@@ -680,8 +669,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     func abandonCorrelationForViewExit() {
         fieldAuthorization.revoke()
-        // Close the screen-lifetime admission boundary before revoking every already-issued grant.
-        // A later SwiftUI/account callback must not mint a replacement membership probe off-screen.
         acceptsViewScopedMembershipRequests = false
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
@@ -696,8 +683,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
         watchdog?.cancel()
         watchdog = nil
 
-        // Foreground loss already owns the terminal retirement for this view lifetime.
-        // Avoid racing a second terminal task when backgrounding is followed by onDisappear.
         if foregroundIntegrityLossHandled { return }
 
         if let token = currentConnectionToken {
@@ -715,8 +700,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
 
         if phase == .authenticating {
-            // Driver handoff happened, but no package generation exists yet. The request-id fence
-            // below forces the pending ledger task to retire its generation before SDK connect.
             localBLESettlementToken = nil
             sdkLocalBLEOnline = false
             driver = nil
@@ -736,7 +719,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
         guard processCorrelationLease != nil || correlationSession != nil else { return }
-        // Existing helper stops package transport before releasing this controller's lease.
         abandonPackageCorrelation()
         phase = .failed
         message = "Bluetooth correlation was interrupted when Capture left Secure Link. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series."
@@ -744,15 +726,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     func appDidLoseForeground() {
-        // A sealed accepted artifact is immutable and already closed to new evidence. Backgrounding
-        // after acceptance must not downgrade or rebuild that frozen result.
         guard phase != .accepted else { return }
         fieldAuthorization.revoke()
         guard !foregroundIntegrityLossHandled else { return }
         foregroundIntegrityLossHandled = true
-
-        // Capture evidence is foreground-only. Close view-scoped account authority and revoke
-        // already-issued asynchronous grants before inspecting any radio/session state.
         acceptsViewScopedMembershipRequests = false
         sdkDeviceMembershipVerified = false
         membershipAccountUID = nil
@@ -768,8 +745,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
         watchdog = nil
 
         if processCorrelationLease != nil || correlationSession != nil {
-            // The full discovery reset preserves scanner-first lease retirement and also erases
-            // every actionable target-selection bit earned by the interrupted correlation.
             resetDiscoverySessionOnly()
             phase = .failed
             message = "Capture left the foreground during Bluetooth target correlation. Restart from OFF1 with a fresh OFF1→ON1→OFF2→ON2 series; interrupted windows are never reusable evidence."
@@ -778,8 +753,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
 
         if phase == .correlated || phase == .selected {
-            // Final-window sealing already retired the scanner/lease. Revoke target reuse authority
-            // without erasing the completed OFF1→ON1→OFF2→ON2 evidence needed for diagnostics.
             pendingCorrelatedTargetID = nil
             selectedID = nil
             targetCorrelationOperatorConfirmed = false
@@ -791,8 +764,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
         guard let token = currentConnectionToken else {
             if phase == .authenticating {
-                // OfficialTuyaFactory.make() permanently retires package correlation for this
-                // process, even if no package generation existed before foreground loss.
                 localBLESettlementToken = nil
                 sdkLocalBLEOnline = false
                 driver = nil
@@ -813,8 +784,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
             ["generation": String(token.diagnosticGeneration)]
         )
 
-        // This finite terminal task must outlive SwiftUI StateObject teardown. Exact-token fencing
-        // prevents a stale retirement from touching a later generation.
         Task { @MainActor [self] in
             guard self.currentConnectionToken == token else { return }
             if wasObserving {
@@ -918,10 +887,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     var applicationEvidenceSurvivedHistoricalWindow: Bool {
-        guard let authenticatedAt = ledgerSnapshot.authenticatedAtUptimeNanoseconds,
-              let latestPayload = ledgerSnapshot.latestApplicationPayloadUptimeNanoseconds,
-              latestPayload >= authenticatedAt else { return false }
-        return latestPayload - authenticatedAt >= TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
+        TuyaAuthenticatedReadOnlyPresentation.applicationEvidenceSurvivedHistoricalWindow(ledgerSnapshot)
     }
 
     var preflightVerdict: TuyaAuthenticatedReadOnlyPreflight.Verdict {
@@ -947,14 +913,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
-        // Accepted app evidence belongs to this physical attempt only. The controller's
-        // diagnostic log intentionally survives failures for troubleshooting, so establish an
-        // explicit custody boundary before fresh membership/correlation evidence can begin.
         captureAttemptEventStartIndex = events.count
         sealedAcceptedEventPrefix = nil
 
-        // Every physical attempt receives a fresh complete current-account membership verdict
-        // before the package-owned four-window Bluetooth correlation series may start.
         verifySDKMembership { [weak self] authorized in
             guard let self else { return }
             let leaseVerdict = TuyaSDKAccountIdentityLeaseGate.verdict(for: self.accountIdentityLeaseSnapshot)
@@ -1128,14 +1089,8 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func finishCorrelationSeries(_ result: PassiveBluetoothPowerCycleObservationResult) {
-        // `finishCurrentWindow()` has already synchronously retired the final package scanner.
-        // Release the process lease only after that radio transport is no longer live, so another
-        // controller can never acquire Tuya ownership while package scanning still exists.
         correlationSession = nil
         releasePackageCorrelationLease()
-
-        // Preserve the package-issued receipts + exact catalogs before releasing the live scanner.
-        // The artifact can therefore audit/replay correlation without trusting a detached UUID.
         correlationProvenance = CorrelationProvenance(result: result)
         targetCorrelationMethod = correlationProvenance?.method
         targetCorrelationWindowCount = result.windows.count
@@ -1241,8 +1196,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
         membershipDeviceID = nil
         pendingCorrelatedTargetID = nil
         if phase == .correlated || phase == .selected {
-            // Final-window sealing already retired package scanning. Account authority loss must
-            // revoke target reuse without deleting the completed physical-correlation receipts.
             pendingCorrelatedTargetID = nil
             selectedID = nil
             targetCorrelationOperatorConfirmed = false
@@ -1383,7 +1336,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
             return
         }
 
-        // Membership is re-proven immediately before granting Tuya BLE ownership.
         verifySDKMembership { [weak self] stillAuthorized in
             guard let self else { return }
             guard stillAuthorized,
@@ -1450,8 +1402,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
             guard let self else { return }
             do {
                 let token = try await self.sessionLedger.beginConnection()
-                // Own the package generation before any later mutation can fail. Otherwise an
-                // auth-start clock regression could strand callback authority in the ledger.
                 self.currentConnectionToken = token
                 guard self.officialConnectionRequestID == connectionRequestID,
                       self.phase == .authenticating else {
@@ -1604,9 +1554,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 do {
                     try await sessionLedger.markAuthenticated(for: token, method: .smartLifeAppSDK)
                     await refreshLedgerSnapshot()
-
-                    // Both ledger actor hops above can interleave foreground/view/account retirement.
-                    // Never repaint an already-retired generation as authenticated observation.
                     guard currentConnectionToken == token else {
                         log("stale_auth_promotion_resume_ignored", [
                             "generation": String(token.diagnosticGeneration)
@@ -1831,9 +1778,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
         applicationUpdateAdmissionsInFlight += 1
         defer { applicationUpdateAdmissionsInFlight -= 1 }
 
-        // Snapshot the exact account identity while the admission checks above are still
-        // synchronously true. The actor hops below may interleave foreground/account teardown;
-        // export custody must never re-read mutable membership state after that suspension.
         guard let leasedAccountUID = membershipAccountUID?.trimmingCharacters(in: .whitespacesAndNewlines),
               !leasedAccountUID.isEmpty else {
             await invalidateSourceAuthority(
@@ -1849,8 +1793,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
             try await sessionLedger.recordApplicationUpdate(isNonEmpty: !update.isEmpty, for: token)
             await refreshLedgerSnapshot()
 
-            // The ledger hops above may interleave account/view lifecycle changes. Revalidate
-            // the exact generation and account lease immediately before immutable event custody.
             guard currentConnectionToken == token,
                   phase == .observing,
                   !acceptanceCutIsClosed,
@@ -1913,12 +1855,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 with: "<redacted-account-uid>",
                 options: [.caseInsensitive, .literal]
             )
-
-            // Redacting malformed keys can collapse two distinct SDK entries onto one key.
-            // Preserve every admitted opaque value under a deterministic redaction-safe suffix.
-            // `generation` is Nembra-owned event provenance. Preserve an opaque SDK
-            // field with the same spelling under an application namespace instead of
-            // allowing the trusted token stamp below to destroy admitted evidence.
             let reservedCustodyKey = redactedKey == "generation"
                 ? "application.generation"
                 : redactedKey
@@ -2052,18 +1988,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
                         break
                     }
                     self.acceptanceCutIsClosed = true
-                    // Freeze only the current physical attempt. Older failed-attempt diagnostics stay
-                    // available in the live controller log but cannot contaminate accepted evidence.
                     let acceptedEventPrefixAtCut = Array(self.events.dropFirst(self.captureAttemptEventStartIndex))
                     do {
                         try await sessionLedger.sealAcceptedObservation(for: token)
-                        // The package seal retires ledger callback authority before this MainActor
-                        // continuation resumes. A late SDK terminal/view lifecycle callback may run
-                        // in that suspension window, so app-side generation + phase authority must
-                        // still match the exact observing generation before accepted promotion.
-                        // Do not attempt a second ledger terminal here: the package seal is already
-                        // immutable; this fence only prevents stale app-side state from repainting
-                        // a concurrent terminal lifecycle result as accepted.
                         guard self.currentConnectionToken == token,
                               self.phase == .observing else {
                             self.currentConnectionToken = nil
@@ -2327,11 +2254,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
         log(kind, ["generation": String(token.diagnosticGeneration)])
     }
 
-    /// Mirrors a terminal continuity verdict already committed by the package mutation that threw
-    /// `observationContinuityInvalidated`. That package path clears its current token before
-    /// throwing, so calling another ledger terminal here would manufacture a false retirement
-    /// failure. This helper changes app-local ownership/presentation only; it does not claim BLE
-    /// disconnect, source loss, a new clock receipt, or a second terminal event.
     private func mirrorAlreadyTerminalObservationContinuity(
         token: TuyaReadOnlyConnectionToken,
         message: String,
@@ -2408,8 +2330,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
         do {
             try await sessionLedger.markInternalLifecycleFailure(for: token)
         } catch {
-            // Do not discard app ownership when package retirement itself is unproven. Keeping the
-            // token blocks generic reset/retry and makes relaunch the only safe recovery.
             phase = .failed
             self.message = "Internal session authority could not be terminally retired. Relaunch Capture before another attempt."
             log("internal_lifecycle_terminal_retirement_failed", [
@@ -2507,10 +2427,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
             encoder.dateEncodingStrategy = .iso8601
             exportData = try encoder.encode(envelope)
             if phase == .accepted {
-      exportName = "Nembra-Capture-\(deviceID.prefix(8)).json"
-  } else {
-      exportName = "Nembra-Secure-Link-\(deviceID.prefix(8))-Diagnostics.json"
-  }
+                exportName = "Nembra-Capture-\(deviceID.prefix(8)).json"
+            } else {
+                exportName = "Nembra-Secure-Link-\(deviceID.prefix(8))-Diagnostics.json"
+            }
             if phase != .failed {
                 message = "Sanitized diagnostics ready with exact compiled source + reviewed Tuya dependency-lock provenance. No account UID, AppKey/AppSecret, password, account token, local_key, session key, raw FD50 claim, DP query, or DP command is exported."
             }
@@ -2526,8 +2446,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func abandonPackageCorrelation() {
-        // Radio transport first, process lease second. The owner token prevents an old controller
-        // from clearing a lease that belongs to a newer correlation attempt.
         correlationSession?.abandonCurrentWindow()
         correlationSession = nil
         releasePackageCorrelationLease()
@@ -2559,15 +2477,10 @@ private final class SecureLinkController: NSObject, ObservableObject {
         sdkLocalBLEOnline = false
         exportData = nil
         diagnosticExportError = nil
-        // Active authenticated generations must be terminally retired by their
-        // owning outcome path before a new discovery attempt. Generic reset never
-        // manufactures a transport-disconnect terminal.
         assert(currentConnectionToken == nil)
     }
 
     private func failLocally(_ text: String, _ kind: String) {
-        // A process lease is acquired before the first window advances presentation `phase`.
-        // Session construction/start failures must therefore release by lease ownership too.
         if processCorrelationLease != nil || phase == .baseline || phase == .powerOn || phase == .scanning || phase == .correlated {
             abandonPackageCorrelation()
         }
@@ -2681,9 +2594,6 @@ private enum OfficialTuyaFactory {
               bootstrap(),
               accountLoggedIn,
               currentAccountUID != nil else { return nil }
-        // A process-global Tuya BLE manager may outlive any one controller. Once a
-        // supported Tuya driver is handed out, package-owned correlation stays retired
-        // until app relaunch; later failures must not recreate competing BLE ownership.
         packageCorrelationRetiredForProcess = true
         return SmartLifeDriver()
 #else
@@ -2850,11 +2760,6 @@ private final class SmartLifeDriver: NSObject, OfficialTuyaDriver, ThingSmartDev
         onApplicationUpdate?(sanitized)
     }
 
-    // Assign collision suffixes only after traversing the original SDK keys in a
-    // deterministic order. Otherwise Dictionary hash order can decide which admitted
-    // evidence value receives the base redacted key versus #2/#3. Tuya application
-    // dictionaries use scalar AnyHashable keys; spelling, concrete scalar type, then
-    // scalar reflection provide a stable pre-redaction identity for that bounded input.
     private static func sortedApplicationEntries(
         _ dictionary: [AnyHashable: Any]
     ) -> [(key: AnyHashable, value: Any)] {
