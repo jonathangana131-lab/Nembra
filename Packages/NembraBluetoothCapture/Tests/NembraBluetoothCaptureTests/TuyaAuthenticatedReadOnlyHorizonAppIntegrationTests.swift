@@ -31,6 +31,23 @@ struct TuyaAuthenticatedReadOnlyHorizonAppIntegrationTests {
         #expect(exposesApplicationSurvival || usesCanonicalSurvivalPresentation || derivesCanonicalVerdict)
     }
 
+    @Test("app delegates historical-window truth to the strict package presentation helper")
+    func appUsesCanonicalStrictHistoricalWindowPresentation() throws {
+        let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
+        let helper = String(try section(
+            in: source,
+            from: "var applicationEvidenceSurvivedHistoricalWindow: Bool",
+            to: "var preflightVerdict: TuyaAuthenticatedReadOnlyPreflight.Verdict"
+        ))
+
+        #expect(helper.contains(
+            "TuyaAuthenticatedReadOnlyPresentation.applicationEvidenceSurvivedHistoricalWindow(ledgerSnapshot)"
+        ))
+        #expect(!helper.contains(
+            ">= TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds"
+        ))
+    }
+
     @Test("authentication-success copy describes repeated late evidence and 45-second stability")
     func observationCopyMatchesCanonicalEvidenceShape() throws {
         let source = try readRepositoryFile("NembraApp/App/NembraCaptureEntrypoint.swift")
