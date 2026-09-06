@@ -10,7 +10,7 @@ struct C7D09A22PhysicalFirstAcceptanceGateTests {
             authenticatedAtUptimeNanoseconds: 1_000_000_000,
             latestObservedUptimeNanoseconds: 46_000_000_000,
             applicationPayloadCount: 2,
-            latestApplicationPayloadUptimeNanoseconds: 31_000_000_000,
+            latestApplicationPayloadUptimeNanoseconds: 31_000_000_001,
             connectionGeneration: 1
         )
     }
