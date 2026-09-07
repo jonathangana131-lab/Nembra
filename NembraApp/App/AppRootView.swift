@@ -225,7 +225,7 @@ private struct RideHistoryView: View {
             journalStateSurface(
                 title: "Your first ride belongs here",
                 systemImage: "point.bottomleft.forward.to.point.topright.scurvepath",
-                message: "Completed rides appear automatically after Nembra safely saves their accepted recording evidence.",
+                message: "Verified rides will appear here once Nembra can safely record accepted live scooter evidence.",
                 identifier: "rides.empty"
             )
         case .unavailable, .failed:
