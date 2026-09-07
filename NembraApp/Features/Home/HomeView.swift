@@ -473,7 +473,7 @@ struct HomeView: View {
         .buttonStyle(.plain)
         .nembraGlassControl()
         .disabled(
-            vehicle.state.connection != .connected ||
+            !vehicle.hasLiveVehicleCommandAuthority ||
             vehicle.isVehicleCommandPending ||
             !available ||
             !enabled
@@ -549,7 +549,7 @@ struct HomeView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending || isSelected)
+        .disabled(!vehicle.hasLiveVehicleCommandAuthority || vehicle.isVehicleCommandPending || isSelected)
         .accessibilityLabel(mode.displayName)
         .accessibilityValue(modeChoiceAccessibilityValue(selected: isSelected, pending: isPending))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -920,7 +920,7 @@ struct HomeView: View {
     }
 
     private func isLockConfirmationStillValid(_ requestedLocked: Bool) -> Bool {
-        guard vehicle.state.connection == .connected,
+        guard vehicle.hasLiveVehicleCommandAuthority,
               !vehicle.isVehicleCommandPending else {
             return false
         }
