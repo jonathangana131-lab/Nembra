@@ -84,7 +84,7 @@ struct VehicleControlsView: View {
                 }
             }
 
-            if vehicle.state.connection != .connected {
+            if !commandsAvailable {
                 Divider()
                 connectionIssueField
 
@@ -606,6 +606,9 @@ struct VehicleControlsView: View {
         if vehicle.state.dataAvailability == .retained {
             return "Selected settings are retained from the last confirmed vehicle session. Reconnect for fresh state or changes."
         }
+        if vehicle.state.connection == .connected && !commandsAvailable {
+            return "Controls remain read-only until Nembra has current live vehicle evidence and a verified command capability."
+        }
         return "Nembra shows a new control state only after the scooter service confirms the command."
     }
 
@@ -619,10 +622,16 @@ struct VehicleControlsView: View {
         if vehicle.state.dataAvailability == .retained {
             return "Reconnect to confirm the current setting or make a change."
         }
+        if vehicle.state.connection == .connected && !commandsAvailable {
+            return "Controls remain read-only until current live vehicle evidence is available."
+        }
         return "The displayed state changes only after vehicle confirmation."
     }
 
     private var lockSectionSubtitle: String {
+        if !commandsAvailable {
+            return "Lock controls remain read-only until current live vehicle evidence is available."
+        }
         if vehicle.state.isLocked == true {
             return "Unlocking remains available while connected; changes still require vehicle confirmation."
         }
@@ -665,7 +674,7 @@ struct VehicleControlsView: View {
     }
 
     private var commandsAvailable: Bool {
-        vehicle.state.connection == .connected
+        vehicle.hasLiveVehicleCommandAuthority
     }
 
     private var connectionText: String {
@@ -739,7 +748,7 @@ struct VehicleControlsView: View {
         case .disconnected:
             return ("circle.dashed", "Vehicle offline", "Reconnect before changing vehicle settings.")
         case .connected:
-            return ("checkmark.circle", "Connected", "Vehicle controls are available.")
+            return ("checkmark.shield", "Connected · Read only", "Waiting for current live vehicle evidence before controls can be enabled.")
         }
     }
 
