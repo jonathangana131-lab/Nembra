@@ -121,6 +121,13 @@ final class VehicleStore {
         return state.connection == .connected ? .live : .retained
     }
 
+    /// Commands require current-session confirmed vehicle evidence in addition to a
+    /// connected transport. Retained state is explicitly read-only, and a bare BLE
+    /// connection with no accepted values does not manufacture command authority.
+    var hasLiveVehicleCommandAuthority: Bool {
+        state.connection == .connected && state.dataAvailability == .live
+    }
+
     /// Simulator-only qualified live speed for truth-sensitive presentation and
     /// stopped-control admission. Aggregate connection can only remove authority;
     /// it never promotes a cached speed number into current evidence.
@@ -347,12 +354,12 @@ final class VehicleStore {
     }
 
     func setHeadlight(_ enabled: Bool) async {
-        guard canBeginVehicleCommand else { return }
+        guard canBeginVehicleCommand(.headlight) else { return }
         await perform(.headlight) { try await service.setHeadlight(enabled) }
     }
 
     func setLocked(_ locked: Bool) async {
-        guard canBeginVehicleCommand else { return }
+        guard canBeginVehicleCommand(.lock) else { return }
         if locked && !canLockFromCurrentSpeedEvidence {
             lastErrorMessage = "Live stopped-speed evidence is required before locking."
             return
@@ -361,28 +368,31 @@ final class VehicleStore {
     }
 
     func setCruise(_ enabled: Bool) async {
-        guard canBeginVehicleCommand else { return }
+        guard canBeginVehicleCommand(.cruise) else { return }
         pendingCruiseValue = enabled
         defer { pendingCruiseValue = nil }
         await perform(.cruise) { try await service.setCruise(enabled) }
     }
 
     func setMode(_ mode: RideMode) async {
-        guard canBeginVehicleCommand else { return }
+        guard profile.capabilities.supportedRideModes.contains(mode),
+              canBeginVehicleCommand(.mode) else { return }
         pendingRideMode = mode
         defer { pendingRideMode = nil }
         await perform(.mode) { try await service.setRideMode(mode) }
     }
 
     func setStartMode(_ mode: StartMode) async {
-        guard canBeginVehicleCommand else { return }
+        guard canBeginVehicleCommand(.startMode) else { return }
         pendingStartMode = mode
         defer { pendingStartMode = nil }
         await perform(.startMode) { try await service.setStartMode(mode) }
     }
 
     func setSpeedLimit(kilometersPerHour: Int, slot: SpeedLimitSlot) async {
-        guard canBeginVehicleCommand else { return }
+        guard let range = profile.capabilities.speedLimitRangesBySlot[slot],
+              range.contains(kilometersPerHour),
+              canBeginVehicleCommand(.speedLimit) else { return }
         pendingSpeedLimit = (slot, kilometersPerHour)
         defer { pendingSpeedLimit = nil }
         await perform(.speedLimit) {
@@ -390,8 +400,32 @@ final class VehicleStore {
         }
     }
 
-    private var canBeginVehicleCommand: Bool {
-        !pendingCommands.contains(.connect) && !isVehicleCommandPending
+    private func canBeginVehicleCommand(_ command: PendingCommand) -> Bool {
+        guard command != .connect,
+              hasLiveVehicleCommandAuthority,
+              !pendingCommands.contains(.connect),
+              !isVehicleCommandPending else {
+            return false
+        }
+
+        let capabilities = profile.capabilities
+        switch command {
+        case .headlight:
+            return capabilities.supportsHeadlight
+        case .lock:
+            return capabilities.supportsLock
+        case .cruise:
+            return capabilities.supportsCruise
+        case .mode:
+            return !capabilities.supportedRideModes.isEmpty
+        case .startMode:
+            return capabilities.supportsStartMode
+        case .speedLimit:
+            return capabilities.supportsSpeedLimit
+                && !capabilities.speedLimitRangesBySlot.isEmpty
+        case .connect:
+            return false
+        }
     }
 
     private func apply(_ incomingState: VehicleState) {
@@ -502,7 +536,7 @@ final class VehicleStore {
     }
 
     private func perform(_ command: PendingCommand, operation: () async throws -> Void) async {
-        guard command != .connect, canBeginVehicleCommand else { return }
+        guard canBeginVehicleCommand(command) else { return }
         pendingCommands.insert(command)
         lastErrorMessage = nil
         defer { pendingCommands.remove(command) }
