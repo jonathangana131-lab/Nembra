@@ -167,7 +167,7 @@ private struct RideHistoryView: View {
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
 
-            Text("Every ride, kept with its evidence.")
+            Text("Verified rides, kept with their evidence.")
                 .font(dynamicTypeSize.isAccessibilitySize ? .title2.weight(.bold) : .title.weight(.bold))
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
