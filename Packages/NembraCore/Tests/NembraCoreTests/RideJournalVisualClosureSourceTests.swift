@@ -71,6 +71,47 @@ struct RideJournalVisualClosureSourceTests {
         #expect(history.contains("journalStateSurface"))
     }
 
+    @Test("Ride records stay fail closed for unverified live scooter telemetry semantics")
+    func rideRecordsDoNotPromoteUnverifiedTelemetrySemantics() throws {
+        let source = try String(contentsOf: appRootViewURL, encoding: .utf8)
+        let history = try scopedSource(
+            source,
+            from: "private struct RideHistoryView: View",
+            until: "private struct RideRouteMapView: View"
+        )
+
+        // Until authenticated physical payload evidence establishes actual DP meaning,
+        // the ride journal may present only evidence it truly owns: timestamps,
+        // quality-screened GPS geometry/distance, and an already-recorded odometer delta.
+        // It must not grow convenient-looking battery/speed/control telemetry merely
+        // because those concepts exist elsewhere in the product or simulator.
+        for forbiddenPresentation in [
+            "Battery",
+            "BATTERY",
+            "Top speed",
+            "TOP SPEED",
+            "Ride mode",
+            "RIDE MODE",
+            "Headlight",
+            "HEADLIGHT",
+            "Brake",
+            "BRAKE",
+            "Power",
+            "POWER",
+        ] {
+            #expect(!history.contains("Text(\"\(forbiddenPresentation)\")"))
+            #expect(!history.contains("title: \"\(forbiddenPresentation)\""))
+            #expect(!history.contains("label: \"\(forbiddenPresentation)\""))
+        }
+
+        #expect(history.contains("Verified rides, kept with their evidence."))
+        #expect(history.contains("Verified rides will appear here once Nembra can safely record accepted live scooter evidence."))
+        #expect(history.contains("Scooter odometer and GPS distance stay separate"))
+        #expect(history.contains("qualityScreenedGPSDistanceMeters"))
+        #expect(history.contains("startingOdometerKilometers"))
+        #expect(history.contains("endingOdometerKilometers"))
+    }
+
     private func scopedSource(_ source: String, from startMarker: String, until endMarker: String) throws -> String {
         let start = try #require(source.range(of: startMarker))
         let end = try #require(source.range(of: endMarker, range: start.upperBound..<source.endIndex))
