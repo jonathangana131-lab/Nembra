@@ -51,6 +51,74 @@ public struct C7D09A22DocumentedTransparentEvidenceArtifact: Codable, Equatable,
         omittedPayloadCount = snapshot.omittedPayloadCount
     }
 
+    /// Reconstructs canonical receive evidence only from byte-preserving retained callbacks.
+    ///
+    /// Portable JSON is diagnostic evidence, not an authority token. Summary counters/timestamps
+    /// can therefore never be sufficient by themselves to mint physical-first acceptance. This
+    /// validator requires repeated retained payload bytes, valid monotonic chronology, internally
+    /// consistent byte accounting, and a retained callback strictly beyond the historical rejection
+    /// horizon. The returned evidence remains documented Smart Life transport evidence only.
+    public func validatedReceiveEvidence(connectionGeneration: UInt64) -> TuyaAuthenticatedReceiveEvidence? {
+        guard connectionGeneration > 0,
+              kind == Self.evidenceKind,
+              !tuyaDeviceID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              payloadCount >= retainedPayloads.count,
+              omittedPayloadCount >= 0,
+              payloadCount == retainedPayloads.count + omittedPayloadCount,
+              retainedPayloads.count >= TuyaPhysicalFirstAcceptanceGate.minimumDocumentedReceivePayloadCount else {
+            return nil
+        }
+
+        var previousTimestamp: UInt64?
+        var retainedBytes = 0
+        var hasRetainedPostHorizonPayload = false
+        let hexDigits = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
+
+        for (index, payload) in retainedPayloads.enumerated() {
+            guard payload.sequence == index + 1,
+                  payload.byteCount > 0,
+                  payload.receivedAtUptimeNanoseconds >= sdkConnectionStartedAtUptimeNanoseconds,
+                  payload.elapsedSinceSDKConnectionNanoseconds == payload.receivedAtUptimeNanoseconds - sdkConnectionStartedAtUptimeNanoseconds,
+                  payload.hex.utf8.count == payload.byteCount * 2,
+                  payload.hex.unicodeScalars.allSatisfy({ hexDigits.contains($0) }) else {
+                return nil
+            }
+            if let previousTimestamp,
+               payload.receivedAtUptimeNanoseconds <= previousTimestamp {
+                return nil
+            }
+            previousTimestamp = payload.receivedAtUptimeNanoseconds
+            retainedBytes += payload.byteCount
+            if payload.elapsedSinceSDKConnectionNanoseconds > TuyaSmartLifeTransparentReceiveObservationLedger.c7d09a22HistoricalRejectionNanoseconds {
+                hasRetainedPostHorizonPayload = true
+            }
+        }
+
+        guard retainedPayloadByteCount == retainedBytes,
+              totalByteCount >= retainedPayloadByteCount,
+              hasRetainedPostHorizonPayload,
+              hasPayloadStrictlyBeyondHistoricalRejectionHorizon,
+              let retainedLatest = retainedPayloads.last?.receivedAtUptimeNanoseconds,
+              let declaredLatest = latestPayloadAtUptimeNanoseconds,
+              declaredLatest >= retainedLatest else {
+            return nil
+        }
+
+        if omittedPayloadCount == 0 {
+            guard totalByteCount == retainedPayloadByteCount,
+                  declaredLatest == retainedLatest else {
+                return nil
+            }
+        }
+
+        return TuyaAuthenticatedReceiveEvidence(
+            provenance: .smartLifeDocumentedDeviceToAppReceive,
+            connectionGeneration: connectionGeneration,
+            payloadCount: retainedPayloads.count,
+            latestPayloadUptimeNanoseconds: retainedLatest
+        )
+    }
+
     /// Deterministic JSON suitable for attaching to a field capture without exposing account secrets.
     public func encodedJSON() throws -> Data {
         let encoder = JSONEncoder()
