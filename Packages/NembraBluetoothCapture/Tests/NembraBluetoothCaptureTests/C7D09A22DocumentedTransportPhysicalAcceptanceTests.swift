@@ -40,6 +40,43 @@ final class C7D09A22DocumentedTransportPhysicalAcceptanceTests: XCTestCase {
         )
     }
 
+    func testDifferentSDKConnectionInstanceFailsClosedEvenWhenGenerationMatches() throws {
+        var ledger = try XCTUnwrap(TuyaSmartLifeTransparentReceiveObservationLedger(
+            expectedDeviceID: deviceID,
+            sdkConnectionStartedAtUptimeNanoseconds: authenticatedAt - 2
+        ))
+        let early = try XCTUnwrap(TuyaSmartLifeTransparentReceiveReceipt(
+            payload: Data([0x01]),
+            callbackDeviceID: deviceID,
+            expectedDeviceID: deviceID,
+            receivedAtUptimeNanoseconds: authenticatedAt + 1_000_000_000
+        ))
+        let survived = try XCTUnwrap(TuyaSmartLifeTransparentReceiveReceipt(
+            payload: Data([0x02]),
+            callbackDeviceID: deviceID,
+            expectedDeviceID: deviceID,
+            receivedAtUptimeNanoseconds: authenticatedAt
+                + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
+                + 1
+        ))
+        XCTAssertTrue(ledger.record(early))
+        XCTAssertTrue(ledger.record(survived))
+
+        let fieldAttempt = C7D09A22DocumentedTransparentLivePreflight.FieldAttemptEvidence(
+            connectionGeneration: generation,
+            milestone: .satisfied,
+            artifact: C7D09A22DocumentedTransparentEvidenceArtifact(snapshot: ledger.snapshot)
+        )
+
+        XCTAssertEqual(
+            C7D09A22DocumentedTransportPhysicalAcceptance.verdict(
+                authenticatedPreflight: readyPreflight(),
+                fieldAttempt: fieldAttempt
+            ),
+            .blocked(reason: "Documented transport artifact does not belong to the exact authenticated SDK connection instance.")
+        )
+    }
+
     func testUnsatisfiedMilestoneCannotBypassCanonicalReceiveRequirement() {
         let fieldAttempt = C7D09A22DocumentedTransparentLivePreflight.FieldAttemptEvidence(
             connectionGeneration: generation,
@@ -67,7 +104,7 @@ final class C7D09A22DocumentedTransportPhysicalAcceptanceTests: XCTestCase {
     private func qualifyingArtifact() throws -> C7D09A22DocumentedTransparentEvidenceArtifact {
         var ledger = try XCTUnwrap(TuyaSmartLifeTransparentReceiveObservationLedger(
             expectedDeviceID: deviceID,
-            sdkConnectionStartedAtUptimeNanoseconds: authenticatedAt
+            sdkConnectionStartedAtUptimeNanoseconds: authenticatedAt - 1
         ))
         let early = try XCTUnwrap(TuyaSmartLifeTransparentReceiveReceipt(
             payload: Data([0x01]),
