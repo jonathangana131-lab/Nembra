@@ -11,6 +11,27 @@ struct ES80CommandCapabilityAppVisibilitySourceTests {
         #expect(source.contains("if vehicle.profile.capabilities.supportsLock"))
     }
 
+    @Test("Home keeps unverified ES80 semantics behind capability or simulator-qualified evidence")
+    func homeKeepsPhysicalTruthBoundaryClosed() throws {
+        let source = try readRepositoryFile("NembraApp/Features/Home/HomeView.swift")
+
+        // C7D09A22 has not produced authenticated application payloads yet. Home may
+        // render generic/simulator state, but real ES80-only semantics must remain
+        // unreachable while the primary profile's capability gates are closed.
+        #expect(source.contains("if !supportedModes.isEmpty"))
+        #expect(source.contains("RideMode.allCases.filter(vehicle.profile.capabilities.supportedRideModes.contains)"))
+        #expect(source.contains("if vehicle.profile.capabilities.supportsOdometer"))
+        #expect(source.contains("if vehicle.profile.capabilities.supportsStartMode"))
+        #expect(source.contains("if vehicle.profile.capabilities.supportsCruise"))
+        #expect(source.contains("vehicle.simulatorQualifiedLiveSpeedKilometersPerHour"))
+        #expect(source.contains("vehicle.canLockFromCurrentSpeedEvidence"))
+        #expect(source.contains("vehicle.hasLiveVehicleCommandAuthority"))
+        #expect(!source.contains("writeDataPoint"))
+        #expect(!source.contains("setDataPoint"))
+        #expect(!source.contains("unbind"))
+        #expect(!source.contains("resetDevice"))
+    }
+
     @Test("Vehicle Controls hides every unverified ES80 command family behind profile capability gates")
     func vehicleControlsAreCapabilityGated() throws {
         let source = try readRepositoryFile("NembraApp/Features/Home/VehicleControlsView.swift")
