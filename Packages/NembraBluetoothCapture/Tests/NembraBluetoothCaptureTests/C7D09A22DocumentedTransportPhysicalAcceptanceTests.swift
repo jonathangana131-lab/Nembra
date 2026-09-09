@@ -54,6 +54,41 @@ final class C7D09A22DocumentedTransportPhysicalAcceptanceTests: XCTestCase {
         XCTAssertTrue(valid.satisfiesDocumentedAuthenticatedTransportAcceptance)
     }
 
+    func testPortableSummaryMetadataCannotMintPhysicalAcceptanceWithoutMatchingRetainedBytes() throws {
+        let artifact = try qualifyingArtifact()
+        var forgedJSON = try JSONSerialization.jsonObject(with: artifact.encodedJSON()) as! [String: Any]
+        forgedJSON["payloadCount"] = 200
+        forgedJSON["omittedPayloadCount"] = 198
+        forgedJSON["latestPayloadAtUptimeNanoseconds"] = authenticatedAt
+            + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds
+            + 9_000_000_000
+        forgedJSON["hasPayloadStrictlyBeyondHistoricalRejectionHorizon"] = true
+
+        var retained = try XCTUnwrap(forgedJSON["retainedPayloads"] as? [[String: Any]])
+        retained[1]["receivedAtUptimeNanoseconds"] = authenticatedAt + 2_000_000_000
+        retained[1]["elapsedSinceSDKConnectionNanoseconds"] = 2_000_000_001
+        forgedJSON["retainedPayloads"] = retained
+
+        let forgedArtifact = try JSONDecoder().decode(
+            C7D09A22DocumentedTransparentEvidenceArtifact.self,
+            from: JSONSerialization.data(withJSONObject: forgedJSON, options: [.sortedKeys])
+        )
+        let fieldAttempt = C7D09A22DocumentedTransparentLivePreflight.FieldAttemptEvidence(
+            connectionGeneration: generation,
+            milestone: .satisfied,
+            artifact: forgedArtifact
+        )
+
+        XCTAssertNil(forgedArtifact.validatedReceiveEvidence(connectionGeneration: generation))
+        XCTAssertEqual(
+            C7D09A22DocumentedTransportPhysicalAcceptance.verdict(
+                authenticatedPreflight: readyPreflight(),
+                fieldAttempt: fieldAttempt
+            ),
+            .blocked(reason: "Documented transport artifact does not contain self-consistent retained receive bytes and chronology.")
+        )
+    }
+
     func testStaleGenerationFailsClosedBeforeEvidenceCanBePromoted() throws {
         let fieldAttempt = C7D09A22DocumentedTransparentLivePreflight.FieldAttemptEvidence(
             connectionGeneration: generation - 1,
