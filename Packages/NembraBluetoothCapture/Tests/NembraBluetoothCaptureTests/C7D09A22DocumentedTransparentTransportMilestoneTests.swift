@@ -33,7 +33,7 @@ struct C7D09A22DocumentedTransparentTransportMilestoneTests {
 
     @Test
     @MainActor
-    func authenticatedSessionRequiresRepeatedTransparentPayloadsBeforeHistoricalWindowMilestone() async throws {
+    func authenticatedSessionWaitsForTransparentPayloadThenHistoricalWindowSurvival() async throws {
         let context = try await authenticatedContext()
         let ingress = C7D09A22DocumentedTransparentReceiveIngress()
         #expect(await ingress.begin(
@@ -54,7 +54,7 @@ struct C7D09A22DocumentedTransparentTransportMilestoneTests {
         #expect(C7D09A22DocumentedTransparentTransportMilestone.verdict(
             authenticatedPreflight: context.snapshot,
             transparent: recorded
-        ) == .waitingForRepeatedPayloads)
+        ) == .waitingForHistoricalRejectionWindow)
 
         #expect(!C7D09A22DocumentedTransparentTransportMilestone.authorizesRawFD50CharacteristicCustody)
         #expect(!C7D09A22DocumentedTransparentTransportMilestone.authorizesPhysicalFirstAcceptance)
