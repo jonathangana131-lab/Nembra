@@ -22,8 +22,25 @@ struct NavigationPhysicalTruthSourceTests {
         #expect(source.contains("Nembra will preview it here without using scooter telemetry."))
         #expect(source.contains("They do not contain scooter telemetry."))
         #expect(source.contains("item.openInMaps()"))
+
+        // C7D09A22 physical-truth fence: destination search/navigation is map-owned.
+        // Until authenticated physical payload evidence exists it must not consume,
+        // infer, or command scooter DP semantics merely because BLE is connected.
+        #expect(!source.contains("@Environment(VehicleStore.self)"))
+        #expect(!source.contains("vehicle."))
         #expect(!source.contains("hasLiveVehicleCommandAuthority"))
         #expect(!source.contains("VehicleTelemetry"))
+        #expect(!source.contains("liveBattery"))
+        #expect(!source.contains("batteryPercent"))
+        #expect(!source.contains("liveSpeed"))
+        #expect(!source.contains("rideMode"))
+        #expect(!source.contains("headlight"))
+        #expect(!source.contains("brake"))
+        #expect(!source.contains("powerWatts"))
+        #expect(!source.contains("writeDataPoint"))
+        #expect(!source.contains("setDataPoint"))
+        #expect(!source.contains("unbind"))
+        #expect(!source.contains("resetDevice"))
     }
 
     private func navigationHostSection() throws -> Substring {
