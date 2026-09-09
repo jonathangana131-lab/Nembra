@@ -33,17 +33,11 @@ final class C7D09A22DocumentedTransportPhysicalAcceptanceTests: XCTestCase {
         )
         XCTAssertFalse(zeroGeneration.satisfiesDocumentedAuthenticatedTransportAcceptance)
 
-        let forgedArtifact = C7D09A22DocumentedTransparentEvidenceArtifact(
-            kind: "forged-transport-kind",
-            tuyaDeviceID: artifact.tuyaDeviceID,
-            sdkConnectionStartedAtUptimeNanoseconds: artifact.sdkConnectionStartedAtUptimeNanoseconds,
-            payloadCount: artifact.payloadCount,
-            totalByteCount: artifact.totalByteCount,
-            latestPayloadAtUptimeNanoseconds: artifact.latestPayloadAtUptimeNanoseconds,
-            hasPayloadStrictlyBeyondHistoricalRejectionHorizon: artifact.hasPayloadStrictlyBeyondHistoricalRejectionHorizon,
-            retainedPayloads: artifact.retainedPayloads,
-            retainedPayloadByteCount: artifact.retainedPayloadByteCount,
-            omittedPayloadCount: artifact.omittedPayloadCount
+        var forgedJSON = try JSONSerialization.jsonObject(with: artifact.encodedJSON()) as! [String: Any]
+        forgedJSON["kind"] = "forged-transport-kind"
+        let forgedArtifact = try JSONDecoder().decode(
+            C7D09A22DocumentedTransparentEvidenceArtifact.self,
+            from: JSONSerialization.data(withJSONObject: forgedJSON, options: [.sortedKeys])
         )
         let forged = C7D09A22DocumentedTransparentLivePreflight.FieldAttemptEvidence(
             connectionGeneration: generation,
