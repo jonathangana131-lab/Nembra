@@ -10,6 +10,7 @@ public enum C7D09A22DocumentedTransparentTransportMilestone {
     public enum Verdict: Equatable, Sendable {
         case blockedUnauthenticated
         case waitingForFirstPayload
+        case waitingForRepeatedPayloads
         case waitingForHistoricalRejectionWindow
         case satisfied
     }
@@ -25,6 +26,9 @@ public enum C7D09A22DocumentedTransparentTransportMilestone {
         }
         guard let transparent, transparent.payloadCount > 0 else {
             return .waitingForFirstPayload
+        }
+        guard transparent.payloadCount >= TuyaPhysicalFirstAcceptanceGate.minimumDocumentedReceivePayloadCount else {
+            return .waitingForRepeatedPayloads
         }
         guard transparent.hasPayloadStrictlyBeyondHistoricalRejectionHorizon else {
             return .waitingForHistoricalRejectionWindow
