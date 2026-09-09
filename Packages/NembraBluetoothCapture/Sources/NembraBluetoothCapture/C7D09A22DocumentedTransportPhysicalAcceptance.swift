@@ -25,6 +25,15 @@ public enum C7D09A22DocumentedTransportPhysicalAcceptance {
             )
         }
 
+        guard artifact.kind == C7D09A22DocumentedTransparentEvidenceArtifact.evidenceKind else {
+            return .blocked(reason: "Documented transport artifact has unsupported provenance.")
+        }
+
+        guard let connectionStartedAt = snapshot.connectionStartedAtUptimeNanoseconds,
+              artifact.sdkConnectionStartedAtUptimeNanoseconds == connectionStartedAt else {
+            return .blocked(reason: "Documented transport artifact does not belong to the exact authenticated SDK connection instance.")
+        }
+
         let receiveEvidence = TuyaAuthenticatedReceiveEvidence(
             provenance: .smartLifeDocumentedDeviceToAppReceive,
             connectionGeneration: generation,
