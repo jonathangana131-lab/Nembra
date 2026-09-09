@@ -24,6 +24,42 @@ final class C7D09A22DocumentedTransportPhysicalAcceptanceTests: XCTestCase {
         )
     }
 
+    func testFieldAttemptConvenienceAcceptanceRejectsZeroGenerationAndForgedArtifactKind() throws {
+        let artifact = try qualifyingArtifact()
+        let zeroGeneration = C7D09A22DocumentedTransparentLivePreflight.FieldAttemptEvidence(
+            connectionGeneration: 0,
+            milestone: .satisfied,
+            artifact: artifact
+        )
+        XCTAssertFalse(zeroGeneration.satisfiesDocumentedAuthenticatedTransportAcceptance)
+
+        let forgedArtifact = C7D09A22DocumentedTransparentEvidenceArtifact(
+            kind: "forged-transport-kind",
+            tuyaDeviceID: artifact.tuyaDeviceID,
+            sdkConnectionStartedAtUptimeNanoseconds: artifact.sdkConnectionStartedAtUptimeNanoseconds,
+            payloadCount: artifact.payloadCount,
+            totalByteCount: artifact.totalByteCount,
+            latestPayloadAtUptimeNanoseconds: artifact.latestPayloadAtUptimeNanoseconds,
+            hasPayloadStrictlyBeyondHistoricalRejectionHorizon: artifact.hasPayloadStrictlyBeyondHistoricalRejectionHorizon,
+            retainedPayloads: artifact.retainedPayloads,
+            retainedPayloadByteCount: artifact.retainedPayloadByteCount,
+            omittedPayloadCount: artifact.omittedPayloadCount
+        )
+        let forged = C7D09A22DocumentedTransparentLivePreflight.FieldAttemptEvidence(
+            connectionGeneration: generation,
+            milestone: .satisfied,
+            artifact: forgedArtifact
+        )
+        XCTAssertFalse(forged.satisfiesDocumentedAuthenticatedTransportAcceptance)
+
+        let valid = C7D09A22DocumentedTransparentLivePreflight.FieldAttemptEvidence(
+            connectionGeneration: generation,
+            milestone: .satisfied,
+            artifact: artifact
+        )
+        XCTAssertTrue(valid.satisfiesDocumentedAuthenticatedTransportAcceptance)
+    }
+
     func testStaleGenerationFailsClosedBeforeEvidenceCanBePromoted() throws {
         let fieldAttempt = C7D09A22DocumentedTransparentLivePreflight.FieldAttemptEvidence(
             connectionGeneration: generation - 1,
