@@ -43,7 +43,7 @@ final class C7D09A22DocumentedTransportPhysicalAcceptanceTests: XCTestCase {
     func testUnsatisfiedMilestoneCannotBypassCanonicalReceiveRequirement() {
         let fieldAttempt = C7D09A22DocumentedTransparentLivePreflight.FieldAttemptEvidence(
             connectionGeneration: generation,
-            milestone: .blockedNoPayloads,
+            milestone: .waitingForFirstPayload,
             artifact: nil
         )
 
