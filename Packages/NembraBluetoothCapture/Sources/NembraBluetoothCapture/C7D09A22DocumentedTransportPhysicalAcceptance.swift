@@ -34,12 +34,9 @@ public enum C7D09A22DocumentedTransportPhysicalAcceptance {
             return .blocked(reason: "Documented transport artifact does not belong to the exact authenticated SDK connection instance.")
         }
 
-        let receiveEvidence = TuyaAuthenticatedReceiveEvidence(
-            provenance: .smartLifeDocumentedDeviceToAppReceive,
-            connectionGeneration: generation,
-            payloadCount: artifact.payloadCount,
-            latestPayloadUptimeNanoseconds: artifact.latestPayloadAtUptimeNanoseconds
-        )
+        guard let receiveEvidence = artifact.validatedReceiveEvidence(connectionGeneration: generation) else {
+            return .blocked(reason: "Documented transport artifact does not contain self-consistent retained receive bytes and chronology.")
+        }
 
         return TuyaPhysicalFirstAcceptanceGate.verdict(
             preflight: snapshot,
