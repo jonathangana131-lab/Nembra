@@ -106,6 +106,7 @@ struct DashboardView: View {
             ) {
                 Task { await vehicle.setLocked(!(vehicle.state.isLocked ?? false)) }
             }
+            .disabled(!vehicle.hasLiveVehicleCommandAuthority || vehicle.isVehicleCommandPending)
         } message: {
             Text("Nembra changes the lock state only after the scooter confirms the command.")
         }
@@ -207,6 +208,12 @@ struct DashboardView: View {
         if shouldShowStoppedControls {
             stoppedControls
                 .transition(.opacity)
+        } else if vehicle.state.connection == .connected && hasUsableStoppedSpeed && !vehicle.hasLiveVehicleCommandAuthority {
+            Label("Live control evidence required", systemImage: "exclamationmark.shield")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Controls unavailable until live vehicle command authority is established")
+                .accessibilityIdentifier("dashboard.controls-authority-unavailable-message")
         } else if vehicle.state.connection == .connected && !hasUsableStoppedSpeed {
             Label("Live speed required for controls", systemImage: "speedometer")
                 .font(.caption.weight(.semibold))
@@ -378,6 +385,13 @@ struct DashboardView: View {
             if shouldShowStoppedControls {
                 stoppedControls
                     .transition(.opacity.combined(with: .scale(scale: 0.97)))
+            } else if vehicle.state.connection == .connected && hasUsableStoppedSpeed && !vehicle.hasLiveVehicleCommandAuthority {
+                Label("Live control evidence required", systemImage: "exclamationmark.shield")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityLabel("Controls unavailable until live vehicle command authority is established")
+                    .accessibilityIdentifier("dashboard.controls-authority-unavailable-message")
             } else if vehicle.state.connection == .connected && !hasUsableStoppedSpeed {
                 Label("Live speed required", systemImage: "speedometer")
                     .font(.caption2.weight(.semibold))
@@ -457,7 +471,7 @@ struct DashboardView: View {
                             .frame(width: 44, height: 44)
                         }
                         .buttonStyle(.glass)
-                        .disabled(vehicle.state.connection != .connected || vehicle.isVehicleCommandPending || isSelected)
+                        .disabled(!vehicle.hasLiveVehicleCommandAuthority || vehicle.isVehicleCommandPending || isSelected)
                         .accessibilityLabel(mode.displayName)
                         .accessibilityValue(modeChoiceAccessibilityValue(selected: isSelected, pending: isPending))
                         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -486,7 +500,7 @@ struct DashboardView: View {
                         .frame(width: 44, height: 44)
                     }
                     .buttonStyle(.glass)
-                    .disabled(vehicle.isVehicleCommandPending)
+                    .disabled(!vehicle.hasLiveVehicleCommandAuthority || vehicle.isVehicleCommandPending)
                     .accessibilityLabel(isOn ? "Turn light off" : "Turn light on")
                     .accessibilityValue(isPending ? "Updating" : (isOn ? "On" : "Off"))
                     .accessibilityIdentifier("dashboard.control.light")
@@ -509,7 +523,7 @@ struct DashboardView: View {
                         .frame(width: 44, height: 44)
                     }
                     .buttonStyle(.glass)
-                    .disabled(vehicle.isVehicleCommandPending)
+                    .disabled(!vehicle.hasLiveVehicleCommandAuthority || vehicle.isVehicleCommandPending)
                     .accessibilityLabel(isLocked ? "Unlock scooter" : "Lock scooter")
                     .accessibilityValue(isPending ? "Updating" : (isLocked ? "Secured" : "Ready"))
                     .accessibilityIdentifier("dashboard.control.lock")
@@ -569,7 +583,8 @@ struct DashboardView: View {
     }
 
     private var shouldShowStoppedControls: Bool {
-        guard let speed = usableStoppedControlSpeedKilometersPerHour else { return false }
+        guard vehicle.hasLiveVehicleCommandAuthority,
+              let speed = usableStoppedControlSpeedKilometersPerHour else { return false }
         return speed < 0.5
     }
 
