@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import NembraBluetoothCapture
 
@@ -25,6 +26,8 @@ struct C7D09A22PhysicalFirstAcceptanceTests {
         )
     }
 
+    private let retainedRawPayloads = [Data([0x01]), Data([0x02, 0x03])]
+
     @Test("canonical auth without raw notifications remains below physical first acceptance")
     func authenticatedStructuredEvidenceAloneIsInsufficient() {
         let evidence = C7D09A22PhysicalFirstAcceptance.RawNotifyEvidence(
@@ -41,6 +44,24 @@ struct C7D09A22PhysicalFirstAcceptanceTests {
         )
     }
 
+    @Test("claimed counters without retained bytes cannot mint physical acceptance")
+    func countersWithoutRetainedBytesAreRejected() {
+        let evidence = C7D09A22PhysicalFirstAcceptance.RawNotifyEvidence(
+            connectionGeneration: connectionGeneration,
+            rawNotifyPayloadCount: 2,
+            latestRawNotifyUptimeNanoseconds: authenticatedAt
+                + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
+                + 1
+        )
+
+        #expect(
+            C7D09A22PhysicalFirstAcceptance.verdict(
+                preflight: readyPreflight(),
+                rawNotifyEvidence: evidence
+            ) == .blocked(reason: "Repeated retained non-empty raw notification bytes are required; summary counters alone are not physical evidence.")
+        )
+    }
+
     @Test("raw notifications from another generation cannot cross the custody boundary")
     func staleRawNotifyGenerationIsRejected() {
         let evidence = C7D09A22PhysicalFirstAcceptance.RawNotifyEvidence(
@@ -48,7 +69,8 @@ struct C7D09A22PhysicalFirstAcceptanceTests {
             rawNotifyPayloadCount: 2,
             latestRawNotifyUptimeNanoseconds: authenticatedAt
                 + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
-                + 1
+                + 1,
+            retainedRawNotifyPayloads: retainedRawPayloads
         )
 
         #expect(
@@ -65,7 +87,8 @@ struct C7D09A22PhysicalFirstAcceptanceTests {
             connectionGeneration: connectionGeneration,
             rawNotifyPayloadCount: 2,
             latestRawNotifyUptimeNanoseconds: authenticatedAt
-                + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
+                + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds,
+            retainedRawNotifyPayloads: retainedRawPayloads
         )
 
         #expect(
@@ -76,14 +99,34 @@ struct C7D09A22PhysicalFirstAcceptanceTests {
         )
     }
 
-    @Test("repeated same-generation raw notify evidence beyond rejection window earns transport acceptance only")
+    @Test("retained byte count must match the raw notify summary")
+    func retainedByteCountMismatchIsRejected() {
+        let evidence = C7D09A22PhysicalFirstAcceptance.RawNotifyEvidence(
+            connectionGeneration: connectionGeneration,
+            rawNotifyPayloadCount: 3,
+            latestRawNotifyUptimeNanoseconds: authenticatedAt
+                + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
+                + 1,
+            retainedRawNotifyPayloads: retainedRawPayloads
+        )
+
+        #expect(
+            C7D09A22PhysicalFirstAcceptance.verdict(
+                preflight: readyPreflight(),
+                rawNotifyEvidence: evidence
+            ) == .blocked(reason: "Raw notification summary does not match the retained physical payload bytes.")
+        )
+    }
+
+    @Test("repeated retained same-generation raw notify bytes beyond rejection window earn transport acceptance only")
     func qualifyingRawNotifyEvidenceIsAccepted() {
         let evidence = C7D09A22PhysicalFirstAcceptance.RawNotifyEvidence(
             connectionGeneration: connectionGeneration,
             rawNotifyPayloadCount: 2,
             latestRawNotifyUptimeNanoseconds: authenticatedAt
                 + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
-                + 1
+                + 1,
+            retainedRawNotifyPayloads: retainedRawPayloads
         )
 
         #expect(
