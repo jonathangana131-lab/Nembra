@@ -30,7 +30,7 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     /// scheduling gap beyond this horizon cannot be erased by a queued application callback.
     public static let maximumContinuousObservationGapNanoseconds: UInt64 = 5_000_000_000
 
-    public enum MutationError: Error, Equatable, Sendable {
+    public enum MutationError: Error, Equatable, Sendable, LocalizedError {
         case noActiveConnection
         case staleConnection
         case invalidAuthenticationTransition
@@ -42,10 +42,21 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         case observationContinuityInvalidated
         case incompleteObservationHorizonReached
         case preflightNotReady
+
+        public var errorDescription: String? {
+            switch self {
+            case .incompleteObservationHorizonReached:
+                return "Authenticated transport reached the bounded incomplete-evidence horizon without qualifying repeated application evidence."
+            default:
+                return nil
+            }
+        }
     }
 
     private static let observationContinuityFailureReason =
         "Authenticated observation continuity was invalidated by a long observation gap."
+    private static let incompleteObservationFailureReason =
+        "Authenticated transport reached the bounded incomplete-evidence horizon without qualifying repeated application evidence."
     private static let sourceAuthorityFailureReason =
         "Tuya SDK source authority was invalidated."
     private static let internalLifecycleFailureReason =
@@ -144,6 +155,14 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
     }
 
     public func markInternalLifecycleFailure(for token: TuyaReadOnlyConnectionToken) throws {
+        if currentToken == nil,
+           token.ledgerID == ledgerID,
+           token.generation == generation,
+           case let .failed(reason) = authenticationState,
+           reason == Self.incompleteObservationFailureReason {
+            return
+        }
+
         try requireCurrent(token)
 
         switch authenticationState {
@@ -212,6 +231,7 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
             connectionGeneration: currentToken?.generation ?? generation
         )
         if TuyaAuthenticatedReadOnlyPreflight.shouldRetireIncompleteObservation(preMutationHorizonSnapshot) {
+            retireIncompleteObservation(at: now)
             throw MutationError.incompleteObservationHorizonReached
         }
 
@@ -233,6 +253,7 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         latestObservedUptimeNanoseconds = now
 
         if TuyaAuthenticatedReadOnlyPreflight.shouldRetireIncompleteObservation(makeSnapshot()) {
+            retireIncompleteObservation(at: now)
             throw MutationError.incompleteObservationHorizonReached
         }
     }
@@ -334,5 +355,11 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
             currentToken = nil
             throw MutationError.observationContinuityInvalidated
         }
+    }
+
+    private func retireIncompleteObservation(at now: UInt64) {
+        latestObservedUptimeNanoseconds = now
+        authenticationState = .failed(reason: Self.incompleteObservationFailureReason)
+        currentToken = nil
     }
 }
