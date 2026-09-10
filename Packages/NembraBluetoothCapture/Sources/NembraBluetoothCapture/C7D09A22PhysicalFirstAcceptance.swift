@@ -12,14 +12,23 @@ public enum C7D09A22PhysicalFirstAcceptance {
         public let rawNotifyPayloadCount: Int
         public let latestRawNotifyUptimeNanoseconds: UInt64?
 
+        /// Retained, non-semantic raw notification bytes from the physical characteristic path.
+        ///
+        /// Counts/timestamps are useful summaries but are not physical evidence by themselves.
+        /// Keeping the bytes here prevents a caller from minting first acceptance with only a
+        /// claimed counter. No parsing or DP meaning is attached to these payloads.
+        public let retainedRawNotifyPayloads: [Data]
+
         public init(
             connectionGeneration: UInt64,
             rawNotifyPayloadCount: Int,
-            latestRawNotifyUptimeNanoseconds: UInt64?
+            latestRawNotifyUptimeNanoseconds: UInt64?,
+            retainedRawNotifyPayloads: [Data] = []
         ) {
             self.connectionGeneration = connectionGeneration
             self.rawNotifyPayloadCount = max(0, rawNotifyPayloadCount)
             self.latestRawNotifyUptimeNanoseconds = latestRawNotifyUptimeNanoseconds
+            self.retainedRawNotifyPayloads = retainedRawNotifyPayloads
         }
     }
 
@@ -44,6 +53,18 @@ public enum C7D09A22PhysicalFirstAcceptance {
         guard rawNotifyEvidence.rawNotifyPayloadCount >= minimumRawNotifyPayloadCount else {
             return .blocked(reason: "Repeated raw application notify payload evidence is required.")
         }
+
+        let retainedNonEmptyPayloadCount = rawNotifyEvidence.retainedRawNotifyPayloads.reduce(into: 0) { count, payload in
+            if !payload.isEmpty { count += 1 }
+        }
+        guard retainedNonEmptyPayloadCount >= minimumRawNotifyPayloadCount else {
+            return .blocked(reason: "Repeated retained non-empty raw notification bytes are required; summary counters alone are not physical evidence.")
+        }
+        guard retainedNonEmptyPayloadCount == rawNotifyEvidence.rawNotifyPayloadCount,
+              rawNotifyEvidence.retainedRawNotifyPayloads.allSatisfy({ !$0.isEmpty }) else {
+            return .blocked(reason: "Raw notification summary does not match the retained physical payload bytes.")
+        }
+
         guard let authenticatedAt = preflight.authenticatedAtUptimeNanoseconds,
               let latestObserved = preflight.latestObservedUptimeNanoseconds,
               let latestRawNotify = rawNotifyEvidence.latestRawNotifyUptimeNanoseconds,
