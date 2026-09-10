@@ -26,6 +26,12 @@ public enum C7D09A22DocumentedTransparentTransportMilestone {
         guard let transparent, transparent.payloadCount > 0 else {
             return .waitingForFirstPayload
         }
+        // Keep the visible transport milestone aligned with physical acceptance's repeated-receive
+        // contract. A single delayed/bootstrap callback, even one arriving after 30 seconds, is not
+        // enough to present this generation as having satisfied authenticated receive liveness.
+        guard transparent.payloadCount >= TuyaPhysicalFirstAcceptanceGate.minimumDocumentedReceivePayloadCount else {
+            return .waitingForHistoricalRejectionWindow
+        }
         guard transparent.hasPayloadStrictlyBeyondHistoricalRejectionHorizon else {
             return .waitingForHistoricalRejectionWindow
         }

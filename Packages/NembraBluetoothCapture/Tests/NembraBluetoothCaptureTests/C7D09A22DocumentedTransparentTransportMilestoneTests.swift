@@ -32,6 +32,56 @@ struct C7D09A22DocumentedTransparentTransportMilestoneTests {
     }
 
     @Test
+    func singlePostHorizonCallbackCannotSatisfyRepeatedReceiveMilestone() {
+        let authenticated = TuyaAuthenticatedReadOnlyPreflightSnapshot(
+            authenticationState: .authenticated,
+            authenticationMethod: .smartLifeAppSDK,
+            connectionStartedAtUptimeNanoseconds: 0,
+            authenticatedAtUptimeNanoseconds: 1,
+            latestObservedUptimeNanoseconds: 45_000_000_001,
+            applicationPayloadCount: 2,
+            latestApplicationPayloadUptimeNanoseconds: 31_000_000_002,
+            connectionGeneration: 1
+        )
+        let oneDelayedCallback = TuyaSmartLifeTransparentReceiveObservationLedger.Snapshot(
+            tuyaDeviceID: "demo",
+            sdkConnectionStartedAtUptimeNanoseconds: 0,
+            payloadCount: 1,
+            totalByteCount: 1,
+            latestPayloadAtUptimeNanoseconds: 31_000_000_001,
+            hasPayloadStrictlyBeyondHistoricalRejectionHorizon: true,
+            retainedPayloads: [
+                .init(payload: Data([0x01]), receivedAtUptimeNanoseconds: 31_000_000_001)
+            ],
+            retainedPayloadByteCount: 1,
+            omittedPayloadCount: 0
+        )
+        #expect(C7D09A22DocumentedTransparentTransportMilestone.verdict(
+            authenticatedPreflight: authenticated,
+            transparent: oneDelayedCallback
+        ) == .waitingForHistoricalRejectionWindow)
+
+        let repeatedCallbacks = TuyaSmartLifeTransparentReceiveObservationLedger.Snapshot(
+            tuyaDeviceID: "demo",
+            sdkConnectionStartedAtUptimeNanoseconds: 0,
+            payloadCount: 2,
+            totalByteCount: 2,
+            latestPayloadAtUptimeNanoseconds: 31_000_000_001,
+            hasPayloadStrictlyBeyondHistoricalRejectionHorizon: true,
+            retainedPayloads: [
+                .init(payload: Data([0x01]), receivedAtUptimeNanoseconds: 1_000_000_000),
+                .init(payload: Data([0x02]), receivedAtUptimeNanoseconds: 31_000_000_001)
+            ],
+            retainedPayloadByteCount: 2,
+            omittedPayloadCount: 0
+        )
+        #expect(C7D09A22DocumentedTransparentTransportMilestone.verdict(
+            authenticatedPreflight: authenticated,
+            transparent: repeatedCallbacks
+        ) == .satisfied)
+    }
+
+    @Test
     @MainActor
     func authenticatedSessionWaitsForTransparentPayloadThenHistoricalWindowSurvival() async throws {
         let context = try await authenticatedContext()
