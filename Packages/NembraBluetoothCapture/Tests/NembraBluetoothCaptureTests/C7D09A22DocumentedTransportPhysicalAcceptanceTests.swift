@@ -7,7 +7,7 @@ final class C7D09A22DocumentedTransportPhysicalAcceptanceTests: XCTestCase {
     private let authenticatedAt: UInt64 = 10_000_000_000
     private let deviceID = "6815A5F5-4D1E-E004-BAE8-6DF924123907"
 
-    func testQualifyingSameGenerationDocumentedTransportReachesCanonicalPhysicalAcceptanceGate() throws {
+    func testQualifyingSameGenerationDocumentedTransportRemainsBelowPhysicalFirstAcceptance() throws {
         let artifact = try qualifyingArtifact()
         let fieldAttempt = C7D09A22DocumentedTransparentLivePreflight.FieldAttemptEvidence(
             connectionGeneration: generation,
@@ -20,7 +20,7 @@ final class C7D09A22DocumentedTransportPhysicalAcceptanceTests: XCTestCase {
                 authenticatedPreflight: readyPreflight(),
                 fieldAttempt: fieldAttempt
             ),
-            .readyForPhysicalFirstAcceptance
+            .blocked(reason: "Authenticated documented transport survived the rejection window; raw FD50 characteristic notify custody is still required for physical first acceptance.")
         )
     }
 
@@ -159,8 +159,9 @@ final class C7D09A22DocumentedTransportPhysicalAcceptanceTests: XCTestCase {
         )
     }
 
-    func testBridgeNeverGrantsRawCustodySemanticsOrMutationAuthority() {
+    func testBridgeNeverGrantsRawCustodyPhysicalAcceptanceSemanticsOrMutationAuthority() {
         XCTAssertFalse(C7D09A22DocumentedTransportPhysicalAcceptance.authorizesRawFD50CharacteristicCustody)
+        XCTAssertFalse(C7D09A22DocumentedTransportPhysicalAcceptance.authorizesPhysicalFirstAcceptance)
         XCTAssertFalse(C7D09A22DocumentedTransportPhysicalAcceptance.authorizesStationaryMapping)
         XCTAssertFalse(C7D09A22DocumentedTransportPhysicalAcceptance.authorizesTelemetrySemantics)
         XCTAssertFalse(C7D09A22DocumentedTransportPhysicalAcceptance.authorizesControlWrites)
