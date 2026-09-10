@@ -80,6 +80,7 @@ final class C7D09A22DocumentedTransportPhysicalAcceptanceTests: XCTestCase {
         )
 
         XCTAssertNil(forgedArtifact.validatedReceiveEvidence(connectionGeneration: generation))
+        XCTAssertFalse(fieldAttempt.satisfiesDocumentedAuthenticatedTransportAcceptance)
         XCTAssertEqual(
             C7D09A22DocumentedTransportPhysicalAcceptance.verdict(
                 authenticatedPreflight: readyPreflight(),
