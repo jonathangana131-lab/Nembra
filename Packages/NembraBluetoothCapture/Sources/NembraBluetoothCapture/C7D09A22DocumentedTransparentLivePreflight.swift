@@ -31,12 +31,10 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
             guard let generation = connectionGeneration,
                   generation > 0,
                   milestone == .satisfied,
-                  let artifact,
-                  artifact.kind == C7D09A22DocumentedTransparentEvidenceArtifact.evidenceKind else {
+                  let artifact else {
                 return false
             }
-            return artifact.payloadCount >= TuyaPhysicalFirstAcceptanceGate.minimumDocumentedReceivePayloadCount &&
-                artifact.hasPayloadStrictlyBeyondHistoricalRejectionHorizon
+            return artifact.validatedReceiveEvidence(connectionGeneration: generation) != nil
         }
 
         public var authorizesRawFD50CharacteristicCustody: Bool { false }
