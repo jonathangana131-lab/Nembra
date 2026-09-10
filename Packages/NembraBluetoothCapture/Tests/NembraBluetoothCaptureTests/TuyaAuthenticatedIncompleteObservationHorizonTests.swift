@@ -32,6 +32,18 @@ struct TuyaAuthenticatedIncompleteObservationHorizonTests {
         #expect(snapshot.applicationPayloadCount == 1)
         #expect(snapshot.latestApplicationPayloadUptimeNanoseconds == authenticatedAt + 1_000_000_000)
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) != .readyForStationaryMapping)
+        if case let .failed(reason) = snapshot.authenticationState {
+            #expect(reason.contains("bounded incomplete-evidence horizon"))
+        } else {
+            Issue.record("Incomplete horizon must terminally fail the exact authenticated generation.")
+        }
+        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection) {
+            try await ledger.observeCurrentConnection(for: token)
+        }
+
+        // Capture's existing generic terminal cleanup may race the package-owned horizon throw.
+        // It is safe and idempotent only for this exact already-retired incomplete-horizon token.
+        try await ledger.markInternalLifecycleFailure(for: token)
     }
 
     @Test("deadline-crossing second callback is rejected before evidence mutation")
@@ -63,6 +75,33 @@ struct TuyaAuthenticatedIncompleteObservationHorizonTests {
         #expect(after.applicationPayloadCount == before.applicationPayloadCount)
         #expect(after.latestApplicationPayloadUptimeNanoseconds == before.latestApplicationPayloadUptimeNanoseconds)
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: after) != .readyForStationaryMapping)
+        if case .failed = after.authenticationState {
+            // Expected: the deadline-crossing callback cannot remain authorized after rejection.
+        } else {
+            Issue.record("Deadline-crossing application evidence must retire the authenticated generation.")
+        }
+        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection) {
+            try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
+        }
+        try await ledger.markInternalLifecycleFailure(for: token)
+    }
+
+    @Test("incomplete-horizon cleanup cannot authorize an older token")
+    func incompleteHorizonCleanupIsGenerationExact() async throws {
+        let clock = HorizonClock(2_500_000_000)
+        let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
+        let oldToken = try await ledger.beginConnection()
+        try await ledger.markAuthenticationStarted(for: oldToken)
+        try await ledger.markAuthenticated(for: oldToken, method: .smartLifeAppSDK)
+        try await ledger.endConnection(for: oldToken)
+
+        let currentToken = try await ledger.beginConnection()
+        try await ledger.markAuthenticationStarted(for: currentToken)
+        try await ledger.markAuthenticated(for: currentToken, method: .smartLifeAppSDK)
+
+        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection) {
+            try await ledger.markInternalLifecycleFailure(for: oldToken)
+        }
     }
 
     @Test("canonically ready generation survives incomplete horizon")
