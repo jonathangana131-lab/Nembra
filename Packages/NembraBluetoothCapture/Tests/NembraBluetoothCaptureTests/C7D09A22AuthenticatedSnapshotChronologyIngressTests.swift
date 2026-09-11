@@ -62,4 +62,28 @@ struct C7D09A22AuthenticatedSnapshotChronologyIngressTests {
         #expect(!ingress.hasActiveGeneration)
         #expect(ingress.capture(payload: Data([0x01]), callbackDeviceID: "demo") == nil)
     }
+
+    @Test
+    @MainActor
+    func explicitBeginRejectsCallerBackdatedConnectionStart() async throws {
+        let ledger = TuyaAuthenticatedReadOnlySessionLedger()
+        let token = try await ledger.beginConnection()
+        try await ledger.markAuthenticationStarted(for: token)
+        try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
+        let snapshot = await ledger.currentPreflightSnapshot()
+        let packageStart = try #require(snapshot.connectionStartedAtUptimeNanoseconds)
+        let forgedEarlierStart = packageStart > 30_000_000_001
+            ? packageStart - 30_000_000_001
+            : packageStart &+ 1
+
+        let ingress = C7D09A22DocumentedTransparentReceiveIngress()
+        #expect(!(await ingress.begin(
+            connectionToken: token,
+            expectedDeviceID: "demo",
+            sdkConnectionStartedAtUptimeNanoseconds: forgedEarlierStart,
+            authenticatedPreflightSnapshot: snapshot
+        )))
+        #expect(!ingress.hasActiveGeneration)
+        #expect(ingress.capture(payload: Data([0x01]), callbackDeviceID: "demo") == nil)
+    }
 }
