@@ -26,6 +26,13 @@ public enum C7D09A22PhysicalFirstAcceptanceGate {
         /// `nil` deliberately fails closed so existing SDK-only/legacy evidence cannot be
         /// promoted accidentally.
         public let rawNotifyConnectionGeneration: UInt64?
+        /// Package chronology for the most recent retained raw characteristic notification.
+        /// Physical first acceptance requires this notification itself—not merely an idle
+        /// connection—to cross the historical post-authentication rejection horizon.
+        public let latestRawNotifyUptimeNanoseconds: UInt64?
+        /// Retained non-empty raw characteristic bytes. Summary counts/booleans alone are not
+        /// sufficient physical evidence and therefore fail closed in the canonical gate.
+        public let retainedRawNotifyPayloads: [Data]
 
         public init(
             authenticatedPreflight: TuyaAuthenticatedReadOnlyPreflightSnapshot,
@@ -33,7 +40,9 @@ public enum C7D09A22PhysicalFirstAcceptanceGate {
             rawNotifyObservedAfterAuthentication: Bool,
             canonicalFD50CharacteristicTupleProven: Bool,
             sameAuthenticatedTransportCustodyProven: Bool,
-            rawNotifyConnectionGeneration: UInt64? = nil
+            rawNotifyConnectionGeneration: UInt64? = nil,
+            latestRawNotifyUptimeNanoseconds: UInt64? = nil,
+            retainedRawNotifyPayloads: [Data] = []
         ) {
             self.authenticatedPreflight = authenticatedPreflight
             self.rawNotifyPayloadCount = max(0, rawNotifyPayloadCount)
@@ -41,6 +50,8 @@ public enum C7D09A22PhysicalFirstAcceptanceGate {
             self.canonicalFD50CharacteristicTupleProven = canonicalFD50CharacteristicTupleProven
             self.sameAuthenticatedTransportCustodyProven = sameAuthenticatedTransportCustodyProven
             self.rawNotifyConnectionGeneration = rawNotifyConnectionGeneration
+            self.latestRawNotifyUptimeNanoseconds = latestRawNotifyUptimeNanoseconds
+            self.retainedRawNotifyPayloads = retainedRawNotifyPayloads
         }
     }
 
@@ -70,6 +81,19 @@ public enum C7D09A22PhysicalFirstAcceptanceGate {
         }
         guard rawNotifyConnectionGeneration == evidence.authenticatedPreflight.connectionGeneration else {
             return .blocked(reason: "Raw notification evidence belongs to a different or stale connection generation.")
+        }
+
+        let canonicalEvidence = C7D09A22PhysicalFirstAcceptance.RawNotifyEvidence(
+            connectionGeneration: rawNotifyConnectionGeneration,
+            rawNotifyPayloadCount: evidence.rawNotifyPayloadCount,
+            latestRawNotifyUptimeNanoseconds: evidence.latestRawNotifyUptimeNanoseconds,
+            retainedRawNotifyPayloads: evidence.retainedRawNotifyPayloads
+        )
+        guard C7D09A22PhysicalFirstAcceptance.verdict(
+            preflight: evidence.authenticatedPreflight,
+            rawNotifyEvidence: canonicalEvidence
+        ) == .acceptedRawNotifyTransport else {
+            return .blocked(reason: "Raw FD50 notify evidence has not satisfied the canonical retained-byte and post-rejection chronology gate.")
         }
         return .accepted
     }
