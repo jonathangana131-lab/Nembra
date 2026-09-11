@@ -1,11 +1,11 @@
 import Foundation
 
-/// Opaque, semantics-free evidence for the first physical Tuya acceptance gate.
+/// Legacy, summary-only Tuya notify metadata.
 ///
 /// This value deliberately carries no DP identifier, decoded value, control intent, token,
-/// local key, session key, or other credential material. It can prove only that non-empty
-/// device-to-app bytes were observed on the canonical FD50 notify characteristic while the
-/// package owned the same authenticated transport generation.
+/// local key, session key, or other credential material. It is retained for diagnostic/source
+/// compatibility only. Summary fields and caller-supplied provenance booleans are not physical
+/// evidence and can never authorize Nembra's physical GO boundary.
 public struct TuyaPhysicalNotifyEvidence: Equatable, Sendable {
     public enum Direction: String, Equatable, Sendable {
         case deviceToApp
@@ -39,12 +39,12 @@ public struct TuyaPhysicalNotifyEvidence: Equatable, Sendable {
     }
 }
 
-/// Final fail-closed boundary for Nembra's first physical acceptance.
+/// Compatibility facade over the canonical C7D09A22 physical-truth boundary.
 ///
-/// `TuyaAuthenticatedReadOnlyPreflight` proves the documented Smart Life SDK-authenticated
-/// application path survived the historical rejection window. This gate additionally requires
-/// genuine, package-owned raw FD50 notify bytes from that exact authenticated connection
-/// generation. It does not decode or assign any scooter semantics and grants no write authority.
+/// Physical GO authority lives only in `C7D09A22PhysicalFirstAcceptance`, whose evidence retains
+/// repeated non-empty raw notify bytes and whose initializer is package-internal. The older
+/// summary-only path below is deliberately fail-closed so counters, timestamps, or provenance
+/// booleans supplied by app/UI code cannot become physical truth.
 public enum TuyaPhysicalFirstAcceptance {
     public static let canonicalDeviceToAppCharacteristicUUID =
         "00000002-0000-1001-8001-00805F9B07D0"
@@ -54,44 +54,35 @@ public enum TuyaPhysicalFirstAcceptance {
         case accepted
     }
 
+    /// Authoritative compatibility entry point. This delegates to the single canonical physical
+    /// acceptance implementation rather than maintaining a parallel definition of GO.
+    public static func verdict(
+        preflight: TuyaAuthenticatedReadOnlyPreflightSnapshot,
+        rawNotifyEvidence: C7D09A22PhysicalFirstAcceptance.RawNotifyEvidence
+    ) -> Verdict {
+        switch C7D09A22PhysicalFirstAcceptance.verdict(
+            preflight: preflight,
+            rawNotifyEvidence: rawNotifyEvidence
+        ) {
+        case .acceptedRawNotifyTransport:
+            return .accepted
+        case .blocked(let reason):
+            return .blocked(reason: reason)
+        }
+    }
+
+    /// Legacy summary-only evidence is intentionally non-authoritative.
+    ///
+    /// Even apparently valid values cannot prove retained bytes or package-owned callback custody,
+    /// so this overload must never produce `.accepted`.
     public static func verdict(
         preflight: TuyaAuthenticatedReadOnlyPreflightSnapshot,
         notify: TuyaPhysicalNotifyEvidence
     ) -> Verdict {
-        guard TuyaAuthenticatedReadOnlyPreflight.verdict(for: preflight) == .readyForStationaryMapping else {
-            return .blocked(reason: "Authenticated read-only preflight is not ready.")
-        }
-        guard notify.packageOwnedRawTransportEvidence else {
-            return .blocked(reason: "Raw notify evidence is not owned by the live capture transport.")
-        }
-        guard notify.samePhysicalTransportCustodyProven else {
-            return .blocked(reason: "Raw notify evidence lacks same-transport custody proof.")
-        }
-        guard notify.direction == .deviceToApp else {
-            return .blocked(reason: "Physical acceptance requires device-to-app notify evidence.")
-        }
-        guard notify.payloadByteCount > 0 else {
-            return .blocked(reason: "Physical acceptance requires a non-empty notify payload.")
-        }
-        guard notify.connectionGeneration > 0,
-              notify.connectionGeneration == preflight.connectionGeneration else {
-            return .blocked(reason: "Notify evidence is not from the authenticated connection generation.")
-        }
-        guard canonicalizedUUID(notify.characteristicUUID) == canonicalDeviceToAppCharacteristicUUID else {
-            return .blocked(reason: "Notify evidence is not from the canonical FD50 device-to-app characteristic.")
-        }
-        guard let authenticatedAt = preflight.authenticatedAtUptimeNanoseconds,
-              notify.receivedAtUptimeNanoseconds >= authenticatedAt else {
-            return .blocked(reason: "Notify chronology is unavailable or predates authentication.")
-        }
-        guard notify.receivedAtUptimeNanoseconds - authenticatedAt
-                > TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds else {
-            return .blocked(reason: "Raw notify evidence has not survived beyond the historical rejection window.")
-        }
-        return .accepted
-    }
-
-    private static func canonicalizedUUID(_ value: String) -> String {
-        value.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        _ = preflight
+        _ = notify
+        return .blocked(
+            reason: "Legacy summary-only notify metadata cannot authorize physical acceptance; retained package-owned raw notify evidence is required."
+        )
     }
 }
