@@ -561,14 +561,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
     @Published private(set) var membershipStatus = "Exact scooter membership has not been checked in the official SDK account yet."
     @Published private(set) var membershipBusy = false
     @Published private(set) var fieldAuthorizationStatus = "Waiting for the retained field authorization manifest."
-    @Published private(set) var ledgerSnapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
-        authenticationState: .unavailable(reason: "No active Bluetooth connection."),
-        connectionStartedAtUptimeNanoseconds: nil,
-        authenticatedAtUptimeNanoseconds: nil,
-        latestObservedUptimeNanoseconds: nil,
-        applicationPayloadCount: 0,
-        connectionGeneration: 0
-    )
+    @Published private(set) var ledgerSnapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot.noActiveConnection
     @Published private(set) var exportData: Data?
     @Published private(set) var diagnosticExportError: String?
     @Published private(set) var exportName = "Nembra-Secure-Link-Diagnostics.json"
@@ -1956,13 +1949,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
                    transparentEvidence.satisfiesDocumentedAuthenticatedTransportAcceptance,
                    transparentEvidence.connectionGeneration == token.diagnosticGeneration {
                     self.transparentTransportAcceptanceLoggedGeneration = token.diagnosticGeneration
-                    self.log("authenticated_transparent_transport_acceptance", [
+                    self.log("authenticated_transparent_transport_survival", [
                         "generation": String(token.diagnosticGeneration),
                         "payloadCount": String(transparentEvidence.artifact?.payloadCount ?? 0),
                         "survivedHistoricalRejectionHorizon": "true",
                         "authority": "documented-tuya-transport-only"
                     ])
-                    self.message = "Authenticated Tuya receive bytes survived beyond the historical rejection window for generation \(token.diagnosticGeneration). Physical transport acceptance is proven; raw FD50 characteristic custody and scooter DP semantics remain unassigned."
+                    self.message = "Authenticated Tuya receive bytes survived beyond the historical rejection window for generation \(token.diagnosticGeneration). Documented Tuya transport survival is proven; C7D09A22 physical-first acceptance still requires retained raw FD50 characteristic notifications tied to this authenticated generation, and scooter DP semantics remain unassigned."
                 }
 #endif
 
