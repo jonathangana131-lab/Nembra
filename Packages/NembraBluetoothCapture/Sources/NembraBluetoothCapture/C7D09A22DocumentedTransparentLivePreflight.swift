@@ -47,7 +47,10 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
 
     private let handoff: C7D09A22DocumentedTransparentDelegateHandoff
     private var authenticatedSnapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot?
-    private var activeGeneration: UInt64?
+    /// Retain the exact package-minted token, not just its diagnostic generation number.
+    /// Independent connection ledgers can legitimately mint the same diagnostic generation;
+    /// that number is presentation/debug metadata and is never sufficient lifecycle authority.
+    private var activeConnectionToken: TuyaReadOnlyConnectionToken?
 
     public init(
         preflightSnapshotProvider: @escaping SnapshotProvider,
@@ -68,7 +71,7 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
         authenticatedPreflightSnapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot
     ) async -> Bool {
         authenticatedSnapshot = nil
-        activeGeneration = nil
+        activeConnectionToken = nil
         let armed = await handoff.begin(
             connectionToken: connectionToken,
             expectedDeviceID: expectedDeviceID,
@@ -76,7 +79,7 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
         )
         guard armed else { return false }
         self.authenticatedSnapshot = authenticatedPreflightSnapshot
-        self.activeGeneration = connectionToken.diagnosticGeneration
+        self.activeConnectionToken = connectionToken
         return true
     }
 
@@ -123,7 +126,7 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
     /// characteristic or any DP meaning.
     public func fieldAttemptEvidence() async -> FieldAttemptEvidence {
         guard let authenticatedSnapshot,
-              let activeGeneration else {
+              let activeConnectionToken else {
             return FieldAttemptEvidence(
                 connectionGeneration: nil,
                 milestone: .blockedUnauthenticated,
@@ -137,7 +140,7 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
         )
         let artifact = transparent.map(C7D09A22DocumentedTransparentEvidenceArtifact.init(snapshot:))
         return FieldAttemptEvidence(
-            connectionGeneration: activeGeneration,
+            connectionGeneration: activeConnectionToken.diagnosticGeneration,
             milestone: milestone,
             artifact: artifact
         )
@@ -156,24 +159,25 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
     /// GATT service/characteristic tuple required for raw FD50 physical first acceptance.
     public func evidenceArtifact() async -> C7D09A22DocumentedTransparentEvidenceArtifact? {
         guard authenticatedSnapshot != nil,
-              activeGeneration != nil,
+              activeConnectionToken != nil,
               let snapshot = await handoff.diagnosticSnapshot() else {
             return nil
         }
         return C7D09A22DocumentedTransparentEvidenceArtifact(snapshot: snapshot)
     }
 
-    /// Retires only when the caller still owns the exact armed package generation.
+    /// Retires only when the caller still owns the exact armed package token.
     ///
-    /// This is the preferred live-app terminal path. An asynchronous failure/disconnect callback
-    /// from generation N must never be able to retire a subsequently armed generation N+1.
+    /// Diagnostic generation numbers are deliberately insufficient lifecycle authority because
+    /// independent ledgers can both mint generation 1. An asynchronous callback carrying a token
+    /// from another ledger must never retire this authenticated field attempt.
     /// Returns `true` only when this call actually retired the active generation.
     @discardableResult
     public func retire(connectionToken: TuyaReadOnlyConnectionToken) async -> Bool {
-        guard activeGeneration == connectionToken.diagnosticGeneration else { return false }
+        guard activeConnectionToken == connectionToken else { return false }
         await handoff.retire()
         authenticatedSnapshot = nil
-        activeGeneration = nil
+        activeConnectionToken = nil
         return true
     }
 
@@ -182,14 +186,15 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
     public func retire() async {
         await handoff.retire()
         authenticatedSnapshot = nil
-        activeGeneration = nil
+        activeConnectionToken = nil
     }
 
     public var hasActiveAuthenticatedGeneration: Bool {
-        authenticatedSnapshot != nil && activeGeneration != nil && handoff.hasActiveGeneration
+        authenticatedSnapshot != nil && activeConnectionToken != nil && handoff.hasActiveGeneration
     }
 
-    public var activeDiagnosticGeneration: UInt64? { activeGeneration }
+    /// Diagnostic-only generation number for display/export. Never use this value as lifecycle authority.
+    public var activeDiagnosticGeneration: UInt64? { activeConnectionToken?.diagnosticGeneration }
 
     // Transport evidence cannot authorize protocol meaning or scooter mutation.
     public var authorizesRawFD50CharacteristicCustody: Bool { false }
