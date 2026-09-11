@@ -66,7 +66,12 @@ final class SmartLifeTransparentReceiveLease {
         authenticatedPreflightSnapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot
     ) async -> Generation? {
         if let generation {
-            return generation.diagnosticGeneration == connectionToken.diagnosticGeneration ? generation : nil
+            // Idempotent re-entry is valid only for the exact package token while this
+            // lease still physically owns Tuya's process-global receive-delegate slot.
+            // Diagnostic generation numbers are intentionally insufficient here because
+            // independent ledgers can both mint generation 1, and a displaced delegate
+            // means the documented receive path is no longer installed.
+            return generation == connectionToken && ownsManagerDelegateSlot ? generation : nil
         }
 
         guard await preflight.arm(
@@ -100,7 +105,7 @@ final class SmartLifeTransparentReceiveLease {
     /// only documented authenticated Tuya transport acceptance; raw FD50 characteristic custody,
     /// scooter DP semantics, and all control authority remain false in the package evidence.
     func fieldAttemptEvidence(for connectionToken: Generation) async -> FieldAttemptEvidence? {
-        guard generation?.diagnosticGeneration == connectionToken.diagnosticGeneration,
+        guard generation == connectionToken,
               ownsManagerDelegateSlot else {
             return nil
         }
@@ -112,7 +117,7 @@ final class SmartLifeTransparentReceiveLease {
     func diagnosticSnapshot(
         for connectionToken: Generation
     ) async -> C7D09A22DocumentedTransparentReceiveIngress.DiagnosticSnapshot? {
-        guard generation?.diagnosticGeneration == connectionToken.diagnosticGeneration,
+        guard generation == connectionToken,
               ownsManagerDelegateSlot else {
             return nil
         }
@@ -122,7 +127,7 @@ final class SmartLifeTransparentReceiveLease {
     /// Terminal teardown is fenced to the exact token that armed this lease. An old
     /// async callback from generation N cannot clear the manager slot for generation N+1.
     func terminalLifecycleDidOccur(for connectionToken: Generation) async {
-        guard generation?.diagnosticGeneration == connectionToken.diagnosticGeneration else {
+        guard generation == connectionToken else {
             return
         }
 
