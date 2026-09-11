@@ -34,7 +34,10 @@ public struct TuyaAuthenticatedReadOnlyPreflightSnapshot: Equatable, Sendable {
     public let latestApplicationPayloadUptimeNanoseconds: UInt64?
     public let connectionGeneration: UInt64
 
-    public init(
+    /// Snapshot construction is package-owned. App/UI code may inspect a snapshot returned by the
+    /// session provider, but cannot manufacture authenticated chronology or Smart Life provenance.
+    /// `@testable` package tests retain access to deterministic fixtures.
+    init(
         authenticationState: AuthenticationState,
         authenticationMethod: TuyaReadOnlyAuthenticationMethod? = nil,
         connectionStartedAtUptimeNanoseconds: UInt64?,
