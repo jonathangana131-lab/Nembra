@@ -48,9 +48,12 @@ public final class C7D09A22DocumentedTransparentReceiveIngress {
     }
 
     /// Arms ingress only for a package-issued generation that is already authenticated by
-    /// the official Smart Life SDK for this same generation. A connection token by itself
-    /// is not authentication authority. A second begin always retires the previous
-    /// generation and device identity first.
+    /// the official Smart Life SDK for this same generation. The explicit timestamp overload is
+    /// retained for package-level composition/tests, but the timestamp is not caller authority:
+    /// it must exactly equal the immutable package snapshot's connection-start timestamp. This
+    /// prevents a caller from backdating the transparent ledger to manufacture >30 s liveness.
+    /// A connection token by itself is not authentication authority. A second begin always retires
+    /// the previous generation and device identity first.
     @discardableResult
     public func begin(
         connectionToken: TuyaReadOnlyConnectionToken,
@@ -65,6 +68,7 @@ public final class C7D09A22DocumentedTransparentReceiveIngress {
               authenticatedPreflightSnapshot.connectionGeneration == connectionToken.diagnosticGeneration,
               authenticatedPreflightSnapshot.authenticationState == .authenticated,
               authenticatedPreflightSnapshot.authenticationMethod == .smartLifeAppSDK,
+              authenticatedPreflightSnapshot.connectionStartedAtUptimeNanoseconds == sdkConnectionStartedAtUptimeNanoseconds,
               let authenticatedAt = authenticatedPreflightSnapshot.authenticatedAtUptimeNanoseconds,
               authenticatedAt >= sdkConnectionStartedAtUptimeNanoseconds,
               let nextSession = C7D09A22AuthenticatedTransparentReceiveSession(
