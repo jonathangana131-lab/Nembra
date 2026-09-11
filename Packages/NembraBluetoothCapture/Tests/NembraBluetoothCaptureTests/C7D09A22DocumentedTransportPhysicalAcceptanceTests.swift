@@ -189,7 +189,10 @@ final class C7D09A22DocumentedTransportPhysicalAcceptanceTests: XCTestCase {
         ))
         XCTAssertTrue(ledger.record(early))
         XCTAssertTrue(ledger.record(survived))
-        return C7D09A22DocumentedTransparentEvidenceArtifact(snapshot: ledger.snapshot)
+        return C7D09A22DocumentedTransparentEvidenceArtifact(
+            snapshot: ledger.snapshot,
+            connectionGeneration: generation
+        )
     }
 
     private func readyPreflight() -> TuyaAuthenticatedReadOnlyPreflightSnapshot {
