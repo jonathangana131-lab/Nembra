@@ -19,7 +19,11 @@ public enum C7D09A22PhysicalFirstAcceptance {
         /// claimed counter. No parsing or DP meaning is attached to these payloads.
         public let retainedRawNotifyPayloads: [Data]
 
-        public init(
+        /// Package-internal on purpose. Physical acceptance evidence must be minted by a
+        /// package-owned CoreBluetooth custody path, not assembled by app/UI callers from
+        /// counters, timestamps, or copied bytes. `@testable` fixtures may still exercise the
+        /// canonical decision boundary without making fabrication part of the public API.
+        init(
             connectionGeneration: UInt64,
             rawNotifyPayloadCount: Int,
             latestRawNotifyUptimeNanoseconds: UInt64?,
