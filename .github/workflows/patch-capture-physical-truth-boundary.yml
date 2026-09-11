@@ -25,37 +25,41 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
 
           path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
           text = path.read_text()
 
-          old_snapshot = '''    @Published private(set) var ledgerSnapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
-              authenticationState: .unavailable(reason: "No active Bluetooth connection."),
-              connectionStartedAtUptimeNanoseconds: nil,
-              authenticatedAtUptimeNanoseconds: nil,
-              latestObservedUptimeNanoseconds: nil,
-              applicationPayloadCount: 0,
-              connectionGeneration: 0
-          )'''
-          new_snapshot = '''    @Published private(set) var ledgerSnapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot.noActiveConnection'''
+          snapshot_pattern = re.compile(
+              r'@Published private\(set\) var ledgerSnapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot\(\s*'
+              r'authenticationState: \.unavailable\(reason: "No active Bluetooth connection\."\),\s*'
+              r'connectionStartedAtUptimeNanoseconds: nil,\s*'
+              r'authenticatedAtUptimeNanoseconds: nil,\s*'
+              r'latestObservedUptimeNanoseconds: nil,\s*'
+              r'applicationPayloadCount: 0,\s*'
+              r'connectionGeneration: 0\s*\)'
+          )
+          text, snapshot_count = snapshot_pattern.subn(
+              '@Published private(set) var ledgerSnapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot.noActiveConnection',
+              text,
+              count=1,
+          )
+          if snapshot_count != 1:
+              raise SystemExit(f"expected exactly one fail-closed bootstrap snapshot match, found {snapshot_count}")
 
-          old_event = '''                    self.log("authenticated_transparent_transport_acceptance", ['''
-          new_event = '''                    self.log("authenticated_transparent_transport_survival", ['''
+          old_event = 'self.log("authenticated_transparent_transport_acceptance", ['
+          new_event = 'self.log("authenticated_transparent_transport_survival", ['
+          event_count = text.count(old_event)
+          if event_count != 1:
+              raise SystemExit(f"expected exactly one transport event match, found {event_count}")
+          text = text.replace(old_event, new_event, 1)
 
-          old_message = '''                    self.message = "Authenticated Tuya receive bytes survived beyond the historical rejection window for generation \\(token.diagnosticGeneration). Physical transport acceptance is proven; raw FD50 characteristic custody and scooter DP semantics remain unassigned."'''
-          new_message = '''                    self.message = "Authenticated Tuya receive bytes survived beyond the historical rejection window for generation \\(token.diagnosticGeneration). Documented Tuya transport survival is proven; C7D09A22 physical-first acceptance still requires retained raw FD50 characteristic notifications tied to this authenticated generation, and scooter DP semantics remain unassigned."'''
-
-          replacements = [
-              (old_snapshot, new_snapshot, "fail-closed bootstrap snapshot"),
-              (old_event, new_event, "transport-survival event name"),
-              (old_message, new_message, "transport-survival user message"),
-          ]
-
-          for old, new, label in replacements:
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f"expected exactly one {label} match, found {count}")
-              text = text.replace(old, new, 1)
+          old_message_fragment = 'Physical transport acceptance is proven; raw FD50 characteristic custody and scooter DP semantics remain unassigned.'
+          new_message_fragment = 'Documented Tuya transport survival is proven; C7D09A22 physical-first acceptance still requires retained raw FD50 characteristic notifications tied to this authenticated generation, and scooter DP semantics remain unassigned.'
+          message_count = text.count(old_message_fragment)
+          if message_count != 1:
+              raise SystemExit(f"expected exactly one transport message match, found {message_count}")
+          text = text.replace(old_message_fragment, new_message_fragment, 1)
 
           path.write_text(text)
           PY
