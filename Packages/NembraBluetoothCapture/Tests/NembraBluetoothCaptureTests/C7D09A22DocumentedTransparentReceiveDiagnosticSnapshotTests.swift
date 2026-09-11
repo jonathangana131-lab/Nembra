@@ -11,7 +11,7 @@ struct C7D09A22DocumentedTransparentReceiveDiagnosticSnapshotTests {
         try await ledger.markAuthenticationStarted(for: token)
         try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
         let authenticatedSnapshot = await ledger.currentPreflightSnapshot()
-        let connectionStartedAt = try #require(authenticatedSnapshot.authenticatedAtUptimeNanoseconds)
+        let connectionStartedAt = try #require(authenticatedSnapshot.connectionStartedAtUptimeNanoseconds)
 
         let ingress = C7D09A22DocumentedTransparentReceiveIngress()
         #expect(await ingress.begin(
