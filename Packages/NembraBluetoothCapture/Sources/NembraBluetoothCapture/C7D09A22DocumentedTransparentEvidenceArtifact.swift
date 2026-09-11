@@ -21,6 +21,10 @@ public struct C7D09A22DocumentedTransparentEvidenceArtifact: Codable, Equatable,
 
     public let kind: String
     public let tuyaDeviceID: String
+    /// Diagnostic generation captured at artifact creation. This is provenance metadata only, not
+    /// lifecycle authority: exact `TuyaReadOnlyConnectionToken` equality remains package-internal.
+    /// Older/unbound artifacts decode as nil and deliberately cannot validate authenticated transport.
+    public let sourceConnectionGeneration: UInt64?
     public let sdkConnectionStartedAtUptimeNanoseconds: UInt64
     public let payloadCount: Int
     public let totalByteCount: Int
@@ -30,9 +34,30 @@ public struct C7D09A22DocumentedTransparentEvidenceArtifact: Codable, Equatable,
     public let retainedPayloadByteCount: Int
     public let omittedPayloadCount: Int
 
+    /// Builds an unbound diagnostic artifact. It preserves bytes for inspection but cannot validate
+    /// authenticated transport until the package-owned live preflight binds a source generation.
     public init(snapshot: TuyaSmartLifeTransparentReceiveObservationLedger.Snapshot) {
+        self.init(snapshot: snapshot, connectionGeneration: nil)
+    }
+
+    /// Builds generation-bound diagnostic evidence from one package-owned authenticated attempt.
+    public init(
+        snapshot: TuyaSmartLifeTransparentReceiveObservationLedger.Snapshot,
+        connectionGeneration: UInt64
+    ) {
+        self.init(
+            snapshot: snapshot,
+            sourceConnectionGeneration: connectionGeneration > 0 ? connectionGeneration : nil
+        )
+    }
+
+    private init(
+        snapshot: TuyaSmartLifeTransparentReceiveObservationLedger.Snapshot,
+        sourceConnectionGeneration: UInt64?
+    ) {
         kind = Self.evidenceKind
         tuyaDeviceID = snapshot.tuyaDeviceID
+        self.sourceConnectionGeneration = sourceConnectionGeneration
         sdkConnectionStartedAtUptimeNanoseconds = snapshot.sdkConnectionStartedAtUptimeNanoseconds
         payloadCount = snapshot.payloadCount
         totalByteCount = snapshot.totalByteCount
@@ -55,11 +80,13 @@ public struct C7D09A22DocumentedTransparentEvidenceArtifact: Codable, Equatable,
     ///
     /// Portable JSON is diagnostic evidence, not an authority token. Summary counters/timestamps
     /// can therefore never be sufficient by themselves to mint physical-first acceptance. This
-    /// validator requires repeated retained payload bytes, valid monotonic chronology, internally
-    /// consistent byte accounting, and a retained callback strictly beyond the historical rejection
-    /// horizon. The returned evidence remains documented Smart Life transport evidence only.
+    /// validator requires the artifact's own generation provenance to match the requested generation,
+    /// repeated retained payload bytes, valid monotonic chronology, internally consistent byte
+    /// accounting, and a retained callback strictly beyond the historical rejection horizon. The
+    /// returned evidence remains documented Smart Life transport evidence only.
     public func validatedReceiveEvidence(connectionGeneration: UInt64) -> TuyaAuthenticatedReceiveEvidence? {
         guard connectionGeneration > 0,
+              sourceConnectionGeneration == connectionGeneration,
               kind == Self.evidenceKind,
               !tuyaDeviceID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               payloadCount >= retainedPayloads.count,
