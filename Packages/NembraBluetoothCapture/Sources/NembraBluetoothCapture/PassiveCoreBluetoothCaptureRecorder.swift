@@ -23,6 +23,10 @@ public actor PassiveCoreBluetoothCaptureRecorder {
 
     /// Records one event using the system-boot-relative monotonic uptime clock
     /// for ordering and wall-clock Date only as correlation metadata.
+    ///
+    /// Production callers intentionally cannot provide the receipt clock. This
+    /// keeps future physical-acceptance evidence anchored to package-owned
+    /// callback chronology rather than app/UI supplied timestamps.
     public func record(_ event: PassiveBluetoothCaptureEvent) throws {
         try record(
             event,
@@ -31,10 +35,14 @@ public actor PassiveCoreBluetoothCaptureRecorder {
         )
     }
 
-    /// Deterministic/testable recording path. Callers may supply equal monotonic
-    /// timestamps for callbacks delivered in the same clock tick; sequence
-    /// number remains the strict total-order tiebreaker.
-    public func record(
+    /// Package-internal deterministic/testable recording path. Callers may
+    /// supply equal monotonic timestamps for callbacks delivered in the same
+    /// clock tick; sequence number remains the strict total-order tiebreaker.
+    ///
+    /// This must not be public: allowing app/UI code to inject an arbitrary
+    /// event together with an arbitrary monotonic receipt time would let copied
+    /// bytes masquerade as package-owned CoreBluetooth callback custody.
+    func record(
         _ event: PassiveBluetoothCaptureEvent,
         receivedAtUptimeNanoseconds: UInt64,
         receivedAtDate: Date
