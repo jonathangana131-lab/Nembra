@@ -34,6 +34,20 @@ public struct TuyaAuthenticatedReadOnlyPreflightSnapshot: Equatable, Sendable {
     public let latestApplicationPayloadUptimeNanoseconds: UInt64?
     public let connectionGeneration: UInt64
 
+    /// Public fail-closed bootstrap state for app presentation before the package-owned ledger has
+    /// an active Bluetooth generation. This intentionally exposes no initializer capable of
+    /// minting authenticated provenance, chronology, generation identity, or payload evidence.
+    public static let noActiveConnection = TuyaAuthenticatedReadOnlyPreflightSnapshot(
+        authenticationState: .unavailable(reason: "No active Bluetooth connection."),
+        authenticationMethod: nil,
+        connectionStartedAtUptimeNanoseconds: nil,
+        authenticatedAtUptimeNanoseconds: nil,
+        latestObservedUptimeNanoseconds: nil,
+        applicationPayloadCount: 0,
+        latestApplicationPayloadUptimeNanoseconds: nil,
+        connectionGeneration: 0
+    )
+
     /// Snapshot construction is package-owned. App/UI code may inspect a snapshot returned by the
     /// session provider, but cannot manufacture authenticated chronology or Smart Life provenance.
     /// `@testable` package tests retain access to deterministic fixtures.
