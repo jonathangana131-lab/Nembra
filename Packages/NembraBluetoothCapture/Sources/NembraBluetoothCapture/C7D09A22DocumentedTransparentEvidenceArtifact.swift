@@ -37,7 +37,7 @@ public struct C7D09A22DocumentedTransparentEvidenceArtifact: Codable, Equatable,
     /// Builds an unbound diagnostic artifact. It preserves bytes for inspection but cannot validate
     /// authenticated transport until the package-owned live preflight binds a source generation.
     public init(snapshot: TuyaSmartLifeTransparentReceiveObservationLedger.Snapshot) {
-        self.init(snapshot: snapshot, connectionGeneration: nil)
+        self.init(snapshot: snapshot, sourceConnectionGeneration: nil)
     }
 
     /// Builds generation-bound diagnostic evidence from one package-owned authenticated attempt.
