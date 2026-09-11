@@ -34,7 +34,11 @@ public enum C7D09A22PhysicalFirstAcceptanceGate {
         /// sufficient physical evidence and therefore fail closed in the canonical gate.
         public let retainedRawNotifyPayloads: [Data]
 
-        public init(
+        /// Package-internal on purpose. App/UI code cannot manufacture physical-GO authority
+        /// by setting provenance booleans and copying bytes into this struct. Production
+        /// evidence must be assembled inside NembraBluetoothCapture from the package-owned
+        /// authenticated/CoreBluetooth custody path. Tests may use this seam through @testable.
+        init(
             authenticatedPreflight: TuyaAuthenticatedReadOnlyPreflightSnapshot,
             rawNotifyPayloadCount: Int,
             rawNotifyObservedAfterAuthentication: Bool,
