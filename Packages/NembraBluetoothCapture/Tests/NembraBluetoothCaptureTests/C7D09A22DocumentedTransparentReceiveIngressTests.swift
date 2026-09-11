@@ -25,10 +25,11 @@ struct C7D09A22DocumentedTransparentReceiveIngressTests {
         #expect(!ingress.hasActiveGeneration)
 
         let context = try await authenticatedContext()
+        let connectionStartedAt = try #require(context.snapshot.connectionStartedAtUptimeNanoseconds)
         let began = await ingress.begin(
             connectionToken: context.token,
             expectedDeviceID: " demo ",
-            sdkConnectionStartedAtUptimeNanoseconds: 1,
+            sdkConnectionStartedAtUptimeNanoseconds: connectionStartedAt,
             authenticatedPreflightSnapshot: context.snapshot
         )
 
@@ -69,11 +70,12 @@ struct C7D09A22DocumentedTransparentReceiveIngressTests {
     func rejectsWrongDeviceBeforeGenerationStamping() async throws {
         let ingress = C7D09A22DocumentedTransparentReceiveIngress()
         let context = try await authenticatedContext()
+        let connectionStartedAt = try #require(context.snapshot.connectionStartedAtUptimeNanoseconds)
 
         #expect(await ingress.begin(
             connectionToken: context.token,
             expectedDeviceID: "demo",
-            sdkConnectionStartedAtUptimeNanoseconds: 1,
+            sdkConnectionStartedAtUptimeNanoseconds: connectionStartedAt,
             authenticatedPreflightSnapshot: context.snapshot
         ))
 
@@ -102,11 +104,12 @@ struct C7D09A22DocumentedTransparentReceiveIngressTests {
     func newBeginRetiresOldGenerationAndDeviceBeforeAdmittingCallbacks() async throws {
         let ingress = C7D09A22DocumentedTransparentReceiveIngress()
         let first = try await authenticatedContext()
+        let firstConnectionStartedAt = try #require(first.snapshot.connectionStartedAtUptimeNanoseconds)
 
         #expect(await ingress.begin(
             connectionToken: first.token,
             expectedDeviceID: "demo-one",
-            sdkConnectionStartedAtUptimeNanoseconds: 1,
+            sdkConnectionStartedAtUptimeNanoseconds: firstConnectionStartedAt,
             authenticatedPreflightSnapshot: first.snapshot
         ))
         let firstReceipt = ingress.capture(
@@ -121,11 +124,12 @@ struct C7D09A22DocumentedTransparentReceiveIngressTests {
         try await secondLedger.markAuthenticationStarted(for: secondToken)
         try await secondLedger.markAuthenticated(for: secondToken, method: .smartLifeAppSDK)
         let secondSnapshot = await secondLedger.currentPreflightSnapshot()
+        let secondConnectionStartedAt = try #require(secondSnapshot.connectionStartedAtUptimeNanoseconds)
 
         #expect(await ingress.begin(
             connectionToken: secondToken,
             expectedDeviceID: "demo-two",
-            sdkConnectionStartedAtUptimeNanoseconds: 2,
+            sdkConnectionStartedAtUptimeNanoseconds: secondConnectionStartedAt,
             authenticatedPreflightSnapshot: secondSnapshot
         ))
 
