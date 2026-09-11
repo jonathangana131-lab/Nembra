@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import NembraBluetoothCapture
 
@@ -12,6 +13,27 @@ struct C7D09A22PhysicalFirstAcceptanceGateTests {
             applicationPayloadCount: 2,
             latestApplicationPayloadUptimeNanoseconds: 31_000_000_001,
             connectionGeneration: 1
+        )
+    }
+
+    private func qualifyingEvidence(
+        rawNotifyPayloadCount: Int = 2,
+        rawNotifyObservedAfterAuthentication: Bool = true,
+        canonicalFD50CharacteristicTupleProven: Bool = true,
+        sameAuthenticatedTransportCustodyProven: Bool = true,
+        rawNotifyConnectionGeneration: UInt64? = 1,
+        latestRawNotifyUptimeNanoseconds: UInt64? = 31_000_000_001,
+        retainedRawNotifyPayloads: [Data] = [Data([0x01]), Data([0x02])]
+    ) -> C7D09A22PhysicalFirstAcceptanceGate.Evidence {
+        C7D09A22PhysicalFirstAcceptanceGate.Evidence(
+            authenticatedPreflight: readyPreflight(),
+            rawNotifyPayloadCount: rawNotifyPayloadCount,
+            rawNotifyObservedAfterAuthentication: rawNotifyObservedAfterAuthentication,
+            canonicalFD50CharacteristicTupleProven: canonicalFD50CharacteristicTupleProven,
+            sameAuthenticatedTransportCustodyProven: sameAuthenticatedTransportCustodyProven,
+            rawNotifyConnectionGeneration: rawNotifyConnectionGeneration,
+            latestRawNotifyUptimeNanoseconds: latestRawNotifyUptimeNanoseconds,
+            retainedRawNotifyPayloads: retainedRawNotifyPayloads
         )
     }
 
@@ -33,46 +55,49 @@ struct C7D09A22PhysicalFirstAcceptanceGateTests {
     }
 
     @Test
-    func rawNotifyMustBePostAuthCanonicalSameTransportAndSameGeneration() {
-        let missingTransportCustody = C7D09A22PhysicalFirstAcceptanceGate.Evidence(
-            authenticatedPreflight: readyPreflight(),
-            rawNotifyPayloadCount: 1,
-            rawNotifyObservedAfterAuthentication: true,
-            canonicalFD50CharacteristicTupleProven: true,
-            sameAuthenticatedTransportCustodyProven: false,
-            rawNotifyConnectionGeneration: 1
-        )
+    func rawNotifyMustBeCanonicalSameTransportAndSameGeneration() {
+        let missingTransportCustody = qualifyingEvidence(sameAuthenticatedTransportCustodyProven: false)
         #expect(C7D09A22PhysicalFirstAcceptanceGate.verdict(for: missingTransportCustody) != .accepted)
         #expect(!C7D09A22PhysicalFirstAcceptanceGate.authorizesStationarySemanticMapping(for: missingTransportCustody))
 
-        let missingGeneration = C7D09A22PhysicalFirstAcceptanceGate.Evidence(
-            authenticatedPreflight: readyPreflight(),
-            rawNotifyPayloadCount: 1,
-            rawNotifyObservedAfterAuthentication: true,
-            canonicalFD50CharacteristicTupleProven: true,
-            sameAuthenticatedTransportCustodyProven: true
-        )
+        let missingGeneration = qualifyingEvidence(rawNotifyConnectionGeneration: nil)
         #expect(C7D09A22PhysicalFirstAcceptanceGate.verdict(for: missingGeneration) != .accepted)
 
-        let staleGeneration = C7D09A22PhysicalFirstAcceptanceGate.Evidence(
-            authenticatedPreflight: readyPreflight(),
-            rawNotifyPayloadCount: 1,
-            rawNotifyObservedAfterAuthentication: true,
-            canonicalFD50CharacteristicTupleProven: true,
-            sameAuthenticatedTransportCustodyProven: true,
-            rawNotifyConnectionGeneration: 2
-        )
+        let staleGeneration = qualifyingEvidence(rawNotifyConnectionGeneration: 2)
         #expect(C7D09A22PhysicalFirstAcceptanceGate.verdict(for: staleGeneration) != .accepted)
         #expect(!C7D09A22PhysicalFirstAcceptanceGate.authorizesStationarySemanticMapping(for: staleGeneration))
+    }
 
-        let complete = C7D09A22PhysicalFirstAcceptanceGate.Evidence(
-            authenticatedPreflight: readyPreflight(),
-            rawNotifyPayloadCount: 1,
-            rawNotifyObservedAfterAuthentication: true,
-            canonicalFD50CharacteristicTupleProven: true,
-            sameAuthenticatedTransportCustodyProven: true,
-            rawNotifyConnectionGeneration: 1
+    @Test
+    func summaryClaimsCannotReplaceRepeatedRetainedRawBytes() {
+        let oneRetainedPayload = qualifyingEvidence(
+            rawNotifyPayloadCount: 2,
+            retainedRawNotifyPayloads: [Data([0x01])]
         )
+        #expect(C7D09A22PhysicalFirstAcceptanceGate.verdict(for: oneRetainedPayload) != .accepted)
+
+        let mismatchedSummary = qualifyingEvidence(rawNotifyPayloadCount: 3)
+        #expect(C7D09A22PhysicalFirstAcceptanceGate.verdict(for: mismatchedSummary) != .accepted)
+
+        let emptyRetainedPayload = qualifyingEvidence(
+            retainedRawNotifyPayloads: [Data([0x01]), Data()]
+        )
+        #expect(C7D09A22PhysicalFirstAcceptanceGate.verdict(for: emptyRetainedPayload) != .accepted)
+    }
+
+    @Test
+    func rawNotifyItselfMustCrossHistoricalPostAuthenticationRejectionWindow() {
+        let earlyNotify = qualifyingEvidence(latestRawNotifyUptimeNanoseconds: 31_000_000_000)
+        #expect(C7D09A22PhysicalFirstAcceptanceGate.verdict(for: earlyNotify) != .accepted)
+
+        let missingNotifyChronology = qualifyingEvidence(latestRawNotifyUptimeNanoseconds: nil)
+        #expect(C7D09A22PhysicalFirstAcceptanceGate.verdict(for: missingNotifyChronology) != .accepted)
+    }
+
+    @Test
+    func repeatedRetainedPostRejectionNotifyEvidenceAuthorizesOnlyStationaryMapping() {
+        let complete = qualifyingEvidence()
+
         #expect(C7D09A22PhysicalFirstAcceptanceGate.verdict(for: complete) == .accepted)
         #expect(C7D09A22PhysicalFirstAcceptanceGate.authorizesStationarySemanticMapping(for: complete))
         #expect(!C7D09A22PhysicalFirstAcceptanceGate.authorizesTelemetrySemantics(for: complete))
