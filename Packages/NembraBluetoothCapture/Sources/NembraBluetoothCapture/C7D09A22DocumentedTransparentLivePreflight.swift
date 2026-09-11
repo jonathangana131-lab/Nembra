@@ -138,7 +138,12 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
             authenticatedPreflight: authenticatedSnapshot,
             transparent: transparent
         )
-        let artifact = transparent.map(C7D09A22DocumentedTransparentEvidenceArtifact.init(snapshot:))
+        let artifact = transparent.map {
+            C7D09A22DocumentedTransparentEvidenceArtifact(
+                snapshot: $0,
+                connectionGeneration: activeConnectionToken.diagnosticGeneration
+            )
+        }
         return FieldAttemptEvidence(
             connectionGeneration: activeConnectionToken.diagnosticGeneration,
             milestone: milestone,
@@ -159,11 +164,14 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
     /// GATT service/characteristic tuple required for raw FD50 physical first acceptance.
     public func evidenceArtifact() async -> C7D09A22DocumentedTransparentEvidenceArtifact? {
         guard authenticatedSnapshot != nil,
-              activeConnectionToken != nil,
+              let activeConnectionToken,
               let snapshot = await handoff.diagnosticSnapshot() else {
             return nil
         }
-        return C7D09A22DocumentedTransparentEvidenceArtifact(snapshot: snapshot)
+        return C7D09A22DocumentedTransparentEvidenceArtifact(
+            snapshot: snapshot,
+            connectionGeneration: activeConnectionToken.diagnosticGeneration
+        )
     }
 
     /// Retires only when the caller still owns the exact armed package token.
