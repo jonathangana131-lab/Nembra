@@ -40,6 +40,7 @@ actor TuyaAuthenticatedRawFD50Ingress {
         case blockedInvalidAuthenticatedChronology
         case blockedBeforeAuthenticationBoundary
         case blockedNonMonotonicReceipt
+        case blockedAuthorityChangedDuringReceipt
     }
 
     /// Exact opaque token this ingress was bound to when the authenticated same-session callback
@@ -60,23 +61,13 @@ actor TuyaAuthenticatedRawFD50Ingress {
         self.uptimeProvider = uptimeProvider
     }
 
-    /// Retains bytes delivered by the documented same-session device→app notify callback.
-    ///
-    /// The fixed FD50 notify UUID, exact token generation, and callback receipt time are minted at
-    /// this boundary rather than accepted as caller input. The callback must also present the exact
-    /// opaque token this ingress was bound to; matching generation numbers from another ledger are
-    /// insufficient physical custody. The snapshot provider must independently return that same
-    /// opaque token with its snapshot, so a cross-ledger snapshot cannot authorize this ingress.
-    func recordDocumentedSameSessionNotify(
-        payload: Data,
-        connectionToken: TuyaReadOnlyConnectionToken
-    ) async -> RecordVerdict {
-        guard !payload.isEmpty else { return .blockedEmptyPayload }
-        guard connectionToken == authenticatedConnectionToken else {
-            return .blockedForeignConnectionToken
-        }
-
-        let snapshotEvidence = await snapshotProvider()
+    /// Validates that snapshot evidence belongs to the exact live Smart Life-authenticated session
+    /// bound to this ingress. The detailed verdict is used for the first admission check; the same
+    /// predicate is repeated immediately before custody so an async snapshot lookup cannot create a
+    /// time-of-check/time-of-use window across a generation change.
+    private func authorityVerdict(
+        for snapshotEvidence: SnapshotEvidence
+    ) -> RecordVerdict? {
         guard snapshotEvidence.connectionToken == authenticatedConnectionToken else {
             return .blockedForeignSnapshotAuthority
         }
@@ -98,6 +89,34 @@ actor TuyaAuthenticatedRawFD50Ingress {
               latestObserved >= authenticatedAt else {
             return .blockedInvalidAuthenticatedChronology
         }
+        return nil
+    }
+
+    /// Retains bytes delivered by the documented same-session device→app notify callback.
+    ///
+    /// The fixed FD50 notify UUID, exact token generation, and callback receipt time are minted at
+    /// this boundary rather than accepted as caller input. The callback must also present the exact
+    /// opaque token this ingress was bound to; matching generation numbers from another ledger are
+    /// insufficient physical custody. The snapshot provider must independently return that same
+    /// opaque token with its snapshot, so a cross-ledger snapshot cannot authorize this ingress.
+    /// Authority is checked both before and after the receipt timestamp is minted so a session that
+    /// is superseded while the async preflight lookup is in flight cannot admit stale raw bytes.
+    func recordDocumentedSameSessionNotify(
+        payload: Data,
+        connectionToken: TuyaReadOnlyConnectionToken
+    ) async -> RecordVerdict {
+        guard !payload.isEmpty else { return .blockedEmptyPayload }
+        guard connectionToken == authenticatedConnectionToken else {
+            return .blockedForeignConnectionToken
+        }
+
+        let admissionEvidence = await snapshotProvider()
+        if let verdict = authorityVerdict(for: admissionEvidence) {
+            return verdict
+        }
+        guard let authenticatedAt = admissionEvidence.snapshot.authenticatedAtUptimeNanoseconds else {
+            return .blockedInvalidAuthenticatedChronology
+        }
 
         let observedAt = uptimeProvider()
         guard observedAt > authenticatedAt else {
@@ -106,6 +125,18 @@ actor TuyaAuthenticatedRawFD50Ingress {
         if let previousReceipt = retained.last?.observedAtUptimeNanoseconds,
            observedAt <= previousReceipt {
             return .blockedNonMonotonicReceipt
+        }
+
+        // Re-read exact-token authority after timestamping and immediately before custody. This is
+        // deliberately a second source-of-truth read rather than trusting the earlier snapshot:
+        // snapshotProvider is async, and another connection generation may supersede this token
+        // between admission and retention.
+        let custodyEvidence = await snapshotProvider()
+        guard authorityVerdict(for: custodyEvidence) == nil,
+              custodyEvidence.connectionToken == admissionEvidence.connectionToken,
+              custodyEvidence.snapshot.connectionGeneration == admissionEvidence.snapshot.connectionGeneration,
+              custodyEvidence.snapshot.authenticatedAtUptimeNanoseconds == authenticatedAt else {
+            return .blockedAuthorityChangedDuringReceipt
         }
 
         retained.append(
@@ -130,17 +161,7 @@ actor TuyaAuthenticatedRawFD50Ingress {
         guard connectionToken == authenticatedConnectionToken else { return [] }
 
         let snapshotEvidence = await snapshotProvider()
-        let snapshot = snapshotEvidence.snapshot
-        guard snapshotEvidence.connectionToken == authenticatedConnectionToken,
-              snapshot.hasActiveCallbackAuthority,
-              snapshot.connectionGeneration == authenticatedConnectionToken.diagnosticGeneration,
-              snapshot.authenticationState == .authenticated,
-              snapshot.authenticationMethod == .smartLifeAppSDK,
-              let connectionStarted = snapshot.connectionStartedAtUptimeNanoseconds,
-              let authenticatedAt = snapshot.authenticatedAtUptimeNanoseconds,
-              let latestObserved = snapshot.latestObservedUptimeNanoseconds,
-              authenticatedAt >= connectionStarted,
-              latestObserved >= authenticatedAt else {
+        guard authorityVerdict(for: snapshotEvidence) == nil else {
             retained.removeAll()
             return []
         }
