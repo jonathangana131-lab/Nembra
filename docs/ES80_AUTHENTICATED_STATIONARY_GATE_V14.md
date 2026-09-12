@@ -1,6 +1,6 @@
 # ES80 Authenticated Stationary Gate — V14
 
-Status: **NO-GO — DO NOT RUN THE NEXT PHYSICAL SESSION YET.**
+Status: **PHYSICAL GO OPEN — authenticated Tuya transport survival is not C7D09A22 physical acceptance.**
 
 Protocol: V14  
 Feature: Nembra Capture / ES80 physical truth  
@@ -11,13 +11,18 @@ Physical motion requirement: stationary for the entire experiment
 
 ## Purpose
 
-This document is the durable acceptance checkpoint for the next physical rung after capture `C7D09A22-96DA-4E46-9BEF-E36F670ADB0E`. It is intentionally a short truth contract, not a second field runbook and not a snapshot of transient PR/branch state.
+This document is the durable truth contract for the physical rung after capture `C7D09A22-96DA-4E46-9BEF-E36F670ADB0E`.
 
-C7D09A22 physically verified the modern Tuya FD50 transport, observed zero application characteristic payloads, and repeatedly disconnected at about 29.930 seconds. It did **not** establish why that disconnect cadence occurred. The next useful physical experiment is therefore the smallest stationary experiment that can prove a legitimate current Tuya authenticated application session and genuine application evidence beyond the historical rejection region.
+C7D09A22 selected peripheral `6815A5F5-4D1E-E004-BAE8-6DF924123907`, advertised as Tuya FD50 / local name `demo`, completed all 17 scenarios, captured zero application characteristic payloads, and observed repeated peripheral-initiated disconnects at about 30 seconds. The capture does not prove the cause of the disconnect cadence. The historical peripheral UUID is capture-local evidence only and is not durable scooter identity.
 
-The physical acceptance threshold is intentionally no weaker than shipping `TuyaAuthenticatedReadOnlyPreflight`: at least **two** admitted non-empty application updates in one current SmartLife-authenticated generation, the latest admitted update at least **30 seconds after authentication**, and at least **45 seconds** of accepted authenticated observation continuity. Older one-payload / merely-`>30 s` wording is superseded. One bootstrap/state replay, two early updates followed only by generic BLE liveness, or transport-only survival cannot authorize stationary mapping.
+The next accepted physical result must prove both:
 
-This document cannot authorize Bluetooth activity by itself. Only the final composed exact app build, with all required software/private-device gates accepted and an explicit repository `GO`, may authorize the physical session.
+1. a legitimate current Tuya-authenticated, read-only session for the user's already-bound scooter survives beyond the historical rejection window; and
+2. genuine non-empty raw FD50 device-to-app characteristic notification payloads are retained from that authenticated session.
+
+Authenticated Smart Life SDK application/transparent callbacks are useful observation evidence, but they cannot substitute for raw FD50 characteristic-notification custody and cannot by themselves close physical GO.
+
+No DP ID, field meaning, scale, signedness, cadence, command acknowledgement, battery, voltage, current, power, speed, mode, light, lock, brake, cruise, trip, or odometer semantic is physically established yet.
 
 ## Accepted predecessor truth
 
@@ -33,106 +38,83 @@ From `docs/ES80_PHYSICAL_TRUTH_C7D09A22.md`:
 - peripheral-initiated disconnects: `15`;
 - mean connected interval before rejection: approximately `29.930 s`.
 
-The C7D09A22 CoreBluetooth peripheral UUID `6815A5F5-4D1E-E004-BAE8-6DF924123907` is historical capture-local evidence only. It is not durable scooter identity and may not break a later correlation tie.
+## Evidence-source contract
 
-No DP ID, field meaning, scale, signedness, cadence, command acknowledgement, battery, voltage, current, power, speed, mode, light, lock, cruise, trip, or odometer semantic is physically established yet.
+### Authenticated Tuya observation evidence
 
-## Current evidence-source contract
+The production preflight may use documented Smart Life / Tuya SDK mechanisms with the user's own linked Tuya account and exact linked-device identity to establish authentication and connection continuity. Structured SDK callbacks and transparent/passthrough receive callbacks may be retained as **authenticated Tuya application evidence**.
 
-For the current authenticated stationary gate, the supported application evidence source is same-generation structured SmartLife SDK delivery through `ThingSmartDeviceDelegate.dpsUpdate`, admitted by the canonical package-owned authenticated-session authority.
+That evidence may prove that the documented authenticated Tuya transport is alive and has survived beyond the historical rejection horizon. It does **not** establish raw FD50/ATT notification bytes, raw characteristic provenance, DP semantics, or command acknowledgement.
 
-That structured SDK application evidence is legitimate evidence that the authenticated application path is alive when it satisfies the canonical chronology and generation rules. It does **not** establish raw FD50/ATT bytes, byte-exact notification framing, DP semantics, or command acknowledgement.
+### Physical-first raw evidence
 
-Raw byte-exact authenticated FD50 evidence remains a separate unresolved evidence rung. The current gate must not open a second competing CoreBluetooth connection merely to collect bytes while the official SmartLife SDK owns the authenticated BLE session, and it must not relabel `String(describing:)` or other structured SDK projections as raw transport bytes.
+C7D09A22 physical acceptance requires retained non-empty payload bytes from the FD50 device-to-app notify characteristic `00000002-0000-1001-8001-00805F9B07D0`, with custody that is truthfully tied to the same authenticated connection generation.
 
-Accordingly, a valid current structured-SDK artifact may truthfully retain `rawFD50BytesCaptured=false` while still closing this authenticated-session gate if every canonical application-evidence predicate is earned. That PASS would unlock only the next smallest stationary semantic-correlation experiment; it would not claim raw FD50 evidence or any telemetry meaning.
+The app must not manufacture that join from matching timestamps, matching names, RSSI, the historical CoreBluetooth UUID, SDK transparent bytes, or two independent BLE connections. If the official SDK owns the authenticated connection and does not expose a documented same-session raw characteristic callback, physical GO stays open rather than opening a competing CoreBluetooth owner or relabeling application-layer bytes as raw notifications.
 
-## Software and private-device prerequisites before GO
+The raw-notify acceptance prefix must retain at least **two** non-empty raw notify payloads, and at least one retained raw notification must arrive beyond the historical approximately-30-second rejection boundary while the authenticated generation remains valid.
 
-The final composed candidate must close all applicable prerequisites on one exact source/build lineage:
+## Safe preflight invariants
 
-1. Fresh package-owned `OFF1 → ON1 → OFF2 → ON2` correlation using full CoreBluetooth identity, accepted bounded windows, and fail-closed ambiguity handling.
-2. Explicit operator confirmation of the one freshly correlated candidate. Name, RSSI, FD50, Tuya hints, or the historical UUID remain descriptive only.
-3. Preserved non-secret correlation provenance sufficient to audit the four sealed windows, final disposition, and explicit confirmation.
-4. `NembraCaptureBuildIdentity.isAuthoritativeFieldBuild == true` as a necessary OFF1 build-provenance prerequisite, while remaining insufficient by itself.
-5. Fresh package-owned one-time signed authorization session `.armed` for the live app attempt.
-6. Official SmartLife SDK login using the same account that owns the scooter, with fresh exact-device membership and current account-identity lease authority.
-7. One BLE owner: package correlation is retired before the official SmartLife authenticated local-BLE session begins.
-8. Canonical generation-bound lifecycle authority rejects stale/late callbacks, account/source drift, chronology regression, incomplete-observation timeout, continuity failure, and transport loss without manufacturing evidence or resurrecting retired generations.
-9. Structured application updates are admitted only as structured application evidence; no raw-FD50 claim is minted from them.
-10. No DP query, arbitrary command, control mutation, random characteristic write, unbind, reset, or OTA path is added to provoke traffic.
-11. Accepted evidence and correlation provenance are sealed immutably and exported without credentials/secrets; delayed post-seal callbacks cannot mutate the accepted prefix.
-12. Exact-head focused/package tests and exact-head Xcode 27 app/Capture acceptance are terminal green on the unchanged final candidate.
-13. The privately provisioned workspace builds, signs, installs, and identifies that exact accepted source on the intended iPhone 12 / iOS 27 with the intended Tuya private workspace/security inputs.
-14. A final durable `GO` record names the exact accepted source/build/procedure and stop conditions.
+The preflight is read-only and fail-closed:
 
-Queued, running, skipped, ancestor-green, package-only, Simulator-only, source-review-only, or historical evidence cannot authorize the physical session.
-
-Until every applicable prerequisite is closed on one final composed exact build, status remains **NO-GO / DO NOT SCAN / DO NOT RUN**.
-
-## Physical sequence once GO exists
-
-The detailed operator sequence is owned by `docs/CAPTURE_P0_SECURE_LINK_NEXT_TEST.md`; this document does not duplicate it. The invariant physical order is:
-
-1. Keep the scooter stationary, initially OFF, charger physically disconnected, and Capture foregrounded under the accepted current-attempt declarations.
-2. Earn fresh `OFF1 → ON1 → OFF2 → ON2` correlation under the package-owned bounded observation contract.
-3. Continue only if exactly one repeatable full CoreBluetooth identity is accepted, then explicitly confirm that correlated target.
-4. Re-prove current same-account exact-device authority.
-5. Allow the official SmartLife SDK to become the sole authenticated BLE owner.
-6. Observe without Nembra DP queries or control writes.
-7. Preserve genuine same-generation `ThingSmartDeviceDelegate.dpsUpdate` application evidence through the canonical ledger.
-8. Require at least **two** genuine non-empty same-generation application updates, with the latest at least **30 seconds after authentication**, while maintaining at least **45 seconds** of accepted authenticated observation continuity.
-9. Seal the canonical ready prefix before presenting success or sharing the sanitized artifact.
+1. Use the official documented Tuya/Smart Life authentication mechanism or credentials/identity derived from the user's own linked Tuya account.
+2. Do not guess authentication packets or arbitrary characteristic writes.
+3. Do not issue semantic DP queries merely to provoke traffic.
+4. Do not unbind, reset, remove, pair-over, OTA-update, or otherwise mutate scooter ownership/state.
+5. Maintain one BLE owner for the authenticated session unless an officially documented same-session observation mechanism proves otherwise.
+6. Reject stale generations, account/device identity drift, chronology regression, continuity loss, and delayed callbacks from retired sessions.
+7. Keep SDK/application evidence and raw-characteristic evidence in separate evidence classes until an explicit same-session custody bridge proves their relationship.
+8. Never mint speed/battery/mode/light/brake/power or other DP meaning from opaque bytes, timing, UI state, scenario timing, GPS, or prior assumptions.
 
 ## Physical PASS conditions
 
-The current authenticated stationary gate may be classified `PASS` only if the sealed accepted artifact proves all of the following for one current authenticated generation:
+Physical GO may be classified `PASS` only when one current authenticated generation proves all of the following:
 
-- fresh four-window target correlation completed and the operator explicitly confirmed the one accepted candidate;
-- accepted SmartLife SDK authentication provenance exists for the intended already-bound device/account;
-- current same-account exact-device membership/identity authority remained valid;
-- at least **two** genuine non-empty same-generation application updates were admitted from `ThingSmartDeviceDelegate.dpsUpdate`;
-- the latest accepted application update occurred at least **30 seconds after authentication**;
-- accepted authenticated observation continuity reached at least **45 seconds** after authentication;
-- the canonical accepted prefix was sealed before product success;
-- application evidence and chronology/provenance were exported without secrets;
-- the artifact labels structured SDK evidence truthfully and does not pretend it contains raw FD50 bytes when `rawFD50BytesCaptured=false`;
-- no opaque payload was promoted into telemetry semantics;
-- no stale generation, replayed callback, GPS/scenario timing, UI timer, or caller-constructed state was promoted into physical protocol truth;
-- Nembra sent no semantic DP query/control command or competing post-auth CoreBluetooth connection.
+- accepted Smart Life / Tuya authentication provenance exists for the intended already-bound device under the user's linked account;
+- authentication/session continuity survives beyond the previous approximately-30-second rejection window;
+- the same authenticated generation has truthful raw-characteristic custody for the FD50 device-to-app notify characteristic;
+- at least **two** genuine non-empty raw FD50 notify payloads are retained;
+- at least one retained raw FD50 notify payload arrives after the historical rejection boundary;
+- payload count and retained-byte accounting agree with the sealed raw evidence;
+- the accepted evidence prefix is sealed before product success is presented;
+- exported evidence contains no credentials or secrets;
+- no raw payload is promoted into telemetry or control semantics;
+- no independent competing post-auth CoreBluetooth session is treated as same-session evidence;
+- Nembra performs no semantic control write, arbitrary GATT write, reset, removal, unbind, or OTA action.
 
-A transport callback, notification subscription, timer UI, one application callback/state replay, two early callbacks, a latest callback before 30 seconds, 45 seconds of transport-only liveness, or structured SDK evidence mislabeled as raw bytes is **not** a PASS.
-
-Passing this gate proves a supported authenticated Tuya application session plus genuine repeated application evidence. It does **not** establish raw FD50/ATT bytes, permanent CoreBluetooth identity, DP meanings, speed/battery/power semantics, command acknowledgement, or safe write authority.
+Authenticated SDK transport survival, SDK transparent receive bytes, a subscription event without payload bytes, a UI timer, one raw packet, two early raw packets followed only by generic liveness, or an unauthenticated raw capture is **not** a PASS.
 
 ## Stop / fail-closed conditions
 
 Stop the attempt and preserve only legitimately admitted evidence if any of these occurs:
 
-- exact build/procedure or one-time signed authorization authority is missing, stale, revoked, or mismatched;
-- account identity or exact-device membership authority changes;
-- the current-attempt stationary/charger-disconnected/no-riding declarations become absent or false;
-- target correlation is none, ambiguous, interrupted, chronology-invalid, or cannot preserve required provenance;
-- the operator has not explicitly confirmed the fresh target;
-- foreground/lifecycle integrity is lost;
+- linked-account or exact-device authority is missing, stale, revoked, or changes;
+- the authenticated generation is lost or cannot be unambiguously identified;
+- target identity/correlation becomes ambiguous;
+- foreground/lifecycle integrity required by the capture is lost;
 - a stale/duplicate generation cannot be safely classified;
-- local-BLE acquisition, accepted chronology, or continuity fails;
-- fewer than two genuine non-empty application updates are admitted, or the latest does not survive to at least 30 seconds post-authentication;
-- the authenticated continuity minimum of 45 seconds is not earned;
+- the session drops before the rejection boundary without accepted raw notify evidence;
+- raw notification provenance cannot be tied to the authenticated session without inference;
+- a second BLE owner would be required merely to manufacture raw custody;
 - artifact integrity/seal/export cannot be established;
 - any secret appears in UI/log/export;
-- any Nembra DP query/control write, reset/unbind/OTA action, or competing post-auth CoreBluetooth ownership path is observed.
+- any guessed authentication write, semantic DP query/control write, reset, removal, unbind, or OTA action is observed.
 
-Do not repair a failed attempt by substituting another build/account, guessing a target, weakening the 2/30/45 predicates, relabeling structured SDK evidence as raw bytes, or inferring protocol semantics from timing/GPS/UI behavior.
+Do not repair a failed attempt by weakening the raw-notify requirement, joining independent connections by timing, relabeling SDK passthrough bytes as characteristic bytes, guessing a target, or inferring protocol semantics from opaque data.
 
-## What PASS unlocks
+## What authenticated Tuya survival unlocks
 
-A successful authenticated stationary gate unlocks only the next smallest stationary semantic-correlation experiment using the genuine application evidence that was actually observed. It does not automatically establish speed, battery, current, power, mode, light, brake, lock, odometer, or command semantics.
+A documented authenticated Tuya session surviving beyond the historical rejection window is a valuable milestone: it proves the old unauthenticated ~30-second rejection behavior has been crossed under the supported authentication path. It does **not** close C7D09A22 physical acceptance by itself.
 
-Raw byte-exact authenticated FD50 evidence remains a separate unresolved rung unless a later accepted one-owner-compatible source earns it. The swarm should generalize only from evidence that the ES80 path actually produces.
+## What physical PASS unlocks
+
+Physical PASS unlocks only the next smallest stationary correlation experiment over the opaque raw evidence actually observed. It does not automatically establish speed, battery, current, power, mode, light, brake, lock, odometer, command acknowledgement, or safe write authority.
+
+Semantic assignment remains blocked until controlled authenticated physical evidence supports a specific mapping.
 
 ## Durable handoff rule
 
-Do not pin this document to mutable PR numbers or transient branch heads. Fresh GO workers must inspect live GitHub and the current hard-freeze/convergence state before acting. Live accepted composition wins over stale chat or historical coordination snapshots.
+This contract supersedes older wording that allowed `rawFD50BytesCaptured=false` to close the physical gate. Structured SDK evidence remains useful, but physical GO now requires authenticated raw FD50 notify custody as defined above.
 
-A green checkpoint is not automatically the endpoint. The gate closes only when the final composed app/private-device path is accepted and a real stationary session produces the required sealed authenticated evidence.
+Do not spend capacity reviving stale #833 physical NO-GO ceremony. The real C7D09A22 field artifact is the physical predecessor and the current product source must remain aligned with this contract.
