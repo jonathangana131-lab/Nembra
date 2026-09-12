@@ -21,6 +21,7 @@ actor TuyaAuthenticatedRawFD50Ingress {
         case blockedUnauthenticatedGeneration
         case blockedWrongAuthenticationMethod
         case blockedBeforeAuthenticationBoundary
+        case blockedNonMonotonicReceipt
     }
 
     /// Exact opaque token this ingress was bound to when the authenticated same-session callback
@@ -74,6 +75,10 @@ actor TuyaAuthenticatedRawFD50Ingress {
         let observedAt = uptimeProvider()
         guard observedAt > authenticatedAt else {
             return .blockedBeforeAuthenticationBoundary
+        }
+        if let previousReceipt = retained.last?.observedAtUptimeNanoseconds,
+           observedAt <= previousReceipt {
+            return .blockedNonMonotonicReceipt
         }
 
         retained.append(
