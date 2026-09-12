@@ -20,7 +20,7 @@ public enum C7D09A22DocumentedTransparentTransportMilestone {
     ) -> Verdict {
         guard authenticatedPreflight.authenticationState == .authenticated,
               authenticatedPreflight.authenticationMethod == .smartLifeAppSDK,
-              authenticatedPreflight.authenticatedAtUptimeNanoseconds != nil else {
+              let authenticatedAt = authenticatedPreflight.authenticatedAtUptimeNanoseconds else {
             return .blockedUnauthenticated
         }
         guard let transparent, transparent.payloadCount > 0 else {
@@ -32,9 +32,28 @@ public enum C7D09A22DocumentedTransparentTransportMilestone {
         guard transparent.payloadCount >= TuyaPhysicalFirstAcceptanceGate.minimumDocumentedReceivePayloadCount else {
             return .waitingForHistoricalRejectionWindow
         }
-        guard transparent.hasPayloadStrictlyBeyondHistoricalRejectionHorizon else {
+
+        // The historical unauthenticated failure happened around 30 seconds after connection, but
+        // the P0 acceptance claim is stronger: the *authenticated* Smart Life session itself must
+        // be independently observed alive beyond that window, and a documented device-to-app
+        // callback must also land beyond the same post-authentication boundary. Do not reuse the
+        // transparent ledger's connection-start-relative convenience bit here because authentication
+        // can occur seconds after connect. Likewise, a queued callback cannot prove transport
+        // survival if the package ledger was not independently observed at or after that callback.
+        guard let latestObserved = authenticatedPreflight.latestObservedUptimeNanoseconds,
+              let latestPayload = transparent.latestPayloadAtUptimeNanoseconds,
+              latestObserved >= latestPayload,
+              latestObserved >= authenticatedAt,
+              latestPayload >= authenticatedAt else {
             return .waitingForHistoricalRejectionWindow
         }
+
+        let horizon = TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds
+        guard latestObserved - authenticatedAt > horizon,
+              latestPayload - authenticatedAt > horizon else {
+            return .waitingForHistoricalRejectionWindow
+        }
+
         return .satisfied
     }
 
