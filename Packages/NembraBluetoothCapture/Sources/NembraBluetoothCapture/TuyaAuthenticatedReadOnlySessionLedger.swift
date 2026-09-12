@@ -228,7 +228,8 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
             latestObservedUptimeNanoseconds: now,
             applicationPayloadCount: applicationPayloadCount,
             latestApplicationPayloadUptimeNanoseconds: latestApplicationPayloadUptimeNanoseconds,
-            connectionGeneration: currentToken?.generation ?? generation
+            connectionGeneration: currentToken?.generation ?? generation,
+            hasActiveCallbackAuthority: currentToken != nil
         )
         if TuyaAuthenticatedReadOnlyPreflight.shouldRetireIncompleteObservation(preMutationHorizonSnapshot) {
             retireIncompleteObservation(at: now)
@@ -323,7 +324,8 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
             latestObservedUptimeNanoseconds: latestObservedUptimeNanoseconds,
             applicationPayloadCount: applicationPayloadCount,
             latestApplicationPayloadUptimeNanoseconds: latestApplicationPayloadUptimeNanoseconds,
-            connectionGeneration: currentToken?.generation ?? generation
+            connectionGeneration: currentToken?.generation ?? generation,
+            hasActiveCallbackAuthority: currentToken != nil
         )
     }
 
