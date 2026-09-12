@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import NembraBluetoothCapture
 
@@ -21,6 +22,10 @@ struct TuyaAuthenticatedRawFD50AcceptanceTests {
         )
     }
 
+    private func payload(_ count: Int, byte: UInt8 = 0xA5) -> Data {
+        Data(repeating: byte, count: count)
+    }
+
     @Test("authenticated SDK survival alone cannot close physical GO")
     func sdkOnlyIsBlocked() {
         let verdict = TuyaAuthenticatedRawFD50Acceptance.verdict(
@@ -39,16 +44,18 @@ struct TuyaAuthenticatedRawFD50AcceptanceTests {
                 connectionGeneration: snapshot.connectionGeneration,
                 characteristicUUID: TuyaAuthenticatedRawFD50Acceptance.deviceToAppNotifyCharacteristicUUID.lowercased(),
                 observedAtUptimeNanoseconds: authenticatedAt + 2_000_000_000,
-                payloadByteCount: 8
+                payload: payload(8, byte: 0x11)
             ),
             TuyaAuthenticatedRawFD50Acceptance.Observation(
                 connectionGeneration: snapshot.connectionGeneration,
                 characteristicUUID: TuyaAuthenticatedRawFD50Acceptance.deviceToAppNotifyCharacteristicUUID,
                 observedAtUptimeNanoseconds: authenticatedAt + 30_000_000_001,
-                payloadByteCount: 12
+                payload: payload(12, byte: 0x22)
             )
         ]
 
+        #expect(observations[0].payload == payload(8, byte: 0x11))
+        #expect(observations[1].payload == payload(12, byte: 0x22))
         #expect(
             TuyaAuthenticatedRawFD50Acceptance.verdict(
                 authenticatedSnapshot: snapshot,
@@ -69,13 +76,13 @@ struct TuyaAuthenticatedRawFD50AcceptanceTests {
                 connectionGeneration: snapshot.connectionGeneration,
                 characteristicUUID: TuyaAuthenticatedRawFD50Acceptance.deviceToAppNotifyCharacteristicUUID,
                 observedAtUptimeNanoseconds: authenticatedAt + 2_000_000_000,
-                payloadByteCount: 8
+                payload: payload(8)
             ),
             TuyaAuthenticatedRawFD50Acceptance.Observation(
                 connectionGeneration: snapshot.connectionGeneration,
                 characteristicUUID: TuyaAuthenticatedRawFD50Acceptance.deviceToAppNotifyCharacteristicUUID,
                 observedAtUptimeNanoseconds: authenticatedAt + 30_000_000_001,
-                payloadByteCount: 12
+                payload: payload(12)
             )
         ]
 
@@ -96,13 +103,13 @@ struct TuyaAuthenticatedRawFD50AcceptanceTests {
                 connectionGeneration: snapshot.connectionGeneration,
                 characteristicUUID: TuyaAuthenticatedRawFD50Acceptance.deviceToAppNotifyCharacteristicUUID,
                 observedAtUptimeNanoseconds: authenticatedAt,
-                payloadByteCount: 8
+                payload: payload(8)
             ),
             TuyaAuthenticatedRawFD50Acceptance.Observation(
                 connectionGeneration: snapshot.connectionGeneration,
                 characteristicUUID: TuyaAuthenticatedRawFD50Acceptance.deviceToAppNotifyCharacteristicUUID,
                 observedAtUptimeNanoseconds: authenticatedAt + 31_000_000_000,
-                payloadByteCount: 12
+                payload: payload(12)
             )
         ]
 
@@ -122,7 +129,7 @@ struct TuyaAuthenticatedRawFD50AcceptanceTests {
             connectionGeneration: snapshot.connectionGeneration,
             characteristicUUID: TuyaAuthenticatedRawFD50Acceptance.deviceToAppNotifyCharacteristicUUID,
             observedAtUptimeNanoseconds: authenticatedAt + 31_000_000_000,
-            payloadByteCount: 12
+            payload: payload(12)
         )
 
         #expect(
@@ -142,31 +149,31 @@ struct TuyaAuthenticatedRawFD50AcceptanceTests {
                 connectionGeneration: snapshot.connectionGeneration + 1,
                 characteristicUUID: TuyaAuthenticatedRawFD50Acceptance.deviceToAppNotifyCharacteristicUUID,
                 observedAtUptimeNanoseconds: authenticatedAt + 31_000_000_000,
-                payloadByteCount: 8
+                payload: payload(8)
             ),
             TuyaAuthenticatedRawFD50Acceptance.Observation(
                 connectionGeneration: snapshot.connectionGeneration,
                 characteristicUUID: TuyaAuthenticatedRawFD50Acceptance.deviceToAppNotifyCharacteristicUUID,
                 observedAtUptimeNanoseconds: authenticatedAt + 31_000_000_000,
-                payloadByteCount: 0
+                payload: Data()
             ),
             TuyaAuthenticatedRawFD50Acceptance.Observation(
                 connectionGeneration: snapshot.connectionGeneration,
                 characteristicUUID: "00000001-0000-1001-8001-00805F9B07D0",
                 observedAtUptimeNanoseconds: authenticatedAt + 31_000_000_000,
-                payloadByteCount: 8
+                payload: payload(8)
             ),
             TuyaAuthenticatedRawFD50Acceptance.Observation(
                 connectionGeneration: snapshot.connectionGeneration,
                 characteristicUUID: TuyaAuthenticatedRawFD50Acceptance.deviceToAppNotifyCharacteristicUUID,
                 observedAtUptimeNanoseconds: authenticatedAt + 1_000_000_000,
-                payloadByteCount: 8
+                payload: payload(8)
             ),
             TuyaAuthenticatedRawFD50Acceptance.Observation(
                 connectionGeneration: snapshot.connectionGeneration,
                 characteristicUUID: TuyaAuthenticatedRawFD50Acceptance.deviceToAppNotifyCharacteristicUUID,
                 observedAtUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedRawFD50Acceptance.historicalRejectionBoundaryNanoseconds,
-                payloadByteCount: 8
+                payload: payload(8)
             )
         ]
 
