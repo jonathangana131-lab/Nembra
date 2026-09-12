@@ -42,6 +42,45 @@ struct TuyaAuthenticatedRawFD50IngressTests {
         #expect(observations.first?.payload == bytes)
     }
 
+    @Test("equal or backwards receipt timestamps cannot enter raw physical custody")
+    func nonMonotonicReceiptsAreBlockedAtIngress() async throws {
+        let clock = RawIngressTestUptimeClock(1_000)
+        let (ledger, token) = try await authenticatedLedger(clock: clock)
+        let ingress = TuyaAuthenticatedRawFD50Ingress(
+            authenticatedConnectionToken: token,
+            snapshotProvider: { await ledger.currentPreflightSnapshot() },
+            uptimeProvider: clock.now
+        )
+
+        clock.advance(to: 3_000)
+        let firstVerdict = await ingress.recordDocumentedSameSessionNotify(
+            payload: Data([0x01]),
+            connectionToken: token
+        )
+        let equalVerdict = await ingress.recordDocumentedSameSessionNotify(
+            payload: Data([0x02]),
+            connectionToken: token
+        )
+        clock.advance(to: 2_500)
+        let backwardsVerdict = await ingress.recordDocumentedSameSessionNotify(
+            payload: Data([0x03]),
+            connectionToken: token
+        )
+        clock.advance(to: 3_001)
+        let laterVerdict = await ingress.recordDocumentedSameSessionNotify(
+            payload: Data([0x04]),
+            connectionToken: token
+        )
+        let observations = await ingress.observations(for: token)
+
+        #expect(firstVerdict == .retained)
+        #expect(equalVerdict == .blockedNonMonotonicReceipt)
+        #expect(backwardsVerdict == .blockedNonMonotonicReceipt)
+        #expect(laterVerdict == .retained)
+        #expect(observations.map(\.observedAtUptimeNanoseconds) == [3_000, 3_001])
+        #expect(observations.map(\.payload) == [Data([0x01]), Data([0x04])])
+    }
+
     @Test("stale generation cannot relabel bytes as current authenticated raw custody")
     func staleGenerationIsBlocked() async throws {
         let clock = RawIngressTestUptimeClock(1_000)
