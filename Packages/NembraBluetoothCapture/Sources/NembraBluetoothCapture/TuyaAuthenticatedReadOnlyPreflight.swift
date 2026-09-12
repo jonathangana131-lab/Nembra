@@ -34,6 +34,11 @@ public struct TuyaAuthenticatedReadOnlyPreflightSnapshot: Equatable, Sendable {
     public let latestApplicationPayloadUptimeNanoseconds: UInt64?
     public let connectionGeneration: UInt64
 
+    /// True only while the package-owned ledger still holds callback authority for this exact
+    /// connection generation. Authentication chronology can remain useful diagnostic evidence
+    /// after a generation is sealed, but a retired generation must never mint new physical truth.
+    public let hasActiveCallbackAuthority: Bool
+
     /// Public fail-closed bootstrap state for app presentation before the package-owned ledger has
     /// an active Bluetooth generation. This intentionally exposes no initializer capable of
     /// minting authenticated provenance, chronology, generation identity, or payload evidence.
@@ -45,12 +50,15 @@ public struct TuyaAuthenticatedReadOnlyPreflightSnapshot: Equatable, Sendable {
         latestObservedUptimeNanoseconds: nil,
         applicationPayloadCount: 0,
         latestApplicationPayloadUptimeNanoseconds: nil,
-        connectionGeneration: 0
+        connectionGeneration: 0,
+        hasActiveCallbackAuthority: false
     )
 
     /// Snapshot construction is package-owned. App/UI code may inspect a snapshot returned by the
     /// session provider, but cannot manufacture authenticated chronology or Smart Life provenance.
-    /// `@testable` package tests retain access to deterministic fixtures.
+    /// `@testable` package tests retain access to deterministic fixtures. The default callback-
+    /// authority value keeps existing deterministic active-session fixtures source-compatible;
+    /// production ledger snapshots always provide the live authority bit explicitly.
     init(
         authenticationState: AuthenticationState,
         authenticationMethod: TuyaReadOnlyAuthenticationMethod? = nil,
@@ -59,7 +67,8 @@ public struct TuyaAuthenticatedReadOnlyPreflightSnapshot: Equatable, Sendable {
         latestObservedUptimeNanoseconds: UInt64?,
         applicationPayloadCount: Int,
         latestApplicationPayloadUptimeNanoseconds: UInt64? = nil,
-        connectionGeneration: UInt64
+        connectionGeneration: UInt64,
+        hasActiveCallbackAuthority: Bool = true
     ) {
         self.authenticationState = authenticationState
         self.authenticationMethod = authenticationMethod
@@ -69,6 +78,7 @@ public struct TuyaAuthenticatedReadOnlyPreflightSnapshot: Equatable, Sendable {
         self.applicationPayloadCount = max(0, applicationPayloadCount)
         self.latestApplicationPayloadUptimeNanoseconds = latestApplicationPayloadUptimeNanoseconds
         self.connectionGeneration = connectionGeneration
+        self.hasActiveCallbackAuthority = hasActiveCallbackAuthority
     }
 }
 
