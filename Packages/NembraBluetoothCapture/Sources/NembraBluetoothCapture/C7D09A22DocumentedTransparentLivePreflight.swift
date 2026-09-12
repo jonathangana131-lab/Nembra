@@ -46,6 +46,7 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
     }
 
     private let handoff: C7D09A22DocumentedTransparentDelegateHandoff
+    private let preflightSnapshotProvider: SnapshotProvider
     private var authenticatedSnapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot?
     /// Retain the exact package-minted token, not just its diagnostic generation number.
     /// Independent connection ledgers can legitimately mint the same diagnostic generation;
@@ -56,6 +57,7 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
         preflightSnapshotProvider: @escaping SnapshotProvider,
         recordObserver: RecordObserver? = nil
     ) {
+        self.preflightSnapshotProvider = preflightSnapshotProvider
         self.handoff = C7D09A22DocumentedTransparentDelegateHandoff(
             preflightSnapshotProvider: preflightSnapshotProvider,
             recordObserver: recordObserver
@@ -107,12 +109,18 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
 
     /// Returns the current documented authenticated transport milestone only.
     /// This never upgrades the evidence into raw FD50 characteristic or DP semantic authority.
+    ///
+    /// The liveness cut is deliberately refreshed from the package-owned session ledger instead of
+    /// reusing the arm-time snapshot. Physical P0 requires an independent observation that the
+    /// authenticated SDK connection survived beyond the historical ~30 second rejection window.
+    /// A refreshed snapshot is accepted only when it still represents the exact armed connection
+    /// instance and authentication boundary; reconnects and cross-generation snapshots fail closed.
     public func transportMilestone() async -> C7D09A22DocumentedTransparentTransportMilestone.Verdict {
-        guard let authenticatedSnapshot else {
+        guard let currentSnapshot = await currentAuthenticatedSnapshotForArmedGeneration() else {
             return .blockedUnauthenticated
         }
         return C7D09A22DocumentedTransparentTransportMilestone.verdict(
-            authenticatedPreflight: authenticatedSnapshot,
+            authenticatedPreflight: currentSnapshot,
             transparent: await handoff.diagnosticSnapshot()
         )
     }
@@ -122,11 +130,12 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
     /// Callers should prefer this when rendering/exporting the P0 physical lane because it samples
     /// the transparent ledger only once and binds the result to the exact authenticated generation.
     /// A satisfied value means documented authenticated Tuya transport delivered real bytes beyond
-    /// the historical rejection horizon; it still does not claim the underlying FD50 GATT
-    /// characteristic or any DP meaning.
+    /// the historical rejection horizon *and* the package session ledger independently observed the
+    /// same authenticated connection alive through that evidence. It still does not claim the
+    /// underlying FD50 GATT characteristic or any DP meaning.
     public func fieldAttemptEvidence() async -> FieldAttemptEvidence {
-        guard let authenticatedSnapshot,
-              let activeConnectionToken else {
+        guard let activeConnectionToken,
+              let currentSnapshot = await currentAuthenticatedSnapshotForArmedGeneration() else {
             return FieldAttemptEvidence(
                 connectionGeneration: nil,
                 milestone: .blockedUnauthenticated,
@@ -135,7 +144,7 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
         }
         let transparent = await handoff.diagnosticSnapshot()
         let milestone = C7D09A22DocumentedTransparentTransportMilestone.verdict(
-            authenticatedPreflight: authenticatedSnapshot,
+            authenticatedPreflight: currentSnapshot,
             transparent: transparent
         )
         let artifact = transparent.map {
@@ -163,7 +172,7 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
     /// documented Smart Life transport evidence only: the callback does not expose the underlying
     /// GATT service/characteristic tuple required for raw FD50 physical first acceptance.
     public func evidenceArtifact() async -> C7D09A22DocumentedTransparentEvidenceArtifact? {
-        guard authenticatedSnapshot != nil,
+        guard await currentAuthenticatedSnapshotForArmedGeneration() != nil,
               let activeConnectionToken,
               let snapshot = await handoff.diagnosticSnapshot() else {
             return nil
@@ -203,6 +212,32 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
 
     /// Diagnostic-only generation number for display/export. Never use this value as lifecycle authority.
     public var activeDiagnosticGeneration: UInt64? { activeConnectionToken?.diagnosticGeneration }
+
+    /// Refreshes liveness while preserving the immutable identity/chronology of the connection that
+    /// originally armed this preflight. `latestObservedUptimeNanoseconds` is expected to advance;
+    /// connection start and authentication time are not. Any mismatch is treated as a reconnect or
+    /// corrupted authority boundary and therefore cannot be used for this field attempt.
+    private func currentAuthenticatedSnapshotForArmedGeneration() async -> TuyaAuthenticatedReadOnlyPreflightSnapshot? {
+        guard let armedSnapshot = authenticatedSnapshot,
+              let activeConnectionToken,
+              let current = await preflightSnapshotProvider(),
+              current.authenticationState == .authenticated,
+              current.authenticationMethod == .smartLifeAppSDK,
+              current.connectionGeneration == activeConnectionToken.diagnosticGeneration,
+              current.connectionGeneration == armedSnapshot.connectionGeneration,
+              current.connectionStartedAtUptimeNanoseconds == armedSnapshot.connectionStartedAtUptimeNanoseconds,
+              current.authenticatedAtUptimeNanoseconds == armedSnapshot.authenticatedAtUptimeNanoseconds else {
+            return nil
+        }
+
+        if let armedLatest = armedSnapshot.latestObservedUptimeNanoseconds,
+           let currentLatest = current.latestObservedUptimeNanoseconds,
+           currentLatest < armedLatest {
+            return nil
+        }
+
+        return current
+    }
 
     // Transport evidence cannot authorize protocol meaning or scooter mutation.
     public var authorizesRawFD50CharacteristicCustody: Bool { false }
