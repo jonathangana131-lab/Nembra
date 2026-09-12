@@ -1968,48 +1968,11 @@ private final class SecureLinkController: NSObject, ObservableObject {
                     continue
                 }
 
-                if self.applicationUpdateAdmissionsInFlight == 0,
-                   (self.canonicalObservedAgeSeconds ?? 0) > 60,
-                   self.applicationUpdateCount == 0
-#if canImport(ThingSmartHomeKit)
-                   && self.transparentTransportAcceptanceLoggedGeneration != token.diagnosticGeneration
-#endif
-                {
-                    do {
-                        try await sessionLedger.markApplicationObservationTimedOut(for: token)
-                    guard self.currentConnectionToken == token,
-                          self.phase == .observing else {
-                        self.log("stale_application_timeout_completion_ignored", [
-                            "generation": String(token.diagnosticGeneration),
-                            "phase": self.phase.rawValue
-                        ])
-                        return
-                    }
-                    } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
-                        await self.invalidateInternalLifecycle(
-                            token: token,
-                            message: "The application-observation deadline encountered a monotonic-clock regression.",
-                            kind: "application_timeout_clock_regressed"
-                        )
-                        return
-                    } catch {
-                        await self.invalidateInternalLifecycle(
-                            token: token,
-                            message: "The application-observation terminal could not complete safely: \(error.localizedDescription)",
-                            kind: "application_timeout_lifecycle_rejected"
-                        )
-                        return
-                    }
-                    self.currentConnectionToken = nil
-                    self.localBLESettlementToken = nil
-                    self.sdkLocalBLEOnline = false
-                    self.driver = nil
-                    await self.refreshLedgerSnapshot()
-                    self.phase = .failed
-                    self.message = "Authenticated session produced no application update before the observation deadline. Export diagnostics; relaunch Capture before any new stationary read-only attempt."
-                    self.log("authenticated_application_timeout", ["generation": String(token.diagnosticGeneration)])
-                    return
-                }
+                // SDK/application silence is not a physical terminal. The authenticated
+                // Tuya-owned BLE generation must remain alive while local BLE and source
+                // authority are healthy so same-session raw FD50 characteristic custody
+                // can still be earned. Actual transport loss and lifecycle/source-authority
+                // failures above remain terminal; no write/reset/unbind fallback is used.
 
                 try? await Task.sleep(for: .seconds(1))
             }
