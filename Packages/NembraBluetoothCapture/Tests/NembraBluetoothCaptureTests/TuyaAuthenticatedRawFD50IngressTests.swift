@@ -231,6 +231,33 @@ struct TuyaAuthenticatedRawFD50IngressTests {
         #expect(observations.isEmpty)
     }
 
+    @Test("authority superseded between admission and custody cannot retain raw bytes")
+    func authorityRaceIsBlockedBeforeCustody() async throws {
+        let clock = RawIngressTestUptimeClock(1_000)
+        let (ledger, token) = try await authenticatedLedger(clock: clock)
+        let admittedEvidence = await snapshotEvidence(ledger: ledger, token: token)
+
+        clock.advance(to: 2_500)
+        _ = try await ledger.beginConnection()
+        let supersededEvidence = await snapshotEvidence(ledger: ledger, token: token)
+        let sequence = RawIngressSnapshotSequence([admittedEvidence, supersededEvidence])
+        let ingress = TuyaAuthenticatedRawFD50Ingress(
+            authenticatedConnectionToken: token,
+            snapshotProvider: { await sequence.next() },
+            uptimeProvider: clock.now
+        )
+
+        clock.advance(to: 3_000)
+        let verdict = await ingress.recordDocumentedSameSessionNotify(
+            payload: Data([0xFD, 0x50, 0xAA]),
+            connectionToken: token
+        )
+        let observations = await ingress.observations(for: token)
+
+        #expect(verdict == .blockedAuthorityChangedDuringReceipt)
+        #expect(observations.isEmpty)
+    }
+
     @Test("retained bytes self-invalidate when authenticated callback authority is superseded")
     func retainedBytesSelfInvalidateAfterGenerationChange() async throws {
         let clock = RawIngressTestUptimeClock(1_000)
@@ -287,6 +314,24 @@ struct TuyaAuthenticatedRawFD50IngressTests {
         await ingress.retire(connectionToken: token)
         let retainedAfterRetirement = await ingress.observations(for: token)
         #expect(retainedAfterRetirement.isEmpty)
+    }
+}
+
+private actor RawIngressSnapshotSequence {
+    private let evidence: [TuyaAuthenticatedRawFD50Ingress.SnapshotEvidence]
+    private var index = 0
+
+    init(_ evidence: [TuyaAuthenticatedRawFD50Ingress.SnapshotEvidence]) {
+        precondition(!evidence.isEmpty)
+        self.evidence = evidence
+    }
+
+    func next() -> TuyaAuthenticatedRawFD50Ingress.SnapshotEvidence {
+        let current = evidence[index]
+        if index < evidence.count - 1 {
+            index += 1
+        }
+        return current
     }
 }
 
