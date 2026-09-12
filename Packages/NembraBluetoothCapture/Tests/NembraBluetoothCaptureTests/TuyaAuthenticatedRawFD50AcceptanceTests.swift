@@ -64,6 +64,36 @@ struct TuyaAuthenticatedRawFD50AcceptanceTests {
         )
     }
 
+    @Test("raw notify received between SDK-local connection polls still counts as physical evidence")
+    func rawNotifyBetweenSDKPollsIsAccepted() {
+        let authenticatedAt: UInt64 = 1_000
+        let snapshot = authenticatedSnapshot(
+            authenticatedAt: authenticatedAt,
+            latestObserved: authenticatedAt + 29_000_000_000
+        )
+        let observations = [
+            TuyaAuthenticatedRawFD50Acceptance.Observation(
+                connectionGeneration: snapshot.connectionGeneration,
+                characteristicUUID: TuyaAuthenticatedRawFD50Acceptance.deviceToAppNotifyCharacteristicUUID,
+                observedAtUptimeNanoseconds: authenticatedAt + 2_000_000_000,
+                payload: payload(8, byte: 0x31)
+            ),
+            TuyaAuthenticatedRawFD50Acceptance.Observation(
+                connectionGeneration: snapshot.connectionGeneration,
+                characteristicUUID: TuyaAuthenticatedRawFD50Acceptance.deviceToAppNotifyCharacteristicUUID,
+                observedAtUptimeNanoseconds: authenticatedAt + 30_000_000_001,
+                payload: payload(12, byte: 0x32)
+            )
+        ]
+
+        #expect(
+            TuyaAuthenticatedRawFD50Acceptance.verdict(
+                authenticatedSnapshot: snapshot,
+                observations: observations
+            ) == .accepted
+        )
+    }
+
     @Test("retired authenticated callback authority cannot close physical acceptance")
     func retiredCallbackAuthorityIsBlocked() {
         let authenticatedAt: UInt64 = 1_000
