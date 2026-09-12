@@ -114,7 +114,8 @@ actor TuyaAuthenticatedRawFD50Ingress {
         if let verdict = authorityVerdict(for: admissionEvidence) {
             return verdict
         }
-        guard let authenticatedAt = admissionEvidence.snapshot.authenticatedAtUptimeNanoseconds else {
+        guard let connectionStarted = admissionEvidence.snapshot.connectionStartedAtUptimeNanoseconds,
+              let authenticatedAt = admissionEvidence.snapshot.authenticatedAtUptimeNanoseconds else {
             return .blockedInvalidAuthenticatedChronology
         }
 
@@ -130,11 +131,14 @@ actor TuyaAuthenticatedRawFD50Ingress {
         // Re-read exact-token authority after timestamping and immediately before custody. This is
         // deliberately a second source-of-truth read rather than trusting the earlier snapshot:
         // snapshotProvider is async, and another connection generation may supersede this token
-        // between admission and retention.
+        // between admission and retention. Bind both connection start and authentication instant;
+        // either changing inside one diagnostic generation means the session chronology mutated and
+        // must not admit raw bytes as evidence from one continuous authenticated transport.
         let custodyEvidence = await snapshotProvider()
         guard authorityVerdict(for: custodyEvidence) == nil,
               custodyEvidence.connectionToken == admissionEvidence.connectionToken,
               custodyEvidence.snapshot.connectionGeneration == admissionEvidence.snapshot.connectionGeneration,
+              custodyEvidence.snapshot.connectionStartedAtUptimeNanoseconds == connectionStarted,
               custodyEvidence.snapshot.authenticatedAtUptimeNanoseconds == authenticatedAt else {
             return .blockedAuthorityChangedDuringReceipt
         }
