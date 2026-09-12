@@ -47,6 +47,9 @@ public enum TuyaAuthenticatedRawFD50Acceptance {
         guard authenticatedSnapshot.connectionGeneration > 0 else {
             return .blocked(reason: "No current authenticated Bluetooth generation.")
         }
+        guard authenticatedSnapshot.hasActiveCallbackAuthority else {
+            return .blocked(reason: "Authenticated generation no longer has live callback authority.")
+        }
         guard authenticatedSnapshot.authenticationState == .authenticated,
               authenticatedSnapshot.authenticationMethod == .smartLifeAppSDK else {
             return .blocked(reason: "Current generation is not authenticated by the documented Smart Life SDK path.")
