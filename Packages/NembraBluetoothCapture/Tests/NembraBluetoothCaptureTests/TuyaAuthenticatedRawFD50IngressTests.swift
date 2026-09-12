@@ -231,6 +231,33 @@ struct TuyaAuthenticatedRawFD50IngressTests {
         #expect(observations.isEmpty)
     }
 
+    @Test("retained bytes self-invalidate when authenticated callback authority is superseded")
+    func retainedBytesSelfInvalidateAfterGenerationChange() async throws {
+        let clock = RawIngressTestUptimeClock(1_000)
+        let (ledger, token) = try await authenticatedLedger(clock: clock)
+        let ingress = TuyaAuthenticatedRawFD50Ingress(
+            authenticatedConnectionToken: token,
+            snapshotProvider: { await snapshotEvidence(ledger: ledger, token: token) },
+            uptimeProvider: clock.now
+        )
+
+        clock.advance(to: 3_000)
+        let verdict = await ingress.recordDocumentedSameSessionNotify(
+            payload: Data([0xCA, 0xFE]),
+            connectionToken: token
+        )
+        let beforeSupersession = await ingress.observations(for: token)
+
+        #expect(verdict == .retained)
+        #expect(beforeSupersession.map(\.payload) == [Data([0xCA, 0xFE])])
+
+        clock.advance(to: 4_000)
+        _ = try await ledger.beginConnection()
+        let afterSupersession = await ingress.observations(for: token)
+
+        #expect(afterSupersession.isEmpty)
+    }
+
     @Test("retirement clears only the exact authenticated token's retained bytes")
     func retirementClearsExactToken() async throws {
         let clock = RawIngressTestUptimeClock(1_000)
