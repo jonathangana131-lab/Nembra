@@ -89,9 +89,11 @@ public enum TuyaAuthenticatedReadOnlyPreflight {
     /// bootstrap callback into a claim of an ongoing authenticated notify path.
     public static let minimumAuthenticatedApplicationPayloadCount = 2
 
-    /// An authenticated generation that still cannot satisfy the application-evidence contract
-    /// after this bounded horizon must be retired and restarted. A bootstrap callback must not
-    /// keep an otherwise non-accepting generation alive indefinitely.
+    /// Legacy diagnostic horizon retained for artifact compatibility. It no longer has authority
+    /// to retire a healthy authenticated generation: C7D09A22 physical acceptance now waits for
+    /// same-generation raw FD50 notification custody, which may legitimately arrive after SDK
+    /// application silence. Transport loss, continuity loss, or source-authority loss remain
+    /// terminal through the ledger's dedicated lifecycle paths.
     public static let maximumIncompleteObservationNanoseconds: UInt64 = 60_000_000_000
 
     public enum Verdict: Equatable, Sendable {
@@ -142,25 +144,15 @@ public enum TuyaAuthenticatedReadOnlyPreflight {
         return .readyForStationaryMapping
     }
 
-    /// Returns true only when the current SmartLife-authenticated generation has reached the
-    /// bounded observation horizon without earning canonical readiness. Callers must retire the
-    /// exact generation fail-closed; this helper does not perform transport writes or infer a BLE
-    /// disconnect. Invalid chronology is also terminal rather than silently extending authority.
+    /// C7D09A22 superseded the old SDK-application deadline. A healthy SmartLife-authenticated
+    /// generation must remain available for the package-owned same-session raw-FD50 evidence path
+    /// regardless of SDK application silence. This legacy helper deliberately never grants
+    /// retirement authority; callers still fail closed on actual transport/continuity/source loss.
     public static func shouldRetireIncompleteObservation(
         _ snapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot
     ) -> Bool {
-        guard snapshot.connectionGeneration > 0,
-              snapshot.authenticationState == .authenticated,
-              snapshot.authenticationMethod == .smartLifeAppSDK,
-              let authenticatedAt = snapshot.authenticatedAtUptimeNanoseconds,
-              let latest = snapshot.latestObservedUptimeNanoseconds else {
-            return false
-        }
-        guard latest >= authenticatedAt else { return true }
-        guard latest - authenticatedAt >= maximumIncompleteObservationNanoseconds else {
-            return false
-        }
-        return verdict(for: snapshot) != .readyForStationaryMapping
+        _ = snapshot
+        return false
     }
 }
 
