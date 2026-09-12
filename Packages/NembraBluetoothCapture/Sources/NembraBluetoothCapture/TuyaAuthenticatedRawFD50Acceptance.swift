@@ -61,7 +61,10 @@ public enum TuyaAuthenticatedRawFD50Acceptance {
             $0.connectionGeneration == authenticatedSnapshot.connectionGeneration
                 && $0.characteristicUUID == deviceToAppNotifyCharacteristicUUID
                 && $0.payloadByteCount > 0
-                && $0.observedAtUptimeNanoseconds >= authenticatedAt
+                // Raw physical evidence must be received after authentication completed. A packet
+                // stamped at or before the authentication transition cannot prove the authenticated
+                // generation's notify path even when its generation identifier otherwise matches.
+                && $0.observedAtUptimeNanoseconds > authenticatedAt
                 && $0.observedAtUptimeNanoseconds <= latestObserved
         }
 
@@ -70,7 +73,7 @@ public enum TuyaAuthenticatedRawFD50Acceptance {
         // replayed/copy-pasted observation cannot manufacture the required two-event prefix.
         let distinctReceiptTimes = Set(qualifying.map(\.observedAtUptimeNanoseconds))
         guard distinctReceiptTimes.count >= minimumRetainedNotifyCount else {
-            return .blocked(reason: "Fewer than two distinct retained non-empty raw FD50 notify receipts belong to this authenticated generation.")
+            return .blocked(reason: "Fewer than two distinct retained non-empty post-auth raw FD50 notify receipts belong to this authenticated generation.")
         }
         guard qualifying.contains(where: {
             $0.observedAtUptimeNanoseconds - authenticatedAt > historicalRejectionBoundaryNanoseconds
