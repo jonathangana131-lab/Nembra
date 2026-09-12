@@ -119,10 +119,32 @@ actor TuyaAuthenticatedRawFD50Ingress {
         return .retained
     }
 
-    /// Returns observations only when queried with this ingress's exact opaque connection token.
-    /// A token from another ledger with the same diagnostic generation receives no retained bytes.
-    func observations(for connectionToken: TuyaReadOnlyConnectionToken) -> [TuyaAuthenticatedRawFD50Acceptance.Observation] {
+    /// Returns observations only while this ingress still owns the exact live authenticated
+    /// callback authority that admitted them. This makes stale evidence self-invalidating even if
+    /// an integration misses or races the explicit local `retire` call.
+    ///
+    /// A foreign query token receives no bytes and cannot clear the bound session. When the bound
+    /// session itself is no longer current/authenticated, its retained bytes are locally purged.
+    /// This is evidence hygiene only: it performs no scooter or Tuya mutation.
+    func observations(for connectionToken: TuyaReadOnlyConnectionToken) async -> [TuyaAuthenticatedRawFD50Acceptance.Observation] {
         guard connectionToken == authenticatedConnectionToken else { return [] }
+
+        let snapshotEvidence = await snapshotProvider()
+        let snapshot = snapshotEvidence.snapshot
+        guard snapshotEvidence.connectionToken == authenticatedConnectionToken,
+              snapshot.hasActiveCallbackAuthority,
+              snapshot.connectionGeneration == authenticatedConnectionToken.diagnosticGeneration,
+              snapshot.authenticationState == .authenticated,
+              snapshot.authenticationMethod == .smartLifeAppSDK,
+              let connectionStarted = snapshot.connectionStartedAtUptimeNanoseconds,
+              let authenticatedAt = snapshot.authenticatedAtUptimeNanoseconds,
+              let latestObserved = snapshot.latestObservedUptimeNanoseconds,
+              authenticatedAt >= connectionStarted,
+              latestObserved >= authenticatedAt else {
+            retained.removeAll()
+            return []
+        }
+
         return retained.filter { $0.connectionGeneration == authenticatedConnectionToken.diagnosticGeneration }
     }
 
