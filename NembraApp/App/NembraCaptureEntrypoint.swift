@@ -1964,10 +1964,6 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 // raw FD50 characteristic custody can be earned. Keep listening.
                 if case .readyForStationaryMapping = TuyaAuthenticatedReadOnlyPreflight.verdict(for: self.ledgerSnapshot) {
                     self.message = "Authenticated Tuya application evidence is stable for generation \(token.diagnosticGeneration), but physical GO remains blocked. Keeping the authenticated session alive for retained raw FD50 characteristic notifications beyond the historical rejection window."
-                    self.log("legacy_sdk_readiness_observation_only", [
-                        "generation": String(token.diagnosticGeneration),
-                        "authority": "tuya-sdk-application-evidence-not-physical-go"
-                    ])
                     try? await Task.sleep(for: .seconds(1))
                     continue
                 }
