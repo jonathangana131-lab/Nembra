@@ -20,6 +20,7 @@ actor TuyaAuthenticatedRawFD50Ingress {
         case blockedInactiveGeneration
         case blockedUnauthenticatedGeneration
         case blockedWrongAuthenticationMethod
+        case blockedInvalidAuthenticatedChronology
         case blockedBeforeAuthenticationBoundary
         case blockedNonMonotonicReceipt
     }
@@ -68,8 +69,12 @@ actor TuyaAuthenticatedRawFD50Ingress {
         guard snapshot.authenticationMethod == .smartLifeAppSDK else {
             return .blockedWrongAuthenticationMethod
         }
-        guard let authenticatedAt = snapshot.authenticatedAtUptimeNanoseconds else {
-            return .blockedUnauthenticatedGeneration
+        guard let connectionStarted = snapshot.connectionStartedAtUptimeNanoseconds,
+              let authenticatedAt = snapshot.authenticatedAtUptimeNanoseconds,
+              let latestObserved = snapshot.latestObservedUptimeNanoseconds,
+              authenticatedAt >= connectionStarted,
+              latestObserved >= authenticatedAt else {
+            return .blockedInvalidAuthenticatedChronology
         }
 
         let observedAt = uptimeProvider()
