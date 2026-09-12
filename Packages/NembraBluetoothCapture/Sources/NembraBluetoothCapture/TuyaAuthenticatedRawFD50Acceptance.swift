@@ -65,8 +65,12 @@ public enum TuyaAuthenticatedRawFD50Acceptance {
                 && $0.observedAtUptimeNanoseconds <= latestObserved
         }
 
-        guard qualifying.count >= minimumRetainedNotifyCount else {
-            return .blocked(reason: "Fewer than two retained non-empty raw FD50 notify payloads belong to this authenticated generation.")
+        // Physical acceptance requires distinct callback receipts, not two copies of one retained
+        // observation. The package ingress stamps each callback with monotonic receipt time, so a
+        // replayed/copy-pasted observation cannot manufacture the required two-event prefix.
+        let distinctReceiptTimes = Set(qualifying.map(\.observedAtUptimeNanoseconds))
+        guard distinctReceiptTimes.count >= minimumRetainedNotifyCount else {
+            return .blocked(reason: "Fewer than two distinct retained non-empty raw FD50 notify receipts belong to this authenticated generation.")
         }
         guard qualifying.contains(where: {
             $0.observedAtUptimeNanoseconds - authenticatedAt > historicalRejectionBoundaryNanoseconds
