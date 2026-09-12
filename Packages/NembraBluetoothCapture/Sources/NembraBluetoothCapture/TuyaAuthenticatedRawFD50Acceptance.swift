@@ -51,8 +51,10 @@ public enum TuyaAuthenticatedRawFD50Acceptance {
               authenticatedSnapshot.authenticationMethod == .smartLifeAppSDK else {
             return .blocked(reason: "Current generation is not authenticated by the documented Smart Life SDK path.")
         }
-        guard let authenticatedAt = authenticatedSnapshot.authenticatedAtUptimeNanoseconds,
+        guard let connectionStarted = authenticatedSnapshot.connectionStartedAtUptimeNanoseconds,
+              let authenticatedAt = authenticatedSnapshot.authenticatedAtUptimeNanoseconds,
               let latestObserved = authenticatedSnapshot.latestObservedUptimeNanoseconds,
+              authenticatedAt >= connectionStarted,
               latestObserved >= authenticatedAt else {
             return .blocked(reason: "Authenticated connection chronology is unavailable or invalid.")
         }
