@@ -10,13 +10,30 @@ import Foundation
 /// This type performs no BLE writes, DP queries, reset/remove/unbind operations, or payload parsing.
 /// It is intentionally internal until a documented Tuya-owned raw characteristic callback exists.
 actor TuyaAuthenticatedRawFD50Ingress {
-    typealias SnapshotProvider = @Sendable () async -> TuyaAuthenticatedReadOnlyPreflightSnapshot
+    /// Couples a preflight snapshot to the exact opaque token whose ledger produced it. Keeping
+    /// these values in one provider result prevents a second authenticated ledger with the same
+    /// numeric generation from accidentally authorizing this ingress's bytes.
+    struct SnapshotEvidence: Sendable {
+        let snapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot
+        let connectionToken: TuyaReadOnlyConnectionToken?
+
+        init(
+            snapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot,
+            connectionToken: TuyaReadOnlyConnectionToken?
+        ) {
+            self.snapshot = snapshot
+            self.connectionToken = connectionToken
+        }
+    }
+
+    typealias SnapshotProvider = @Sendable () async -> SnapshotEvidence
     typealias UptimeProvider = @Sendable () -> UInt64
 
     enum RecordVerdict: Equatable, Sendable {
         case retained
         case blockedEmptyPayload
         case blockedForeignConnectionToken
+        case blockedForeignSnapshotAuthority
         case blockedInactiveGeneration
         case blockedUnauthenticatedGeneration
         case blockedWrongAuthenticationMethod
@@ -48,7 +65,8 @@ actor TuyaAuthenticatedRawFD50Ingress {
     /// The fixed FD50 notify UUID, exact token generation, and callback receipt time are minted at
     /// this boundary rather than accepted as caller input. The callback must also present the exact
     /// opaque token this ingress was bound to; matching generation numbers from another ledger are
-    /// insufficient physical custody.
+    /// insufficient physical custody. The snapshot provider must independently return that same
+    /// opaque token with its snapshot, so a cross-ledger snapshot cannot authorize this ingress.
     func recordDocumentedSameSessionNotify(
         payload: Data,
         connectionToken: TuyaReadOnlyConnectionToken
@@ -58,7 +76,11 @@ actor TuyaAuthenticatedRawFD50Ingress {
             return .blockedForeignConnectionToken
         }
 
-        let snapshot = await snapshotProvider()
+        let snapshotEvidence = await snapshotProvider()
+        guard snapshotEvidence.connectionToken == authenticatedConnectionToken else {
+            return .blockedForeignSnapshotAuthority
+        }
+        let snapshot = snapshotEvidence.snapshot
         guard snapshot.hasActiveCallbackAuthority,
               snapshot.connectionGeneration == authenticatedConnectionToken.diagnosticGeneration else {
             return .blockedInactiveGeneration
