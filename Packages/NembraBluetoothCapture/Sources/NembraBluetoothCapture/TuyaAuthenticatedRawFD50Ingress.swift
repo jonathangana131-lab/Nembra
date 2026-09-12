@@ -16,20 +16,27 @@ actor TuyaAuthenticatedRawFD50Ingress {
     enum RecordVerdict: Equatable, Sendable {
         case retained
         case blockedEmptyPayload
+        case blockedForeignConnectionToken
         case blockedInactiveGeneration
         case blockedUnauthenticatedGeneration
         case blockedWrongAuthenticationMethod
         case blockedBeforeAuthenticationBoundary
     }
 
+    /// Exact opaque token this ingress was bound to when the authenticated same-session callback
+    /// path was installed. Token equality includes the package-private ledger identity as well as
+    /// the generation, so another ledger's generation `1` cannot impersonate this session.
+    private let authenticatedConnectionToken: TuyaReadOnlyConnectionToken
     private let snapshotProvider: SnapshotProvider
     private let uptimeProvider: UptimeProvider
     private var retained: [TuyaAuthenticatedRawFD50Acceptance.Observation] = []
 
     init(
+        authenticatedConnectionToken: TuyaReadOnlyConnectionToken,
         snapshotProvider: @escaping SnapshotProvider,
         uptimeProvider: @escaping UptimeProvider = { DispatchTime.now().uptimeNanoseconds }
     ) {
+        self.authenticatedConnectionToken = authenticatedConnectionToken
         self.snapshotProvider = snapshotProvider
         self.uptimeProvider = uptimeProvider
     }
@@ -37,17 +44,21 @@ actor TuyaAuthenticatedRawFD50Ingress {
     /// Retains bytes delivered by the documented same-session device→app notify callback.
     ///
     /// The fixed FD50 notify UUID, exact token generation, and callback receipt time are minted at
-    /// this boundary rather than accepted as caller input. A stale token therefore cannot be used
-    /// to relabel bytes as belonging to the current authenticated generation.
+    /// this boundary rather than accepted as caller input. The callback must also present the exact
+    /// opaque token this ingress was bound to; matching generation numbers from another ledger are
+    /// insufficient physical custody.
     func recordDocumentedSameSessionNotify(
         payload: Data,
         connectionToken: TuyaReadOnlyConnectionToken
     ) async -> RecordVerdict {
         guard !payload.isEmpty else { return .blockedEmptyPayload }
+        guard connectionToken == authenticatedConnectionToken else {
+            return .blockedForeignConnectionToken
+        }
 
         let snapshot = await snapshotProvider()
         guard snapshot.hasActiveCallbackAuthority,
-              snapshot.connectionGeneration == connectionToken.diagnosticGeneration else {
+              snapshot.connectionGeneration == authenticatedConnectionToken.diagnosticGeneration else {
             return .blockedInactiveGeneration
         }
         guard snapshot.authenticationState == .authenticated else {
@@ -67,7 +78,7 @@ actor TuyaAuthenticatedRawFD50Ingress {
 
         retained.append(
             TuyaAuthenticatedRawFD50Acceptance.Observation(
-                connectionGeneration: connectionToken.diagnosticGeneration,
+                connectionGeneration: authenticatedConnectionToken.diagnosticGeneration,
                 characteristicUUID: TuyaAuthenticatedRawFD50Acceptance.deviceToAppNotifyCharacteristicUUID,
                 observedAtUptimeNanoseconds: observedAt,
                 payload: payload
@@ -76,15 +87,17 @@ actor TuyaAuthenticatedRawFD50Ingress {
         return .retained
     }
 
-    /// Returns only observations belonging to this exact connection token. The physical acceptance
-    /// evaluator still independently validates the current authenticated snapshot and chronology.
+    /// Returns observations only when queried with this ingress's exact opaque connection token.
+    /// A token from another ledger with the same diagnostic generation receives no retained bytes.
     func observations(for connectionToken: TuyaReadOnlyConnectionToken) -> [TuyaAuthenticatedRawFD50Acceptance.Observation] {
-        retained.filter { $0.connectionGeneration == connectionToken.diagnosticGeneration }
+        guard connectionToken == authenticatedConnectionToken else { return [] }
+        return retained.filter { $0.connectionGeneration == authenticatedConnectionToken.diagnosticGeneration }
     }
 
-    /// Exact-generation retirement. This is local evidence hygiene only and never touches scooter
-    /// state or asks Tuya to disconnect, reset, remove, or unbind anything.
+    /// Exact-token retirement. This is local evidence hygiene only and never touches scooter state
+    /// or asks Tuya to disconnect, reset, remove, or unbind anything.
     func retire(connectionToken: TuyaReadOnlyConnectionToken) {
-        retained.removeAll { $0.connectionGeneration == connectionToken.diagnosticGeneration }
+        guard connectionToken == authenticatedConnectionToken else { return }
+        retained.removeAll { $0.connectionGeneration == authenticatedConnectionToken.diagnosticGeneration }
     }
 }
