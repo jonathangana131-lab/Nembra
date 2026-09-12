@@ -1,0 +1,70 @@
+name: P0 remove SDK-silence terminal
+
+on:
+  push:
+    branches:
+      - capture/one-time-ble-dump-gpt56
+    paths:
+      - .github/workflows/capture-p0-remove-sdk-silence-terminal-gpt56.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: capture/one-time-ble-dump-gpt56
+          fetch-depth: 0
+      - name: Keep authenticated session alive through SDK silence
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("NembraApp/App/NembraCaptureEntrypoint.swift")
+          text = path.read_text()
+          start_marker = "                if self.applicationUpdateAdmissionsInFlight == 0,\n"
+          next_poll_marker = "                try? await Task.sleep(for: .seconds(1))\n"
+          start = text.find(start_marker)
+          if start < 0:
+              raise SystemExit("SDK-silence terminal start marker not found")
+          end = text.find(next_poll_marker, start)
+          if end < 0:
+              raise SystemExit("watchdog next-poll marker not found")
+          removed = text[start:end]
+          required = [
+              "markApplicationObservationTimedOut(for: token)",
+              "authenticated_application_timeout",
+              "applicationUpdateCount == 0",
+          ]
+          for needle in required:
+              if needle not in removed:
+                  raise SystemExit(f"expected terminal fragment missing: {needle}")
+
+          replacement = (
+              "                // SDK/application silence is not a physical terminal. The authenticated\n"
+              "                // Tuya-owned BLE generation must remain alive while local BLE and source\n"
+              "                // authority are healthy so same-session raw FD50 characteristic custody\n"
+              "                // can still be earned. Actual transport loss and lifecycle/source-authority\n"
+              "                // failures above remain terminal; no write/reset/unbind fallback is used.\n\n"
+          )
+          text = text[:start] + replacement + text[end:]
+          if "markApplicationObservationTimedOut(for: token)" in text:
+              raise SystemExit("stale application-observation timeout call remains")
+          path.write_text(text)
+          PY
+
+          git diff --check
+          git diff -- NembraApp/App/NembraCaptureEntrypoint.swift
+      - name: Commit production patch and remove one-shot workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/capture-p0-remove-sdk-silence-terminal-gpt56.yml
+          git add NembraApp/App/NembraCaptureEntrypoint.swift
+          git commit -m "Physical truth: keep authenticated session alive through SDK silence"
+          git push origin HEAD:capture/one-time-ble-dump-gpt56
