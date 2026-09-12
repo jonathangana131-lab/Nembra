@@ -1,0 +1,39 @@
+name: One-shot dedupe SDK readiness fence
+
+on:
+  push:
+    branches:
+      - capture/one-time-ble-dump-gpt56
+    paths:
+      - '.github/workflows/one-shot-dedupe-sdk-readiness-fence.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: capture/one-time-ble-dump-gpt56
+          fetch-depth: 1
+      - name: Remove per-second readiness log spam
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          s = p.read_text()
+          needle = '''                    self.log("legacy_sdk_readiness_observation_only", [\n                        "generation": String(token.diagnosticGeneration),\n                        "authority": "tuya-sdk-application-evidence-not-physical-go"\n                    ])\n'''
+          if s.count(needle) != 1:
+              raise SystemExit(f'expected one readiness log block, found {s.count(needle)}')
+          p.write_text(s.replace(needle, '', 1))
+          PY
+          rm .github/workflows/one-shot-dedupe-sdk-readiness-fence.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift .github/workflows/one-shot-dedupe-sdk-readiness-fence.yml
+          git commit -m 'Physical truth: keep readiness fence quiet'
+          git push origin HEAD:capture/one-time-ble-dump-gpt56
