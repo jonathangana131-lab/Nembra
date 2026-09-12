@@ -2,10 +2,10 @@ import Foundation
 import Testing
 @testable import NembraBluetoothCapture
 
-@Suite("Tuya authenticated incomplete observation horizon")
+@Suite("Tuya authenticated legacy observation horizon")
 struct TuyaAuthenticatedIncompleteObservationHorizonTests {
-    @Test("bootstrap-only generation retires at package-owned 60 second horizon")
-    func bootstrapOnlyGenerationRetires() async throws {
+    @Test("SDK-silent authenticated generation stays alive beyond legacy 60 second horizon")
+    func sdkSilentGenerationStaysAlive() async throws {
         let clock = HorizonClock(1_000_000_000)
         let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
         let token = try await ledger.beginConnection()
@@ -22,32 +22,20 @@ struct TuyaAuthenticatedIncompleteObservationHorizonTests {
             ledger: ledger,
             token: token,
             authenticatedAt: authenticatedAt,
-            throughOffset: 56_000_000_000
+            throughOffset: 66_000_000_000
         )
-        clock.set(authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.maximumIncompleteObservationNanoseconds)
-        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached) {
-            try await ledger.observeCurrentConnection(for: token)
-        }
+
         let snapshot = await ledger.currentPreflightSnapshot()
+        #expect(snapshot.authenticationState == .authenticated)
+        #expect(snapshot.authenticationMethod == .smartLifeAppSDK)
         #expect(snapshot.applicationPayloadCount == 1)
         #expect(snapshot.latestApplicationPayloadUptimeNanoseconds == authenticatedAt + 1_000_000_000)
+        #expect(TuyaAuthenticatedReadOnlyPreflight.shouldRetireIncompleteObservation(snapshot) == false)
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) != .readyForStationaryMapping)
-        if case let .failed(reason) = snapshot.authenticationState {
-            #expect(reason.contains("bounded incomplete-evidence horizon"))
-        } else {
-            Issue.record("Incomplete horizon must terminally fail the exact authenticated generation.")
-        }
-        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection) {
-            try await ledger.observeCurrentConnection(for: token)
-        }
-
-        // Capture's existing generic terminal cleanup may race the package-owned horizon throw.
-        // It is safe and idempotent only for this exact already-retired incomplete-horizon token.
-        try await ledger.markInternalLifecycleFailure(for: token)
     }
 
-    @Test("deadline-crossing second callback is rejected before evidence mutation")
-    func deadlineCrossingPayloadCannotManufactureReadiness() async throws {
+    @Test("late SDK callback does not retire a healthy authenticated generation")
+    func lateSDKCallbackDoesNotRetireGeneration() async throws {
         let clock = HorizonClock(2_000_000_000)
         let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
         let token = try await ledger.beginConnection()
@@ -58,54 +46,26 @@ struct TuyaAuthenticatedIncompleteObservationHorizonTests {
         try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
         clock.set(authenticatedAt + 1_000_000_000)
         try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
+
         try await pollContinuously(
             clock: clock,
             ledger: ledger,
             token: token,
             authenticatedAt: authenticatedAt,
-            throughOffset: 56_000_000_000
+            throughOffset: 61_000_000_000
         )
+        clock.set(authenticatedAt + 62_000_000_000)
+        try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
 
-        let before = await ledger.currentPreflightSnapshot()
-        clock.set(authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.maximumIncompleteObservationNanoseconds)
-        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.incompleteObservationHorizonReached) {
-            try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
-        }
-        let after = await ledger.currentPreflightSnapshot()
-        #expect(after.applicationPayloadCount == before.applicationPayloadCount)
-        #expect(after.latestApplicationPayloadUptimeNanoseconds == before.latestApplicationPayloadUptimeNanoseconds)
-        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: after) != .readyForStationaryMapping)
-        if case .failed = after.authenticationState {
-            // Expected: the deadline-crossing callback cannot remain authorized after rejection.
-        } else {
-            Issue.record("Deadline-crossing application evidence must retire the authenticated generation.")
-        }
-        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection) {
-            try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
-        }
-        try await ledger.markInternalLifecycleFailure(for: token)
+        let snapshot = await ledger.currentPreflightSnapshot()
+        #expect(snapshot.authenticationState == .authenticated)
+        #expect(snapshot.applicationPayloadCount == 2)
+        #expect(snapshot.latestApplicationPayloadUptimeNanoseconds == authenticatedAt + 62_000_000_000)
+        #expect(TuyaAuthenticatedReadOnlyPreflight.shouldRetireIncompleteObservation(snapshot) == false)
     }
 
-    @Test("incomplete-horizon cleanup cannot authorize an older token")
-    func incompleteHorizonCleanupIsGenerationExact() async throws {
-        let clock = HorizonClock(2_500_000_000)
-        let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
-        let oldToken = try await ledger.beginConnection()
-        try await ledger.markAuthenticationStarted(for: oldToken)
-        try await ledger.markAuthenticated(for: oldToken, method: .smartLifeAppSDK)
-        try await ledger.endConnection(for: oldToken)
-
-        let currentToken = try await ledger.beginConnection()
-        try await ledger.markAuthenticationStarted(for: currentToken)
-        try await ledger.markAuthenticated(for: currentToken, method: .smartLifeAppSDK)
-
-        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.staleConnection) {
-            try await ledger.markInternalLifecycleFailure(for: oldToken)
-        }
-    }
-
-    @Test("canonically ready generation survives incomplete horizon")
-    func readyGenerationSurvivesHorizon() async throws {
+    @Test("actual continuity loss remains terminal after legacy horizon retirement is disabled")
+    func continuityLossRemainsTerminal() async throws {
         let clock = HorizonClock(3_000_000_000)
         let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: clock.now)
         let token = try await ledger.beginConnection()
@@ -114,28 +74,17 @@ struct TuyaAuthenticatedIncompleteObservationHorizonTests {
         let authenticatedAt: UInt64 = 3_200_000_000
         clock.set(authenticatedAt)
         try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
-        clock.set(authenticatedAt + 1_000_000_000)
-        try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
-        try await pollContinuously(
-            clock: clock,
-            ledger: ledger,
-            token: token,
-            authenticatedAt: authenticatedAt,
-            throughOffset: 26_000_000_000
-        )
-        clock.set(authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds + 1)
-        try await ledger.recordApplicationUpdate(isNonEmpty: true, for: token)
-        try await pollContinuously(
-            clock: clock,
-            ledger: ledger,
-            token: token,
-            authenticatedAt: authenticatedAt,
-            fromOffset: 35_000_000_000,
-            throughOffset: 60_000_000_000
-        )
+
+        clock.set(authenticatedAt + TuyaAuthenticatedReadOnlySessionLedger.maximumContinuousObservationGapNanoseconds + 1)
+        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.observationContinuityInvalidated) {
+            try await ledger.observeCurrentConnection(for: token)
+        }
         let snapshot = await ledger.currentPreflightSnapshot()
-        #expect(snapshot.applicationPayloadCount == 2)
-        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .readyForStationaryMapping)
+        if case .failed = snapshot.authenticationState {
+            // Expected: only real continuity/lifecycle/source failures remain terminal here.
+        } else {
+            Issue.record("Observation continuity loss must still fail the authenticated generation.")
+        }
     }
 
     private func pollContinuously(
