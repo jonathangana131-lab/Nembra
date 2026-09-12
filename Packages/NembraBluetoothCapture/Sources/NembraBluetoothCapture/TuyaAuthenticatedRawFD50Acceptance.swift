@@ -76,8 +76,14 @@ public enum TuyaAuthenticatedRawFD50Acceptance {
                 // stamped at or before the authentication transition cannot prove the authenticated
                 // generation's notify path even when its generation identifier otherwise matches.
                 && $0.observedAtUptimeNanoseconds > authenticatedAt
-                && $0.observedAtUptimeNanoseconds <= latestObserved
         }
+
+        // Do not require a raw callback timestamp to be <= the snapshot's latest SDK-local
+        // observation. The package-owned raw ingress validates live callback authority at the
+        // callback boundary itself, while the SDK-local connection poll and raw callback execute
+        // independently. A legitimate notify can therefore land between two SDK-local polls; an
+        // upper-bound comparison here would temporarily (or permanently, at capture completion)
+        // discard real same-session evidence merely because the snapshot was sampled first.
 
         // Physical acceptance requires distinct callback receipts, not two copies of one retained
         // observation. The package ingress stamps each callback with monotonic receipt time, so a
