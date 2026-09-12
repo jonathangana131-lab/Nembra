@@ -158,6 +158,37 @@ struct TuyaAuthenticatedRawFD50IngressTests {
         #expect(observations.isEmpty)
     }
 
+    @Test("invalid authenticated chronology is rejected before raw bytes enter custody")
+    func invalidAuthenticatedChronologyIsBlockedAtIngress() async throws {
+        let clock = RawIngressTestUptimeClock(1_000)
+        let (_, token) = try await authenticatedLedger(clock: clock)
+        let invalidSnapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
+            authenticationState: .authenticated,
+            authenticationMethod: .smartLifeAppSDK,
+            connectionStartedAtUptimeNanoseconds: nil,
+            authenticatedAtUptimeNanoseconds: 2_000,
+            latestObservedUptimeNanoseconds: 2_500,
+            applicationPayloadCount: 0,
+            connectionGeneration: token.diagnosticGeneration,
+            hasActiveCallbackAuthority: true
+        )
+        let ingress = TuyaAuthenticatedRawFD50Ingress(
+            authenticatedConnectionToken: token,
+            snapshotProvider: { invalidSnapshot },
+            uptimeProvider: clock.now
+        )
+
+        clock.advance(to: 3_000)
+        let verdict = await ingress.recordDocumentedSameSessionNotify(
+            payload: Data([0xFD, 0x50]),
+            connectionToken: token
+        )
+        let observations = await ingress.observations(for: token)
+
+        #expect(verdict == .blockedInvalidAuthenticatedChronology)
+        #expect(observations.isEmpty)
+    }
+
     @Test("retirement clears only the exact authenticated token's retained bytes")
     func retirementClearsExactToken() async throws {
         let clock = RawIngressTestUptimeClock(1_000)
