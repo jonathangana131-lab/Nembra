@@ -15,21 +15,27 @@ public enum TuyaAuthenticatedRawFD50Acceptance {
         public let connectionGeneration: UInt64
         public let characteristicUUID: String
         public let observedAtUptimeNanoseconds: UInt64
-        public let payloadByteCount: Int
+
+        /// Exact bytes delivered by the documented same-session raw characteristic callback.
+        /// Keeping the bytes (rather than only their length) makes an accepted prefix auditable
+        /// and usable for later physical mapping without assigning any DP semantics here.
+        public let payload: Data
+
+        public var payloadByteCount: Int { payload.count }
 
         /// Observation construction is package-owned so app/UI code cannot manufacture physical
         /// custody. A future documented same-session raw callback must be integrated inside this
-        /// package and may then construct observations at that ingress boundary.
+        /// package and pass the exact callback bytes at this ingress boundary.
         init(
             connectionGeneration: UInt64,
             characteristicUUID: String,
             observedAtUptimeNanoseconds: UInt64,
-            payloadByteCount: Int
+            payload: Data
         ) {
             self.connectionGeneration = connectionGeneration
             self.characteristicUUID = characteristicUUID.uppercased()
             self.observedAtUptimeNanoseconds = observedAtUptimeNanoseconds
-            self.payloadByteCount = max(0, payloadByteCount)
+            self.payload = payload
         }
     }
 
@@ -65,7 +71,7 @@ public enum TuyaAuthenticatedRawFD50Acceptance {
         let qualifying = observations.filter {
             $0.connectionGeneration == authenticatedSnapshot.connectionGeneration
                 && $0.characteristicUUID == deviceToAppNotifyCharacteristicUUID
-                && $0.payloadByteCount > 0
+                && !$0.payload.isEmpty
                 // Raw physical evidence must be received after authentication completed. A packet
                 // stamped at or before the authentication transition cannot prove the authenticated
                 // generation's notify path even when its generation identifier otherwise matches.
