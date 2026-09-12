@@ -55,6 +55,33 @@ struct TuyaAuthenticatedRawFD50AcceptanceTests {
         )
     }
 
+    @Test("a raw receipt at the authentication transition cannot qualify as post-auth evidence")
+    func authenticationBoundaryReceiptIsBlocked() {
+        let authenticatedAt: UInt64 = 1_000
+        let snapshot = authenticatedSnapshot(authenticatedAt: authenticatedAt)
+        let observations = [
+            TuyaAuthenticatedRawFD50Acceptance.Observation(
+                connectionGeneration: snapshot.connectionGeneration,
+                characteristicUUID: TuyaAuthenticatedRawFD50Acceptance.deviceToAppNotifyCharacteristicUUID,
+                observedAtUptimeNanoseconds: authenticatedAt,
+                payloadByteCount: 8
+            ),
+            TuyaAuthenticatedRawFD50Acceptance.Observation(
+                connectionGeneration: snapshot.connectionGeneration,
+                characteristicUUID: TuyaAuthenticatedRawFD50Acceptance.deviceToAppNotifyCharacteristicUUID,
+                observedAtUptimeNanoseconds: authenticatedAt + 31_000_000_000,
+                payloadByteCount: 12
+            )
+        ]
+
+        #expect(
+            TuyaAuthenticatedRawFD50Acceptance.verdict(
+                authenticatedSnapshot: snapshot,
+                observations: observations
+            ) != .accepted
+        )
+    }
+
     @Test("replaying one retained raw notify cannot counterfeit the two-receipt prefix")
     func replayedObservationIsBlocked() {
         let authenticatedAt: UInt64 = 1_000
