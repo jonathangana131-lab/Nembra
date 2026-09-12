@@ -35,7 +35,7 @@ struct TuyaAuthenticatedRawFD50AcceptanceTests {
         #expect(verdict != .accepted)
     }
 
-    @Test("two same-generation raw notifies including one after 30 seconds close physical acceptance")
+    @Test("two same-generation raw notifies plus independent authenticated survival after 30 seconds close physical acceptance")
     func acceptedRawPrefix() {
         let authenticatedAt: UInt64 = 1_000
         let snapshot = authenticatedSnapshot(authenticatedAt: authenticatedAt)
@@ -64,8 +64,8 @@ struct TuyaAuthenticatedRawFD50AcceptanceTests {
         )
     }
 
-    @Test("raw notify received between SDK-local connection polls still counts as physical evidence")
-    func rawNotifyBetweenSDKPollsIsAccepted() {
+    @Test("raw notify after 30 seconds cannot substitute for independent authenticated connection survival")
+    func delayedRawNotifyWithoutPostBoundaryConnectionObservationIsBlocked() {
         let authenticatedAt: UInt64 = 1_000
         let snapshot = authenticatedSnapshot(
             authenticatedAt: authenticatedAt,
@@ -90,7 +90,37 @@ struct TuyaAuthenticatedRawFD50AcceptanceTests {
             TuyaAuthenticatedRawFD50Acceptance.verdict(
                 authenticatedSnapshot: snapshot,
                 observations: observations
-            ) == .accepted
+            ) == .blocked(reason: "Authenticated connection has not been independently observed beyond the historical rejection boundary.")
+        )
+    }
+
+    @Test("connection observation exactly at 30 seconds does not satisfy strict survival boundary")
+    func connectionObservationAtBoundaryIsBlocked() {
+        let authenticatedAt: UInt64 = 1_000
+        let snapshot = authenticatedSnapshot(
+            authenticatedAt: authenticatedAt,
+            latestObserved: authenticatedAt + TuyaAuthenticatedRawFD50Acceptance.historicalRejectionBoundaryNanoseconds
+        )
+        let observations = [
+            TuyaAuthenticatedRawFD50Acceptance.Observation(
+                connectionGeneration: snapshot.connectionGeneration,
+                characteristicUUID: TuyaAuthenticatedRawFD50Acceptance.deviceToAppNotifyCharacteristicUUID,
+                observedAtUptimeNanoseconds: authenticatedAt + 2_000_000_000,
+                payload: payload(8, byte: 0x41)
+            ),
+            TuyaAuthenticatedRawFD50Acceptance.Observation(
+                connectionGeneration: snapshot.connectionGeneration,
+                characteristicUUID: TuyaAuthenticatedRawFD50Acceptance.deviceToAppNotifyCharacteristicUUID,
+                observedAtUptimeNanoseconds: authenticatedAt + 30_000_000_001,
+                payload: payload(12, byte: 0x42)
+            )
+        ]
+
+        #expect(
+            TuyaAuthenticatedRawFD50Acceptance.verdict(
+                authenticatedSnapshot: snapshot,
+                observations: observations
+            ) == .blocked(reason: "Authenticated connection has not been independently observed beyond the historical rejection boundary.")
         )
     }
 
