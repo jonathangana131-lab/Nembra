@@ -68,6 +68,15 @@ public enum TuyaAuthenticatedRawFD50Acceptance {
             return .blocked(reason: "Authenticated connection chronology is unavailable or invalid.")
         }
 
+        // Physical GO has two independent requirements: real raw notify custody and an authenticated
+        // connection that itself remains observed beyond the historical ~30-second rejection window.
+        // A delayed/queued raw callback received after 30 seconds cannot, by itself, prove that the
+        // BLE transport was still alive at that time. Require the SDK-local connection ledger to
+        // independently observe the same authenticated generation strictly beyond the boundary.
+        guard latestObserved - authenticatedAt > historicalRejectionBoundaryNanoseconds else {
+            return .blocked(reason: "Authenticated connection has not been independently observed beyond the historical rejection boundary.")
+        }
+
         let qualifying = observations.filter {
             $0.connectionGeneration == authenticatedSnapshot.connectionGeneration
                 && $0.characteristicUUID == deviceToAppNotifyCharacteristicUUID
@@ -79,11 +88,9 @@ public enum TuyaAuthenticatedRawFD50Acceptance {
         }
 
         // Do not require a raw callback timestamp to be <= the snapshot's latest SDK-local
-        // observation. The package-owned raw ingress validates live callback authority at the
-        // callback boundary itself, while the SDK-local connection poll and raw callback execute
-        // independently. A legitimate notify can therefore land between two SDK-local polls; an
-        // upper-bound comparison here would temporarily (or permanently, at capture completion)
-        // discard real same-session evidence merely because the snapshot was sampled first.
+        // observation. The raw callback and SDK-local connection poll execute independently, so a
+        // legitimate notify can land between two polls. The independent survival guard above only
+        // requires that the authenticated transport itself has also been observed beyond 30 seconds.
 
         // Physical acceptance requires distinct callback receipts, not two copies of one retained
         // observation. The package ingress stamps each callback with monotonic receipt time, so a
