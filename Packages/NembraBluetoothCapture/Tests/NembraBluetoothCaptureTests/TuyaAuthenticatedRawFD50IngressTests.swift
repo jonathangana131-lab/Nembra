@@ -21,6 +21,7 @@ struct TuyaAuthenticatedRawFD50IngressTests {
         let clock = RawIngressTestUptimeClock(1_000)
         let (ledger, token) = try await authenticatedLedger(clock: clock)
         let ingress = TuyaAuthenticatedRawFD50Ingress(
+            authenticatedConnectionToken: token,
             snapshotProvider: { await ledger.currentPreflightSnapshot() },
             uptimeProvider: clock.now
         )
@@ -46,6 +47,7 @@ struct TuyaAuthenticatedRawFD50IngressTests {
         let clock = RawIngressTestUptimeClock(1_000)
         let (ledger, firstToken) = try await authenticatedLedger(clock: clock)
         let ingress = TuyaAuthenticatedRawFD50Ingress(
+            authenticatedConnectionToken: firstToken,
             snapshotProvider: { await ledger.currentPreflightSnapshot() },
             uptimeProvider: clock.now
         )
@@ -64,11 +66,40 @@ struct TuyaAuthenticatedRawFD50IngressTests {
         #expect(observations.isEmpty)
     }
 
+    @Test("same generation from another ledger cannot impersonate authenticated raw custody")
+    func foreignLedgerTokenWithSameGenerationIsBlocked() async throws {
+        let primaryClock = RawIngressTestUptimeClock(1_000)
+        let (primaryLedger, primaryToken) = try await authenticatedLedger(clock: primaryClock)
+        let ingress = TuyaAuthenticatedRawFD50Ingress(
+            authenticatedConnectionToken: primaryToken,
+            snapshotProvider: { await primaryLedger.currentPreflightSnapshot() },
+            uptimeProvider: primaryClock.now
+        )
+
+        let foreignClock = RawIngressTestUptimeClock(1_000)
+        let (_, foreignToken) = try await authenticatedLedger(clock: foreignClock)
+        #expect(foreignToken.diagnosticGeneration == primaryToken.diagnosticGeneration)
+        #expect(foreignToken != primaryToken)
+
+        primaryClock.advance(to: 3_000)
+        let verdict = await ingress.recordDocumentedSameSessionNotify(
+            payload: Data([0xFD, 0x50]),
+            connectionToken: foreignToken
+        )
+        let foreignObservations = await ingress.observations(for: foreignToken)
+        let primaryObservations = await ingress.observations(for: primaryToken)
+
+        #expect(verdict == .blockedForeignConnectionToken)
+        #expect(foreignObservations.isEmpty)
+        #expect(primaryObservations.isEmpty)
+    }
+
     @Test("empty callback and callback at authentication boundary are not retained")
     func emptyAndBoundaryCallbacksAreBlocked() async throws {
         let clock = RawIngressTestUptimeClock(1_000)
         let (ledger, token) = try await authenticatedLedger(clock: clock)
         let ingress = TuyaAuthenticatedRawFD50Ingress(
+            authenticatedConnectionToken: token,
             snapshotProvider: { await ledger.currentPreflightSnapshot() },
             uptimeProvider: clock.now
         )
@@ -88,11 +119,12 @@ struct TuyaAuthenticatedRawFD50IngressTests {
         #expect(observations.isEmpty)
     }
 
-    @Test("retirement clears only the exact generation's retained bytes")
-    func retirementClearsExactGeneration() async throws {
+    @Test("retirement clears only the exact authenticated token's retained bytes")
+    func retirementClearsExactToken() async throws {
         let clock = RawIngressTestUptimeClock(1_000)
         let (ledger, token) = try await authenticatedLedger(clock: clock)
         let ingress = TuyaAuthenticatedRawFD50Ingress(
+            authenticatedConnectionToken: token,
             snapshotProvider: { await ledger.currentPreflightSnapshot() },
             uptimeProvider: clock.now
         )
@@ -106,6 +138,12 @@ struct TuyaAuthenticatedRawFD50IngressTests {
 
         #expect(verdict == .retained)
         #expect(retainedBeforeRetirement.count == 1)
+
+        let foreignClock = RawIngressTestUptimeClock(1_000)
+        let (_, foreignToken) = try await authenticatedLedger(clock: foreignClock)
+        await ingress.retire(connectionToken: foreignToken)
+        let retainedAfterForeignRetirement = await ingress.observations(for: token)
+        #expect(retainedAfterForeignRetirement.count == 1)
 
         await ingress.retire(connectionToken: token)
         let retainedAfterRetirement = await ingress.observations(for: token)
