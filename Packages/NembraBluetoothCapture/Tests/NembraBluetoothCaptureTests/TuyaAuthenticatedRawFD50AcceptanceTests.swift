@@ -5,7 +5,8 @@ struct TuyaAuthenticatedRawFD50AcceptanceTests {
     private func authenticatedSnapshot(
         generation: UInt64 = 7,
         authenticatedAt: UInt64 = 1_000,
-        latestObserved: UInt64 = 46_000_000_000
+        latestObserved: UInt64 = 46_000_000_000,
+        hasActiveCallbackAuthority: Bool = true
     ) -> TuyaAuthenticatedReadOnlyPreflightSnapshot {
         TuyaAuthenticatedReadOnlyPreflightSnapshot(
             authenticationState: .authenticated,
@@ -15,7 +16,8 @@ struct TuyaAuthenticatedRawFD50AcceptanceTests {
             latestObservedUptimeNanoseconds: latestObserved,
             applicationPayloadCount: 0,
             latestApplicationPayloadUptimeNanoseconds: nil,
-            connectionGeneration: generation
+            connectionGeneration: generation,
+            hasActiveCallbackAuthority: hasActiveCallbackAuthority
         )
     }
 
@@ -52,6 +54,36 @@ struct TuyaAuthenticatedRawFD50AcceptanceTests {
                 authenticatedSnapshot: snapshot,
                 observations: observations
             ) == .accepted
+        )
+    }
+
+    @Test("retired authenticated callback authority cannot close physical acceptance")
+    func retiredCallbackAuthorityIsBlocked() {
+        let authenticatedAt: UInt64 = 1_000
+        let snapshot = authenticatedSnapshot(
+            authenticatedAt: authenticatedAt,
+            hasActiveCallbackAuthority: false
+        )
+        let observations = [
+            TuyaAuthenticatedRawFD50Acceptance.Observation(
+                connectionGeneration: snapshot.connectionGeneration,
+                characteristicUUID: TuyaAuthenticatedRawFD50Acceptance.deviceToAppNotifyCharacteristicUUID,
+                observedAtUptimeNanoseconds: authenticatedAt + 2_000_000_000,
+                payloadByteCount: 8
+            ),
+            TuyaAuthenticatedRawFD50Acceptance.Observation(
+                connectionGeneration: snapshot.connectionGeneration,
+                characteristicUUID: TuyaAuthenticatedRawFD50Acceptance.deviceToAppNotifyCharacteristicUUID,
+                observedAtUptimeNanoseconds: authenticatedAt + 30_000_000_001,
+                payloadByteCount: 12
+            )
+        ]
+
+        #expect(
+            TuyaAuthenticatedRawFD50Acceptance.verdict(
+                authenticatedSnapshot: snapshot,
+                observations: observations
+            ) == .blocked(reason: "Authenticated generation no longer has live callback authority.")
         )
     }
 
