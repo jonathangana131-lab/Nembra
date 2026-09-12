@@ -55,6 +55,25 @@ struct TuyaAuthenticatedRawFD50AcceptanceTests {
         )
     }
 
+    @Test("replaying one retained raw notify cannot counterfeit the two-receipt prefix")
+    func replayedObservationIsBlocked() {
+        let authenticatedAt: UInt64 = 1_000
+        let snapshot = authenticatedSnapshot(authenticatedAt: authenticatedAt)
+        let receipt = TuyaAuthenticatedRawFD50Acceptance.Observation(
+            connectionGeneration: snapshot.connectionGeneration,
+            characteristicUUID: TuyaAuthenticatedRawFD50Acceptance.deviceToAppNotifyCharacteristicUUID,
+            observedAtUptimeNanoseconds: authenticatedAt + 31_000_000_000,
+            payloadByteCount: 12
+        )
+
+        #expect(
+            TuyaAuthenticatedRawFD50Acceptance.verdict(
+                authenticatedSnapshot: snapshot,
+                observations: [receipt, receipt]
+            ) != .accepted
+        )
+    }
+
     @Test("wrong generation, empty bytes, wrong characteristic, and boundary-equal packets cannot qualify")
     func rejectsCounterfeitCustody() {
         let authenticatedAt: UInt64 = 1_000
