@@ -1,0 +1,52 @@
+name: One-shot remove legacy SDK acceptance
+
+on:
+  push:
+    branches:
+      - capture/one-time-ble-dump-gpt56
+    paths:
+      - '.github/workflows/one-shot-remove-legacy-sdk-acceptance.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: capture/one-time-ble-dump-gpt56
+          fetch-depth: 1
+      - name: Remove obsolete SDK-only acceptance/seal path
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('NembraApp/App/NembraCaptureEntrypoint.swift')
+          s = p.read_text()
+          start = s.index('                switch TuyaAuthenticatedReadOnlyPreflight.verdict(for: self.ledgerSnapshot) {\n')
+          end_marker = '                if self.applicationUpdateAdmissionsInFlight == 0,\n'
+          end = s.index(end_marker, start)
+          block = s[start:end]
+          required = [
+              'case .readyForStationaryMapping:',
+              'sealAcceptedObservation(for: token)',
+              'self.phase = .accepted',
+              'case .blocked:'
+          ]
+          missing = [needle for needle in required if needle not in block]
+          if missing:
+              raise SystemExit(f'refusing patch; expected legacy acceptance markers missing: {missing}')
+          if block.count('case .readyForStationaryMapping:') != 1 or block.count('case .blocked:') != 1:
+              raise SystemExit('refusing patch; legacy switch shape changed')
+          s = s[:start] + s[end:]
+          p.write_text(s)
+          PY
+          rm .github/workflows/one-shot-remove-legacy-sdk-acceptance.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add NembraApp/App/NembraCaptureEntrypoint.swift .github/workflows/one-shot-remove-legacy-sdk-acceptance.yml
+          git commit -m 'Physical truth: remove SDK-only acceptance path'
+          git push origin HEAD:capture/one-time-ble-dump-gpt56
