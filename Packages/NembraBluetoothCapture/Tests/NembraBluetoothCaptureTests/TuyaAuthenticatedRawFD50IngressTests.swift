@@ -16,13 +16,23 @@ struct TuyaAuthenticatedRawFD50IngressTests {
         return (ledger, token)
     }
 
+    private func snapshotEvidence(
+        ledger: TuyaAuthenticatedReadOnlySessionLedger,
+        token: TuyaReadOnlyConnectionToken
+    ) async -> TuyaAuthenticatedRawFD50Ingress.SnapshotEvidence {
+        TuyaAuthenticatedRawFD50Ingress.SnapshotEvidence(
+            snapshot: await ledger.currentPreflightSnapshot(),
+            connectionToken: token
+        )
+    }
+
     @Test("ingress mints generation characteristic and receipt chronology instead of accepting caller provenance")
     func mintsPackageOwnedProvenance() async throws {
         let clock = RawIngressTestUptimeClock(1_000)
         let (ledger, token) = try await authenticatedLedger(clock: clock)
         let ingress = TuyaAuthenticatedRawFD50Ingress(
             authenticatedConnectionToken: token,
-            snapshotProvider: { await ledger.currentPreflightSnapshot() },
+            snapshotProvider: { await snapshotEvidence(ledger: ledger, token: token) },
             uptimeProvider: clock.now
         )
         let bytes = Data([0x01, 0x02, 0xFD, 0x50])
@@ -48,7 +58,7 @@ struct TuyaAuthenticatedRawFD50IngressTests {
         let (ledger, token) = try await authenticatedLedger(clock: clock)
         let ingress = TuyaAuthenticatedRawFD50Ingress(
             authenticatedConnectionToken: token,
-            snapshotProvider: { await ledger.currentPreflightSnapshot() },
+            snapshotProvider: { await snapshotEvidence(ledger: ledger, token: token) },
             uptimeProvider: clock.now
         )
 
@@ -87,7 +97,7 @@ struct TuyaAuthenticatedRawFD50IngressTests {
         let (ledger, firstToken) = try await authenticatedLedger(clock: clock)
         let ingress = TuyaAuthenticatedRawFD50Ingress(
             authenticatedConnectionToken: firstToken,
-            snapshotProvider: { await ledger.currentPreflightSnapshot() },
+            snapshotProvider: { await snapshotEvidence(ledger: ledger, token: firstToken) },
             uptimeProvider: clock.now
         )
 
@@ -105,13 +115,13 @@ struct TuyaAuthenticatedRawFD50IngressTests {
         #expect(observations.isEmpty)
     }
 
-    @Test("same generation from another ledger cannot impersonate authenticated raw custody")
+    @Test("same generation from another ledger cannot impersonate authenticated raw callback custody")
     func foreignLedgerTokenWithSameGenerationIsBlocked() async throws {
         let primaryClock = RawIngressTestUptimeClock(1_000)
         let (primaryLedger, primaryToken) = try await authenticatedLedger(clock: primaryClock)
         let ingress = TuyaAuthenticatedRawFD50Ingress(
             authenticatedConnectionToken: primaryToken,
-            snapshotProvider: { await primaryLedger.currentPreflightSnapshot() },
+            snapshotProvider: { await snapshotEvidence(ledger: primaryLedger, token: primaryToken) },
             uptimeProvider: primaryClock.now
         )
 
@@ -133,13 +143,40 @@ struct TuyaAuthenticatedRawFD50IngressTests {
         #expect(primaryObservations.isEmpty)
     }
 
+    @Test("same numeric generation from another ledger cannot authorize the bound raw ingress snapshot")
+    func foreignLedgerSnapshotWithSameGenerationIsBlocked() async throws {
+        let primaryClock = RawIngressTestUptimeClock(1_000)
+        let (_, primaryToken) = try await authenticatedLedger(clock: primaryClock)
+
+        let foreignClock = RawIngressTestUptimeClock(1_000)
+        let (foreignLedger, foreignToken) = try await authenticatedLedger(clock: foreignClock)
+        #expect(foreignToken.diagnosticGeneration == primaryToken.diagnosticGeneration)
+        #expect(foreignToken != primaryToken)
+
+        let ingress = TuyaAuthenticatedRawFD50Ingress(
+            authenticatedConnectionToken: primaryToken,
+            snapshotProvider: { await snapshotEvidence(ledger: foreignLedger, token: foreignToken) },
+            uptimeProvider: primaryClock.now
+        )
+
+        primaryClock.advance(to: 3_000)
+        let verdict = await ingress.recordDocumentedSameSessionNotify(
+            payload: Data([0xFD, 0x50]),
+            connectionToken: primaryToken
+        )
+        let observations = await ingress.observations(for: primaryToken)
+
+        #expect(verdict == .blockedForeignSnapshotAuthority)
+        #expect(observations.isEmpty)
+    }
+
     @Test("empty callback and callback at authentication boundary are not retained")
     func emptyAndBoundaryCallbacksAreBlocked() async throws {
         let clock = RawIngressTestUptimeClock(1_000)
         let (ledger, token) = try await authenticatedLedger(clock: clock)
         let ingress = TuyaAuthenticatedRawFD50Ingress(
             authenticatedConnectionToken: token,
-            snapshotProvider: { await ledger.currentPreflightSnapshot() },
+            snapshotProvider: { await snapshotEvidence(ledger: ledger, token: token) },
             uptimeProvider: clock.now
         )
 
@@ -174,7 +211,12 @@ struct TuyaAuthenticatedRawFD50IngressTests {
         )
         let ingress = TuyaAuthenticatedRawFD50Ingress(
             authenticatedConnectionToken: token,
-            snapshotProvider: { invalidSnapshot },
+            snapshotProvider: {
+                TuyaAuthenticatedRawFD50Ingress.SnapshotEvidence(
+                    snapshot: invalidSnapshot,
+                    connectionToken: token
+                )
+            },
             uptimeProvider: clock.now
         )
 
@@ -195,7 +237,7 @@ struct TuyaAuthenticatedRawFD50IngressTests {
         let (ledger, token) = try await authenticatedLedger(clock: clock)
         let ingress = TuyaAuthenticatedRawFD50Ingress(
             authenticatedConnectionToken: token,
-            snapshotProvider: { await ledger.currentPreflightSnapshot() },
+            snapshotProvider: { await snapshotEvidence(ledger: ledger, token: token) },
             uptimeProvider: clock.now
         )
 
