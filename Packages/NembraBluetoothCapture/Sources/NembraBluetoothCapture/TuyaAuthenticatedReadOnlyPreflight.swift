@@ -117,6 +117,9 @@ public enum TuyaAuthenticatedReadOnlyPreflight {
         guard snapshot.connectionGeneration > 0 else {
             return .blocked(reason: "No current Bluetooth connection generation.")
         }
+        guard snapshot.hasActiveCallbackAuthority else {
+            return .blocked(reason: "Current Bluetooth connection generation no longer owns callback authority.")
+        }
         switch snapshot.authenticationState {
         case let .unavailable(reason), let .failed(reason):
             return .blocked(reason: reason)
