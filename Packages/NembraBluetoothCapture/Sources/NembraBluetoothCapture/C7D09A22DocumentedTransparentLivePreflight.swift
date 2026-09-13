@@ -56,6 +56,10 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
     /// A legacy device-ID-only arm may collect diagnostics, but it cannot later mint a proof that
     /// claims UUID/product provenance the package never actually bound to that connection.
     private var activeLinkedDeviceIdentity: C7D09A22DocumentedSmartLifeReadOnlyConnector.LinkedDeviceIdentity?
+    /// `@MainActor` does not make async methods non-reentrant. This epoch makes every arm/retire an
+    /// explicit lifecycle intent so a stale continuation cannot publish local authority after a
+    /// newer reconnect or teardown has already superseded it.
+    private var lifecycleEpoch: UInt64 = 0
 
     public init(
         preflightSnapshotProvider: @escaping SnapshotProvider,
@@ -80,18 +84,12 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
         expectedDeviceID: String,
         authenticatedPreflightSnapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot
     ) async -> Bool {
-        authenticatedSnapshot = nil
-        activeConnectionToken = nil
-        activeLinkedDeviceIdentity = nil
-        let armed = await handoff.begin(
+        await armInternal(
             connectionToken: connectionToken,
             expectedDeviceID: expectedDeviceID,
+            linkedDeviceIdentity: nil,
             authenticatedPreflightSnapshot: authenticatedPreflightSnapshot
         )
-        guard armed else { return false }
-        self.authenticatedSnapshot = authenticatedPreflightSnapshot
-        self.activeConnectionToken = connectionToken
-        return true
     }
 
     /// Arms the exact authenticated generation and binds the complete linked Smart Life identity
@@ -103,13 +101,39 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
         linkedDeviceIdentity: C7D09A22DocumentedSmartLifeReadOnlyConnector.LinkedDeviceIdentity,
         authenticatedPreflightSnapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot
     ) async -> Bool {
-        let armed = await arm(
+        await armInternal(
             connectionToken: connectionToken,
             expectedDeviceID: linkedDeviceIdentity.deviceID,
+            linkedDeviceIdentity: linkedDeviceIdentity,
             authenticatedPreflightSnapshot: authenticatedPreflightSnapshot
         )
-        guard armed else { return false }
-        activeLinkedDeviceIdentity = linkedDeviceIdentity
+    }
+
+    /// One lifecycle-fenced implementation for both public arm shapes. Identity, token, and
+    /// authentication snapshot are published together only after the handoff confirms that this
+    /// exact lifecycle intent still owns the result.
+    private func armInternal(
+        connectionToken: TuyaReadOnlyConnectionToken,
+        expectedDeviceID: String,
+        linkedDeviceIdentity: C7D09A22DocumentedSmartLifeReadOnlyConnector.LinkedDeviceIdentity?,
+        authenticatedPreflightSnapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot
+    ) async -> Bool {
+        lifecycleEpoch &+= 1
+        let attemptEpoch = lifecycleEpoch
+        authenticatedSnapshot = nil
+        activeConnectionToken = nil
+        activeLinkedDeviceIdentity = nil
+
+        let armed = await handoff.begin(
+            connectionToken: connectionToken,
+            expectedDeviceID: expectedDeviceID,
+            authenticatedPreflightSnapshot: authenticatedPreflightSnapshot
+        )
+        guard lifecycleEpoch == attemptEpoch, armed else { return false }
+
+        self.authenticatedSnapshot = authenticatedPreflightSnapshot
+        self.activeConnectionToken = connectionToken
+        self.activeLinkedDeviceIdentity = linkedDeviceIdentity
         return true
     }
 
@@ -220,20 +244,22 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
     @discardableResult
     public func retire(connectionToken: TuyaReadOnlyConnectionToken) async -> Bool {
         guard activeConnectionToken == connectionToken else { return false }
-        await handoff.retire()
+        lifecycleEpoch &+= 1
         authenticatedSnapshot = nil
         activeConnectionToken = nil
         activeLinkedDeviceIdentity = nil
+        await handoff.retire()
         return true
     }
 
     /// Unconditional owner teardown for view/process destruction where no newer generation can
     /// exist. Live asynchronous lifecycle callbacks should use `retire(connectionToken:)` instead.
     public func retire() async {
-        await handoff.retire()
+        lifecycleEpoch &+= 1
         authenticatedSnapshot = nil
         activeConnectionToken = nil
         activeLinkedDeviceIdentity = nil
+        await handoff.retire()
     }
 
     public var hasActiveAuthenticatedGeneration: Bool {
