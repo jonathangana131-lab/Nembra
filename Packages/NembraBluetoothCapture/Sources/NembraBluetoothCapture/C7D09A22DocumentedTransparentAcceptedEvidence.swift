@@ -1,6 +1,6 @@
 import Foundation
 
-/// Portable proof that the package-owned live preflight observed the documented Smart Life
+/// Portable record that the package-owned live preflight observed the documented Smart Life
 /// transport milestone as satisfied for one exact authenticated generation.
 ///
 /// The embedded evidence preserves the exact retained device-to-app callback bytes. This wrapper
@@ -8,10 +8,14 @@ import Foundation
 /// cut whose transport milestone was satisfied, so a saved field artifact does not have to infer
 /// first-stage transport acceptance from a UI log line.
 ///
+/// This type is intentionally `Encodable` but not `Decodable`: arbitrary external JSON must never
+/// be able to mint an acceptance-shaped package value. A later app export may exact-byte seal the
+/// emitted JSON, while imported/hand-edited JSON remains diagnostic data only.
+///
 /// This is deliberately *not* raw FD50 characteristic custody. Tuya's documented transparent
-/// callback does not expose the underlying GATT characteristic identity, so this proof cannot mint
+/// callback does not expose the underlying GATT characteristic identity, so this record cannot mint
 /// physical-first acceptance, scooter DP semantics, writes, pairing, reset, removal, or unbind.
-public struct C7D09A22DocumentedTransportAcceptanceProof: Codable, Equatable, Sendable {
+public struct C7D09A22DocumentedTransportAcceptanceProof: Encodable, Equatable, Sendable {
     public static let evidenceKind = "c7d09a22-documented-authenticated-transport-acceptance"
 
     public let kind: String
@@ -38,10 +42,10 @@ public struct C7D09A22DocumentedTransportAcceptanceProof: Codable, Equatable, Se
         evidence = artifact
     }
 
-    /// Revalidates all byte-preserving provenance that remains portable after the live session.
-    /// The boolean is accepted only in combination with the exact package-minted evidence kind,
-    /// generation binding, and self-consistent retained callback bytes.
-    public var hasValidPortableDocumentedTransportAcceptanceProof: Bool {
+    /// Revalidates only the portable exact-byte evidence embedded in this package-minted record.
+    /// The live independent-liveness observation is what allowed this value to be minted; it is not
+    /// reconstructed from portable JSON and this property deliberately makes no such claim.
+    public var embeddedReceiveEvidenceIsSelfConsistent: Bool {
         guard kind == Self.evidenceKind,
               documentedTransportAcceptanceSatisfied,
               connectionGeneration > 0,
@@ -86,8 +90,8 @@ public extension C7D09A22DocumentedTransparentLivePreflight {
         return evidence.artifact
     }
 
-    /// Produces a durable package-owned record of the first-stage physical-truth milestone.
-    /// A proof exists only when the same coherent field-attempt cut contains repeated retained
+    /// Produces a package-minted, emit-only record of the first-stage physical-truth milestone.
+    /// A record exists only when the same coherent field-attempt cut contains repeated retained
     /// documented receive bytes and the independently observed authenticated transport milestone.
     /// It intentionally remains weaker than raw FD50 characteristic custody.
     func acceptedDocumentedTransportProofArtifact() async -> C7D09A22DocumentedTransportAcceptanceProof? {
