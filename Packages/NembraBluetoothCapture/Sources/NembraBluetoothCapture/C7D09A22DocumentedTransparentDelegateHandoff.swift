@@ -27,6 +27,10 @@ public final class C7D09A22DocumentedTransparentDelegateHandoff {
     private let recordObserver: RecordObserver?
     private var isRetired = true
     private var pendingRecordTail: Task<Void, Never>?
+    /// Main-actor lifecycle methods are re-entrant across `await`. A monotonic epoch prevents a
+    /// stale begin/retire continuation from changing retirement state or touching ingress after a
+    /// newer lifecycle operation has taken ownership.
+    private var lifecycleEpoch: UInt64 = 0
 
     public init(
         ingress: C7D09A22DocumentedTransparentReceiveIngress = .init(),
@@ -46,12 +50,20 @@ public final class C7D09A22DocumentedTransparentDelegateHandoff {
         expectedDeviceID: String,
         authenticatedPreflightSnapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot
     ) async -> Bool {
-        await retire()
+        lifecycleEpoch &+= 1
+        let attemptEpoch = lifecycleEpoch
+        isRetired = true
+        let previousTail = pendingRecordTail
+        pendingRecordTail = nil
+        await previousTail?.value
+        guard lifecycleEpoch == attemptEpoch else { return false }
+
         let armed = await ingress.begin(
             connectionToken: connectionToken,
             expectedDeviceID: expectedDeviceID,
             authenticatedPreflightSnapshot: authenticatedPreflightSnapshot
         )
+        guard lifecycleEpoch == attemptEpoch else { return false }
         isRetired = !armed
         return armed
     }
@@ -102,10 +114,16 @@ public final class C7D09A22DocumentedTransparentDelegateHandoff {
     /// Retires before releasing package custody. Any callback already sealed but not yet recorded
     /// is discarded by the local retirement check and by the ingress/session generation checks.
     public func retire() async {
+        lifecycleEpoch &+= 1
+        let retireEpoch = lifecycleEpoch
         isRetired = true
         let tail = pendingRecordTail
         pendingRecordTail = nil
         await tail?.value
+        // If a newer begin/retire took ownership while the tail drained, this retirement owns no
+        // ingress state anymore. Skipping the call is what prevents stale teardown from killing a
+        // newer authenticated attempt.
+        guard lifecycleEpoch == retireEpoch else { return }
         await ingress.retire()
     }
 
