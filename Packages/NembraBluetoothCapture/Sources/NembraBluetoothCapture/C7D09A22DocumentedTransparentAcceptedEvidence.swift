@@ -6,12 +6,13 @@ import Foundation
 /// The embedded evidence preserves the exact retained device-to-app callback bytes. This wrapper
 /// additionally records that those bytes were sampled from the same coherent `FieldAttemptEvidence`
 /// cut whose transport milestone was satisfied, and binds that cut to the exact linked Tuya device
-/// identity used to select the authenticated scooter. A saved field artifact therefore cannot infer
-/// first-stage transport acceptance from a UI log line or relabel accepted bytes as another scooter.
+/// identity that was already bound when the authenticated live preflight was armed. A saved field
+/// artifact therefore cannot infer first-stage transport acceptance from a UI log line or retrofit
+/// UUID/product metadata after transport evidence was collected.
 ///
 /// This type is intentionally `Encodable` but not `Decodable`: arbitrary external JSON must never
-/// be able to mint an acceptance-shaped package value. A later app export may exact-byte seal the
-/// emitted JSON, while imported/hand-edited JSON remains diagnostic data only.
+/// be able to mint an acceptance-shaped package value. Its initializer is package-internal for the
+/// same reason; production acceptance is exported only through the identity-bound live preflight.
 ///
 /// This is deliberately *not* raw FD50 characteristic custody. Tuya's documented transparent
 /// callback does not expose the underlying GATT characteristic identity, so this record cannot mint
@@ -25,7 +26,7 @@ public struct C7D09A22DocumentedTransportAcceptanceProof: Encodable, Equatable, 
     public let documentedTransportAcceptanceSatisfied: Bool
     public let evidence: C7D09A22DocumentedTransparentEvidenceArtifact
 
-    public init?(
+    init?(
         fieldAttempt: C7D09A22DocumentedTransparentLivePreflight.FieldAttemptEvidence,
         linkedDeviceIdentity: C7D09A22DocumentedSmartLifeReadOnlyConnector.LinkedDeviceIdentity
     ) {
@@ -134,19 +135,31 @@ public extension C7D09A22DocumentedTransparentLivePreflight {
     }
 
     /// Produces a package-minted, emit-only record of the first-stage physical-truth milestone.
-    /// A record exists only when a stable field-attempt cut contains repeated retained documented
-    /// receive bytes, the independently observed authenticated transport milestone, and those bytes
-    /// belong to the exact linked Tuya device identity supplied by the authenticated Smart Life
-    /// connection path. It intentionally remains weaker than raw FD50 characteristic custody.
-    func acceptedDocumentedTransportProofArtifact(
-        linkedDeviceIdentity: C7D09A22DocumentedSmartLifeReadOnlyConnector.LinkedDeviceIdentity
-    ) async -> C7D09A22DocumentedTransportAcceptanceProof? {
-        guard let evidence = await stableFieldAttemptEvidenceForAcceptance() else {
+    ///
+    /// The complete linked identity must have been bound at arm time to the exact authenticated
+    /// token. Export-time code therefore cannot attach a different UUID/product ID to valid bytes
+    /// merely because the Tuya device ID happens to match.
+    func acceptedDocumentedTransportProofArtifact() async -> C7D09A22DocumentedTransportAcceptanceProof? {
+        guard let expectedIdentity = activeLinkedDeviceIdentityForAcceptanceFence,
+              let evidence = await stableFieldAttemptEvidenceForAcceptance(),
+              activeLinkedDeviceIdentityForAcceptanceFence == expectedIdentity else {
             return nil
         }
         return C7D09A22DocumentedTransportAcceptanceProof(
             fieldAttempt: evidence,
-            linkedDeviceIdentity: linkedDeviceIdentity
+            linkedDeviceIdentity: expectedIdentity
         )
+    }
+
+    /// Compatibility export for callers that already carry the linked identity. The supplied value
+    /// is now verification-only: it must exactly equal the identity bound at arm time and cannot be
+    /// used to retrofit UUID/product provenance onto a device-ID-only preflight.
+    func acceptedDocumentedTransportProofArtifact(
+        linkedDeviceIdentity: C7D09A22DocumentedSmartLifeReadOnlyConnector.LinkedDeviceIdentity
+    ) async -> C7D09A22DocumentedTransportAcceptanceProof? {
+        guard activeLinkedDeviceIdentityForAcceptanceFence == linkedDeviceIdentity else {
+            return nil
+        }
+        return await acceptedDocumentedTransportProofArtifact()
     }
 }
