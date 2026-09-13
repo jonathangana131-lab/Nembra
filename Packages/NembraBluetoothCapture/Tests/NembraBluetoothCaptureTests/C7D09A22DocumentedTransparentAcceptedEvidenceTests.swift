@@ -54,6 +54,61 @@ struct C7D09A22DocumentedTransparentAcceptedEvidenceTests {
 
     @Test
     @MainActor
+    func fullLinkedIdentityMustBeBoundAtArmTimeAndCannotBeRetrofitted() async throws {
+        let ledger = TuyaAuthenticatedReadOnlySessionLedger()
+        let token = try await ledger.beginConnection()
+        try await ledger.markAuthenticationStarted(for: token)
+        try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
+        let authenticated = await ledger.currentPreflightSnapshot()
+
+        let preflight = C7D09A22DocumentedTransparentLivePreflight(
+            preflightSnapshotProvider: { await ledger.currentPreflightSnapshot() }
+        )
+
+        // Legacy device-ID-only arming retains transport diagnostics but deliberately carries no
+        // UUID/product provenance. Export-time metadata cannot upgrade that weaker custody.
+        #expect(await preflight.arm(
+            connectionToken: token,
+            expectedDeviceID: linkedIdentity.deviceID,
+            authenticatedPreflightSnapshot: authenticated
+        ))
+        #expect(preflight.activeLinkedDeviceIdentityForAcceptanceFence == nil)
+        #expect(await preflight.acceptedDocumentedTransportProofArtifact(linkedDeviceIdentity: linkedIdentity) == nil)
+
+        // Re-arm the same authenticated token through the identity-bound path. The complete linked
+        // identity is now package-owned state associated with this exact token.
+        #expect(await preflight.arm(
+            connectionToken: token,
+            linkedDeviceIdentity: linkedIdentity,
+            authenticatedPreflightSnapshot: authenticated
+        ))
+        #expect(preflight.activeLinkedDeviceIdentityForAcceptanceFence == linkedIdentity)
+
+        let substitutedUUID = try #require(
+            C7D09A22DocumentedSmartLifeReadOnlyConnector.LinkedDeviceIdentity(
+                deviceID: linkedIdentity.deviceID,
+                uuid: "00000000-0000-0000-0000-000000000001",
+                productID: linkedIdentity.productID
+            )
+        )
+        let substitutedProduct = try #require(
+            C7D09A22DocumentedSmartLifeReadOnlyConnector.LinkedDeviceIdentity(
+                deviceID: linkedIdentity.deviceID,
+                uuid: linkedIdentity.uuid,
+                productID: "different-product"
+            )
+        )
+
+        #expect(preflight.activeLinkedDeviceIdentityForAcceptanceFence != substitutedUUID)
+        #expect(preflight.activeLinkedDeviceIdentityForAcceptanceFence != substitutedProduct)
+        #expect(await preflight.acceptedDocumentedTransportProofArtifact(linkedDeviceIdentity: substitutedUUID) == nil)
+        #expect(await preflight.acceptedDocumentedTransportProofArtifact(linkedDeviceIdentity: substitutedProduct) == nil)
+        #expect(!preflight.authorizesControlWrites)
+        #expect(!preflight.authorizesPairingResetOrUnbind)
+    }
+
+    @Test
+    @MainActor
     func acceptanceFenceDistinguishesIndependentTokensWithSameDiagnosticGeneration() async throws {
         let firstLedger = TuyaAuthenticatedReadOnlySessionLedger()
         let firstToken = try await firstLedger.beginConnection()
