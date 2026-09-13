@@ -223,6 +223,7 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
               let current = await preflightSnapshotProvider(),
               current.authenticationState == .authenticated,
               current.authenticationMethod == .smartLifeAppSDK,
+              current.hasActiveCallbackAuthority,
               current.connectionGeneration == activeConnectionToken.diagnosticGeneration,
               current.connectionGeneration == armedSnapshot.connectionGeneration,
               current.connectionStartedAtUptimeNanoseconds == armedSnapshot.connectionStartedAtUptimeNanoseconds,
