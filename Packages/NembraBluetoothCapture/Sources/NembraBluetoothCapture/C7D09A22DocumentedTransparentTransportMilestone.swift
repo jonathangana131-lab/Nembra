@@ -20,6 +20,7 @@ public enum C7D09A22DocumentedTransparentTransportMilestone {
     ) -> Verdict {
         guard authenticatedPreflight.authenticationState == .authenticated,
               authenticatedPreflight.authenticationMethod == .smartLifeAppSDK,
+              authenticatedPreflight.hasActiveCallbackAuthority,
               let authenticatedAt = authenticatedPreflight.authenticatedAtUptimeNanoseconds else {
             return .blockedUnauthenticated
         }
