@@ -53,6 +53,7 @@ struct C7D09A22DocumentedTransparentAcceptedEvidenceTests {
     }
 
     @Test
+    @MainActor
     func satisfiedTransportProofRejectsDifferentLinkedScooterIdentity() throws {
         let generation: UInt64 = 7
         let postHorizon = TuyaSmartLifeTransparentReceiveObservationLedger.c7d09a22HistoricalRejectionNanoseconds + 1
