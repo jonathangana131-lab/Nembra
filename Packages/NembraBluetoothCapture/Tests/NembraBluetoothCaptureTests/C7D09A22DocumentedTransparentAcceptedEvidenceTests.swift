@@ -32,9 +32,11 @@ struct C7D09A22DocumentedTransparentAcceptedEvidenceTests {
 
         #expect(await preflight.evidenceArtifact() != nil)
         #expect(await preflight.acceptedDocumentedTransportEvidenceArtifact() == nil)
+        #expect(await preflight.acceptedDocumentedTransportProofArtifact() == nil)
 
         let cut = await preflight.fieldAttemptEvidence()
         #expect(!cut.satisfiesDocumentedAuthenticatedTransportAcceptance)
+        #expect(C7D09A22DocumentedTransportAcceptanceProof(fieldAttempt: cut) == nil)
         #expect(!cut.authorizesRawFD50CharacteristicCustody)
         #expect(!cut.authorizesTelemetrySemantics)
         #expect(!cut.authorizesControlWrites)
