@@ -21,11 +21,19 @@ public enum C7D09A22DocumentedTransparentTransportMilestone {
         guard authenticatedPreflight.authenticationState == .authenticated,
               authenticatedPreflight.authenticationMethod == .smartLifeAppSDK,
               authenticatedPreflight.hasActiveCallbackAuthority,
-              let authenticatedAt = authenticatedPreflight.authenticatedAtUptimeNanoseconds else {
+              let connectionStarted = authenticatedPreflight.connectionStartedAtUptimeNanoseconds,
+              let authenticatedAt = authenticatedPreflight.authenticatedAtUptimeNanoseconds,
+              authenticatedAt >= connectionStarted else {
             return .blockedUnauthenticated
         }
         guard let transparent, transparent.payloadCount > 0 else {
             return .waitingForFirstPayload
+        }
+        // The documented receive ledger must belong to the exact physical connection chronology
+        // whose Smart Life authentication is being evaluated. A same-generation-looking snapshot
+        // from another connection attempt must never be spliceable into a satisfied milestone.
+        guard transparent.sdkConnectionStartedAtUptimeNanoseconds == connectionStarted else {
+            return .waitingForHistoricalRejectionWindow
         }
         // Keep the visible transport milestone aligned with physical acceptance's repeated-receive
         // contract. A single delayed/bootstrap callback, even one arriving after 30 seconds, is not
