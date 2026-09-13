@@ -76,36 +76,77 @@ public struct C7D09A22DocumentedTransportAcceptanceProof: Encodable, Equatable, 
 }
 
 public extension C7D09A22DocumentedTransparentLivePreflight {
+    /// Samples an acceptance cut across the actor boundaries used by the live preflight and then
+    /// revalidates the active generation before returning it.
+    ///
+    /// `fieldAttemptEvidence()` necessarily awaits both the authenticated-session ledger and the
+    /// transparent receive ledger. Swift actors are re-entrant across those awaits, so an app-level
+    /// reconnect/re-arm can otherwise occur between the two samples. Diagnostic generation numbers
+    /// remain non-authoritative, but within this package-owned live preflight they are a useful
+    /// reconnect fence: a legitimate re-arm advances the active generation. Sampling twice and
+    /// checking the active generation before, between, and after those awaits prevents an accepted
+    /// export from combining an older authenticated cut with bytes from a newer connection.
+    ///
+    /// Payload traffic may legitimately advance between the two cuts, so equality is intentionally
+    /// not required. The second coherent cut is returned only while the same generation is still
+    /// active. This does not create any new protocol or mutation authority.
+    private func stableFieldAttemptEvidenceForAcceptance() async -> FieldAttemptEvidence? {
+        guard hasActiveAuthenticatedGeneration,
+              let expectedGeneration = activeDiagnosticGeneration,
+              expectedGeneration > 0 else {
+            return nil
+        }
+
+        let first = await fieldAttemptEvidence()
+        guard first.connectionGeneration == expectedGeneration,
+              hasActiveAuthenticatedGeneration,
+              activeDiagnosticGeneration == expectedGeneration else {
+            return nil
+        }
+
+        let second = await fieldAttemptEvidence()
+        guard second.connectionGeneration == expectedGeneration,
+              hasActiveAuthenticatedGeneration,
+              activeDiagnosticGeneration == expectedGeneration else {
+            return nil
+        }
+
+        return second
+    }
+
     /// Returns portable documented Smart Life receive evidence only when the exact armed
     /// authenticated generation has crossed the physical transport liveness boundary.
     ///
     /// Unlike `evidenceArtifact()`, which is intentionally useful for diagnostics before the
-    /// historical rejection horizon, this accessor is acceptance-scoped: it samples one coherent
-    /// package-owned field-attempt cut and exposes bytes only when that same cut proves repeated
-    /// documented device-to-app receive plus independent authenticated-session survival beyond the
-    /// post-authentication rejection window.
+    /// historical rejection horizon, this accessor is acceptance-scoped: it samples one stable
+    /// package-owned field-attempt cut and exposes bytes only when that same connection generation
+    /// proves repeated documented device-to-app receive plus independent authenticated-session
+    /// survival beyond the post-authentication rejection window.
     ///
     /// This remains documented SDK transport evidence. It does not identify the underlying FD50
     /// GATT characteristic and cannot authorize DP semantics, control writes, pairing, reset,
     /// removal, or unbind.
     func acceptedDocumentedTransportEvidenceArtifact() async -> C7D09A22DocumentedTransparentEvidenceArtifact? {
-        let evidence = await fieldAttemptEvidence()
-        guard evidence.satisfiesDocumentedAuthenticatedTransportAcceptance else {
+        guard let evidence = await stableFieldAttemptEvidenceForAcceptance(),
+              evidence.satisfiesDocumentedAuthenticatedTransportAcceptance else {
             return nil
         }
         return evidence.artifact
     }
 
     /// Produces a package-minted, emit-only record of the first-stage physical-truth milestone.
-    /// A record exists only when the same coherent field-attempt cut contains repeated retained
-    /// documented receive bytes, the independently observed authenticated transport milestone, and
-    /// those bytes belong to the exact linked Tuya device identity supplied by the authenticated
-    /// Smart Life connection path. It intentionally remains weaker than raw FD50 characteristic custody.
+    /// A record exists only when a stable field-attempt cut contains repeated retained documented
+    /// receive bytes, the independently observed authenticated transport milestone, and those bytes
+    /// belong to the exact linked Tuya device identity supplied by the authenticated Smart Life
+    /// connection path. It intentionally remains weaker than raw FD50 characteristic custody.
     func acceptedDocumentedTransportProofArtifact(
         linkedDeviceIdentity: C7D09A22DocumentedSmartLifeReadOnlyConnector.LinkedDeviceIdentity
     ) async -> C7D09A22DocumentedTransportAcceptanceProof? {
-        C7D09A22DocumentedTransportAcceptanceProof(
-            fieldAttempt: await fieldAttemptEvidence(),
+        guard let evidence = await stableFieldAttemptEvidenceForAcceptance() else {
+            return nil
+        }
+        return C7D09A22DocumentedTransportAcceptanceProof(
+            fieldAttempt: evidence,
             linkedDeviceIdentity: linkedDeviceIdentity
         )
     }
