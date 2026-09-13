@@ -105,23 +105,44 @@ final class SmartLifeTransparentReceiveLease {
     /// only documented authenticated Tuya transport acceptance; raw FD50 characteristic custody,
     /// scooter DP semantics, and all control authority remain false in the package evidence.
     func fieldAttemptEvidence(for connectionToken: Generation) async -> FieldAttemptEvidence? {
-        guard generation == connectionToken,
-              ownsManagerDelegateSlot else {
+        guard await retainAuthorityOrRetireDisplacedCustody(for: connectionToken) else {
             return nil
         }
         return await preflight.fieldAttemptEvidence()
     }
 
     /// Non-secret receive diagnostics are available only to the currently leased generation.
-    /// Stale generations cannot inspect a later connection's payload custody.
+    /// Stale generations cannot inspect a later connection's payload custody. If another
+    /// component has displaced the documented receive delegate, package evidence custody is
+    /// retired immediately rather than leaving retained bytes armed behind a dead callback path.
     func diagnosticSnapshot(
         for connectionToken: Generation
     ) async -> C7D09A22DocumentedTransparentReceiveIngress.DiagnosticSnapshot? {
-        guard generation == connectionToken,
-              ownsManagerDelegateSlot else {
+        guard await retainAuthorityOrRetireDisplacedCustody(for: connectionToken) else {
             return nil
         }
         return await preflight.diagnosticSnapshot()
+    }
+
+    /// Revalidates the physical callback authority for this exact generation. Losing Tuya's
+    /// process-global delegate slot is terminal for *evidence custody*, not for the underlying
+    /// Smart Life connection. We therefore retire only the package preflight and never issue
+    /// an SDK disconnect, DP write, reset, removal, or unbind operation here.
+    @discardableResult
+    private func retainAuthorityOrRetireDisplacedCustody(
+        for connectionToken: Generation
+    ) async -> Bool {
+        guard generation == connectionToken else {
+            return false
+        }
+
+        guard ownsManagerDelegateSlot else {
+            generation = nil
+            _ = await preflight.retire(connectionToken: connectionToken)
+            return false
+        }
+
+        return true
     }
 
     /// Terminal teardown is fenced to the exact token that armed this lease. An old
