@@ -139,6 +139,23 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Authenticated connection has not survived the physical stability window yet."))
     }
 
+    @Test("retired callback authority cannot remain acceptance-shaped")
+    func retiredCallbackAuthorityBlocks() {
+        let authenticatedAt: UInt64 = 10
+        let snapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
+            authenticationState: .authenticated,
+            authenticationMethod: .smartLifeAppSDK,
+            connectionStartedAtUptimeNanoseconds: 1,
+            authenticatedAtUptimeNanoseconds: authenticatedAt,
+            latestObservedUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumAuthenticatedConnectionNanoseconds,
+            applicationPayloadCount: 2,
+            latestApplicationPayloadUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds + 1,
+            connectionGeneration: 2,
+            hasActiveCallbackAuthority: false
+        )
+        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Current Bluetooth connection generation no longer owns callback authority."))
+    }
+
     @Test("repeated authenticated SDK payloads past rejection window and 45 second survival unlock stationary mapping")
     func acceptedSDKPhysicalGate() {
         let authenticatedAt: UInt64 = 10
@@ -171,8 +188,8 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
         #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: snapshot) == .blocked(reason: "Tuya Device Sharing proves account/device authority, not authentication of the current BLE connection generation."))
     }
 
-    @Test("one bootstrap callback cannot keep an incomplete authenticated generation alive past terminal horizon")
-    func bootstrapOnlyGenerationExpires() {
+    @Test("SDK application silence does not retire a healthy generation needed for raw FD50 evidence")
+    func bootstrapOnlyGenerationDoesNotAutoRetire() {
         let authenticatedAt: UInt64 = 10
         let snapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
             authenticationState: .authenticated,
@@ -184,11 +201,11 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
             latestApplicationPayloadUptimeNanoseconds: authenticatedAt + 1,
             connectionGeneration: 4
         )
-        #expect(TuyaAuthenticatedReadOnlyPreflight.shouldRetireIncompleteObservation(snapshot))
+        #expect(!TuyaAuthenticatedReadOnlyPreflight.shouldRetireIncompleteObservation(snapshot))
     }
 
-    @Test("early repeated callbacks that never survive the historical rejection window also expire")
-    func earlyOnlyPayloadGenerationExpires() {
+    @Test("early SDK callbacks do not auto-retire a healthy generation needed for raw FD50 evidence")
+    func earlyOnlyPayloadGenerationDoesNotAutoRetire() {
         let authenticatedAt: UInt64 = 10
         let snapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
             authenticationState: .authenticated,
@@ -200,7 +217,7 @@ struct TuyaAuthenticatedReadOnlyPreflightTests {
             latestApplicationPayloadUptimeNanoseconds: authenticatedAt + TuyaAuthenticatedReadOnlyPreflight.minimumPostAuthenticationPayloadSurvivalNanoseconds - 1,
             connectionGeneration: 5
         )
-        #expect(TuyaAuthenticatedReadOnlyPreflight.shouldRetireIncompleteObservation(snapshot))
+        #expect(!TuyaAuthenticatedReadOnlyPreflight.shouldRetireIncompleteObservation(snapshot))
     }
 
     @Test("canonical ready generation never expires at the incomplete-observation horizon")
