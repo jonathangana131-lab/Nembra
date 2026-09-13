@@ -18,7 +18,7 @@ import Foundation
 /// scooter telemetry semantics or controls.
 @MainActor
 public final class C7D09A22DocumentedSmartLifeReadOnlyConnector {
-    public struct LinkedDeviceIdentity: Equatable, Sendable {
+    public struct LinkedDeviceIdentity: Encodable, Equatable, Sendable {
         public let deviceID: String
         public let uuid: String
         public let productID: String
