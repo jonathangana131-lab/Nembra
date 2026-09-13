@@ -54,6 +54,57 @@ struct C7D09A22DocumentedTransparentAcceptedEvidenceTests {
 
     @Test
     @MainActor
+    func acceptanceFenceDistinguishesIndependentTokensWithSameDiagnosticGeneration() async throws {
+        let firstLedger = TuyaAuthenticatedReadOnlySessionLedger()
+        let firstToken = try await firstLedger.beginConnection()
+        try await firstLedger.markAuthenticationStarted(for: firstToken)
+        try await firstLedger.markAuthenticated(for: firstToken, method: .smartLifeAppSDK)
+        let firstSnapshot = await firstLedger.currentPreflightSnapshot()
+
+        let secondLedger = TuyaAuthenticatedReadOnlySessionLedger()
+        let secondToken = try await secondLedger.beginConnection()
+        try await secondLedger.markAuthenticationStarted(for: secondToken)
+        try await secondLedger.markAuthenticated(for: secondToken, method: .smartLifeAppSDK)
+        let secondSnapshot = await secondLedger.currentPreflightSnapshot()
+
+        // Independent package ledgers can both legitimately call their first connection generation 1.
+        // Generation equality must therefore never be the reconnect/export authority fence.
+        #expect(firstToken.diagnosticGeneration == secondToken.diagnosticGeneration)
+        #expect(firstToken != secondToken)
+
+        var activeLedger = firstLedger
+        let preflight = C7D09A22DocumentedTransparentLivePreflight(
+            preflightSnapshotProvider: { await activeLedger.currentPreflightSnapshot() }
+        )
+        #expect(await preflight.arm(
+            connectionToken: firstToken,
+            expectedDeviceID: "demo",
+            authenticatedPreflightSnapshot: firstSnapshot
+        ))
+        let firstFenceToken = try #require(preflight.activeConnectionTokenForAcceptanceFence)
+        #expect(preflight.activeDiagnosticGeneration == firstToken.diagnosticGeneration)
+        #expect(firstFenceToken == firstToken)
+
+        activeLedger = secondLedger
+        #expect(await preflight.arm(
+            connectionToken: secondToken,
+            expectedDeviceID: "demo",
+            authenticatedPreflightSnapshot: secondSnapshot
+        ))
+
+        // The presentation/debug generation did not change, but exact connection authority did.
+        // Acceptance export must fence on this token rather than on the shared number.
+        #expect(preflight.activeDiagnosticGeneration == firstToken.diagnosticGeneration)
+        #expect(preflight.activeConnectionTokenForAcceptanceFence == secondToken)
+        #expect(preflight.activeConnectionTokenForAcceptanceFence != firstFenceToken)
+        #expect(!preflight.authorizesRawFD50CharacteristicCustody)
+        #expect(!preflight.authorizesTelemetrySemantics)
+        #expect(!preflight.authorizesControlWrites)
+        #expect(!preflight.authorizesPairingResetOrUnbind)
+    }
+
+    @Test
+    @MainActor
     func satisfiedTransportProofRejectsDifferentLinkedScooterIdentity() throws {
         let generation: UInt64 = 7
         let postHorizon = TuyaSmartLifeTransparentReceiveObservationLedger.c7d09a22HistoricalRejectionNanoseconds + 1
