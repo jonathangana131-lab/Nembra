@@ -1,12 +1,13 @@
 import Foundation
 
 /// Portable record that the package-owned live preflight observed the documented Smart Life
-/// transport milestone as satisfied for one exact authenticated generation.
+/// transport milestone as satisfied for one exact authenticated generation and linked scooter.
 ///
 /// The embedded evidence preserves the exact retained device-to-app callback bytes. This wrapper
 /// additionally records that those bytes were sampled from the same coherent `FieldAttemptEvidence`
-/// cut whose transport milestone was satisfied, so a saved field artifact does not have to infer
-/// first-stage transport acceptance from a UI log line.
+/// cut whose transport milestone was satisfied, and binds that cut to the exact linked Tuya device
+/// identity used to select the authenticated scooter. A saved field artifact therefore cannot infer
+/// first-stage transport acceptance from a UI log line or relabel accepted bytes as another scooter.
 ///
 /// This type is intentionally `Encodable` but not `Decodable`: arbitrary external JSON must never
 /// be able to mint an acceptance-shaped package value. A later app export may exact-byte seal the
@@ -20,11 +21,13 @@ public struct C7D09A22DocumentedTransportAcceptanceProof: Encodable, Equatable, 
 
     public let kind: String
     public let connectionGeneration: UInt64
+    public let linkedDeviceIdentity: C7D09A22DocumentedSmartLifeReadOnlyConnector.LinkedDeviceIdentity
     public let documentedTransportAcceptanceSatisfied: Bool
     public let evidence: C7D09A22DocumentedTransparentEvidenceArtifact
 
     public init?(
-        fieldAttempt: C7D09A22DocumentedTransparentLivePreflight.FieldAttemptEvidence
+        fieldAttempt: C7D09A22DocumentedTransparentLivePreflight.FieldAttemptEvidence,
+        linkedDeviceIdentity: C7D09A22DocumentedSmartLifeReadOnlyConnector.LinkedDeviceIdentity
     ) {
         guard fieldAttempt.satisfiesDocumentedAuthenticatedTransportAcceptance,
               fieldAttempt.milestone == .satisfied,
@@ -32,12 +35,14 @@ public struct C7D09A22DocumentedTransportAcceptanceProof: Encodable, Equatable, 
               generation > 0,
               let artifact = fieldAttempt.artifact,
               artifact.sourceConnectionGeneration == generation,
+              artifact.tuyaDeviceID == linkedDeviceIdentity.deviceID,
               artifact.validatedReceiveEvidence(connectionGeneration: generation) != nil else {
             return nil
         }
 
         kind = Self.evidenceKind
         connectionGeneration = generation
+        self.linkedDeviceIdentity = linkedDeviceIdentity
         documentedTransportAcceptanceSatisfied = true
         evidence = artifact
     }
@@ -49,7 +54,8 @@ public struct C7D09A22DocumentedTransportAcceptanceProof: Encodable, Equatable, 
         guard kind == Self.evidenceKind,
               documentedTransportAcceptanceSatisfied,
               connectionGeneration > 0,
-              evidence.sourceConnectionGeneration == connectionGeneration else {
+              evidence.sourceConnectionGeneration == connectionGeneration,
+              evidence.tuyaDeviceID == linkedDeviceIdentity.deviceID else {
             return false
         }
         return evidence.validatedReceiveEvidence(connectionGeneration: connectionGeneration) != nil
@@ -92,9 +98,15 @@ public extension C7D09A22DocumentedTransparentLivePreflight {
 
     /// Produces a package-minted, emit-only record of the first-stage physical-truth milestone.
     /// A record exists only when the same coherent field-attempt cut contains repeated retained
-    /// documented receive bytes and the independently observed authenticated transport milestone.
-    /// It intentionally remains weaker than raw FD50 characteristic custody.
-    func acceptedDocumentedTransportProofArtifact() async -> C7D09A22DocumentedTransportAcceptanceProof? {
-        C7D09A22DocumentedTransportAcceptanceProof(fieldAttempt: await fieldAttemptEvidence())
+    /// documented receive bytes, the independently observed authenticated transport milestone, and
+    /// those bytes belong to the exact linked Tuya device identity supplied by the authenticated
+    /// Smart Life connection path. It intentionally remains weaker than raw FD50 characteristic custody.
+    func acceptedDocumentedTransportProofArtifact(
+        linkedDeviceIdentity: C7D09A22DocumentedSmartLifeReadOnlyConnector.LinkedDeviceIdentity
+    ) async -> C7D09A22DocumentedTransportAcceptanceProof? {
+        C7D09A22DocumentedTransportAcceptanceProof(
+            fieldAttempt: await fieldAttemptEvidence(),
+            linkedDeviceIdentity: linkedDeviceIdentity
+        )
     }
 }
