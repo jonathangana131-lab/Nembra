@@ -77,37 +77,36 @@ public struct C7D09A22DocumentedTransportAcceptanceProof: Encodable, Equatable, 
 
 public extension C7D09A22DocumentedTransparentLivePreflight {
     /// Samples an acceptance cut across the actor boundaries used by the live preflight and then
-    /// revalidates the active generation before returning it.
+    /// revalidates the exact active package token before returning it.
     ///
     /// `fieldAttemptEvidence()` necessarily awaits both the authenticated-session ledger and the
     /// transparent receive ledger. Swift actors are re-entrant across those awaits, so an app-level
     /// reconnect/re-arm can otherwise occur between the two samples. Diagnostic generation numbers
-    /// remain non-authoritative, but within this package-owned live preflight they are a useful
-    /// reconnect fence: a legitimate re-arm advances the active generation. Sampling twice and
-    /// checking the active generation before, between, and after those awaits prevents an accepted
-    /// export from combining an older authenticated cut with bytes from a newer connection.
+    /// are explicitly insufficient authority because independent ledgers can both mint generation
+    /// `1`. The package-minted connection token is therefore captured before the first suspension and
+    /// must remain exact-token equal before, between, and after the sampled cuts.
     ///
     /// Payload traffic may legitimately advance between the two cuts, so equality is intentionally
-    /// not required. The second coherent cut is returned only while the same generation is still
-    /// active. This does not create any new protocol or mutation authority.
+    /// not required. The second coherent cut is returned only while the exact same connection token
+    /// remains armed. This does not create any new protocol or mutation authority.
     private func stableFieldAttemptEvidenceForAcceptance() async -> FieldAttemptEvidence? {
         guard hasActiveAuthenticatedGeneration,
-              let expectedGeneration = activeDiagnosticGeneration,
-              expectedGeneration > 0 else {
+              let expectedToken = activeConnectionTokenForAcceptanceFence,
+              expectedToken.diagnosticGeneration > 0 else {
             return nil
         }
 
         let first = await fieldAttemptEvidence()
-        guard first.connectionGeneration == expectedGeneration,
+        guard first.connectionGeneration == expectedToken.diagnosticGeneration,
               hasActiveAuthenticatedGeneration,
-              activeDiagnosticGeneration == expectedGeneration else {
+              activeConnectionTokenForAcceptanceFence == expectedToken else {
             return nil
         }
 
         let second = await fieldAttemptEvidence()
-        guard second.connectionGeneration == expectedGeneration,
+        guard second.connectionGeneration == expectedToken.diagnosticGeneration,
               hasActiveAuthenticatedGeneration,
-              activeDiagnosticGeneration == expectedGeneration else {
+              activeConnectionTokenForAcceptanceFence == expectedToken else {
             return nil
         }
 
@@ -119,7 +118,7 @@ public extension C7D09A22DocumentedTransparentLivePreflight {
     ///
     /// Unlike `evidenceArtifact()`, which is intentionally useful for diagnostics before the
     /// historical rejection horizon, this accessor is acceptance-scoped: it samples one stable
-    /// package-owned field-attempt cut and exposes bytes only when that same connection generation
+    /// package-owned field-attempt cut and exposes bytes only when that exact connection token
     /// proves repeated documented device-to-app receive plus independent authenticated-session
     /// survival beyond the post-authentication rejection window.
     ///
