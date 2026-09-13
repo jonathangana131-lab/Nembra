@@ -113,7 +113,7 @@ struct C7D09A22DocumentedSmartLifeReadOnlyConnectorTests {
         let ledger = TuyaAuthenticatedReadOnlySessionLedger()
         let token = try await ledger.beginConnection()
         try await ledger.markAuthenticationStarted(for: token)
-        try await ledger.markAuthenticated(for: token, method: .vendorEquivalent)
+        try await ledger.markAuthenticated(for: token, method: .documentedDeviceSharing)
 
         let connector = C7D09A22DocumentedSmartLifeReadOnlyConnector(ledger: ledger)
         var rejected = false
