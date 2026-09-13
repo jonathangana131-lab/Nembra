@@ -42,16 +42,24 @@ public final class C7D09A22DocumentedSmartLifeReadOnlyConnector {
         _ productID: String
     ) async throws -> Void
 
+    /// Read-only SDK-local liveness seam. The app must answer from the official Smart Life SDK's
+    /// current local BLE state for the exact UUID supplied here. This closure must not reconnect,
+    /// pair, activate, publish a DP, or write transparent data in order to produce its answer.
+    public typealias SDKExactUUIDOnlineCheck = @MainActor (_ uuid: String) async throws -> Bool
+
     public enum ConnectError: Error, Equatable, Sendable {
         case sdkAuthenticatedConnectionFailed
         case packageAuthenticationPromotionFailed
         case existingAuthenticatedSessionInvalid
         case documentedReceiveCustodyFailed
+        case sdkLivenessObservationFailed
+        case exactUUIDNotObservedOnline
     }
 
     private let ledger: TuyaAuthenticatedReadOnlySessionLedger
     private let handoff: C7D09A22DocumentedTransparentDelegateHandoff
     private var activeToken: TuyaReadOnlyConnectionToken?
+    private var activeIdentity: LinkedDeviceIdentity?
     private var ownsActiveTokenLifecycle = false
 
     public init(ledger: TuyaAuthenticatedReadOnlySessionLedger = .init()) {
@@ -72,6 +80,7 @@ public final class C7D09A22DocumentedSmartLifeReadOnlyConnector {
 
         let token = try await ledger.beginConnection()
         activeToken = token
+        activeIdentity = identity
         ownsActiveTokenLifecycle = true
         do {
             try await ledger.markAuthenticationStarted(for: token)
@@ -79,6 +88,7 @@ public final class C7D09A22DocumentedSmartLifeReadOnlyConnector {
         } catch {
             try? await ledger.markAuthenticationFailed(for: token)
             activeToken = nil
+            activeIdentity = nil
             ownsActiveTokenLifecycle = false
             await handoff.retire()
             throw ConnectError.sdkAuthenticatedConnectionFailed
@@ -89,6 +99,7 @@ public final class C7D09A22DocumentedSmartLifeReadOnlyConnector {
         } catch {
             try? await ledger.markInternalLifecycleFailure(for: token)
             activeToken = nil
+            activeIdentity = nil
             ownsActiveTokenLifecycle = false
             await handoff.retire()
             throw ConnectError.packageAuthenticationPromotionFailed
@@ -102,6 +113,7 @@ public final class C7D09A22DocumentedSmartLifeReadOnlyConnector {
         ) else {
             try? await ledger.markInternalLifecycleFailure(for: token)
             activeToken = nil
+            activeIdentity = nil
             ownsActiveTokenLifecycle = false
             await handoff.retire()
             throw ConnectError.documentedReceiveCustodyFailed
@@ -149,6 +161,7 @@ public final class C7D09A22DocumentedSmartLifeReadOnlyConnector {
         }
 
         activeToken = connectionToken
+        activeIdentity = identity
         ownsActiveTokenLifecycle = false
     }
 
@@ -159,13 +172,53 @@ public final class C7D09A22DocumentedSmartLifeReadOnlyConnector {
     }
 
     /// Records an independent SDK-local liveness observation for the exact active generation.
-    /// This is required in addition to receive timestamps before the >30 s transport milestone can
-    /// be accepted; queued callbacks cannot manufacture connection survival.
-    public func observeAuthenticatedConnection() async throws {
-        guard let activeToken else {
+    ///
+    /// The package deliberately cannot advance its >30 s survival clock merely because this method
+    /// was called. The app must first perform a fresh, read-only observation of the exact linked UUID
+    /// in the official Smart Life SDK's local BLE state. After that async observation returns, the
+    /// exact package token and identity are revalidated to prevent a reconnect/re-arm race from
+    /// crediting liveness to a different physical connection.
+    public func observeAuthenticatedConnection(
+        sdkIsExactUUIDOnline: @escaping SDKExactUUIDOnlineCheck
+    ) async throws {
+        guard let observedToken = activeToken,
+              let observedIdentity = activeIdentity else {
             throw TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection
         }
-        try await ledger.observeCurrentConnection(for: activeToken)
+
+        let isOnline: Bool
+        do {
+            isOnline = try await sdkIsExactUUIDOnline(observedIdentity.uuid)
+        } catch {
+            throw ConnectError.sdkLivenessObservationFailed
+        }
+
+        guard isOnline else {
+            throw ConnectError.exactUUIDNotObservedOnline
+        }
+
+        // The SDK check crosses an actor reentrancy point. Do not let a reconnect or re-arm that
+        // happened while it was in flight donate its observation to either connection generation.
+        guard activeToken == observedToken,
+              activeIdentity == observedIdentity else {
+            throw ConnectError.existingAuthenticatedSessionInvalid
+        }
+
+        let authenticated: TuyaAuthenticatedReadOnlyPreflightSnapshot
+        do {
+            authenticated = try await ledger.currentPreflightSnapshot(for: observedToken)
+        } catch {
+            throw ConnectError.existingAuthenticatedSessionInvalid
+        }
+
+        guard authenticated.authenticationState == .authenticated,
+              authenticated.authenticationMethod == .smartLifeAppSDK,
+              authenticated.connectionGeneration == observedToken.diagnosticGeneration,
+              authenticated.hasActiveCallbackAuthority else {
+            throw ConnectError.existingAuthenticatedSessionInvalid
+        }
+
+        try await ledger.observeCurrentConnection(for: observedToken)
     }
 
     public func currentPreflightSnapshot() async -> TuyaAuthenticatedReadOnlyPreflightSnapshot {
@@ -183,6 +236,7 @@ public final class C7D09A22DocumentedSmartLifeReadOnlyConnector {
         let token = activeToken
         let shouldEndOwnedToken = ownsActiveTokenLifecycle
         activeToken = nil
+        activeIdentity = nil
         ownsActiveTokenLifecycle = false
         await handoff.retire()
         if shouldEndOwnedToken, let token {
