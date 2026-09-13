@@ -52,6 +52,10 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
     /// Independent connection ledgers can legitimately mint the same diagnostic generation;
     /// that number is presentation/debug metadata and is never sufficient lifecycle authority.
     private var activeConnectionToken: TuyaReadOnlyConnectionToken?
+    /// Full linked-device identity is retained only when the authenticated arm path supplied it.
+    /// A legacy device-ID-only arm may collect diagnostics, but it cannot later mint a proof that
+    /// claims UUID/product provenance the package never actually bound to that connection.
+    private var activeLinkedDeviceIdentity: C7D09A22DocumentedSmartLifeReadOnlyConnector.LinkedDeviceIdentity?
 
     public init(
         preflightSnapshotProvider: @escaping SnapshotProvider,
@@ -65,7 +69,11 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
     }
 
     /// Arms only the exact already-authenticated package generation and exact Tuya device ID.
-    /// Failed arming retires any previous generation and leaves the coordinator fail-closed.
+    ///
+    /// This compatibility path deliberately does not bind UUID/product identity. It remains valid
+    /// for diagnostics and transport observation, but an exact-linked-identity acceptance proof
+    /// cannot be minted from it. Production physical-truth wiring should use the identity-bound
+    /// overload below.
     @discardableResult
     public func arm(
         connectionToken: TuyaReadOnlyConnectionToken,
@@ -74,6 +82,7 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
     ) async -> Bool {
         authenticatedSnapshot = nil
         activeConnectionToken = nil
+        activeLinkedDeviceIdentity = nil
         let armed = await handoff.begin(
             connectionToken: connectionToken,
             expectedDeviceID: expectedDeviceID,
@@ -82,6 +91,25 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
         guard armed else { return false }
         self.authenticatedSnapshot = authenticatedPreflightSnapshot
         self.activeConnectionToken = connectionToken
+        return true
+    }
+
+    /// Arms the exact authenticated generation and binds the complete linked Smart Life identity
+    /// to that same authority cut. This is the only arm path that may later export an acceptance
+    /// proof containing UUID/product identity; callers cannot retrofit those fields at export time.
+    @discardableResult
+    public func arm(
+        connectionToken: TuyaReadOnlyConnectionToken,
+        linkedDeviceIdentity: C7D09A22DocumentedSmartLifeReadOnlyConnector.LinkedDeviceIdentity,
+        authenticatedPreflightSnapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot
+    ) async -> Bool {
+        let armed = await arm(
+            connectionToken: connectionToken,
+            expectedDeviceID: linkedDeviceIdentity.deviceID,
+            authenticatedPreflightSnapshot: authenticatedPreflightSnapshot
+        )
+        guard armed else { return false }
+        activeLinkedDeviceIdentity = linkedDeviceIdentity
         return true
     }
 
@@ -195,6 +223,7 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
         await handoff.retire()
         authenticatedSnapshot = nil
         activeConnectionToken = nil
+        activeLinkedDeviceIdentity = nil
         return true
     }
 
@@ -204,6 +233,7 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
         await handoff.retire()
         authenticatedSnapshot = nil
         activeConnectionToken = nil
+        activeLinkedDeviceIdentity = nil
     }
 
     public var hasActiveAuthenticatedGeneration: Bool {
@@ -219,6 +249,12 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
     /// distinguish two independent ledgers that can both mint diagnostic generation `1`; only the
     /// package token itself identifies the exact armed connection authority.
     var activeConnectionTokenForAcceptanceFence: TuyaReadOnlyConnectionToken? { activeConnectionToken }
+
+    /// Package-internal linked-identity provenance for acceptance export. A non-nil value exists
+    /// only when the full identity was supplied at arm time alongside the authenticated token.
+    var activeLinkedDeviceIdentityForAcceptanceFence: C7D09A22DocumentedSmartLifeReadOnlyConnector.LinkedDeviceIdentity? {
+        activeLinkedDeviceIdentity
+    }
 
     /// Refreshes liveness while preserving the immutable identity/chronology of the connection that
     /// originally armed this preflight. `latestObservedUptimeNanoseconds` is expected to advance;
