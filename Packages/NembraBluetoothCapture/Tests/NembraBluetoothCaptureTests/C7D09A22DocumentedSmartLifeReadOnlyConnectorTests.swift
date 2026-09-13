@@ -42,6 +42,82 @@ struct C7D09A22DocumentedSmartLifeReadOnlyConnectorTests {
 
     @Test
     @MainActor
+    func exactUUIDSDKOnlineObservationIsRequiredBeforeSurvivalClockAdvances() async throws {
+        let identity = try c7d09a22Identity()
+        let connector = C7D09A22DocumentedSmartLifeReadOnlyConnector()
+        _ = try await connector.connect(identity: identity) { _, _ in }
+
+        let before = await connector.currentPreflightSnapshot()
+        var observedUUID: String?
+        var rejectedOfflineObservation = false
+
+        do {
+            try await connector.observeAuthenticatedConnection { uuid in
+                observedUUID = uuid
+                return false
+            }
+        } catch {
+            rejectedOfflineObservation = true
+            #expect(
+                error as? C7D09A22DocumentedSmartLifeReadOnlyConnector.ConnectError ==
+                    .exactUUIDNotObservedOnline
+            )
+        }
+
+        #expect(rejectedOfflineObservation)
+        #expect(observedUUID == identity.uuid)
+        let afterRejectedObservation = await connector.currentPreflightSnapshot()
+        #expect(
+            afterRejectedObservation.latestObservedUptimeNanoseconds ==
+                before.latestObservedUptimeNanoseconds
+        )
+
+        try await connector.observeAuthenticatedConnection { uuid in
+            #expect(uuid == identity.uuid)
+            return true
+        }
+
+        let afterAcceptedObservation = await connector.currentPreflightSnapshot()
+        #expect(afterAcceptedObservation.latestObservedUptimeNanoseconds != nil)
+        if let previous = before.latestObservedUptimeNanoseconds,
+           let accepted = afterAcceptedObservation.latestObservedUptimeNanoseconds {
+            #expect(accepted >= previous)
+        }
+        #expect(afterAcceptedObservation.authenticationMethod == .smartLifeAppSDK)
+        #expect(afterAcceptedObservation.hasActiveCallbackAuthority)
+    }
+
+    @Test
+    @MainActor
+    func sdkLivenessCheckFailureCannotManufactureConnectionSurvival() async throws {
+        enum ProbeFailure: Error { case unavailable }
+
+        let identity = try c7d09a22Identity()
+        let connector = C7D09A22DocumentedSmartLifeReadOnlyConnector()
+        _ = try await connector.connect(identity: identity) { _, _ in }
+        let before = await connector.currentPreflightSnapshot()
+
+        var rejected = false
+        do {
+            try await connector.observeAuthenticatedConnection { uuid in
+                #expect(uuid == identity.uuid)
+                throw ProbeFailure.unavailable
+            }
+        } catch {
+            rejected = true
+            #expect(
+                error as? C7D09A22DocumentedSmartLifeReadOnlyConnector.ConnectError ==
+                    .sdkLivenessObservationFailed
+            )
+        }
+
+        #expect(rejected)
+        let after = await connector.currentPreflightSnapshot()
+        #expect(after.latestObservedUptimeNanoseconds == before.latestObservedUptimeNanoseconds)
+    }
+
+    @Test
+    @MainActor
     func adoptsExactLiveAppTokenWithoutCreatingOrRetiringAnotherGeneration() async throws {
         let identity = try c7d09a22Identity()
         let ledger = TuyaAuthenticatedReadOnlySessionLedger()
