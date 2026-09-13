@@ -213,6 +213,13 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
     /// Diagnostic-only generation number for display/export. Never use this value as lifecycle authority.
     public var activeDiagnosticGeneration: UInt64? { activeConnectionToken?.diagnosticGeneration }
 
+    /// Package-internal exact-token authority fence for acceptance export across actor suspension.
+    ///
+    /// This is intentionally not public API. Acceptance helpers in another source file need to
+    /// distinguish two independent ledgers that can both mint diagnostic generation `1`; only the
+    /// package token itself identifies the exact armed connection authority.
+    var activeConnectionTokenForAcceptanceFence: TuyaReadOnlyConnectionToken? { activeConnectionToken }
+
     /// Refreshes liveness while preserving the immutable identity/chronology of the connection that
     /// originally armed this preflight. `latestObservedUptimeNanoseconds` is expected to advance;
     /// connection start and authentication time are not. Any mismatch is treated as a reconnect or
