@@ -286,14 +286,24 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
     /// originally armed this preflight. `latestObservedUptimeNanoseconds` is expected to advance;
     /// connection start and authentication time are not. Any mismatch is treated as a reconnect or
     /// corrupted authority boundary and therefore cannot be used for this field attempt.
+    ///
+    /// The provider is asynchronous and MainActor methods are re-entrant across suspension. Capture
+    /// the exact lifecycle intent before that await and revalidate it afterwards so a stale ledger
+    /// read from an earlier connection can never regain authority after a reconnect or teardown.
     private func currentAuthenticatedSnapshotForArmedGeneration() async -> TuyaAuthenticatedReadOnlyPreflightSnapshot? {
+        let expectedEpoch = lifecycleEpoch
         guard let armedSnapshot = authenticatedSnapshot,
-              let activeConnectionToken,
-              let current = await preflightSnapshotProvider(),
+              let expectedToken = activeConnectionToken else {
+            return nil
+        }
+
+        let current = await preflightSnapshotProvider()
+        guard lifecycleEpoch == expectedEpoch,
+              activeConnectionToken == expectedToken,
               current.authenticationState == .authenticated,
               current.authenticationMethod == .smartLifeAppSDK,
               current.hasActiveCallbackAuthority,
-              current.connectionGeneration == activeConnectionToken.diagnosticGeneration,
+              current.connectionGeneration == expectedToken.diagnosticGeneration,
               current.connectionGeneration == armedSnapshot.connectionGeneration,
               current.connectionStartedAtUptimeNanoseconds == armedSnapshot.connectionStartedAtUptimeNanoseconds,
               current.authenticatedAtUptimeNanoseconds == armedSnapshot.authenticatedAtUptimeNanoseconds else {
