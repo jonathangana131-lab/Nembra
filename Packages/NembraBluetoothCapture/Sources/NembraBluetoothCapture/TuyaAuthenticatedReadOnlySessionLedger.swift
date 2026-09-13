@@ -259,6 +259,17 @@ public actor TuyaAuthenticatedReadOnlySessionLedger: TuyaReadOnlyAuthenticationS
         }
     }
 
+    /// Returns the exact current generation snapshot for `token` without sampling the clock or
+    /// mutating observation chronology. This is used when a package-owned evidence coordinator
+    /// adopts an already-authenticated Smart Life session that was established by the live app.
+    /// A token from another ledger, an older generation, or a retired generation is rejected.
+    public func currentPreflightSnapshot(
+        for token: TuyaReadOnlyConnectionToken
+    ) throws -> TuyaAuthenticatedReadOnlyPreflightSnapshot {
+        try requireCurrent(token)
+        return makeSnapshot()
+    }
+
     public func markObservationContinuityInvalidated(
         for token: TuyaReadOnlyConnectionToken
     ) throws {
