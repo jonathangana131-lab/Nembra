@@ -22,6 +22,10 @@ public final class C7D09A22DocumentedTransparentReceiveIngress {
     private var activeConnectionToken: TuyaReadOnlyConnectionToken?
     private var expectedDeviceID: String?
     private var session: C7D09A22AuthenticatedTransparentReceiveSession?
+    /// Main-actor methods can still be re-entered while awaiting actor-owned session retirement.
+    /// Every begin/retire therefore owns a monotonic lifecycle epoch. A stale continuation may
+    /// finish retiring the session it detached, but it can never publish or erase newer custody.
+    private var lifecycleEpoch: UInt64 = 0
 
     public init() {}
 
@@ -61,7 +65,13 @@ public final class C7D09A22DocumentedTransparentReceiveIngress {
         sdkConnectionStartedAtUptimeNanoseconds: UInt64,
         authenticatedPreflightSnapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot
     ) async -> Bool {
-        await retire()
+        lifecycleEpoch &+= 1
+        let attemptEpoch = lifecycleEpoch
+        let previousSession = detachActiveSession()
+        if let previousSession {
+            await previousSession.retire()
+        }
+        guard lifecycleEpoch == attemptEpoch else { return false }
 
         let normalizedExpectedDeviceID = expectedDeviceID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedExpectedDeviceID.isEmpty,
@@ -79,6 +89,12 @@ public final class C7D09A22DocumentedTransparentReceiveIngress {
             return false
         }
 
+        // A newer begin/retire may have re-entered while the previous actor-owned session was
+        // retiring. Only the still-current attempt may publish new callback custody.
+        guard lifecycleEpoch == attemptEpoch else {
+            await nextSession.retire()
+            return false
+        }
         activeConnectionToken = connectionToken
         self.expectedDeviceID = normalizedExpectedDeviceID
         session = nextSession
@@ -134,12 +150,21 @@ public final class C7D09A22DocumentedTransparentReceiveIngress {
     /// token. Delayed process-global Tuya callbacks therefore cannot be borrowed by a later
     /// attempt or a different selected device.
     public func retire() async {
-        if let session {
-            await session.retire()
+        lifecycleEpoch &+= 1
+        let retiredSession = detachActiveSession()
+        if let retiredSession {
+            await retiredSession.retire()
         }
+    }
+
+    /// Detach synchronously before any actor hop. This is the key reentrancy boundary: a stale
+    /// retirement continuation owns only the session it removed and cannot nil a newer begin.
+    private func detachActiveSession() -> C7D09A22AuthenticatedTransparentReceiveSession? {
+        let detached = session
         session = nil
         expectedDeviceID = nil
         activeConnectionToken = nil
+        return detached
     }
 
     public var hasActiveGeneration: Bool {
