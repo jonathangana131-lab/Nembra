@@ -25,7 +25,8 @@ public enum C7D09A22AuthenticatedTransparentReceiveAdmission {
         bindingGeneration: UInt64,
         receivedAtUptimeNanoseconds: UInt64
     ) -> Verdict {
-        guard snapshot.authenticationState == .authenticated else {
+        guard snapshot.authenticationState == .authenticated,
+              snapshot.hasActiveCallbackAuthority else {
             return .rejectNotAuthenticated
         }
         guard snapshot.authenticationMethod == .smartLifeAppSDK else {
