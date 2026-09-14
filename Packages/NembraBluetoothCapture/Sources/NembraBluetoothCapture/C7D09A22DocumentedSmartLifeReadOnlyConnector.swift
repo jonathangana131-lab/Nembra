@@ -311,9 +311,15 @@ public final class C7D09A22DocumentedSmartLifeReadOnlyConnector {
 
         try await ledger.observeCurrentConnection(for: observedToken)
 
+        // The actor mutation above is another suspension point. If this custody interval lost
+        // ownership while the mutation was in flight, the observation has already touched the
+        // package chronology. Fail closed by retiring the still-current exact token rather than
+        // allowing a retired/re-adopted interval to inherit stale >30 s liveness credit. If a newer
+        // token owns the ledger, this exact-token invalidation is rejected as stale and cannot harm it.
         guard lifecycleEpoch == observedLifecycle,
               activeToken == observedToken,
               activeIdentity == observedIdentity else {
+            try? await ledger.markInternalLifecycleFailure(for: observedToken)
             throw ConnectError.existingAuthenticatedSessionInvalid
         }
     }
