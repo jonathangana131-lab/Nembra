@@ -65,6 +65,38 @@ struct C7D09A22AuthenticatedSnapshotChronologyIngressTests {
 
     @Test
     @MainActor
+    func preferredBeginRejectsAuthenticatedSnapshotAfterCallbackAuthorityLoss() async throws {
+        let ledger = TuyaAuthenticatedReadOnlySessionLedger()
+        let token = try await ledger.beginConnection()
+        try await ledger.markAuthenticationStarted(for: token)
+        try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
+        let liveSnapshot = await ledger.currentPreflightSnapshot()
+        #expect(liveSnapshot.hasActiveCallbackAuthority)
+
+        let retiredAuthoritySnapshot = TuyaAuthenticatedReadOnlyPreflightSnapshot(
+            authenticationState: liveSnapshot.authenticationState,
+            authenticationMethod: liveSnapshot.authenticationMethod,
+            connectionStartedAtUptimeNanoseconds: liveSnapshot.connectionStartedAtUptimeNanoseconds,
+            authenticatedAtUptimeNanoseconds: liveSnapshot.authenticatedAtUptimeNanoseconds,
+            latestObservedUptimeNanoseconds: liveSnapshot.latestObservedUptimeNanoseconds,
+            applicationPayloadCount: liveSnapshot.applicationPayloadCount,
+            latestApplicationPayloadUptimeNanoseconds: liveSnapshot.latestApplicationPayloadUptimeNanoseconds,
+            connectionGeneration: liveSnapshot.connectionGeneration,
+            hasActiveCallbackAuthority: false
+        )
+
+        let ingress = C7D09A22DocumentedTransparentReceiveIngress()
+        #expect(!(await ingress.begin(
+            connectionToken: token,
+            expectedDeviceID: "demo",
+            authenticatedPreflightSnapshot: retiredAuthoritySnapshot
+        )))
+        #expect(!ingress.hasActiveGeneration)
+        #expect(ingress.capture(payload: Data([0x01]), callbackDeviceID: "demo") == nil)
+    }
+
+    @Test
+    @MainActor
     func explicitBeginRejectsCallerBackdatedConnectionStart() async throws {
         let ledger = TuyaAuthenticatedReadOnlySessionLedger()
         let token = try await ledger.beginConnection()
