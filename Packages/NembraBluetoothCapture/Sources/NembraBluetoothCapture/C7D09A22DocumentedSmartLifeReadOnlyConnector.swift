@@ -61,12 +61,45 @@ public final class C7D09A22DocumentedSmartLifeReadOnlyConnector {
     private var activeToken: TuyaReadOnlyConnectionToken?
     private var activeIdentity: LinkedDeviceIdentity?
     private var ownsActiveTokenLifecycle = false
+    private var lifecycleEpoch: UInt64 = 0
 
     public init(ledger: TuyaAuthenticatedReadOnlySessionLedger = .init()) {
         self.ledger = ledger
         self.handoff = C7D09A22DocumentedTransparentDelegateHandoff(
             preflightSnapshotProvider: { await ledger.currentPreflightSnapshot() }
         )
+    }
+
+    private func beginLifecycleIntent() -> UInt64 {
+        lifecycleEpoch &+= 1
+        return lifecycleEpoch
+    }
+
+    private func isCurrentLifecycle(
+        _ epoch: UInt64,
+        token: TuyaReadOnlyConnectionToken,
+        identity: LinkedDeviceIdentity,
+        ownsToken: Bool
+    ) -> Bool {
+        lifecycleEpoch == epoch &&
+            activeToken == token &&
+            activeIdentity == identity &&
+            ownsActiveTokenLifecycle == ownsToken
+    }
+
+    /// Clears only the state that was current when this helper began. This helper deliberately does
+    /// not advance `lifecycleEpoch`; its caller owns the lifecycle intent. Clearing state before the
+    /// first await prevents an older continuation from later mistaking newer custody for its own.
+    private func retireCurrentState() async {
+        let token = activeToken
+        let shouldEndOwnedToken = ownsActiveTokenLifecycle
+        activeToken = nil
+        activeIdentity = nil
+        ownsActiveTokenLifecycle = false
+        await handoff.retire()
+        if shouldEndOwnedToken, let token {
+            try? await ledger.endConnection(for: token)
+        }
     }
 
     /// Starts one exact linked-device generation using only the documented authenticated connect
@@ -76,47 +109,89 @@ public final class C7D09A22DocumentedSmartLifeReadOnlyConnector {
         identity: LinkedDeviceIdentity,
         sdkAuthenticatedConnect: @escaping SDKAuthenticatedConnect
     ) async throws -> TuyaReadOnlyConnectionToken {
-        await retire()
+        let lifecycle = beginLifecycleIntent()
+        await retireCurrentState()
+        guard lifecycleEpoch == lifecycle else {
+            throw ConnectError.existingAuthenticatedSessionInvalid
+        }
 
         let token = try await ledger.beginConnection()
+        guard lifecycleEpoch == lifecycle else {
+            try? await ledger.endConnection(for: token)
+            throw ConnectError.existingAuthenticatedSessionInvalid
+        }
+
         activeToken = token
         activeIdentity = identity
         ownsActiveTokenLifecycle = true
+
         do {
             try await ledger.markAuthenticationStarted(for: token)
+            guard isCurrentLifecycle(lifecycle, token: token, identity: identity, ownsToken: true) else {
+                throw ConnectError.existingAuthenticatedSessionInvalid
+            }
             try await sdkAuthenticatedConnect(identity.uuid, identity.productID)
         } catch {
             try? await ledger.markAuthenticationFailed(for: token)
-            activeToken = nil
-            activeIdentity = nil
-            ownsActiveTokenLifecycle = false
-            await handoff.retire()
+            if isCurrentLifecycle(lifecycle, token: token, identity: identity, ownsToken: true) {
+                activeToken = nil
+                activeIdentity = nil
+                ownsActiveTokenLifecycle = false
+                await handoff.retire()
+            }
+            if error as? ConnectError == .existingAuthenticatedSessionInvalid {
+                throw ConnectError.existingAuthenticatedSessionInvalid
+            }
             throw ConnectError.sdkAuthenticatedConnectionFailed
+        }
+
+        guard isCurrentLifecycle(lifecycle, token: token, identity: identity, ownsToken: true) else {
+            try? await ledger.markInternalLifecycleFailure(for: token)
+            throw ConnectError.existingAuthenticatedSessionInvalid
         }
 
         do {
             try await ledger.markAuthenticated(for: token, method: .smartLifeAppSDK)
         } catch {
             try? await ledger.markInternalLifecycleFailure(for: token)
-            activeToken = nil
-            activeIdentity = nil
-            ownsActiveTokenLifecycle = false
-            await handoff.retire()
+            if isCurrentLifecycle(lifecycle, token: token, identity: identity, ownsToken: true) {
+                activeToken = nil
+                activeIdentity = nil
+                ownsActiveTokenLifecycle = false
+                await handoff.retire()
+            }
             throw ConnectError.packageAuthenticationPromotionFailed
         }
 
+        guard isCurrentLifecycle(lifecycle, token: token, identity: identity, ownsToken: true) else {
+            try? await ledger.markInternalLifecycleFailure(for: token)
+            throw ConnectError.existingAuthenticatedSessionInvalid
+        }
+
         let authenticated = await ledger.currentPreflightSnapshot()
+        guard isCurrentLifecycle(lifecycle, token: token, identity: identity, ownsToken: true) else {
+            try? await ledger.markInternalLifecycleFailure(for: token)
+            throw ConnectError.existingAuthenticatedSessionInvalid
+        }
+
         guard await handoff.begin(
             connectionToken: token,
             expectedDeviceID: identity.deviceID,
             authenticatedPreflightSnapshot: authenticated
         ) else {
             try? await ledger.markInternalLifecycleFailure(for: token)
-            activeToken = nil
-            activeIdentity = nil
-            ownsActiveTokenLifecycle = false
-            await handoff.retire()
+            if isCurrentLifecycle(lifecycle, token: token, identity: identity, ownsToken: true) {
+                activeToken = nil
+                activeIdentity = nil
+                ownsActiveTokenLifecycle = false
+                await handoff.retire()
+            }
             throw ConnectError.documentedReceiveCustodyFailed
+        }
+
+        guard isCurrentLifecycle(lifecycle, token: token, identity: identity, ownsToken: true) else {
+            try? await ledger.markInternalLifecycleFailure(for: token)
+            throw ConnectError.existingAuthenticatedSessionInvalid
         }
 
         return token
@@ -133,7 +208,11 @@ public final class C7D09A22DocumentedSmartLifeReadOnlyConnector {
         identity: LinkedDeviceIdentity,
         connectionToken: TuyaReadOnlyConnectionToken
     ) async throws {
-        await retire()
+        let lifecycle = beginLifecycleIntent()
+        await retireCurrentState()
+        guard lifecycleEpoch == lifecycle else {
+            throw ConnectError.existingAuthenticatedSessionInvalid
+        }
 
         let authenticated: TuyaAuthenticatedReadOnlyPreflightSnapshot
         do {
@@ -142,7 +221,8 @@ public final class C7D09A22DocumentedSmartLifeReadOnlyConnector {
             throw ConnectError.existingAuthenticatedSessionInvalid
         }
 
-        guard authenticated.authenticationState == .authenticated,
+        guard lifecycleEpoch == lifecycle,
+              authenticated.authenticationState == .authenticated,
               authenticated.authenticationMethod == .smartLifeAppSDK,
               authenticated.connectionGeneration == connectionToken.diagnosticGeneration,
               authenticated.hasActiveCallbackAuthority,
@@ -156,8 +236,14 @@ public final class C7D09A22DocumentedSmartLifeReadOnlyConnector {
             expectedDeviceID: identity.deviceID,
             authenticatedPreflightSnapshot: authenticated
         ) else {
-            await handoff.retire()
+            if lifecycleEpoch == lifecycle {
+                await handoff.retire()
+            }
             throw ConnectError.documentedReceiveCustodyFailed
+        }
+
+        guard lifecycleEpoch == lifecycle else {
+            throw ConnectError.existingAuthenticatedSessionInvalid
         }
 
         activeToken = connectionToken
@@ -176,8 +262,8 @@ public final class C7D09A22DocumentedSmartLifeReadOnlyConnector {
     /// The package deliberately cannot advance its >30 s survival clock merely because this method
     /// was called. The app must first perform a fresh, read-only observation of the exact linked UUID
     /// in the official Smart Life SDK's local BLE state. After that async observation returns, the
-    /// exact package token and identity are revalidated to prevent a reconnect/re-arm race from
-    /// crediting liveness to a different physical connection.
+    /// exact package token, identity, and lifecycle intent are revalidated to prevent a reconnect,
+    /// retire, or same-token re-adoption race from crediting liveness to another custody interval.
     public func observeAuthenticatedConnection(
         sdkIsExactUUIDOnline: @escaping SDKExactUUIDOnlineCheck
     ) async throws {
@@ -185,6 +271,7 @@ public final class C7D09A22DocumentedSmartLifeReadOnlyConnector {
               let observedIdentity = activeIdentity else {
             throw TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection
         }
+        let observedLifecycle = lifecycleEpoch
 
         let isOnline: Bool
         do {
@@ -197,9 +284,10 @@ public final class C7D09A22DocumentedSmartLifeReadOnlyConnector {
             throw ConnectError.exactUUIDNotObservedOnline
         }
 
-        // The SDK check crosses an actor reentrancy point. Do not let a reconnect or re-arm that
-        // happened while it was in flight donate its observation to either connection generation.
-        guard activeToken == observedToken,
+        // The SDK check crosses an actor reentrancy point. Do not let a reconnect, retire, or
+        // same-token re-adoption that happened while it was in flight donate its observation.
+        guard lifecycleEpoch == observedLifecycle,
+              activeToken == observedToken,
               activeIdentity == observedIdentity else {
             throw ConnectError.existingAuthenticatedSessionInvalid
         }
@@ -211,7 +299,10 @@ public final class C7D09A22DocumentedSmartLifeReadOnlyConnector {
             throw ConnectError.existingAuthenticatedSessionInvalid
         }
 
-        guard authenticated.authenticationState == .authenticated,
+        guard lifecycleEpoch == observedLifecycle,
+              activeToken == observedToken,
+              activeIdentity == observedIdentity,
+              authenticated.authenticationState == .authenticated,
               authenticated.authenticationMethod == .smartLifeAppSDK,
               authenticated.connectionGeneration == observedToken.diagnosticGeneration,
               authenticated.hasActiveCallbackAuthority else {
@@ -219,6 +310,12 @@ public final class C7D09A22DocumentedSmartLifeReadOnlyConnector {
         }
 
         try await ledger.observeCurrentConnection(for: observedToken)
+
+        guard lifecycleEpoch == observedLifecycle,
+              activeToken == observedToken,
+              activeIdentity == observedIdentity else {
+            throw ConnectError.existingAuthenticatedSessionInvalid
+        }
     }
 
     public func currentPreflightSnapshot() async -> TuyaAuthenticatedReadOnlyPreflightSnapshot {
@@ -233,15 +330,8 @@ public final class C7D09A22DocumentedSmartLifeReadOnlyConnector {
     /// minted by `connect`, retirement closes only the package ledger generation and still does not
     /// issue a scooter/SDK disconnect command.
     public func retire() async {
-        let token = activeToken
-        let shouldEndOwnedToken = ownsActiveTokenLifecycle
-        activeToken = nil
-        activeIdentity = nil
-        ownsActiveTokenLifecycle = false
-        await handoff.retire()
-        if shouldEndOwnedToken, let token {
-            try? await ledger.endConnection(for: token)
-        }
+        _ = beginLifecycleIntent()
+        await retireCurrentState()
     }
 
     public var authorizesRawFD50CharacteristicCustody: Bool { false }
