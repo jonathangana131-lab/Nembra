@@ -186,15 +186,28 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
     /// same authenticated connection alive through that evidence. It still does not claim the
     /// underlying FD50 GATT characteristic or any DP meaning.
     public func fieldAttemptEvidence() async -> FieldAttemptEvidence {
-        guard let activeConnectionToken,
-              let currentSnapshot = await currentAuthenticatedSnapshotForArmedGeneration() else {
+        let expectedEpoch = lifecycleEpoch
+        guard let expectedToken = activeConnectionToken,
+              let currentSnapshot = await currentAuthenticatedSnapshotForArmedGeneration(),
+              lifecycleEpoch == expectedEpoch,
+              activeConnectionToken == expectedToken else {
             return FieldAttemptEvidence(
                 connectionGeneration: nil,
                 milestone: .blockedUnauthenticated,
                 artifact: nil
             )
         }
+
         let transparent = await handoff.diagnosticSnapshot()
+        guard lifecycleEpoch == expectedEpoch,
+              activeConnectionToken == expectedToken else {
+            return FieldAttemptEvidence(
+                connectionGeneration: nil,
+                milestone: .blockedUnauthenticated,
+                artifact: nil
+            )
+        }
+
         let milestone = C7D09A22DocumentedTransparentTransportMilestone.verdict(
             authenticatedPreflight: currentSnapshot,
             transparent: transparent
@@ -202,11 +215,11 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
         let artifact = transparent.map {
             C7D09A22DocumentedTransparentEvidenceArtifact(
                 snapshot: $0,
-                connectionGeneration: activeConnectionToken.diagnosticGeneration
+                connectionGeneration: expectedToken.diagnosticGeneration
             )
         }
         return FieldAttemptEvidence(
-            connectionGeneration: activeConnectionToken.diagnosticGeneration,
+            connectionGeneration: expectedToken.diagnosticGeneration,
             milestone: milestone,
             artifact: artifact
         )
@@ -224,14 +237,22 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
     /// documented Smart Life transport evidence only: the callback does not expose the underlying
     /// GATT service/characteristic tuple required for raw FD50 physical first acceptance.
     public func evidenceArtifact() async -> C7D09A22DocumentedTransparentEvidenceArtifact? {
-        guard await currentAuthenticatedSnapshotForArmedGeneration() != nil,
-              let activeConnectionToken,
-              let snapshot = await handoff.diagnosticSnapshot() else {
+        let expectedEpoch = lifecycleEpoch
+        guard let expectedToken = activeConnectionToken,
+              await currentAuthenticatedSnapshotForArmedGeneration() != nil,
+              lifecycleEpoch == expectedEpoch,
+              activeConnectionToken == expectedToken else {
+            return nil
+        }
+
+        guard let snapshot = await handoff.diagnosticSnapshot(),
+              lifecycleEpoch == expectedEpoch,
+              activeConnectionToken == expectedToken else {
             return nil
         }
         return C7D09A22DocumentedTransparentEvidenceArtifact(
             snapshot: snapshot,
-            connectionGeneration: activeConnectionToken.diagnosticGeneration
+            connectionGeneration: expectedToken.diagnosticGeneration
         )
     }
 
