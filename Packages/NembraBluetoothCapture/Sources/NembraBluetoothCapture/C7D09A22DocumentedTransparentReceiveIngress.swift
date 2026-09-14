@@ -22,9 +22,10 @@ public final class C7D09A22DocumentedTransparentReceiveIngress {
     private var activeConnectionToken: TuyaReadOnlyConnectionToken?
     private var expectedDeviceID: String?
     private var session: C7D09A22AuthenticatedTransparentReceiveSession?
-    /// Main-actor methods can still be re-entered while awaiting actor-owned session retirement.
-    /// Every begin/retire therefore owns a monotonic lifecycle epoch. A stale continuation may
-    /// finish retiring the session it detached, but it can never publish or erase newer custody.
+    /// Main-actor methods can still be re-entered while awaiting actor-owned session work.
+    /// Every begin/retire therefore owns a monotonic lifecycle epoch. Public async evidence reads
+    /// also seal this epoch so a stale continuation may never return evidence after a newer
+    /// lifecycle operation has taken ownership.
     private var lifecycleEpoch: UInt64 = 0
 
     public init() {}
@@ -122,18 +123,27 @@ public final class C7D09A22DocumentedTransparentReceiveIngress {
     }
 
     /// Actor-serialized admission for one already sealed callback receipt.
-    /// The caller supplies the package-owned authenticated snapshot for this same
-    /// connection generation; cross-generation and stale callbacks fail closed.
+    /// The caller supplies the package-owned authenticated snapshot for this same connection
+    /// generation; cross-generation and stale callbacks fail closed. The lifecycle epoch is
+    /// revalidated after the actor await so a record completed for an older session cannot be
+    /// returned after a reconnect, re-arm, or retirement has taken ownership.
     public func record(
         _ receipt: Receipt,
         preflightSnapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot
     ) async -> RecordResult? {
-        guard let session else { return nil }
-        return await session.recordDocumentedTransparentReceive(
+        guard let activeSession = session else { return nil }
+        let recordEpoch = lifecycleEpoch
+        let activeToken = activeConnectionToken
+        let result = await activeSession.recordDocumentedTransparentReceive(
             receipt,
             preflightSnapshot: preflightSnapshot,
-            activeConnectionToken: activeConnectionToken
+            activeConnectionToken: activeToken
         )
+        guard lifecycleEpoch == recordEpoch,
+              activeConnectionToken == activeToken else {
+            return nil
+        }
+        return result
     }
 
     /// Returns only non-secret, read-only transport diagnostics for the currently armed
@@ -142,10 +152,19 @@ public final class C7D09A22DocumentedTransparentReceiveIngress {
     /// payload arrived strictly beyond C7D09A22's historical ~30-second rejection horizon.
     ///
     /// A positive snapshot still does not establish the raw FD50 GATT characteristic tuple,
-    /// so it cannot authorize physical first acceptance or any DP/telemetry semantics.
+    /// so it cannot authorize physical first acceptance or any DP/telemetry semantics. The
+    /// lifecycle epoch and exact package token are sealed around the actor read so an older
+    /// diagnostic request cannot return evidence after newer custody takes over.
     public func diagnosticSnapshot() async -> DiagnosticSnapshot? {
-        guard let session else { return nil }
-        return await session.snapshot
+        guard let activeSession = session else { return nil }
+        let diagnosticEpoch = lifecycleEpoch
+        let activeToken = activeConnectionToken
+        let snapshot = await activeSession.snapshot
+        guard lifecycleEpoch == diagnosticEpoch,
+              activeConnectionToken == activeToken else {
+            return nil
+        }
+        return snapshot
     }
 
     /// Permanently retires the active generation and device identity before releasing its
