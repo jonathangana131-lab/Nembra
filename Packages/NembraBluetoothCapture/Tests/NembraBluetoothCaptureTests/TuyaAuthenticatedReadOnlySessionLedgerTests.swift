@@ -208,7 +208,11 @@ struct TuyaAuthenticatedReadOnlySessionLedgerTests {
             try await ledger.observeCurrentConnection(for: token)
         }
         #expect(await ledger.currentPreflightSnapshot() == sealed)
-        #expect(TuyaAuthenticatedReadOnlyPreflight.verdict(for: sealed) == .readyForStationaryMapping)
+        #expect(!sealed.hasActiveCallbackAuthority)
+        #expect(
+            TuyaAuthenticatedReadOnlyPreflight.verdict(for: sealed)
+                == .blocked(reason: "Current Bluetooth connection generation no longer owns callback authority.")
+        )
     }
 
     @Test("preflight cannot be sealed before canonical readiness")
