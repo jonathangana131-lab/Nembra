@@ -48,8 +48,8 @@ struct C7D09A22DocumentedSmartLifeVerifiedAccountPreflightTests {
         let token = try await C7D09A22DocumentedSmartLifeVerifiedAccountPreflight.connect(
             connector: connector,
             identity: identity(),
-            membershipSnapshot: membership(),
-            identityLeaseSnapshot: lease()
+            membershipSnapshotProvider: { membership() },
+            identityLeaseSnapshotProvider: { lease() }
         ) { observedUUID, observedProductID in
             connectCalls += 1
             #expect(observedUUID == uuid)
@@ -77,8 +77,8 @@ struct C7D09A22DocumentedSmartLifeVerifiedAccountPreflightTests {
             _ = try await C7D09A22DocumentedSmartLifeVerifiedAccountPreflight.connect(
                 connector: connector,
                 identity: identity(),
-                membershipSnapshot: membership(containsDevice: false),
-                identityLeaseSnapshot: lease()
+                membershipSnapshotProvider: { membership(containsDevice: false) },
+                identityLeaseSnapshotProvider: { lease() }
             ) { _, _ in
                 connectCalls += 1
             }
@@ -99,7 +99,7 @@ struct C7D09A22DocumentedSmartLifeVerifiedAccountPreflightTests {
 
     @Test
     @MainActor
-    func accountSwitchAfterMembershipProofBlocksBeforeSDKConnect() async throws {
+    func accountSwitchBeforeConnectBlocksBeforeSDKConnect() async throws {
         let connector = C7D09A22DocumentedSmartLifeReadOnlyConnector()
         var connectCalls = 0
 
@@ -107,8 +107,8 @@ struct C7D09A22DocumentedSmartLifeVerifiedAccountPreflightTests {
             _ = try await C7D09A22DocumentedSmartLifeVerifiedAccountPreflight.connect(
                 connector: connector,
                 identity: identity(),
-                membershipSnapshot: membership(),
-                identityLeaseSnapshot: lease(currentUID: "other-user", membershipUID: accountUID)
+                membershipSnapshotProvider: { membership() },
+                identityLeaseSnapshotProvider: { lease(currentUID: "other-user", membershipUID: accountUID) }
             ) { _, _ in
                 connectCalls += 1
             }
@@ -125,5 +125,45 @@ struct C7D09A22DocumentedSmartLifeVerifiedAccountPreflightTests {
         let snapshot = await connector.currentPreflightSnapshot()
         #expect(snapshot.authenticationState != .authenticated)
         #expect(snapshot.hasActiveCallbackAuthority == false)
+    }
+
+    @Test
+    @MainActor
+    func accountSwitchWhileSDKConnectIsInFlightRetiresAuthenticatedEvidenceCustody() async throws {
+        let connector = C7D09A22DocumentedSmartLifeReadOnlyConnector()
+        var accountChanged = false
+        var connectCalls = 0
+
+        do {
+            _ = try await C7D09A22DocumentedSmartLifeVerifiedAccountPreflight.connect(
+                connector: connector,
+                identity: identity(),
+                membershipSnapshotProvider: { membership() },
+                identityLeaseSnapshotProvider: {
+                    accountChanged
+                        ? lease(currentUID: "other-user", membershipUID: accountUID)
+                        : lease()
+                }
+            ) { observedUUID, observedProductID in
+                connectCalls += 1
+                #expect(observedUUID == uuid)
+                #expect(observedProductID == productID)
+                accountChanged = true
+            }
+            Issue.record("stale linked-account authority survived SDK connect")
+        } catch let error as C7D09A22DocumentedSmartLifeVerifiedAccountPreflight.Error {
+            if case .accountIdentityLeaseNotAuthorized = error {
+                // Expected: the post-connect fresh account read invalidates package evidence custody.
+            } else {
+                Issue.record("unexpected preflight error: \(error)")
+            }
+        }
+
+        #expect(connectCalls == 1)
+        let snapshot = await connector.currentPreflightSnapshot()
+        #expect(snapshot.authenticationState != .authenticated)
+        #expect(snapshot.hasActiveCallbackAuthority == false)
+        #expect(C7D09A22DocumentedSmartLifeVerifiedAccountPreflight.authorizesControlWrites == false)
+        #expect(C7D09A22DocumentedSmartLifeVerifiedAccountPreflight.authorizesPairingResetOrUnbind == false)
     }
 }
