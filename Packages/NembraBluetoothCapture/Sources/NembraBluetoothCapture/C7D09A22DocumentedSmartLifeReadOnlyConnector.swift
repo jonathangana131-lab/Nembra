@@ -87,6 +87,19 @@ public final class C7D09A22DocumentedSmartLifeReadOnlyConnector {
             ownsActiveTokenLifecycle == ownsToken
     }
 
+    /// Re-reads package authentication authority after the handoff has crossed its own async arm
+    /// boundary. This prevents a snapshot captured before `handoff.begin(...)` from authorizing an
+    /// apparently successful connector return after callback authority was revoked in the gap.
+    private func hasCurrentAuthenticatedAuthority(for token: TuyaReadOnlyConnectionToken) async -> Bool {
+        guard let snapshot = try? await ledger.currentPreflightSnapshot(for: token) else {
+            return false
+        }
+        return snapshot.authenticationState == .authenticated &&
+            snapshot.authenticationMethod == .smartLifeAppSDK &&
+            snapshot.connectionGeneration == token.diagnosticGeneration &&
+            snapshot.hasActiveCallbackAuthority
+    }
+
     /// Clears only the state that was current when this helper began. This helper deliberately does
     /// not advance `lifecycleEpoch`; its caller owns the lifecycle intent. Clearing state before the
     /// first await prevents an older continuation from later mistaking newer custody for its own.
@@ -189,8 +202,16 @@ public final class C7D09A22DocumentedSmartLifeReadOnlyConnector {
             throw ConnectError.documentedReceiveCustodyFailed
         }
 
-        guard isCurrentLifecycle(lifecycle, token: token, identity: identity, ownsToken: true) else {
+        guard isCurrentLifecycle(lifecycle, token: token, identity: identity, ownsToken: true),
+              await hasCurrentAuthenticatedAuthority(for: token),
+              isCurrentLifecycle(lifecycle, token: token, identity: identity, ownsToken: true) else {
             try? await ledger.markInternalLifecycleFailure(for: token)
+            if isCurrentLifecycle(lifecycle, token: token, identity: identity, ownsToken: true) {
+                activeToken = nil
+                activeIdentity = nil
+                ownsActiveTokenLifecycle = false
+                await handoff.retire()
+            }
             throw ConnectError.existingAuthenticatedSessionInvalid
         }
 
@@ -242,7 +263,12 @@ public final class C7D09A22DocumentedSmartLifeReadOnlyConnector {
             throw ConnectError.documentedReceiveCustodyFailed
         }
 
-        guard lifecycleEpoch == lifecycle else {
+        guard lifecycleEpoch == lifecycle,
+              await hasCurrentAuthenticatedAuthority(for: connectionToken),
+              lifecycleEpoch == lifecycle else {
+            if lifecycleEpoch == lifecycle {
+                await handoff.retire()
+            }
             throw ConnectError.existingAuthenticatedSessionInvalid
         }
 
