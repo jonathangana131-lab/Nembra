@@ -7,6 +7,11 @@ import Foundation
 /// (1) complete exact-device membership in the user's currently linked Tuya/Smart Life account and
 /// (2) an in-memory same-account identity lease before the SDK BLE connect is allowed to run.
 ///
+/// Account authority is read immediately before and again immediately after the asynchronous SDK
+/// connection. If membership/account identity changes while the SDK connect is in flight, package
+/// evidence custody is retired and the preflight fails closed. Retiring package custody never issues
+/// a scooter disconnect, pairing, activation, reset, removal, or unbind command.
+///
 /// No account credential, UID, local key, token, password, AppSecret, or session material is stored
 /// or exported by this wrapper. It does not add DP publish, transparent write, pairing, activation,
 /// reset, removal, unbind, or disconnect authority.
@@ -16,15 +21,14 @@ public enum C7D09A22DocumentedSmartLifeVerifiedAccountPreflight {
         case accountIdentityLeaseNotAuthorized(reason: String)
     }
 
-    @MainActor
-    @discardableResult
-    public static func connect(
-        connector: C7D09A22DocumentedSmartLifeReadOnlyConnector,
+    public typealias MembershipSnapshotProvider = @MainActor () async -> TuyaSDKAccountDeviceMembershipGate.Snapshot
+    public typealias IdentityLeaseSnapshotProvider = @MainActor () async -> TuyaSDKAccountIdentityLeaseGate.Snapshot
+
+    private static func verify(
         identity: C7D09A22DocumentedSmartLifeReadOnlyConnector.LinkedDeviceIdentity,
         membershipSnapshot: TuyaSDKAccountDeviceMembershipGate.Snapshot,
-        identityLeaseSnapshot: TuyaSDKAccountIdentityLeaseGate.Snapshot,
-        sdkAuthenticatedConnect: @escaping C7D09A22DocumentedSmartLifeReadOnlyConnector.SDKAuthenticatedConnect
-    ) async throws -> TuyaReadOnlyConnectionToken {
+        identityLeaseSnapshot: TuyaSDKAccountIdentityLeaseGate.Snapshot
+    ) throws {
         switch TuyaSDKAccountDeviceMembershipGate.verdict(
             expectedDeviceID: identity.deviceID,
             snapshot: membershipSnapshot
@@ -53,11 +57,42 @@ public enum C7D09A22DocumentedSmartLifeVerifiedAccountPreflight {
         case .blocked(let reason):
             throw Error.accountIdentityLeaseNotAuthorized(reason: reason)
         }
+    }
 
-        return try await connector.connect(
+    @MainActor
+    @discardableResult
+    public static func connect(
+        connector: C7D09A22DocumentedSmartLifeReadOnlyConnector,
+        identity: C7D09A22DocumentedSmartLifeReadOnlyConnector.LinkedDeviceIdentity,
+        membershipSnapshotProvider: @escaping MembershipSnapshotProvider,
+        identityLeaseSnapshotProvider: @escaping IdentityLeaseSnapshotProvider,
+        sdkAuthenticatedConnect: @escaping C7D09A22DocumentedSmartLifeReadOnlyConnector.SDKAuthenticatedConnect
+    ) async throws -> TuyaReadOnlyConnectionToken {
+        try verify(
+            identity: identity,
+            membershipSnapshot: await membershipSnapshotProvider(),
+            identityLeaseSnapshot: await identityLeaseSnapshotProvider()
+        )
+
+        let token = try await connector.connect(
             identity: identity,
             sdkAuthenticatedConnect: sdkAuthenticatedConnect
         )
+
+        do {
+            try verify(
+                identity: identity,
+                membershipSnapshot: await membershipSnapshotProvider(),
+                identityLeaseSnapshot: await identityLeaseSnapshotProvider()
+            )
+        } catch {
+            // This only drops package-owned evidence custody. The connector intentionally exposes no
+            // scooter/SDK disconnect, reset, removal, pairing, activation, or unbind command.
+            await connector.retire()
+            throw error
+        }
+
+        return token
     }
 
     public static var authorizesTelemetrySemantics: Bool { false }
