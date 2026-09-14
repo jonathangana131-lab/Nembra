@@ -12,7 +12,8 @@ struct C7D09A22DocumentedTransparentLivePreflightExactTokenSourceTests {
 
         #expect(source.contains("private var activeConnectionToken: TuyaReadOnlyConnectionToken?"))
         #expect(source.contains("self.activeConnectionToken = connectionToken"))
-        #expect(source.contains("activeConnectionToken.diagnosticGeneration"))
+        #expect(source.contains("activeConnectionToken == expectedToken"))
+        #expect(source.contains("expectedToken.diagnosticGeneration"))
         #expect(!source.contains("private var activeGeneration: UInt64?"))
     }
 
