@@ -2,6 +2,26 @@ import Foundation
 import Testing
 @testable import NembraBluetoothCapture
 
+@MainActor
+private final class C7D09A22SuspendedSnapshotGate {
+    private(set) var isWaiting = false
+    private var continuation: CheckedContinuation<TuyaAuthenticatedReadOnlyPreflightSnapshot?, Never>?
+
+    func snapshot() async -> TuyaAuthenticatedReadOnlyPreflightSnapshot? {
+        isWaiting = true
+        return await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func resume(returning snapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot?) {
+        isWaiting = false
+        let continuation = continuation
+        self.continuation = nil
+        continuation?.resume(returning: snapshot)
+    }
+}
+
 struct C7D09A22DocumentedTransparentDelegateHandoffTests {
     private func authenticatedContext() async throws -> (
         ledger: TuyaAuthenticatedReadOnlySessionLedger,
@@ -90,5 +110,53 @@ struct C7D09A22DocumentedTransparentDelegateHandoffTests {
 
         #expect(snapshotRequestCount == 0)
         #expect(await handoff.diagnosticSnapshot() == nil)
+    }
+
+    @Test
+    @MainActor
+    func callbackSuspendedInSnapshotLookupCannotRecordAfterRetirementStarts() async throws {
+        let context = try await authenticatedContext()
+        let gate = C7D09A22SuspendedSnapshotGate()
+        var recordCallbackCount = 0
+
+        let handoff = C7D09A22DocumentedTransparentDelegateHandoff(
+            preflightSnapshotProvider: {
+                await gate.snapshot()
+            },
+            recordObserver: { result in
+                if result != nil { recordCallbackCount += 1 }
+            }
+        )
+
+        #expect(await handoff.begin(
+            connectionToken: context.token,
+            expectedDeviceID: "demo",
+            authenticatedPreflightSnapshot: context.snapshot
+        ))
+
+        handoff.receive(payload: Data([0xC7, 0xD0, 0x9A, 0x22]), callbackDeviceID: "demo")
+        for _ in 0..<20 where !gate.isWaiting {
+            await Task.yield()
+        }
+        #expect(gate.isWaiting)
+
+        let retireTask = Task { @MainActor in
+            await handoff.retire()
+        }
+        for _ in 0..<20 where handoff.hasActiveGeneration {
+            await Task.yield()
+        }
+        #expect(!handoff.hasActiveGeneration)
+
+        gate.resume(returning: context.snapshot)
+        await retireTask.value
+        for _ in 0..<5 { await Task.yield() }
+
+        #expect(recordCallbackCount == 0)
+        #expect(await handoff.diagnosticSnapshot() == nil)
+        #expect(!handoff.authorizesPhysicalFirstAcceptance)
+        #expect(!handoff.authorizesTelemetrySemantics)
+        #expect(!handoff.authorizesControlWrites)
+        #expect(!handoff.authorizesPairingResetOrUnbind)
     }
 }
