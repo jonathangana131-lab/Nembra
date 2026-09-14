@@ -30,8 +30,8 @@ public final class C7D09A22DocumentedTransparentDelegateHandoff {
     private var isRetired = true
     private var pendingRecordTail: Task<Void, Never>?
     /// Main-actor lifecycle methods are re-entrant across `await`. A monotonic epoch prevents a
-    /// stale begin/retire continuation or callback task from changing or borrowing authority after
-    /// a newer lifecycle operation has taken ownership.
+    /// stale begin/retire continuation, callback task, or diagnostic read from changing, borrowing,
+    /// or reporting authority after a newer lifecycle operation has taken ownership.
     private var lifecycleEpoch: UInt64 = 0
 
     public init(
@@ -121,11 +121,24 @@ public final class C7D09A22DocumentedTransparentDelegateHandoff {
 
     /// Non-secret transport diagnostics only. A positive result still does not prove a raw FD50
     /// GATT service/characteristic tuple and therefore cannot satisfy physical first acceptance.
+    /// The diagnostic read is bound to the lifecycle epoch that requested it: a reconnect, re-arm,
+    /// or retirement at either suspension point invalidates the read rather than allowing an older
+    /// caller to observe a newer generation's evidence.
     public func diagnosticSnapshot() async -> C7D09A22DocumentedTransparentReceiveIngress.DiagnosticSnapshot? {
         guard !isRetired else { return nil }
+        let diagnosticEpoch = lifecycleEpoch
         await drainAcceptedRecords()
-        guard !isRetired else { return nil }
-        return await ingress.diagnosticSnapshot()
+        guard !isRetired,
+              lifecycleEpoch == diagnosticEpoch else {
+            return nil
+        }
+
+        let snapshot = await ingress.diagnosticSnapshot()
+        guard !isRetired,
+              lifecycleEpoch == diagnosticEpoch else {
+            return nil
+        }
+        return snapshot
     }
 
     /// Retires before releasing package custody. Any callback already sealed but not yet recorded
