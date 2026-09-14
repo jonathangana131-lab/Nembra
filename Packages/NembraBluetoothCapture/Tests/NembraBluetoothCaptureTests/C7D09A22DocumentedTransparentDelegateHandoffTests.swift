@@ -159,4 +159,57 @@ struct C7D09A22DocumentedTransparentDelegateHandoffTests {
         #expect(!handoff.authorizesControlWrites)
         #expect(!handoff.authorizesPairingResetOrUnbind)
     }
+
+    @Test
+    @MainActor
+    func diagnosticReadStartedUnderOlderLifecycleCannotReturnAfterRearmBegins() async throws {
+        let first = try await authenticatedContext()
+        let second = try await authenticatedContext()
+        let gate = C7D09A22SuspendedSnapshotGate()
+
+        let handoff = C7D09A22DocumentedTransparentDelegateHandoff(
+            preflightSnapshotProvider: {
+                await gate.snapshot()
+            }
+        )
+
+        #expect(await handoff.begin(
+            connectionToken: first.token,
+            expectedDeviceID: "demo",
+            authenticatedPreflightSnapshot: first.snapshot
+        ))
+
+        handoff.receive(payload: Data([0xC7, 0xD0, 0x9A, 0x22]), callbackDeviceID: "demo")
+        for _ in 0..<20 where !gate.isWaiting {
+            await Task.yield()
+        }
+        #expect(gate.isWaiting)
+
+        let oldDiagnostic = Task { @MainActor in
+            await handoff.diagnosticSnapshot()
+        }
+        await Task.yield()
+
+        let rearm = Task { @MainActor in
+            await handoff.begin(
+                connectionToken: second.token,
+                expectedDeviceID: "demo",
+                authenticatedPreflightSnapshot: second.snapshot
+            )
+        }
+        for _ in 0..<20 where handoff.hasActiveGeneration {
+            await Task.yield()
+        }
+        #expect(!handoff.hasActiveGeneration)
+
+        gate.resume(returning: first.snapshot)
+
+        #expect(await oldDiagnostic.value == nil)
+        #expect(await rearm.value)
+        #expect(handoff.hasActiveGeneration)
+        #expect(!handoff.authorizesPhysicalFirstAcceptance)
+        #expect(!handoff.authorizesTelemetrySemantics)
+        #expect(!handoff.authorizesControlWrites)
+        #expect(!handoff.authorizesPairingResetOrUnbind)
+    }
 }
