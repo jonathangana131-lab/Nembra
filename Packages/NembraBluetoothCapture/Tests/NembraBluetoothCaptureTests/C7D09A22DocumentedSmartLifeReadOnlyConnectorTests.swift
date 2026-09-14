@@ -55,12 +55,14 @@ private final class C7D09A22BlockingLedgerClock: @unchecked Sendable {
         return result
     }
 
+    private func hasBlocked() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return blocked
+    }
+
     func waitUntilBlocked() async {
-        while true {
-            lock.lock()
-            let isBlocked = blocked
-            lock.unlock()
-            if isBlocked { return }
+        while !hasBlocked() {
             await Task.yield()
         }
     }
