@@ -333,7 +333,9 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
             return nil
         }
 
-        let current = await preflightSnapshotProvider()
+        guard let current = await preflightSnapshotProvider() else {
+            return nil
+        }
         guard lifecycleEpoch == expectedEpoch,
               activeConnectionToken == expectedToken,
               current.authenticationState == .authenticated,
