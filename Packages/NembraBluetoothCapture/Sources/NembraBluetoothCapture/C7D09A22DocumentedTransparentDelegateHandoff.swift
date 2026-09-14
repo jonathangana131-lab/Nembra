@@ -8,9 +8,11 @@ import Foundation
 /// asynchronous task, preserving the exact package generation and Tuya device identity that
 /// existed at the SDK callback boundary.
 ///
-/// The later snapshot lookup is deliberately package-owned and may race with retirement. That is
-/// safe: `record(_:preflightSnapshot:)` revalidates generation/authentication custody and rejects
-/// stale or cross-generation receipts. This type never retries a rejected callback against a newer
+/// The later snapshot lookup is deliberately package-owned and may race with retirement. The
+/// callback also carries this handoff's monotonic lifecycle epoch across every suspension point,
+/// so bytes sealed under an older begin/retire lifecycle cannot resume under newer callback
+/// authority. `record(_:preflightSnapshot:)` independently revalidates generation/authentication
+/// custody as a second boundary. This type never retries a rejected callback against a newer
 /// snapshot or generation.
 ///
 /// This handoff is read-only. It has no DP publish, transparent-write, pairing, reset, removal, or
@@ -28,8 +30,8 @@ public final class C7D09A22DocumentedTransparentDelegateHandoff {
     private var isRetired = true
     private var pendingRecordTail: Task<Void, Never>?
     /// Main-actor lifecycle methods are re-entrant across `await`. A monotonic epoch prevents a
-    /// stale begin/retire continuation from changing retirement state or touching ingress after a
-    /// newer lifecycle operation has taken ownership.
+    /// stale begin/retire continuation or callback task from changing or borrowing authority after
+    /// a newer lifecycle operation has taken ownership.
     private var lifecycleEpoch: UInt64 = 0
 
     public init(
@@ -70,25 +72,40 @@ public final class C7D09A22DocumentedTransparentDelegateHandoff {
 
     /// Call synchronously from Tuya's documented transparent-receive delegate callback.
     ///
-    /// Generation/device custody is captured before the asynchronous task is created. Empty,
-    /// wrong-device, unowned, or retired callbacks therefore never reach the snapshot provider.
-    /// Accepted receipts are serialized into one package-owned tail so a later diagnostic read can
-    /// deterministically observe every callback accepted before that read without scheduler sleeps
-    /// or retries. The tail never retries rejected data and never changes generation ownership.
+    /// Generation/device custody and this handoff's lifecycle epoch are captured before the
+    /// asynchronous task is created. Empty, wrong-device, unowned, retired, or superseded
+    /// callbacks therefore never reach the record boundary. Accepted receipts are serialized into
+    /// one package-owned tail so a later diagnostic read can deterministically observe every
+    /// callback accepted before that read without scheduler sleeps or retries. The tail never
+    /// retries rejected data and never changes generation ownership.
     public func receive(payload: Data, callbackDeviceID: String) {
         guard !isRetired,
               let receipt = ingress.capture(payload: payload, callbackDeviceID: callbackDeviceID) else {
             return
         }
 
+        let receiptEpoch = lifecycleEpoch
         let previousRecord = pendingRecordTail
         let recordTask = Task { @MainActor [weak self] in
             await previousRecord?.value
-            guard let self, !self.isRetired,
-                  let snapshot = await self.preflightSnapshotProvider() else {
+            guard let self,
+                  !self.isRetired,
+                  self.lifecycleEpoch == receiptEpoch else {
                 return
             }
+
+            let snapshot = await self.preflightSnapshotProvider()
+            guard !self.isRetired,
+                  self.lifecycleEpoch == receiptEpoch,
+                  let snapshot else {
+                return
+            }
+
             let result = await self.ingress.record(receipt, preflightSnapshot: snapshot)
+            guard !self.isRetired,
+                  self.lifecycleEpoch == receiptEpoch else {
+                return
+            }
             self.recordObserver?(result)
         }
         pendingRecordTail = recordTask
@@ -112,7 +129,8 @@ public final class C7D09A22DocumentedTransparentDelegateHandoff {
     }
 
     /// Retires before releasing package custody. Any callback already sealed but not yet recorded
-    /// is discarded by the local retirement check and by the ingress/session generation checks.
+    /// is discarded by the local retirement/epoch checks and by the ingress/session generation
+    /// checks.
     public func retire() async {
         lifecycleEpoch &+= 1
         let retireEpoch = lifecycleEpoch
