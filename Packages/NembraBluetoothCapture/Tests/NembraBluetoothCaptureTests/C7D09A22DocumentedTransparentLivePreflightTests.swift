@@ -2,6 +2,50 @@ import Foundation
 import Testing
 @testable import NembraBluetoothCapture
 
+private actor SuspendedLivePreflightSnapshotProvider {
+    private let snapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot
+    private var shouldSuspendNextSnapshot = false
+    private var isSuspended = false
+    private var suspensionWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+    init(snapshot: TuyaAuthenticatedReadOnlyPreflightSnapshot) {
+        self.snapshot = snapshot
+    }
+
+    func suspendNextSnapshot() {
+        shouldSuspendNextSnapshot = true
+    }
+
+    func snapshotValue() async -> TuyaAuthenticatedReadOnlyPreflightSnapshot {
+        guard shouldSuspendNextSnapshot else { return snapshot }
+        shouldSuspendNextSnapshot = false
+        isSuspended = true
+        let waiters = suspensionWaiters
+        suspensionWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+        await withCheckedContinuation { continuation in
+            releaseContinuation = continuation
+        }
+        return snapshot
+    }
+
+    func waitUntilSuspended() async {
+        guard !isSuspended else { return }
+        await withCheckedContinuation { continuation in
+            suspensionWaiters.append(continuation)
+        }
+    }
+
+    func release() {
+        releaseContinuation?.resume()
+        releaseContinuation = nil
+        isSuspended = false
+    }
+}
+
 struct C7D09A22DocumentedTransparentLivePreflightTests {
     private func authenticatedContext() async throws -> (
         ledger: TuyaAuthenticatedReadOnlySessionLedger,
@@ -178,6 +222,40 @@ struct C7D09A22DocumentedTransparentLivePreflightTests {
         )))
         #expect(!preflight.hasActiveAuthenticatedGeneration)
         #expect(preflight.activeDiagnosticGeneration == nil)
+        #expect(await preflight.evidenceArtifact() == nil)
+        #expect(await preflight.transportMilestone() == .blockedUnauthenticated)
+    }
+
+    @Test
+    @MainActor
+    func snapshotRefreshSuspendedAcrossRetireCannotRegainAcceptanceAuthority() async throws {
+        let context = try await authenticatedContext()
+        let provider = SuspendedLivePreflightSnapshotProvider(snapshot: context.snapshot)
+        let preflight = C7D09A22DocumentedTransparentLivePreflight(
+            preflightSnapshotProvider: { await provider.snapshotValue() }
+        )
+
+        #expect(await preflight.arm(
+            connectionToken: context.token,
+            expectedDeviceID: "demo",
+            authenticatedPreflightSnapshot: context.snapshot
+        ))
+        preflight.receiveDocumentedSmartLifeCallback(payload: Data([0xc7, 0xd0]), deviceID: "demo")
+        _ = try await waitForPayloadCount(1, in: preflight)
+
+        await provider.suspendNextSnapshot()
+        let evidenceTask = Task { await preflight.fieldAttemptEvidence() }
+        await provider.waitUntilSuspended()
+
+        #expect(await preflight.retire(connectionToken: context.token))
+        #expect(!preflight.hasActiveAuthenticatedGeneration)
+        await provider.release()
+
+        let evidence = await evidenceTask.value
+        #expect(evidence.connectionGeneration == nil)
+        #expect(evidence.milestone == .blockedUnauthenticated)
+        #expect(evidence.artifact == nil)
+        #expect(!evidence.satisfiesDocumentedAuthenticatedTransportAcceptance)
         #expect(await preflight.evidenceArtifact() == nil)
         #expect(await preflight.transportMilestone() == .blockedUnauthenticated)
     }
