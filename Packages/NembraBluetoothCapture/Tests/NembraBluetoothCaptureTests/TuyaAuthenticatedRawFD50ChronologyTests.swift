@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import NembraBluetoothCapture
 
@@ -58,13 +59,13 @@ struct TuyaAuthenticatedRawFD50ChronologyTests {
                 connectionGeneration: generation,
                 characteristicUUID: TuyaAuthenticatedRawFD50Acceptance.deviceToAppNotifyCharacteristicUUID,
                 observedAtUptimeNanoseconds: authenticatedAt + 1,
-                payloadByteCount: 4
+                payload: Data(repeating: 0xA5, count: 4)
             ),
             TuyaAuthenticatedRawFD50Acceptance.Observation(
                 connectionGeneration: generation,
                 characteristicUUID: TuyaAuthenticatedRawFD50Acceptance.deviceToAppNotifyCharacteristicUUID,
                 observedAtUptimeNanoseconds: authenticatedAt + 31_000_000_001,
-                payloadByteCount: 8
+                payload: Data(repeating: 0x5A, count: 8)
             )
         ]
     }
