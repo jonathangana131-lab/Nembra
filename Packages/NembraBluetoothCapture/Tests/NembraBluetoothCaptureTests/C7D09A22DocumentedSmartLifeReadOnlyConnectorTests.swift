@@ -1,3 +1,5 @@
+import Dispatch
+import Foundation
 import Testing
 @testable import NembraBluetoothCapture
 
@@ -20,6 +22,51 @@ private final class C7D09A22ConnectorSuspensionGate {
     func resume() {
         continuation?.resume()
         continuation = nil
+    }
+}
+
+private final class C7D09A22BlockingLedgerClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private let release = DispatchSemaphore(value: 0)
+    private var value: UInt64 = 1_000_000_000
+    private var blockNextRead = false
+    private var blocked = false
+
+    func armNextRead() {
+        lock.lock()
+        blockNextRead = true
+        lock.unlock()
+    }
+
+    func now() -> UInt64 {
+        lock.lock()
+        value &+= 1_000_000
+        let result = value
+        let shouldBlock = blockNextRead
+        if shouldBlock {
+            blockNextRead = false
+            blocked = true
+        }
+        lock.unlock()
+
+        if shouldBlock {
+            release.wait()
+        }
+        return result
+    }
+
+    func waitUntilBlocked() async {
+        while true {
+            lock.lock()
+            let isBlocked = blocked
+            lock.unlock()
+            if isBlocked { return }
+            await Task.yield()
+        }
+    }
+
+    func resume() {
+        release.signal()
     }
 }
 
@@ -175,6 +222,54 @@ struct C7D09A22DocumentedSmartLifeReadOnlyConnectorTests {
         #expect(rejected)
         let after = await connector.currentPreflightSnapshot()
         #expect(after.latestObservedUptimeNanoseconds == before.latestObservedUptimeNanoseconds)
+    }
+
+    @Test
+    @MainActor
+    func staleLivenessMutationAfterEvidenceRetirementFailsClosed() async throws {
+        let identity = try c7d09a22Identity()
+        let clock = C7D09A22BlockingLedgerClock()
+        let ledger = TuyaAuthenticatedReadOnlySessionLedger(nowUptimeNanoseconds: { clock.now() })
+        let liveAppToken = try await ledger.beginConnection()
+        try await ledger.markAuthenticationStarted(for: liveAppToken)
+        try await ledger.markAuthenticated(for: liveAppToken, method: .smartLifeAppSDK)
+
+        let connector = C7D09A22DocumentedSmartLifeReadOnlyConnector(ledger: ledger)
+        try await connector.adoptAuthenticatedSession(
+            identity: identity,
+            connectionToken: liveAppToken
+        )
+
+        clock.armNextRead()
+        let staleObservation = Task { @MainActor in
+            do {
+                try await connector.observeAuthenticatedConnection { uuid in
+                    #expect(uuid == identity.uuid)
+                    return true
+                }
+                return false
+            } catch {
+                return error as? C7D09A22DocumentedSmartLifeReadOnlyConnector.ConnectError ==
+                    .existingAuthenticatedSessionInvalid
+            }
+        }
+
+        await clock.waitUntilBlocked()
+
+        // Retirement changes connector custody while the actor-owned chronology mutation is
+        // already in flight. Because this is an adopted token, retirement itself must not end the
+        // live app's ledger session; only the stale completed mutation is allowed to fail it closed.
+        await connector.retire()
+        clock.resume()
+
+        #expect(await staleObservation.value)
+        let after = await ledger.currentPreflightSnapshot()
+        #expect(after.hasActiveCallbackAuthority == false)
+        if case .failed = after.authenticationState {
+            // Expected: stale liveness credit cannot remain usable for physical acceptance.
+        } else {
+            Issue.record("stale liveness mutation left the exact token usable")
+        }
     }
 
     @Test
