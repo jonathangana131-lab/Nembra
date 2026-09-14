@@ -167,13 +167,28 @@ public final class C7D09A22DocumentedTransparentLivePreflight {
     /// authenticated SDK connection survived beyond the historical ~30 second rejection window.
     /// A refreshed snapshot is accepted only when it still represents the exact armed connection
     /// instance and authentication boundary; reconnects and cross-generation snapshots fail closed.
+    ///
+    /// Both actor suspension points are fenced. A reconnect/retire that happens after the session
+    /// refresh but before the transparent ledger returns must not let the older authenticated cut
+    /// evaluate bytes owned by a newer connection attempt.
     public func transportMilestone() async -> C7D09A22DocumentedTransparentTransportMilestone.Verdict {
-        guard let currentSnapshot = await currentAuthenticatedSnapshotForArmedGeneration() else {
+        let expectedEpoch = lifecycleEpoch
+        guard let expectedToken = activeConnectionToken,
+              let currentSnapshot = await currentAuthenticatedSnapshotForArmedGeneration(),
+              lifecycleEpoch == expectedEpoch,
+              activeConnectionToken == expectedToken else {
             return .blockedUnauthenticated
         }
+
+        let transparent = await handoff.diagnosticSnapshot()
+        guard lifecycleEpoch == expectedEpoch,
+              activeConnectionToken == expectedToken else {
+            return .blockedUnauthenticated
+        }
+
         return C7D09A22DocumentedTransparentTransportMilestone.verdict(
             authenticatedPreflight: currentSnapshot,
-            transparent: await handoff.diagnosticSnapshot()
+            transparent: transparent
         )
     }
 
