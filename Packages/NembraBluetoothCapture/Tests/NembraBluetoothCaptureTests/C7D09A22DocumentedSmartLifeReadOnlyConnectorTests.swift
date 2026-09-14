@@ -1,6 +1,28 @@
 import Testing
 @testable import NembraBluetoothCapture
 
+@MainActor
+private final class C7D09A22ConnectorSuspensionGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var entered = false
+
+    func suspend() async {
+        entered = true
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func waitUntilEntered() async {
+        while !entered {
+            await Task.yield()
+        }
+    }
+
+    func resume() {
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
 struct C7D09A22DocumentedSmartLifeReadOnlyConnectorTests {
     private func c7d09a22Identity() throws -> C7D09A22DocumentedSmartLifeReadOnlyConnector.LinkedDeviceIdentity {
         try #require(
@@ -38,6 +60,45 @@ struct C7D09A22DocumentedSmartLifeReadOnlyConnectorTests {
         #expect(connector.authorizesTelemetrySemantics == false)
         #expect(connector.authorizesControlWrites == false)
         #expect(connector.authorizesPairingResetOrUnbind == false)
+    }
+
+    @Test
+    @MainActor
+    func staleFailedConnectCannotRetireNewerAuthenticatedCustody() async throws {
+        enum ExpectedFailure: Error { case staleAttempt }
+
+        let identity = try c7d09a22Identity()
+        let connector = C7D09A22DocumentedSmartLifeReadOnlyConnector()
+        let gate = C7D09A22ConnectorSuspensionGate()
+
+        let staleAttempt = Task { @MainActor in
+            do {
+                _ = try await connector.connect(identity: identity) { _, _ in
+                    await gate.suspend()
+                    throw ExpectedFailure.staleAttempt
+                }
+                return false
+            } catch {
+                return true
+            }
+        }
+
+        await gate.waitUntilEntered()
+
+        let currentToken = try await connector.connect(identity: identity) { _, _ in }
+        let beforeStaleResume = await connector.currentPreflightSnapshot()
+        #expect(beforeStaleResume.connectionGeneration == currentToken.diagnosticGeneration)
+        #expect(beforeStaleResume.authenticationState == .authenticated)
+        #expect(beforeStaleResume.hasActiveCallbackAuthority)
+
+        gate.resume()
+        #expect(await staleAttempt.value)
+
+        let afterStaleResume = await connector.currentPreflightSnapshot()
+        #expect(afterStaleResume.connectionGeneration == currentToken.diagnosticGeneration)
+        #expect(afterStaleResume.authenticationState == .authenticated)
+        #expect(afterStaleResume.authenticationMethod == .smartLifeAppSDK)
+        #expect(afterStaleResume.hasActiveCallbackAuthority)
     }
 
     @Test
