@@ -166,4 +166,85 @@ struct C7D09A22DocumentedSmartLifeVerifiedAccountPreflightTests {
         #expect(C7D09A22DocumentedSmartLifeVerifiedAccountPreflight.authorizesControlWrites == false)
         #expect(C7D09A22DocumentedSmartLifeVerifiedAccountPreflight.authorizesPairingResetOrUnbind == false)
     }
+
+    @Test
+    @MainActor
+    func exactLinkedAccountProofPermitsReadOnlyLivenessObservation() async throws {
+        let connector = C7D09A22DocumentedSmartLifeReadOnlyConnector()
+        let linkedIdentity = try identity()
+        var onlineChecks = 0
+
+        _ = try await C7D09A22DocumentedSmartLifeVerifiedAccountPreflight.connect(
+            connector: connector,
+            identity: linkedIdentity,
+            membershipSnapshotProvider: { membership() },
+            identityLeaseSnapshotProvider: { lease() }
+        ) { _, _ in }
+
+        try await C7D09A22DocumentedSmartLifeVerifiedAccountPreflight.observeAuthenticatedConnection(
+            connector: connector,
+            identity: linkedIdentity,
+            membershipSnapshotProvider: { membership() },
+            identityLeaseSnapshotProvider: { lease() }
+        ) { observedUUID in
+            onlineChecks += 1
+            #expect(observedUUID == uuid)
+            return true
+        }
+
+        #expect(onlineChecks == 1)
+        let snapshot = await connector.currentPreflightSnapshot()
+        #expect(snapshot.authenticationState == .authenticated)
+        #expect(snapshot.authenticationMethod == .smartLifeAppSDK)
+        #expect(snapshot.hasActiveCallbackAuthority)
+    }
+
+    @Test
+    @MainActor
+    func accountSwitchDuringLivenessObservationCannotDonateSurvivalCredit() async throws {
+        let connector = C7D09A22DocumentedSmartLifeReadOnlyConnector()
+        let linkedIdentity = try identity()
+        var accountChanged = false
+        var onlineChecks = 0
+
+        _ = try await C7D09A22DocumentedSmartLifeVerifiedAccountPreflight.connect(
+            connector: connector,
+            identity: linkedIdentity,
+            membershipSnapshotProvider: { membership() },
+            identityLeaseSnapshotProvider: { lease() }
+        ) { _, _ in }
+
+        do {
+            try await C7D09A22DocumentedSmartLifeVerifiedAccountPreflight.observeAuthenticatedConnection(
+                connector: connector,
+                identity: linkedIdentity,
+                membershipSnapshotProvider: { membership() },
+                identityLeaseSnapshotProvider: {
+                    accountChanged
+                        ? lease(currentUID: "other-user", membershipUID: accountUID)
+                        : lease()
+                }
+            ) { observedUUID in
+                onlineChecks += 1
+                #expect(observedUUID == uuid)
+                accountChanged = true
+                return true
+            }
+            Issue.record("stale linked-account authority donated authenticated liveness")
+        } catch let error as C7D09A22DocumentedSmartLifeVerifiedAccountPreflight.Error {
+            if case .accountIdentityLeaseNotAuthorized = error {
+                // Expected: fresh post-observation authority no longer matches the linked account.
+            } else {
+                Issue.record("unexpected preflight error: \(error)")
+            }
+        }
+
+        #expect(onlineChecks == 1)
+        let snapshot = await connector.currentPreflightSnapshot()
+        #expect(snapshot.authenticationState != .authenticated)
+        #expect(snapshot.hasActiveCallbackAuthority == false)
+        #expect(C7D09A22DocumentedSmartLifeVerifiedAccountPreflight.authorizesTelemetrySemantics == false)
+        #expect(C7D09A22DocumentedSmartLifeVerifiedAccountPreflight.authorizesControlWrites == false)
+        #expect(C7D09A22DocumentedSmartLifeVerifiedAccountPreflight.authorizesPairingResetOrUnbind == false)
+    }
 }
