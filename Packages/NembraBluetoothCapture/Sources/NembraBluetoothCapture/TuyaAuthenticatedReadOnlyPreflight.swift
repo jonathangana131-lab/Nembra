@@ -117,9 +117,10 @@ public enum TuyaAuthenticatedReadOnlyPreflight {
         guard snapshot.connectionGeneration > 0 else {
             return .blocked(reason: "No current Bluetooth connection generation.")
         }
-        guard snapshot.hasActiveCallbackAuthority else {
-            return .blocked(reason: "Current Bluetooth connection generation no longer owns callback authority.")
-        }
+        // Preserve the ledger's canonical terminal identity before considering live callback
+        // authority. A terminal snapshot has already lost mutation authority by construction;
+        // replacing its transport/authentication reason with a generic authority message erases
+        // useful physical evidence without making the gate any safer.
         switch snapshot.authenticationState {
         case let .unavailable(reason), let .failed(reason):
             return .blocked(reason: reason)
@@ -129,6 +130,9 @@ public enum TuyaAuthenticatedReadOnlyPreflight {
             return .blocked(reason: "Tuya authentication is still in progress.")
         case .authenticated:
             break
+        }
+        guard snapshot.hasActiveCallbackAuthority else {
+            return .blocked(reason: "Current Bluetooth connection generation no longer owns callback authority.")
         }
         guard let authenticationMethod = snapshot.authenticationMethod else {
             return .blocked(reason: "Authenticated state has no accepted Tuya authentication provenance.")
