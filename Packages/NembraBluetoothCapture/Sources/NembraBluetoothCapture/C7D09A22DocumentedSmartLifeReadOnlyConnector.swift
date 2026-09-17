@@ -307,6 +307,20 @@ public final class C7D09A22DocumentedSmartLifeReadOnlyConnector {
         }
 
         guard isOnline else {
+            // A negative observation for the exact linked UUID breaks the physical continuity
+            // required by the >30 s / 45 s acceptance horizon. Do not leave this generation's
+            // callback authority armed and allow a later online sample to bridge across an
+            // observed offline interval. This retires package evidence only; it does not issue an
+            // SDK disconnect, reconnect, write, reset, removal, or unbind command.
+            if lifecycleEpoch == observedLifecycle,
+               activeToken == observedToken,
+               activeIdentity == observedIdentity {
+                try? await ledger.markObservationContinuityInvalidated(for: observedToken)
+                activeToken = nil
+                activeIdentity = nil
+                ownsActiveTokenLifecycle = false
+                await handoff.retire()
+            }
             throw ConnectError.exactUUIDNotObservedOnline
         }
 

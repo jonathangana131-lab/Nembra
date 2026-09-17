@@ -152,12 +152,11 @@ struct C7D09A22DocumentedSmartLifeReadOnlyConnectorTests {
 
     @Test
     @MainActor
-    func exactUUIDSDKOnlineObservationIsRequiredBeforeSurvivalClockAdvances() async throws {
+    func exactUUIDSDKOfflineObservationRetiresContinuityInsteadOfBridgingSurvival() async throws {
         let identity = try c7d09a22Identity()
         let connector = C7D09A22DocumentedSmartLifeReadOnlyConnector()
         _ = try await connector.connect(identity: identity) { _, _ in }
 
-        let before = await connector.currentPreflightSnapshot()
         var observedUUID: String?
         var rejectedOfflineObservation = false
 
@@ -177,24 +176,17 @@ struct C7D09A22DocumentedSmartLifeReadOnlyConnectorTests {
         #expect(rejectedOfflineObservation)
         #expect(observedUUID == identity.uuid)
         let afterRejectedObservation = await connector.currentPreflightSnapshot()
+        #expect(afterRejectedObservation.latestObservedUptimeNanoseconds != nil)
+        #expect(afterRejectedObservation.authenticationMethod == .smartLifeAppSDK)
+        #expect(!afterRejectedObservation.hasActiveCallbackAuthority)
         #expect(
-            afterRejectedObservation.latestObservedUptimeNanoseconds ==
-                before.latestObservedUptimeNanoseconds
+            afterRejectedObservation.authenticationState ==
+                .failed(reason: "Authenticated observation continuity was invalidated by a long observation gap.")
         )
 
-        try await connector.observeAuthenticatedConnection { uuid in
-            #expect(uuid == identity.uuid)
-            return true
+        await #expect(throws: TuyaAuthenticatedReadOnlySessionLedger.MutationError.noActiveConnection) {
+            try await connector.observeAuthenticatedConnection { _ in true }
         }
-
-        let afterAcceptedObservation = await connector.currentPreflightSnapshot()
-        #expect(afterAcceptedObservation.latestObservedUptimeNanoseconds != nil)
-        if let previous = before.latestObservedUptimeNanoseconds,
-           let accepted = afterAcceptedObservation.latestObservedUptimeNanoseconds {
-            #expect(accepted >= previous)
-        }
-        #expect(afterAcceptedObservation.authenticationMethod == .smartLifeAppSDK)
-        #expect(afterAcceptedObservation.hasActiveCallbackAuthority)
     }
 
     @Test
