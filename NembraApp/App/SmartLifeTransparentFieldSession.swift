@@ -63,6 +63,28 @@ final class SmartLifeTransparentFieldSession {
         let authorizesPairingResetOrUnbind: Bool
     }
 
+    private struct ReceiveDiagnosticProjection: Codable {
+        struct Payload: Codable {
+            let receivedAtUptimeNanoseconds: UInt64
+            let hex: String
+        }
+        let schemaVersion: Int
+        let connectionGeneration: String
+        let tuyaDeviceID: String
+        let sdkConnectionStartedAtUptimeNanoseconds: UInt64
+        let payloadCount: Int
+        let totalByteCount: Int
+        let latestPayloadAtUptimeNanoseconds: UInt64?
+        let hasPayloadStrictlyBeyondHistoricalRejectionHorizon: Bool
+        let retainedPayloads: [Payload]
+        let retainedPayloadByteCount: Int
+        let omittedPayloadCount: Int
+        let authorizesRawFD50CharacteristicCustody: Bool
+        let authorizesPhysicalFirstAcceptance: Bool
+        let authorizesTelemetrySemantics: Bool
+        let authorizesControlWrites: Bool
+    }
+
     private let preflight: C7D09A22DocumentedTransparentLivePreflight
     private let lease: SmartLifeTransparentReceiveLease
 
@@ -243,7 +265,55 @@ final class SmartLifeTransparentFieldSession {
     func diagnosticSnapshot(
         for connectionToken: Generation
     ) async -> C7D09A22DocumentedTransparentReceiveIngress.DiagnosticSnapshot? {
-        await lease.diagnosticSnapshot(for: connectionToken)
+        guard let snapshot = await lease.diagnosticSnapshot(for: connectionToken) else {
+            return nil
+        }
+        persistDiagnosticSnapshotBestEffort(snapshot, connectionToken: connectionToken)
+        return snapshot
+    }
+
+    /// Persist the raw receive diagnostic cut independently of transport acceptance. This is
+    /// especially useful for the first real authenticated field run: if the connection later
+    /// dies before satisfying the >30 s acceptance horizon, the app still leaves a credential-
+    /// free record proving whether documented Tuya callback bytes were observed at all. This
+    /// remains observational and cannot change account binding or device configuration.
+    private func persistDiagnosticSnapshotBestEffort(
+        _ snapshot: C7D09A22DocumentedTransparentReceiveIngress.DiagnosticSnapshot,
+        connectionToken: Generation
+    ) {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+
+        do {
+            let projection = ReceiveDiagnosticProjection(
+                schemaVersion: 1,
+                connectionGeneration: connectionToken.diagnosticGeneration,
+                tuyaDeviceID: snapshot.tuyaDeviceID,
+                sdkConnectionStartedAtUptimeNanoseconds: snapshot.sdkConnectionStartedAtUptimeNanoseconds,
+                payloadCount: snapshot.payloadCount,
+                totalByteCount: snapshot.totalByteCount,
+                latestPayloadAtUptimeNanoseconds: snapshot.latestPayloadAtUptimeNanoseconds,
+                hasPayloadStrictlyBeyondHistoricalRejectionHorizon: snapshot.hasPayloadStrictlyBeyondHistoricalRejectionHorizon,
+                retainedPayloads: snapshot.retainedPayloads.map {
+                    .init(receivedAtUptimeNanoseconds: $0.receivedAtUptimeNanoseconds, hex: $0.hex)
+                },
+                retainedPayloadByteCount: snapshot.retainedPayloadByteCount,
+                omittedPayloadCount: snapshot.omittedPayloadCount,
+                authorizesRawFD50CharacteristicCustody: false,
+                authorizesPhysicalFirstAcceptance: false,
+                authorizesTelemetrySemantics: false,
+                authorizesControlWrites: false
+            )
+            let data = try encoder.encode(projection)
+            let directory = try physicalTruthDirectory()
+            let url = directory.appendingPathComponent(
+                "authenticated-transparent-receive-generation-\(connectionToken.diagnosticGeneration).json",
+                isDirectory: false
+            )
+            try data.write(to: url, options: .atomic)
+        } catch {
+            // Diagnostic persistence has no transport or scooter authority.
+        }
     }
 
     /// Exact-generation terminal retirement. Before releasing the receive lease, persist one
@@ -254,6 +324,7 @@ final class SmartLifeTransparentFieldSession {
     /// Stale callbacks still cannot retire a later field generation because the underlying lease
     /// remains generation-fenced.
     func terminalLifecycleDidOccur(for connectionToken: Generation) async {
+        _ = await diagnosticSnapshot(for: connectionToken)
         _ = await fieldAttemptEvidence(for: connectionToken)
         await lease.terminalLifecycleDidOccur(for: connectionToken)
     }
