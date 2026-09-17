@@ -80,6 +80,10 @@ jobs:
         shell: bash
         env:
           VALIDATED_HEAD_SHA: ${{ steps.source.outputs.sha }}
+          # NembraCore is iOS 17+/macOS 14+ and uses Swift concurrency throughout.
+          # Pin the package-test deployment target so SwiftPM cannot fall back to
+          # a pre-concurrency macOS target on the hosted Xcode runner.
+          MACOSX_DEPLOYMENT_TARGET: '14.0'
         run: |
           set +e
           set -o pipefail
