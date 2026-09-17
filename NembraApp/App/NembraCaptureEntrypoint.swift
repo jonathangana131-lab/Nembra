@@ -424,6 +424,29 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     struct Export: Codable {
+        struct DocumentedAuthenticatedTransportEvidence: Codable {
+            struct Payload: Codable {
+                let sequence: Int
+                let receivedAtUptimeNanoseconds: UInt64
+                let elapsedSinceSDKConnectionNanoseconds: UInt64
+                let byteCount: Int
+                let hex: String
+            }
+
+            let connectionGeneration: UInt64
+            let tuyaDeviceID: String
+            let payloads: [Payload]
+            let payloadCount: Int
+            let totalByteCount: Int
+            let omittedPayloadCount: Int
+            let hasPayloadStrictlyBeyondHistoricalRejectionHorizon: Bool
+            let satisfiesDocumentedAuthenticatedTransportAcceptance: Bool
+            let authorizesRawFD50CharacteristicCustody: Bool
+            let authorizesPhysicalFirstAcceptance: Bool
+            let authorizesTelemetrySemantics: Bool
+            let authorizesControlWrites: Bool
+        }
+
         let schemaVersion: Int
         let purpose: String
         let exportedAt: Date
@@ -452,6 +475,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         let preflightVerdict: String
         let applicationValueRepresentation: String
         let rawFD50BytesCaptured: Bool
+        let documentedAuthenticatedTransportEvidence: DocumentedAuthenticatedTransportEvidence?
         let secretsRedacted: Bool
         let dpQueriesSent: Bool
         let dpCommandsSent: Bool
@@ -608,6 +632,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
         }
     )
     private var transparentTransportAcceptanceLoggedGeneration: UInt64?
+    private var latestTransparentFieldEvidence: Export.DocumentedAuthenticatedTransportEvidence?
 #endif
 
     init(device: TuyaAccountBridge.LinkedDevice) {
@@ -1944,6 +1969,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
                 }
 
 #if canImport(ThingSmartHomeKit)
+                if let transparentEvidence = await self.transparentFieldSession.fieldAttemptEvidence(for: token) {
+                    self.latestTransparentFieldEvidence = Self.exportTransportEvidence(transparentEvidence)
+                }
                 if self.transparentTransportAcceptanceLoggedGeneration != token.diagnosticGeneration,
                    let transparentEvidence = await self.transparentFieldSession.fieldAttemptEvidence(for: token),
                    transparentEvidence.satisfiesDocumentedAuthenticatedTransportAcceptance,
@@ -2002,6 +2030,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
 
     private func recordObservedTransportLoss(token: TuyaReadOnlyConnectionToken) async {
         guard currentConnectionToken == token else { return }
+#if canImport(ThingSmartHomeKit)
+        await retainTransparentEvidenceForDiagnostics(token: token)
+#endif
         do {
             try await sessionLedger.endConnection(for: token)
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
@@ -2045,6 +2076,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
         kind: String
     ) async {
         guard currentConnectionToken == token else { return }
+#if canImport(ThingSmartHomeKit)
+        await retainTransparentEvidenceForDiagnostics(token: token)
+#endif
         do {
             try await sessionLedger.markSourceAuthorityInvalidated(for: token)
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
@@ -2112,6 +2146,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
         kind: String
     ) async {
         guard currentConnectionToken == token else { return }
+#if canImport(ThingSmartHomeKit)
+        await retainTransparentEvidenceForDiagnostics(token: token)
+#endif
         do {
             try await sessionLedger.markObservationContinuityInvalidated(for: token)
         } catch TuyaAuthenticatedReadOnlySessionLedger.MutationError.monotonicClockRegressed {
@@ -2155,6 +2192,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
         kind: String
     ) async {
         guard currentConnectionToken == token else { return }
+#if canImport(ThingSmartHomeKit)
+        await retainTransparentEvidenceForDiagnostics(token: token)
+#endif
         do {
             try await sessionLedger.markInternalLifecycleFailure(for: token)
         } catch {
@@ -2194,7 +2234,13 @@ private final class SecureLinkController: NSObject, ObservableObject {
     }
 
     private func makeExport(exportedAt: Date, phase: Phase, events: [Event]) -> Export {
-        Export(
+        let documentedAuthenticatedTransportEvidence: Export.DocumentedAuthenticatedTransportEvidence?
+#if canImport(ThingSmartHomeKit)
+        documentedAuthenticatedTransportEvidence = latestTransparentFieldEvidence
+#else
+        documentedAuthenticatedTransportEvidence = nil
+#endif
+        return Export(
             schemaVersion: 10,
             purpose: "Sanitized Tuya authenticated read-only stationary preflight",
             exportedAt: exportedAt,
@@ -2223,6 +2269,7 @@ private final class SecureLinkController: NSObject, ObservableObject {
             preflightVerdict: preflightVerdictText,
             applicationValueRepresentation: "ThingSmartDeviceDelegate dpsUpdate values projected with String(describing:); application-level SDK data, not byte-exact or raw FD50 transport",
             rawFD50BytesCaptured: false,
+            documentedAuthenticatedTransportEvidence: documentedAuthenticatedTransportEvidence,
             secretsRedacted: true,
             dpQueriesSent: false,
             dpCommandsSent: false,
@@ -2230,6 +2277,50 @@ private final class SecureLinkController: NSObject, ObservableObject {
             events: events
         )
     }
+
+#if canImport(ThingSmartHomeKit)
+    /// Preserve the latest exact-generation documented Tuya receive bytes inside the normal
+    /// shareable diagnostic export before terminal teardown retires callback custody. This is
+    /// transport evidence only: the projection itself keeps every FD50/semantic/write authority
+    /// flag false, so a failed physical attempt can be analyzed without inventing scooter DPs.
+    private func retainTransparentEvidenceForDiagnostics(token: TuyaReadOnlyConnectionToken) async {
+        guard currentConnectionToken == token else { return }
+        if let evidence = await transparentFieldSession.fieldAttemptEvidence(for: token),
+           let projection = Self.exportTransportEvidence(evidence),
+           projection.connectionGeneration == token.diagnosticGeneration {
+            latestTransparentFieldEvidence = projection
+        }
+    }
+
+    private static func exportTransportEvidence(
+        _ evidence: C7D09A22DocumentedTransparentLivePreflight.FieldAttemptEvidence
+    ) -> Export.DocumentedAuthenticatedTransportEvidence? {
+        guard let generation = evidence.connectionGeneration,
+              let artifact = evidence.artifact else { return nil }
+        return Export.DocumentedAuthenticatedTransportEvidence(
+            connectionGeneration: generation,
+            tuyaDeviceID: artifact.tuyaDeviceID,
+            payloads: artifact.retainedPayloads.map {
+                .init(
+                    sequence: $0.sequence,
+                    receivedAtUptimeNanoseconds: $0.receivedAtUptimeNanoseconds,
+                    elapsedSinceSDKConnectionNanoseconds: $0.elapsedSinceSDKConnectionNanoseconds,
+                    byteCount: $0.byteCount,
+                    hex: $0.hex
+                )
+            },
+            payloadCount: artifact.payloadCount,
+            totalByteCount: artifact.totalByteCount,
+            omittedPayloadCount: artifact.omittedPayloadCount,
+            hasPayloadStrictlyBeyondHistoricalRejectionHorizon: artifact.hasPayloadStrictlyBeyondHistoricalRejectionHorizon,
+            satisfiesDocumentedAuthenticatedTransportAcceptance: evidence.satisfiesDocumentedAuthenticatedTransportAcceptance,
+            authorizesRawFD50CharacteristicCustody: false,
+            authorizesPhysicalFirstAcceptance: false,
+            authorizesTelemetrySemantics: false,
+            authorizesControlWrites: false
+        )
+    }
+#endif
 
     func prepareExport() {
         diagnosticExportError = nil
@@ -2289,6 +2380,9 @@ private final class SecureLinkController: NSObject, ObservableObject {
         acceptanceCutIsClosed = false
         sealedAcceptedEventPrefix = nil
         sealedAcceptedExport = nil
+#if canImport(ThingSmartHomeKit)
+        latestTransparentFieldEvidence = nil
+#endif
         abandonPackageCorrelation()
         correlationProvenance = nil
         targetCorrelationMethod = nil
