@@ -740,6 +740,40 @@ final class NembraAppTests: XCTestCase {
     }
 
     @MainActor
+    func testPhysicalProfileCannotPresentUnverifiedModeOrHeadlightSemantics() async {
+        let physicalProfile = VehicleProfile.maxshotV1SPro
+        let service = SimulatedScooterService(
+            initialState: SimulatedScooterService.state(for: .riding),
+            profile: physicalProfile,
+            commandLatencyNanoseconds: 0
+        )
+        let store = VehicleStore(
+            service: service,
+            initialState: await service.snapshot(),
+            shouldAutoConnectOnStart: false
+        )
+
+        XCTAssertNotNil(store.state.rideMode)
+        XCTAssertNotNil(store.state.isHeadlightOn)
+        XCTAssertNil(store.displayRideMode)
+        XCTAssertNil(store.displayHeadlightState)
+    }
+
+    @MainActor
+    func testSimulatorQAMayPresentSyntheticModeAndHeadlightSemantics() async {
+        let state = SimulatedScooterService.state(for: .riding)
+        let service = SimulatedScooterService(initialState: state, commandLatencyNanoseconds: 0)
+        let store = VehicleStore(
+            service: service,
+            initialState: state,
+            shouldAutoConnectOnStart: false
+        )
+
+        XCTAssertEqual(store.displayRideMode, state.rideMode)
+        XCTAssertEqual(store.displayHeadlightState, state.isHeadlightOn)
+    }
+
+    @MainActor
     func testSpeedEvidenceGapKeyAloneCannotEnterSimulation() async {
         let environment = [AppBootstrap.simulationSpeedEvidenceGapEnvironmentKey: "1"]
         XCTAssertNil(AppBootstrap.simulationScenario(arguments: ["Nembra"], environment: environment))

@@ -280,7 +280,7 @@ struct VehicleControlsView: View {
                     title: "Off",
                     subtitle: "Confirmed option",
                     icon: "lightbulb.slash",
-                    selected: vehicle.state.isHeadlightOn == false,
+                    selected: vehicle.displayHeadlightState == false,
                     pending: vehicle.pendingCommands.contains(.headlight)
                 ) {
                     await vehicle.setHeadlight(false)
@@ -291,7 +291,7 @@ struct VehicleControlsView: View {
                     title: "On",
                     subtitle: "Confirmed option",
                     icon: "lightbulb.fill",
-                    selected: vehicle.state.isHeadlightOn == true,
+                    selected: vehicle.displayHeadlightState == true,
                     pending: vehicle.pendingCommands.contains(.headlight)
                 ) {
                     await vehicle.setHeadlight(true)
@@ -344,7 +344,7 @@ struct VehicleControlsView: View {
                         title: mode.displayName,
                         subtitle: "Confirmed profile option",
                         icon: modeIcon(mode),
-                        selected: vehicle.state.rideMode == mode,
+                        selected: vehicle.displayRideMode == mode,
                         pending: vehicle.pendingRideMode == mode
                     ) {
                         await vehicle.setMode(mode)

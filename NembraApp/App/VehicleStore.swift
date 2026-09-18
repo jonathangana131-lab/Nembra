@@ -133,6 +133,22 @@ final class VehicleStore {
             && state.dataAvailability == .live
     }
 
+    /// User-facing ride-mode state is semantic data, not generic transport data.
+    /// Until physical DP meaning is established by authenticated hardware evidence,
+    /// only the explicitly synthetic QA source may present a named ride mode.
+    var displayRideMode: RideMode? {
+        guard profile == .simulatorQA, service is SimulatedScooterService else { return nil }
+        return state.rideMode
+    }
+
+    /// Headlight state has the same semantic boundary as ride mode. A boolean found
+    /// in an authenticated payload is not a light mapping by itself, so physical
+    /// profiles remain unknown until that mapping is independently verified.
+    var displayHeadlightState: Bool? {
+        guard profile == .simulatorQA, service is SimulatedScooterService else { return nil }
+        return state.isHeadlightOn
+    }
+
     /// Simulator-only qualified live speed for truth-sensitive presentation and
     /// stopped-control admission. Aggregate connection can only remove authority;
     /// it never promotes a cached speed number into current evidence.

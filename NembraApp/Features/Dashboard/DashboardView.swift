@@ -62,7 +62,7 @@ struct DashboardView: View {
     @State private var batteryReadout: DashboardBatteryReadout = .charge
 
     var body: some View {
-        let personality = DashboardModePersonality.resolved(for: vehicle.state.rideMode)
+        let personality = DashboardModePersonality.resolved(for: vehicle.displayRideMode)
         let composition = DashboardCockpitComposition.resolved(for: dynamicTypeSize)
 
         ZStack {
@@ -417,7 +417,7 @@ struct DashboardView: View {
                 .tracking(1.6)
                 .foregroundStyle(.secondary)
 
-            Text(vehicle.state.rideMode?.displayName.uppercased() ?? "—")
+            Text(vehicle.displayRideMode?.displayName.uppercased() ?? "—")
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(isRetainedVehicleData ? Color.secondary : Color.white)
                 .lineLimit(1)
@@ -428,7 +428,7 @@ struct DashboardView: View {
                 .frame(width: personality.modeMarkerWidth, height: colorSchemeContrast == .increased ? 3 : 2)
                 .accessibilityHidden(true)
 
-            if isRetainedVehicleData, vehicle.state.rideMode != nil {
+            if isRetainedVehicleData, vehicle.displayRideMode != nil {
                 Text("LAST KNOWN")
                     .font(.caption2.weight(.bold))
                     .tracking(1.2)
@@ -448,7 +448,7 @@ struct DashboardView: View {
             if !supportedModes.isEmpty {
                 HStack(spacing: 5) {
                     ForEach(supportedModes, id: \.self) { mode in
-                        let isSelected = vehicle.state.rideMode == mode
+                        let isSelected = vehicle.displayRideMode == mode
                         let isPending = vehicle.pendingRideMode == mode
 
                         Button {
@@ -624,7 +624,7 @@ struct DashboardView: View {
     }
 
     private var modeAccessibilityValue: String {
-        guard let mode = vehicle.state.rideMode?.displayName else { return "Unknown" }
+        guard let mode = vehicle.displayRideMode?.displayName else { return "Unknown" }
         return isRetainedVehicleData ? "Last known \(mode)" : mode
     }
 
