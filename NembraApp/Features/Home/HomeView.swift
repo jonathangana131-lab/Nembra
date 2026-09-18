@@ -873,18 +873,18 @@ struct HomeView: View {
 
     private var hasRetainedSummaryData: Bool {
         guard vehicle.state.dataAvailability == .retained else { return false }
-        return vehicle.state.batteryPercent != nil ||
+        return vehicle.batteryDisplayPercent != nil ||
             vehicle.state.tripKilometers != nil ||
             vehicle.state.rideMode != nil
     }
 
     private var batteryText: String {
-        guard let value = vehicle.state.batteryPercent else { return "—" }
+        guard let value = vehicle.batteryDisplayPercent else { return "—" }
         return "\(value)%"
     }
 
     private var batteryAccessibilityValue: String {
-        guard let value = vehicle.state.batteryPercent else { return "Unavailable" }
+        guard let value = vehicle.batteryDisplayPercent else { return "Unavailable" }
         return isBatteryLow ? "\(value) percent, low battery" : "\(value) percent"
     }
 
@@ -931,12 +931,12 @@ struct HomeView: View {
     }
 
     private var isBatteryLow: Bool {
-        guard let battery = vehicle.state.batteryPercent else { return false }
+        guard let battery = vehicle.batteryDisplayPercent else { return false }
         return battery <= 15
     }
 
     private var batteryIcon: String {
-        guard let battery = vehicle.state.batteryPercent else { return "battery.0percent" }
+        guard let battery = vehicle.batteryDisplayPercent else { return "battery.0percent" }
         switch battery {
         case ...15: return "battery.0percent"
         case ...35: return "battery.25percent"
