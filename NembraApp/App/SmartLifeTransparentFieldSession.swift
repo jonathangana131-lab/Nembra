@@ -81,8 +81,10 @@ final class SmartLifeTransparentFieldSession {
         let omittedPayloadCount: Int
         let authorizesRawFD50CharacteristicCustody: Bool
         let authorizesPhysicalFirstAcceptance: Bool
+        let authorizesStationaryMapping: Bool
         let authorizesTelemetrySemantics: Bool
         let authorizesControlWrites: Bool
+        let authorizesPairingResetOrUnbind: Bool
     }
 
     private let preflight: C7D09A22DocumentedTransparentLivePreflight
@@ -301,8 +303,10 @@ final class SmartLifeTransparentFieldSession {
                 omittedPayloadCount: snapshot.omittedPayloadCount,
                 authorizesRawFD50CharacteristicCustody: false,
                 authorizesPhysicalFirstAcceptance: false,
+                authorizesStationaryMapping: false,
                 authorizesTelemetrySemantics: false,
-                authorizesControlWrites: false
+                authorizesControlWrites: false,
+                authorizesPairingResetOrUnbind: false
             )
             let data = try encoder.encode(projection)
             let directory = try physicalTruthDirectory()
