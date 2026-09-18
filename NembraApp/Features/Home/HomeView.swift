@@ -199,9 +199,12 @@ struct HomeView: View {
                 Label("LAST KNOWN", systemImage: "clock.arrow.circlepath")
                     .accessibilityLabel("Last known vehicle data")
                     .accessibilityHint("These values may be stale until fresh scooter data arrives.")
-            } else if vehicle.state.connection == .connected && vehicle.state.dataAvailability == .live {
+            } else if vehicle.hasLiveVehicleCommandAuthority {
                 Label("LIVE", systemImage: "wave.3.right")
-                    .accessibilityLabel("Live vehicle data")
+                    .accessibilityLabel("Verified live vehicle data")
+            } else if vehicle.state.connection == .connected && vehicle.state.dataAvailability == .live {
+                Label("READ ONLY", systemImage: "checkmark.shield")
+                    .accessibilityLabel("Current read-only vehicle evidence")
             } else {
                 Label("WAITING", systemImage: "ellipsis")
                     .accessibilityLabel("Waiting for vehicle data")
@@ -252,7 +255,7 @@ struct HomeView: View {
 
             heroContextMetric(
                 title: "Mode",
-                value: vehicle.state.rideMode?.displayName ?? "—",
+                value: vehicle.displayRideMode?.displayName ?? "—",
                 icon: "gauge.with.dots.needle.67percent",
                 identifier: "home.metric.mode"
             )
@@ -321,7 +324,7 @@ struct HomeView: View {
     }
 
     private var readinessIcon: String {
-        if vehicle.state.connection == .connected && vehicle.state.dataAvailability == .live {
+        if vehicle.hasLiveVehicleCommandAuthority {
             return "checkmark"
         }
         if vehicle.state.connection == .connecting || vehicle.state.connection == .reconnecting {
@@ -331,8 +334,11 @@ struct HomeView: View {
     }
 
     private var readinessTitle: String {
-        if vehicle.state.connection == .connected && vehicle.state.dataAvailability == .live {
+        if vehicle.hasLiveVehicleCommandAuthority {
             return "Vehicle live"
+        }
+        if vehicle.state.connection == .connected && vehicle.state.dataAvailability == .live {
+            return "Connected · read only"
         }
         if vehicle.state.connection == .connected {
             return "Vehicle connected"
@@ -344,8 +350,11 @@ struct HomeView: View {
     }
 
     private var readinessDetail: String {
-        if vehicle.state.connection == .connected && vehicle.state.dataAvailability == .live {
+        if vehicle.hasLiveVehicleCommandAuthority {
             return "Fresh vehicle evidence is available."
+        }
+        if vehicle.state.connection == .connected && vehicle.state.dataAvailability == .live {
+            return "Current transport evidence is available, but vehicle controls are not yet verified."
         }
         if vehicle.state.connection == .connected && hasRetainedSummaryData {
             return "Last known values remain read-only while fresh vehicle data is unavailable."
@@ -395,13 +404,13 @@ struct HomeView: View {
             actionControl(
                 title: "Light",
                 subtitle: lightSubtitle,
-                icon: vehicle.state.isHeadlightOn == true ? "lightbulb.fill" : "lightbulb",
-                active: vehicle.state.isHeadlightOn == true,
+                icon: vehicle.displayHeadlightState == true ? "lightbulb.fill" : "lightbulb",
+                active: vehicle.displayHeadlightState == true,
                 pending: vehicle.pendingCommands.contains(.headlight),
-                available: vehicle.state.isHeadlightOn != nil,
+                available: vehicle.displayHeadlightState != nil,
                 enabled: true
             ) {
-                guard let isOn = vehicle.state.isHeadlightOn else { return }
+                guard let isOn = vehicle.displayHeadlightState else { return }
                 Task { await vehicle.setHeadlight(!isOn) }
             }
         }
@@ -516,7 +525,7 @@ struct HomeView: View {
     }
 
     private func modeChoice(_ mode: RideMode) -> some View {
-        let isSelected = vehicle.state.rideMode == mode
+        let isSelected = vehicle.displayRideMode == mode
         let isPending = vehicle.pendingRideMode == mode
 
         return Button {
@@ -875,7 +884,7 @@ struct HomeView: View {
         guard vehicle.state.dataAvailability == .retained else { return false }
         return vehicle.batteryDisplayPercent != nil ||
             vehicle.state.tripKilometers != nil ||
-            vehicle.state.rideMode != nil
+            vehicle.displayRideMode != nil
     }
 
     private var batteryText: String {
@@ -898,7 +907,7 @@ struct HomeView: View {
     }
 
     private var lightSubtitle: String {
-        guard let enabled = vehicle.state.isHeadlightOn else { return "Unknown" }
+        guard let enabled = vehicle.displayHeadlightState else { return "Unknown" }
         return enabled ? "On" : "Off"
     }
 
