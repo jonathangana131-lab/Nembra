@@ -693,6 +693,7 @@ final class NembraAppTests: XCTestCase {
         XCTAssertNil(store.state.speedKilometersPerHour)
         XCTAssertNil(store.state.batteryPercent)
         XCTAssertEqual(store.speedInstrumentInterpolationPolicy, .disabled)
+        XCTAssertFalse(store.hasLiveVehicleCommandAuthority)
     }
 
     @MainActor
@@ -787,6 +788,7 @@ final class NembraAppTests: XCTestCase {
             shouldAutoConnectOnStart: false
         )
         await store.start()
+        XCTAssertTrue(store.hasLiveVehicleCommandAuthority)
 
         let firstCommand = Task { await store.setHeadlight(true) }
         await gate.waitUntilEntered()

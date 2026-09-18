@@ -122,10 +122,15 @@ final class VehicleStore {
     }
 
     /// Commands require current-session confirmed vehicle evidence in addition to a
-    /// connected transport. Retained state is explicitly read-only, and a bare BLE
-    /// connection with no accepted values does not manufacture command authority.
+    /// connected transport AND an explicitly verified command-capability source.
+    /// Today only the synthetic Simulator QA service owns that contract. Physical
+    /// profiles remain read-only until authenticated hardware evidence establishes
+    /// their command semantics; generic live telemetry must never promote them.
     var hasLiveVehicleCommandAuthority: Bool {
-        state.connection == .connected && state.dataAvailability == .live
+        profile == .simulatorQA
+            && service is SimulatedScooterService
+            && state.connection == .connected
+            && state.dataAvailability == .live
     }
 
     /// Simulator-only qualified live speed for truth-sensitive presentation and
