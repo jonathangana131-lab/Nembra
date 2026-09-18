@@ -360,10 +360,17 @@ struct DashboardView: View {
     private var dataStatusBadge: some View {
         switch vehicle.state.dataAvailability {
         case .live:
-            Label("LIVE DATA", systemImage: "wave.3.right")
-                .foregroundStyle(colorSchemeContrast == .increased ? Color.white : Color.green)
-                .accessibilityLabel("Vehicle data")
-                .accessibilityValue("Live")
+            if vehicle.hasLiveVehicleCommandAuthority {
+                Label("LIVE DATA", systemImage: "wave.3.right")
+                    .foregroundStyle(colorSchemeContrast == .increased ? Color.white : Color.green)
+                    .accessibilityLabel("Vehicle data")
+                    .accessibilityValue("Live verified vehicle evidence")
+            } else {
+                Label("READ ONLY", systemImage: "checkmark.shield")
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Vehicle data")
+                    .accessibilityValue("Current transport evidence, vehicle semantics not verified")
+            }
         case .retained:
             Label("LAST KNOWN", systemImage: "clock.arrow.circlepath")
                 .foregroundStyle(.orange)
@@ -484,7 +491,7 @@ struct DashboardView: View {
 
             HStack(spacing: 7) {
                 if vehicle.profile.capabilities.supportsHeadlight,
-                   let isOn = vehicle.state.isHeadlightOn {
+                   let isOn = vehicle.displayHeadlightState {
                     let isPending = vehicle.pendingCommands.contains(.headlight)
 
                     Button {
