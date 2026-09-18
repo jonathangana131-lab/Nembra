@@ -696,6 +696,49 @@ final class NembraAppTests: XCTestCase {
     }
 
     @MainActor
+    func testConnectedBatteryCannotEnterSharedStateWithoutExplicitAuthority() async {
+        let service = SimulatedScooterService(
+            initialState: SimulatedScooterService.state(for: .riding),
+            commandLatencyNanoseconds: 0
+        )
+        var unclassified = await service.snapshot()
+        unclassified.batteryPercent = 73
+
+        let store = VehicleStore(
+            service: service,
+            initialState: unclassified,
+            shouldAutoConnectOnStart: false,
+            batteryObservationAuthority: nil
+        )
+
+        XCTAssertNil(store.state.batteryPercent)
+        XCTAssertNil(store.batteryDisplayPercent)
+        XCTAssertEqual(store.batteryDataAvailability, .unavailable)
+    }
+
+    @MainActor
+    func testConnectedBatteryDisplayRequiresExplicitNonSemanticAuthority() async {
+        let service = SimulatedScooterService(
+            initialState: SimulatedScooterService.state(for: .riding),
+            commandLatencyNanoseconds: 0
+        )
+        var classified = await service.snapshot()
+        classified.batteryPercent = 73
+
+        let store = VehicleStore(
+            service: service,
+            initialState: classified,
+            shouldAutoConnectOnStart: false,
+            batteryObservationAuthority: .displayOnly
+        )
+
+        XCTAssertEqual(store.state.batteryPercent, 73)
+        XCTAssertEqual(store.batteryDisplayPercent, 73)
+        XCTAssertEqual(store.batteryDisplayAuthority, .displayOnly)
+        XCTAssertEqual(store.batteryDataAvailability, .live)
+    }
+
+    @MainActor
     func testSpeedEvidenceGapKeyAloneCannotEnterSimulation() async {
         let environment = [AppBootstrap.simulationSpeedEvidenceGapEnvironmentKey: "1"]
         XCTAssertNil(AppBootstrap.simulationScenario(arguments: ["Nembra"], environment: environment))
